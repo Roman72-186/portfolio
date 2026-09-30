@@ -296,12 +296,6 @@
     --ios-orange:     #FF9F0A;
     --ios-purple:     #BF5AF2;
 }
-/* Фотография бренда под светлый интерьер — на тёмном фоне вместо нового
-   тёмного ассета просто гасим картинку и остаёмся на плоском --bg. */
-:root[data-theme="dark"] body {
-    background-image: none;
-}
-
 /* Плашки `.tag-pill--*`/`.student-info-pill--*`: бледный полупрозрачный
    фон + тёмные чернила, откалиброванные на белый холст (сами цвета —
    ниже в файле, `.tag-pill--case`/`--publish`/`--curator`/`--orange`/
@@ -325,26 +319,17 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 /* ── Base ── */
+/* Фон ровный, как в кабинете ученика. До 30.09.2026 в светлой теме здесь была фотография
+   бренда: текст, лежавший прямо на ней, не дотягивал до контраста 4.5 (аудит 11.12). */
 body {
     font-family: var(--font-body);
     background-color: var(--bg);
-    background-image: url('/static/img/bg-desktop.webp?v=1');
-    background-position: center center;
-    background-size: cover;
-    background-attachment: fixed;
-    background-repeat: no-repeat;
     color: var(--text);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-}
-@media (max-width: 768px) {
-    body {
-        background-image: url('/static/img/bg-mobile.webp?v=1');
-        background-attachment: scroll;
-    }
 }
 
 h1, h2, h3, h4, .display {

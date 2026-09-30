@@ -912,3 +912,16 @@ def test_phone_profile_has_h1():
     phone = phone[:phone.index("\n}\n")]
     shown = _rule_with(phone, ".split-wrap.student-selected .profile-h1")
     assert "display: block" in shown and "clip-path: inset(50%)" in shown, shown
+
+
+def test_page_background_is_flat_like_the_student_cabinet():
+    # 11.12: в светлой теме у `body` фоном была фотография бренда. Там, где страница не закрывала её
+    # своим слоем (12 страниц: «Ученики», «Периоды», «Циклы», «Этапы», трекер, 404, «История» ученика…),
+    # текст лежал прямо на снимке — серый на голубом «небе» 3.0–3.4, на тёмной «воде» внизу 1.4–2.8
+    # (замер по пикселям фона, 65 надписей). Владелец 30.09.2026: фон как у ученика — ровный, без фото.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    assert "bg-desktop" not in css and "bg-mobile" not in css
+    body = _css_rule(css, "\nbody ")
+    assert "background-color: var(--bg)" in body and "background-image" not in body, body
+    base_html = (TEMPLATE.parent / "base.html").read_text(encoding="utf-8")
+    assert "bg-desktop" not in base_html and "bg-mobile" not in base_html, "картинку фона больше не предзагружать"
