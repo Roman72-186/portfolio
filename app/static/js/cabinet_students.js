@@ -485,9 +485,14 @@ function buildStatistics(data) {
         return title + '<div class="no-works">График появится после первого пробника с баллом.</div>';
     }
 
-    // Геометрия
-    var W = 720, H = 320;
-    var padL = 38, padR = 16, padT = 16, padB = 56;
+    // Геометрия: рамка = ширине карточки в пикселях, тогда подписи осей — ровно 12px. Раньше рамка была
+    // 720 и сжималась по карточке: на телефоне в 2,2–2,9 раза, подписи ≈ 4–5px (11.10в).
+    var tcEl = document.getElementById('tab-content');
+    var avail = tcEl ? tcEl.clientWidth - 38 : 0;   // карточка: поля 18 + рамка 1.5 с каждой стороны
+    var W = avail > 0 ? Math.max(200, Math.floor(avail)) : 720;
+    var H = Math.min(320, Math.max(240, Math.round(W * 0.42)));
+    var padL = 38, padR = 16, padT = 16, padB = 32;
+    var FONT = 12;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var n = pts.length;
     var xFor = function(i) { return padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1)); };
@@ -500,14 +505,17 @@ function buildStatistics(data) {
     for (var g = 0; g <= 100; g += 20) {
         var gy = yFor(g);
         grid += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--line)" stroke-width="1"/>';
-        grid += '<text x="' + (padL - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="var(--dim)">' + g + '</text>';
+        grid += '<text x="' + (padL - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="' + FONT + '" fill="var(--dim)">' + g + '</text>';
     }
 
-    // Подписи месяцев по X (короткий формат: первые 3 буквы месяца)
+    // Подписи месяцев по X (короткий формат: первые 3 буквы месяца). Если на подпись меньше 32px —
+    // через одну (две…), считая от последнего месяца: текущий подписан всегда.
+    var labelStep = n > 1 ? Math.max(1, Math.ceil(32 / (plotW / (n - 1)))) : 1;
     var xLabels = '';
     pts.forEach(function(p, i) {
+        if ((n - 1 - i) % labelStep) return;
         var short = String(p.label || '').split(' ')[0].slice(0, 3);
-        xLabels += '<text x="' + xFor(i) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="var(--dim)">' + esc(short) + '</text>';
+        xLabels += '<text x="' + xFor(i) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="' + FONT + '" fill="var(--dim)">' + esc(short) + '</text>';
     });
 
     // Сегменты: разрываем линию на соседних не-null точках (null = разрыв графика)

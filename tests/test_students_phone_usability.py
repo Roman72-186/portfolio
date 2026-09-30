@@ -886,6 +886,19 @@ def test_stat_chart_series_take_brand_tokens():
     assert "stat-dot stat-series--draw" in chart and "stat-dot stat-series--comp" in chart
 
 
+def test_stat_chart_axis_labels_are_12px():
+    # 11.10в: рамка графика была 720 и сжималась по карточке — на 390 в 2,2 раза, на 320 в 2,9: подписи осей
+    # 3.5–5px (на компьютере 9.6–10.6, на 1920 — 20). Стало: рамка = ширине карточки в пикселях, подписи 12px
+    # на любой ширине (живой замер 320–1920), месяцы через один, если на подпись меньше 32px.
+    script = _script()
+    chart = script[script.index("function buildStatistics"):script.index("// ── Hero")]
+    assert "tcEl.clientWidth - 38" in chart, "рамка не от ширины карточки"
+    assert "var FONT = 12;" in chart
+    sizes = re.findall(r'font-size="([^"]*)"', chart)
+    assert sizes and set(sizes) == {"' + FONT + '"}, sizes
+    assert "Math.ceil(32 / (plotW / (n - 1)))" in chart and "(n - 1 - i) % labelStep" in chart
+
+
 def test_phone_profile_has_h1():
     # 11.11: на телефоне список с H1 «Все ученики» прячется целиком (display: none), в профиле оставался
     # только H2 с именем. H1 «Профиль ученика» — в правой панели; вне телефона выключен, чтобы H1 был один,
