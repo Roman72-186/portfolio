@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=13">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=14">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=2">
 {% endblock %}
 {% block content %}
@@ -181,6 +181,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
 
     <!-- ── Main panel ── -->
     <div class="split-main">
+        <h1 class="profile-h1">Профиль ученика</h1>
 
         <!-- Mobile back button -->
         <button class="mobile-back-btn" onclick="mobileBackToList()">

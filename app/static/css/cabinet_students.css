@@ -822,6 +822,8 @@
 }
 
 .mobile-back-btn { display: none; }
+/* H1 профиля нужен только телефону: там список с H1 «Все ученики» спрятан (11.11). */
+.profile-h1 { display: none; }
 
 /* ── Телефон и iPad: касание 44px, поля ввода 16px — иначе айфон приближает страницу ── */
 @media (max-width: 834px) {
@@ -871,6 +873,11 @@
     /* When student is selected: hide sidebar, show main panel */
     .split-wrap.student-selected .sidebar { display: none; }
     .split-wrap.student-selected .split-main { display: flex; }
+    /* Заголовок для программ чтения с экрана — глазу не виден */
+    .split-wrap.student-selected .profile-h1 {
+        display: block; position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden;
+        clip-path: inset(50%); white-space: nowrap;
+    }
 
     /* Mobile back button */
     .mobile-back-btn {

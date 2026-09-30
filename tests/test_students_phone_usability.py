@@ -884,3 +884,18 @@ def test_stat_chart_series_take_brand_tokens():
     chart = script[script.index("function renderLine"):script.index("// ── Hero")]
     assert not re.search(r'(stroke|fill|stop-color)="(?!url\(|none")', chart), "цвет ряда атрибутом SVG"
     assert "stat-dot stat-series--draw" in chart and "stat-dot stat-series--comp" in chart
+
+
+def test_phone_profile_has_h1():
+    # 11.11: на телефоне список с H1 «Все ученики» прячется целиком (display: none), в профиле оставался
+    # только H2 с именем. H1 «Профиль ученика» — в правой панели; вне телефона выключен, чтобы H1 был один,
+    # на телефоне при выбранном ученике — скрыт от глаз, но слышен программе чтения с экрана.
+    template = _source()
+    main = template[template.index('<div class="split-main">'):template.index('id="main-panel"')]
+    assert '<h1 class="profile-h1">Профиль ученика</h1>' in main
+    styles = _styles()
+    assert "display: none" in _css_rule(styles, ".profile-h1")
+    phone = styles[styles.index("@media (max-width: 768px) {"):]
+    phone = phone[:phone.index("\n}\n")]
+    shown = _rule_with(phone, ".split-wrap.student-selected .profile-h1")
+    assert "display: block" in shown and "clip-path: inset(50%)" in shown, shown
