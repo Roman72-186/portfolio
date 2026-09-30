@@ -74,6 +74,12 @@
 }
 .trk-badge--live { color: var(--blue-on-soft); background: var(--blue-soft); }
 .trk-badge--draft { color: var(--warning); background: var(--warning-soft); }
+/* «Сделано» у ученика — успех, а не черновик: сплошной зелёный капслоком,
+   в пару к кнопке «Задание выполнено» (владелец 30.09.2026). */
+.trk-badge--done {
+    color: var(--on-color); background: var(--ios-green);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
 
 .trk-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .trk-row-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
@@ -768,6 +774,7 @@
 }
 .ios-learning .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-learning .trk-badge--draft { background: rgba(255,149,0,0.14); color: #B25000; }
+.ios-learning .trk-badge--done { background: var(--ios-green); color: var(--on-color); font-weight: 700; letter-spacing: 0.04em; }
 
 .ios-learning .trk-row-actions { align-items: center; gap: 10px; }
 .ios-learning .trk-row-actions .btn-blue,
@@ -794,13 +801,21 @@
                 background 120ms var(--ios-ease), border-color 120ms var(--ios-ease),
                 color 120ms var(--ios-ease);
 }
-.ios-learning .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); color: #fff; }
+/* Выполненное — капслоком (владелец 30.09.2026), как плашка «Сделано». */
+.ios-learning .trk-toggle-btn.is-done {
+    background: var(--ios-green); border-color: var(--ios-green); color: var(--on-color);
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
 .ios-learning .trk-toggle-btn:active { transform: scale(0.96); }
 /* `:disabled` без `.is-done` — запрос в полёте (полсекунды после клика,
    пока не пришёл ответ сервера). Готовую сделанной задачу гасить нельзя:
    отметка необратима (решение владельца 26.08.2026), и полупрозрачная
    зелёная галочка выглядела бы как «недоступно», а не «выполнено». */
 .ios-learning .trk-toggle-btn:disabled:not(.is-done) { opacity: 0.5; }
+/* Общее `.trk-toggle-btn:disabled { opacity: 0.6 }` выше по файлу гасило и
+   выполненную кнопку — она всегда disabled, отметка необратима. Зелёный
+   выходил блёклым (владелец 30.09.2026), возвращаем полную яркость. */
+.ios-learning .trk-toggle-btn.is-done:disabled { opacity: 1; }
 
 @keyframes ios-learning-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .ios-learning .lrn-card,

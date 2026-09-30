@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=74">
+<link rel="stylesheet" href="/static/css/tracker.css?v=75">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -138,7 +138,7 @@
                 {% if step.subject or step.status == 'done' %}
                 <div class="trk-meta">
                     {% if step.subject %}<span class="trk-badge trk-badge--kind">{{ step.subject }}</span>{% endif %}
-                    {% if step.status == 'done' %}<span class="trk-badge trk-badge--draft">Сделано</span>{% endif %}
+                    {% if step.status == 'done' %}<span class="trk-badge trk-badge--done">Сделано</span>{% endif %}
                 </div>
                 {% endif %}
                 {# Имя задания — только над первым его блоком (владелец
