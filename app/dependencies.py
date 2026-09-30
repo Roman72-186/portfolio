@@ -23,6 +23,7 @@ from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
     blocked_section,
     closed_sections,
+    granted_sections,
     is_configurable_role,
 )
 
@@ -200,9 +201,13 @@ def get_current_user(
     # сотрудники: ученика держат срок доступа и гейты ниже, суперадмина не
     # закрывает ничто. В режиме «глазами» сессия принадлежит сотруднику —
     # суперадмин видит ровно его ограничения.
+    # `granted` — разделы, открытые лично сверх ранга (`Section.grantable`):
+    # их спрашивают проверки самого раздела через `section_access.has_grant`.
     closed = frozenset()
+    granted = frozenset()
     if is_configurable_role(role_name):
         closed = closed_sections(db, user_id=user.id, role_id=user.role_id)
+        granted = granted_sections(db, user_id=user.id, role_name=role_name)
         if blocked_section(
             request.method, request.url.path, request.query_params, closed,
         ):
@@ -304,6 +309,7 @@ def get_current_user(
         "role_name": role_name,
         "role_rank": role_rank,
         "closed_sections": closed,
+        "granted_sections": granted,
     }
 
     return result

@@ -330,3 +330,97 @@ def test_user_rules_refuse_student_target(client, session_factory, superadmin, u
         follow_redirects=False,
     )
     assert resp.status_code == 400
+
+
+# ── Личный доступ сверх роли: архив куратору (владелец 30.09.2026) ────────────
+
+def _archived_student(db, user_factory, vk_id, curator):
+    from datetime import datetime, timezone
+
+    student = user_factory(vk_id=vk_id, name=f"Архивный {vk_id}")
+    student.curator_id = curator.id
+    student.archived_at = datetime.now(timezone.utc)
+    student.is_active = False
+    db.commit()
+    return student
+
+
+def test_curator_without_grant_has_no_archive(client, session_factory, curator):
+    _login(client, session_factory, curator)
+    assert client.get("/cabinet/archive", follow_redirects=False).status_code == 403
+    assert "archive" not in [i.key for i in curator_nav_items()]
+
+
+def test_granted_curator_sees_only_own_archived_students(
+    client, db, session_factory, user_factory, curator,
+):
+    other = user_factory(vk_id=990_530, name="Чужой куратор", role_name="куратор")
+    mine = _archived_student(db, user_factory, 990_531, curator)
+    foreign = _archived_student(db, user_factory, 990_532, other)
+    _personal(db, curator, "archive", True)
+    _login(client, session_factory, curator)
+
+    page = client.get("/cabinet/archive", follow_redirects=False)
+    assert page.status_code == 200
+    assert mine.name in page.text
+    assert foreign.name not in page.text
+
+    assert client.get(f"/cabinet/students/{mine.id}/profile").status_code == 200
+    assert client.get(f"/cabinet/students/{foreign.id}/profile").status_code == 403
+
+
+def test_granted_archive_stays_read_only(client, db, session_factory, user_factory, curator):
+    from app.models.work import Work
+
+    student = _archived_student(db, user_factory, 990_540, curator)
+    work = Work(
+        user_id=student.id, work_type="mock_exam", month="Сентябрь", year=2026,
+        filename="w.jpg", status="success",
+    )
+    db.add(work)
+    db.commit()
+    _personal(db, curator, "archive", True)
+    _login(client, session_factory, curator)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/works/{work.id}/score",
+        data={"score": "80"}, follow_redirects=False,
+    )
+    assert resp.status_code == 404
+
+
+def test_granted_archive_appears_in_curator_menu():
+    keys = [i.key for i in curator_nav_items(granted_sections=frozenset({"archive"}))]
+    assert keys.index("archive") == keys.index("notifications") - 1
+
+
+def test_curator_menu_shows_archive_when_granted(client, db, session_factory, curator):
+    _personal(db, curator, "archive", True)
+    _login(client, session_factory, curator)
+    resp = client.get("/cabinet/curator", follow_redirects=False)
+    assert 'href="/cabinet/archive"' in resp.text
+
+
+def test_grant_only_section_in_card_and_not_in_role_matrix(db, superadmin, curator):
+    rules = {r["key"]: r for r in section_access.user_rules(db, curator)}
+    assert rules["archive"]["grant_only"] is True
+    assert rules["archive"]["state"] == "role"
+    assert "archive" not in section_access.role_matrix(db)["куратор"]
+
+    section_access.save_user_rules(
+        db, actor_id=superadmin.id, target=curator, desired={"archive": "closed"},
+    )
+    assert db.query(SectionAccessRule).count() == 0
+
+    section_access.save_user_rules(
+        db, actor_id=superadmin.id, target=curator, desired={"archive": "open"},
+    )
+    assert section_access.granted_sections(
+        db, user_id=curator.id, role_name="куратор",
+    ) == frozenset({"archive"})
+
+
+def test_grant_is_ignored_for_roles_outside_grantable(db, moderator):
+    _personal(db, moderator, "program", True)
+    assert section_access.granted_sections(
+        db, user_id=moderator.id, role_name="модератор",
+    ) == frozenset()

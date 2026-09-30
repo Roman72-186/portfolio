@@ -308,11 +308,32 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 )
 
 
-def curator_nav_items(closed_sections: frozenset[str] | None = None) -> tuple[NavItem, ...]:
+# Пункты, которые куратор видит, только если суперадмин открыл ему раздел
+# лично сверх роли (`Section.grantable`, владелец 30.09.2026). Встают перед
+# «Уведомлениями».
+CURATOR_GRANTED_NAV_ITEMS: dict[str, NavItem] = {
+    "archive": NavItem(key="archive", href="/cabinet/archive", label="Архив", icon="🗄️"),
+}
+
+
+def curator_nav_items(
+    closed_sections: frozenset[str] | None = None,
+    granted_sections: frozenset[str] | None = None,
+) -> tuple[NavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
-    if not hidden:
-        return CURATOR_NAV_ITEMS
-    return tuple(item for item in CURATOR_NAV_ITEMS if item.key not in hidden)
+    extra = [
+        item for key, item in CURATOR_GRANTED_NAV_ITEMS.items()
+        if key in (granted_sections or ())
+    ]
+    items: list[NavItem] = []
+    for item in CURATOR_NAV_ITEMS:
+        if item.key == "notifications":
+            items.extend(extra)
+            extra = []
+        if item.key not in hidden:
+            items.append(item)
+    items.extend(extra)
+    return tuple(items)
 
 
 def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...]:

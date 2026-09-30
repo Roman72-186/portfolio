@@ -13,6 +13,11 @@
    `get_current_user`, поэтому действует со следующего запроса и не требует
    правки роутов.
 
+Исключение из «только сужает» — `Section.grantable`: раздел, который можно
+открыть одному человеку сверх роли (сейчас архив куратору). Такие разделы
+лежат в `user["granted_sections"]`, а код раздела спрашивает `has_grant`
+рядом с проверкой ранга — без этой правки строка в `grantable` ничего не даст.
+
 Настраиваются только сотрудники: куратор, модератор, Главный преподаватель.
 Ученика держат срок доступа и гейты, суперадмина не закрывает ничто — иначе
 он запер бы сам себя.
@@ -72,6 +77,12 @@ class Section:
     roles: tuple[str, ...]
     # Пункты меню (`navigation.py`), которые пропадают вместе с разделом.
     nav_keys: tuple[str, ...] = ()
+    # Роли, которым раздел можно открыть лично сверх ранга (владелец
+    # 30.09.2026: «куратору дать доступ к Архиву учеников»). Роли целиком
+    # такой раздел не открывается — только отдельному человеку в карточке.
+    # Работает, только если код раздела спрашивает `has_grant`, а не ранг:
+    # новый раздел сюда добавлять вместе с переделкой его проверок.
+    grantable: tuple[str, ...] = ()
 
 
 SECTIONS: tuple[Section, ...] = (
@@ -103,6 +114,9 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         "archive", "Архив учеников", "Прошлые потоки, только просмотр",
         (ROLE_MODERATOR, ROLE_HEAD), ("archive",),
+        # Куратору с личным доступом — только его бывшие ученики: правило
+        # «куратор видит своих» (`student_access.py`) не снимается.
+        grantable=(ROLE_CURATOR,),
     ),
     Section(
         "statistics", "Статистика", "Статистика активности, выгрузки, статистика циклов",
@@ -286,6 +300,31 @@ def closed_sections(db: DBSession, *, user_id: int, role_id: int | None) -> froz
     )
 
 
+def granted_sections(db: DBSession, *, user_id: int, role_name: str | None) -> frozenset[str]:
+    """Разделы, открытые сотруднику лично сверх ранга (`Section.grantable`)."""
+    if not role_name:
+        return frozenset()
+    keys = [s.key for s in SECTIONS if role_name in s.grantable]
+    if not keys:
+        return frozenset()
+    rows = (
+        db.query(SectionAccessRule.section_key)
+        .filter(
+            SectionAccessRule.user_id == user_id,
+            SectionAccessRule.section_key.in_(keys),
+            SectionAccessRule.is_open == True,  # noqa: E712
+        )
+        .all()
+    )
+    return frozenset(r.section_key for r in rows)
+
+
+def has_grant(user: dict, section_key: str) -> bool:
+    """Открыт ли раздел сотруднику лично сверх ранга. Спрашивают проверки
+    самого раздела рядом с проверкой ранга: `rank >= 4 or has_grant(...)`."""
+    return section_key in (user.get("granted_sections") or ())
+
+
 def closed_nav_keys(closed: frozenset[str] | None) -> frozenset[str]:
     """Пункты меню, которые прячутся вместе с закрытыми разделами."""
     if not closed:
@@ -399,17 +438,23 @@ def user_rules(db: DBSession, target: User) -> list[dict]:
             role_closed.add(row.section_key)
     result = []
     for s in SECTIONS:
-        if role_name not in s.roles:
+        grant_only = role_name not in s.roles and role_name in s.grantable
+        if role_name not in s.roles and not grant_only:
             continue
         if s.key in personal:
             state = USER_STATE_OPEN if personal[s.key] else USER_STATE_CLOSED
         else:
             state = USER_STATE_ROLE
+        if grant_only and state == USER_STATE_CLOSED:
+            # «Закрыт» здесь то же, что «как у роли»: роли раздел не положен.
+            state = USER_STATE_ROLE
         result.append({
             "key": s.key,
             "label": s.label,
-            "role_open": s.key not in role_closed,
+            # Раздела нет у роли — «как у роли» значит «закрыт».
+            "role_open": not grant_only and s.key not in role_closed,
             "state": state,
+            "grant_only": grant_only,
         })
     return result
 
@@ -424,6 +469,8 @@ def save_user_rules(db: DBSession, *, actor_id: int, target: User, desired: dict
     for item in user_rules(db, target):
         key = item["key"]
         want = desired.get(key)
+        if item["grant_only"] and want == USER_STATE_CLOSED:
+            want = USER_STATE_ROLE
         if want not in USER_STATES or want == item["state"]:
             continue
         row = (

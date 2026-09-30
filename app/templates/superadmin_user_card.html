@@ -162,11 +162,17 @@
             <div class="uc-grid">
                 {% for rule in section_rules %}
                 <label>
-                    {{ rule.label }}
+                    {{ rule.label }}{% if rule.grant_only %} (сверх роли){% endif %}
                     <select name="section__{{ rule.key }}" class="form-select">
+                        {% if rule.grant_only %}
+                        {# Раздела у роли нет, открыть можно только лично — «закрыт» и «как у роли» здесь одно и то же. #}
+                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Закрыт, как у роли</option>
+                        <option value="open" {% if rule.state == 'open' %}selected{% endif %}>Открыт лично</option>
+                        {% else %}
                         <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли ({{ 'открыт' if rule.role_open else 'закрыт' }})</option>
                         <option value="open" {% if rule.state == 'open' %}selected{% endif %}>Открыт</option>
                         <option value="closed" {% if rule.state == 'closed' %}selected{% endif %}>Закрыт</option>
+                        {% endif %}
                     </select>
                 </label>
                 {% endfor %}

@@ -39,6 +39,7 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.services.section_access import has_grant
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level, student_point_a
 from app.services.review_aggregate import (
@@ -87,6 +88,14 @@ def _require_student_panel(
     raise HTTPException(status_code=403, detail="Нет доступа")
 
 
+def _can_read_archive(user: dict) -> bool:
+    """Архив прошлых потоков: ГП и суперадмин, плюс куратор, которому
+    суперадмин открыл архив лично (владелец 30.09.2026, `section_access.py`).
+    Куратор и в архиве видит только своих бывших учеников — это держат
+    выборка ниже и `student_access.get_student_for_staff_access`."""
+    return user["role_rank"] >= 4 or has_grant(user, "archive")
+
+
 def _get_accessible_students(
     user: dict,
     db: DBSession,
@@ -111,28 +120,27 @@ def _get_accessible_students(
     набора новичок анкету обычно ещё не заполнил, поэтому этот фильтр тоже
     снимает отсев по profile_completed — иначе он был бы не виден вовсе.
 
-    archived=True — режим архива для ГП/суперадмина (rank>=4): вместо действующих
+    archived=True — режим архива (`_can_read_archive`): вместо действующих
     учеников отдаются архивные (прошлые потоки), их данные открыты только на чтение.
+    Куратору с личным доступом к архиву — только его бывшие ученики.
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
 
     if archived:
-        if user["role_rank"] < 4:
+        if not _can_read_archive(user):
             return []
         student_role = db.query(Role).filter(Role.rank == 1).first()
         if not student_role:
             return []
-        return (
-            db.query(User)
-            .filter(
-                User.role_id == student_role.id,
-                User.archived_at.isnot(None),
-                User.deleted_at.is_(None),
-                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-            )
-            .order_by(User.last_name, User.first_name)
-            .all()
+        q = db.query(User).filter(
+            User.role_id == student_role.id,
+            User.archived_at.isnot(None),
+            User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
+        if user["role_rank"] < 4:
+            q = q.filter(User.curator_id == user["user_id"])
+        return q.order_by(User.last_name, User.first_name).all()
 
     if user["role_rank"] < 4:
         # Куратор и преподаватель видят всех своих активных учеников, включая
@@ -174,15 +182,16 @@ def _parse_bool(s: str) -> bool:
 
 
 def _check_access(student_id: int, user: dict, db: DBSession, *, read_archive: bool = False) -> User:
-    """read_archive=True открывает архивного ученика на чтение — только ГП/суперадмину
-    (rank>=4) и только в GET-роутах панели. Мутации архива отсекаются сами: без этого
+    """read_archive=True открывает архивного ученика на чтение — тем, кому открыт
+    архив (`_can_read_archive`), и только в GET-роутах панели. Куратора дальше
+    всё равно держит «только свои» в `get_student_for_staff_access`. Мутации архива отсекаются сами: без этого
     флага архивный ученик не находится вовсе, значит POST/PATCH/DELETE отвечают 404."""
     return get_student_for_staff_access(
         db,
         user,
         student_id,
         active_only=True,
-        allow_archived=read_archive and user["role_rank"] >= 4,
+        allow_archived=read_archive and _can_read_archive(user),
         not_found_detail="Ученик не найден",
         forbidden_detail="Нет доступа к этому ученику",
     )
@@ -238,7 +247,7 @@ def students_archive_panel(
     student: int = Query(0),
     tab: str = Query("portfolio"),
 ):
-    if user["role_rank"] < 4:
+    if not _can_read_archive(user):
         raise HTTPException(status_code=403, detail="Архив доступен только Главному преподавателю и суперадмину")
     return _render_students_panel(
         request, user, db, student=student, tab=tab, archived="1",
@@ -278,8 +287,8 @@ def _render_students_panel(
     is_admin_panel = user["role_rank"] >= 4
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
     has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
-    # Архив прошлых потоков — ГП и суперадмину (rank>=4), только на чтение.
-    archived_b = user["role_rank"] >= 4 and _parse_bool(archived)
+    # Архив прошлых потоков — только на чтение, кому открыт (`_can_read_archive`).
+    archived_b = _can_read_archive(user) and _parse_bool(archived)
 
     students = _get_accessible_students(
         user, db,
@@ -408,7 +417,7 @@ def _render_students_panel(
     mock_status_available = False
     submitted_students: list[dict] = []
     not_submitted_students: list[dict] = []
-    if user["role_rank"] == 2 and students:
+    if user["role_rank"] == 2 and students and not archived_b:
         # Резолвер вызывает несколько запросов на пару (ученик × предмет) —
         # считаем каждую пару ровно один раз, а не дважды (any() + основной цикл).
         active_ticket_by_key = {
@@ -478,7 +487,11 @@ def _render_students_panel(
         "sidebar_students": sidebar_students,
         "initial_student_id": student,
         "initial_tab": tab if tab in valid_tabs else "portfolio",
-        "nav_active": "statistics" if (tab in valid_tabs and tab == "statistics") else "students",
+        "nav_active": (
+            "archive" if archived_b
+            else "statistics" if (tab in valid_tabs and tab == "statistics")
+            else "students"
+        ),
         "can_score": can_score,
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
