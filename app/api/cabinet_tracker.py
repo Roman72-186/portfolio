@@ -22,7 +22,7 @@ Hero-карточка (аватар/имя/тариф/баллы Р-К/год п
 ученика для персонала).
 """
 import logging
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -62,7 +62,9 @@ from app.services.portfolio_window import (
     portfolio_windows,
 )
 from app.services.stats import avg_score_by_subject_all_time
-from app.services.submission_edit import block_work_reason, deadline_reason
+from app.services.submission_edit import (
+    block_work_reason, deadline_reason, late_first_submission,
+)
 from app.services import s3 as s3_service
 from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
@@ -71,6 +73,7 @@ from app.services.task_blocks import (
     CompareChoiceError,
     compare_pick_url,
     compare_progress,
+    completed_after_deadline as task_block_completed_after_deadline,
     save_compare_step,
     count_submission_images as count_task_block_submission_images,
     get_submit_deadlines as get_task_block_submit_deadlines,
@@ -94,6 +97,7 @@ from app.services.task_blocks import (
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
     timed_overrun as task_block_timed_overrun,
+    timed_seconds_left as task_block_timed_seconds_left,
     save_response as save_task_block_response,
 )
 from app.services.tracker import (
@@ -441,6 +445,10 @@ def _submission_payload(
         block_overrides=tariff_deadlines,
         task_overrides=task_tariff_deadlines,
     )
+    deadline_passed = False
+    if submit_until is not None:
+        aware = submit_until if submit_until.tzinfo else submit_until.replace(tzinfo=timezone.utc)
+        deadline_passed = aware <= datetime.now(timezone.utc)
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
         "max_files": MAX_SUBMISSION_IMAGES,
@@ -451,6 +459,10 @@ def _submission_payload(
             task_tariff_deadlines=task_tariff_deadlines,
         ),
         "submit_deadline": format_deadline_msk(submit_until) or None,
+        # Контрольная на время: после срока первую сдачу примут опозданием
+        # (владелец 30.09.2026), и подсказка под формой должна это сказать.
+        "late_allowed": late_first_submission(block, submission),
+        "deadline_passed": deadline_passed,
         "delete_endpoint": f"/cabinet/tracker/blocks/{block.id}/images",
         "comment_endpoint": f"/cabinet/tracker/blocks/{block.id}/comment",
         "submitted_comment": submission.comment if submission else None,
@@ -740,6 +752,14 @@ def cabinet_tracker_task_blocks(
             )
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["overrun"] = task_block_timed_overrun(block, state)
+            # Обратный отсчёт на экране и отметка «после срока» (владелец
+            # 30.09.2026): остаток считает сервер, браузер только тикает.
+            item["time_left_seconds"] = task_block_timed_seconds_left(block, state)
+            item["late"] = task_block_completed_after_deadline(
+                block, task, state, user_tariff=user.get("tariff"),
+                block_overrides=submit_deadlines.get(block.id),
+                task_overrides=task_submit_deadlines,
+            )
             item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
             item.update(_submission_payload(
                 db, task, block, user["user_id"],

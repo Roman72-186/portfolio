@@ -431,6 +431,55 @@
         </div>
     </details>
 
+    <!-- Контрольные на время: таймер и срок (владелец 30.09.2026) -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">{{ timed.submitted }} сдано · {{ timed.overrun }} превысили время · {{ timed.late }} после срока</span></summary>
+        <div class="ss-acc-body">
+            {% if timed.blocks %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Контрольная</th><th class="ss-ta-r">Лимит, мин</th><th class="ss-ta-r">Начали</th><th class="ss-ta-r">Сдали</th><th class="ss-ta-r">Уложились</th><th class="ss-ta-r">Превысили время</th><th class="ss-ta-r">После срока</th><th class="ss-ta-r">Время вышло, работы нет</th></tr></thead>
+                    <tbody>
+                    {% for row in timed.blocks %}
+                    <tr>
+                        <td data-label="Контрольная" class="ss-bold">{{ row.title }}</td>
+                        <td data-label="Лимит, мин" class="ss-ta-r">{{ row.limit or "—" }}</td>
+                        <td data-label="Начали" class="ss-ta-r">{{ row.started }}</td>
+                        <td data-label="Сдали" class="ss-ta-r">{{ row.submitted }}</td>
+                        <td data-label="Уложились" class="ss-ta-r">{{ row.in_time }}</td>
+                        <td data-label="Превысили время" class="ss-ta-r">{{ row.overrun }}</td>
+                        <td data-label="После срока" class="ss-ta-r">{{ row.late }}</td>
+                        <td data-label="Время вышло, работы нет" class="ss-ta-r">{{ row.running_over }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if timed.students %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">Превысили время или сдали после срока</div>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th>Тариф</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Отметка</th></tr></thead>
+                        <tbody>
+                        {% for row in timed.students %}
+                        <tr>
+                            <td data-label="Ученик" class="ss-bold">{{ row.name }}</td>
+                            <td data-label="Тариф">{{ row.tariff or "—" }}</td>
+                            <td data-label="Контрольная">{{ row.title }}</td>
+                            <td data-label="Работал, мин" class="ss-ta-r">{% if row.minutes is not none %}{{ row.minutes }} из {{ row.limit }}{% else %}—{% endif %}</td>
+                            <td data-label="Отметка">{% if row.overrun %}<span class="act-badge ab-danger">время превышено</span> {% endif %}{% if row.late %}<span class="act-badge ab-danger">после срока</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+            {% else %}<div class="ss-empty">Контрольные на время ещё никто не начинал</div>{% endif %}
+        </div>
+    </details>
+
     <!-- Сдачи в заданиях -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Сдачи работ в заданиях</h2><span class="ss-acc-badge">{{ submissions.blocks_waiting }} ждут проверки</span></summary>

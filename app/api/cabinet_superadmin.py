@@ -1385,6 +1385,7 @@ def superadmin_activity(
         get_student_event_stats,
         get_deadline_stats,
         get_submission_stats,
+        get_timed_stats,
         get_task_progress_stats,
         get_video_watch_stats,
     )
@@ -1411,6 +1412,8 @@ def superadmin_activity(
         "submissions": get_submission_stats(db),
         # Сдано до и после срока (владелец 27.09.2026).
         "deadlines": get_deadline_stats(db),
+        # Контрольные на время: превысили таймер, сдали после срока (30.09.2026).
+        "timed": get_timed_stats(db),
         "staff_activity": get_staff_activity(db),
         "audit_feed": get_audit_feed(db),
         # Регистрации и поимённая сводка переехали сюда с «Пользователей»

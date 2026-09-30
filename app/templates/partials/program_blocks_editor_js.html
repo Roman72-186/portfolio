@@ -15,7 +15,7 @@
 т.п.), а `{% include %}` по умолчанию делит контекст с включающим шаблоном.
 Родительская страница обязана передать в контекст: `question_types`,
 `max_block_images`, `block_types`, `catalog_videos`, `subjects`, `tariffs`,
-`deadline_blocks_completion` — те же имена, что уже использует
+`deadline_blocks_completion`, `late_submission_block_types` — те же имена, что уже использует
 `cabinet_program_day.html`.
 
 Что осталось СНАРУЖИ этого partial, в самой странице (не сюда): предпросмотр
@@ -47,6 +47,9 @@ BLOCK_LABELS.poll = BLOCK_LABELS.question;
 // же кортеж `DEADLINE_BLOCKS_COMPLETION`, по которому решает и сервер; своя
 // копия в JS однажды разошлась бы с серверной.
 var DEADLINE_BLOCKS_COMPLETION = {{ deadline_blocks_completion|tojson }};
+// Контрольная на время (владелец 30.09.2026): после срока работу всё равно
+// примут, но запишут опозданием — `LATE_SUBMISSION_BLOCK_TYPES` на сервере.
+var LATE_SUBMISSION_BLOCK_TYPES = {{ (late_submission_block_types or [])|tojson }};
 
 // До 17.09.2026 здесь стояла статичная текстовая подсказка про **жирный**/
 // *курсив* под textarea — заменена нативным WYSIWYG (владелец: «выделили,
@@ -411,7 +414,9 @@ function blockSettingsHTML(type) {
     //
     // У портфолио своё окно в часах (18.09.2026), и оно главнее: там срок
     // остаётся запасным для старых блоков, как и «Закроется».
-    var submitHint = DEADLINE_BLOCKS_COMPLETION.indexOf(type) >= 0
+    var submitHint = LATE_SUBMISSION_BLOCK_TYPES.indexOf(type) >= 0
+        ? 'Пусто – без срока. После срока ученик всё равно сможет сдать работу, она запишется как сданная с опозданием. Заменить работу, сданную раньше, после срока уже нельзя.'
+        : DEADLINE_BLOCKS_COMPLETION.indexOf(type) >= 0
         ? 'Пусто – принимаем без ограничения срока. После срока ученик видит задание и свою работу, но загрузить, изменить и удалить уже не может.'
         : 'Пусто – без срока. Отметить выполнение ученик сможет и после срока, но в статистике это зачтётся опозданием.';
     var submitSetting = ''

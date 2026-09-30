@@ -49,6 +49,7 @@ from app.models.task_block import (
     MEDIA_KINDS,
     MEDIA_VOICE,
     DEADLINE_BLOCKS_COMPLETION,
+    LATE_SUBMISSION_BLOCK_TYPES,
     QUESTION_TEXT,
 )
 from app.services.feedback import read_audio_upload, read_video_upload
@@ -1522,6 +1523,9 @@ def program_cycle_items(
             # Список серверный, чтобы в JS не завелась своя копия, способная
             # разойтись с тем, как решает сервер.
             "deadline_blocks_completion": list(DEADLINE_BLOCKS_COMPLETION),
+            # Типы, где после срока сдачу принимают опозданием (контрольная на
+            # время, владелец 30.09.2026) — у них под полем срока своя подсказка.
+            "late_submission_block_types": list(LATE_SUBMISSION_BLOCK_TYPES),
         },
     )
 
@@ -2120,6 +2124,9 @@ def program_day(
             # Список серверный, чтобы в JS не завелась своя копия, способная
             # разойтись с тем, как решает сервер.
             "deadline_blocks_completion": list(DEADLINE_BLOCKS_COMPLETION),
+            # Типы, где после срока сдачу принимают опозданием (контрольная на
+            # время, владелец 30.09.2026) — у них под полем срока своя подсказка.
+            "late_submission_block_types": list(LATE_SUBMISSION_BLOCK_TYPES),
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.

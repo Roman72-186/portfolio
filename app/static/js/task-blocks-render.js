@@ -898,11 +898,17 @@ scope)` и свойством `answered` (одна попытка: после о
                 // Срок приёма работ (владелец 27.09.2026). Та же формулировка и
                 // тот же формат момента, что у окна портфолио выше — ученик
                 // читает одно и то же правило в двух местах одинаково.
+                // Контрольная на время (владелец 30.09.2026): после срока
+                // первую сдачу принимают, но записывают опозданием —
+                // `late_allowed` решает сервер (`late_first_submission`).
                 if (block.submit_deadline) {
-                    wrap.appendChild(el(
-                        'p', 'video-help',
-                        'Загрузить или заменить работу можно до ' + block.submit_deadline + ' по Москве.'
-                    ));
+                    var deadlineText = 'Загрузить или заменить работу можно до ' + block.submit_deadline + ' по Москве.';
+                    if (block.late_allowed && block.deadline_passed) {
+                        deadlineText = 'Срок сдачи был до ' + block.submit_deadline + ' по Москве. Работу ещё можно отправить, но она запишется как сданная после срока.';
+                    } else if (block.late_allowed) {
+                        deadlineText = 'Сдать работу нужно до ' + block.submit_deadline + ' по Москве. Если опоздаешь, работу всё равно примем, но запишем, что она сдана после срока.';
+                    }
+                    wrap.appendChild(el('p', 'video-help', deadlineText));
                 }
                 (block.submitted_files || []).forEach(function (file, index) {
                     var remove = el('button', 'btn-outline', 'Удалить фото ' + (index + 1));
@@ -1084,6 +1090,9 @@ scope)` и свойством `answered` (одна попытка: после о
                         block.overrun ? 'lrn-blk-verdict is-wrong' : 'lrn-blk-verdict is-ok',
                         block.overrun ? 'Работа сдана, время превышено' : 'Работа сдана вовремя'
                     ));
+                    if (block.late) {
+                        wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Сдана после срока сдачи'));
+                    }
                     // Форму оставляем: до проверки куратором ученик может
                     // догрузить недостающий лист, не открывая ничего заново.
                     wrap.appendChild(uploadForm(block));
@@ -1116,8 +1125,39 @@ scope)` и свойством `answered` (одна попытка: после о
                     'p', 'video-help',
                     'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
                 ));
+                if (typeof block.time_left_seconds === 'number') {
+                    wrap.appendChild(timedCountdown(block.time_left_seconds));
+                }
                 wrap.appendChild(uploadForm(block));
                 return wrap;
+            }
+
+            // Обратный отсчёт контрольной (владелец 30.09.2026). Остаток
+            // приходит с сервера: часы телефона бывают сбиты, а превышение
+            // потом считает сервер (`timed_overrun`). Браузер только тикает
+            // от момента загрузки страницы. Время вышло — отправка остаётся:
+            // превышение не запрещает сдать, только записывается.
+            function timedCountdown(secondsLeft) {
+                var box = el('p', 'video-progress-status');
+                box.setAttribute('role', 'timer');
+                var endsAt = Date.now() + secondsLeft * 1000;
+                var handle = null;
+                function pad(n) { return n < 10 ? '0' + n : String(n); }
+                function tick() {
+                    var left = Math.round((endsAt - Date.now()) / 1000);
+                    if (left <= 0) {
+                        box.textContent = 'Время вышло. Всё равно отправь работу – она запишется как сданная с превышением времени.';
+                        box.classList.add('is-error');
+                        if (handle) window.clearInterval(handle);
+                        return;
+                    }
+                    var h = Math.floor(left / 3600);
+                    var m = Math.floor((left % 3600) / 60);
+                    box.textContent = 'Осталось ' + (h ? h + ':' + pad(m) : m) + ':' + pad(left % 60);
+                }
+                tick();
+                if (secondsLeft > 0) handle = window.setInterval(tick, 1000);
+                return box;
             }
 
             function verdictMark(block) {

@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.homework_submission import STATUS_ACCEPTED, STATUS_NEEDS_REVISION, HomeworkSubmission
-from app.models.task_block import TaskBlock, TaskBlockSubmission
+from app.models.task_block import (
+    LATE_SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockSubmission,
+)
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
 from app.services.tz import msk_text
@@ -22,6 +24,7 @@ def deadline_reason(
     tariff_deadlines: dict[str, datetime | None] | None = None,
     task_tariff_deadlines: dict[str, datetime | None] | None = None,
     now: datetime | None = None,
+    late_allowed: bool = False,
 ) -> str | None:
     """Почему правка закрыта по сроку — или `None`, если срок не вышел.
 
@@ -43,12 +46,17 @@ def deadline_reason(
     дня было нельзя, а лента при этом показывала 30.09. Теперь если срок
     сдачи настроен где угодно (`task_blocks.submit_deadline_is_set`, включая
     «бессрочно» у тарифа), запирает он один; иначе — по-старому, день задания.
+
+    `late_allowed` — сдача, которую после срока принимают опозданием
+    (`LATE_SUBMISSION_BLOCK_TYPES`, решает `block_work_reason`): срок сдачи и
+    день задания её не запирают, запирает только закрытие блока `closes_at`.
     """
     moment = now or datetime.now(timezone.utc)
     deadline = upload_deadline(
         task, block, user_tariff=user_tariff,
         tariff_deadlines=tariff_deadlines,
         task_tariff_deadlines=task_tariff_deadlines,
+        late_allowed=late_allowed,
     )
     if deadline is not None and deadline <= moment:
         return f"Срок сдачи истёк {msk_text(deadline)} по Москве. Изменить работу нельзя."
@@ -60,6 +68,7 @@ def upload_deadline(
     user_tariff: str | None = None,
     tariff_deadlines: dict[str, datetime | None] | None = None,
     task_tariff_deadlines: dict[str, datetime | None] | None = None,
+    late_allowed: bool = False,
 ) -> datetime | None:
     """Момент, когда у **этого** ученика закроется сдача, — самый ранний из
     источников `deadline_reason` (правила — в его докстринге); `None` —
@@ -75,13 +84,27 @@ def upload_deadline(
         task_overrides=task_tariff_deadlines,
     )
     # `block=None` — домашка: срок задания и его строки тарифа, те же правила.
-    deadlines = [submit_deadline_for(block, task, **sources)]
+    deadlines = [] if late_allowed else [submit_deadline_for(block, task, **sources)]
     if block is not None:
         deadlines.append(block.closes_at)
-    if not submit_deadline_is_set(block, task, **sources):
+    if not late_allowed and not submit_deadline_is_set(block, task, **sources):
         deadlines.append(task.due_at)
     present = [_utc(value) for value in deadlines if value]
     return min(present) if present else None
+
+
+def late_first_submission(block: TaskBlock, submission: TaskBlockSubmission | None) -> bool:
+    """Примут ли эту сдачу после срока (опозданием), а не откажут.
+
+    Только первую сдачу контрольной на время (владелец 30.09.2026: «сдать
+    можно, но записать, что просрочен дедлайн»). Строка сдачи без
+    `submitted_at` — оборванная загрузка, работы в ней ещё нет. Уже
+    отправленную работу после срока не заменить: опоздание пишется по
+    первой сдаче, и замена спрятала бы его (`LATE_SUBMISSION_BLOCK_TYPES`).
+    """
+    return block.block_type in LATE_SUBMISSION_BLOCK_TYPES and (
+        submission is None or submission.submitted_at is None
+    )
 
 
 def block_work_reason(
@@ -107,6 +130,7 @@ def block_work_reason(
         task, block, user_tariff=user_tariff,
         tariff_deadlines=tariff_deadlines,
         task_tariff_deadlines=task_tariff_deadlines, now=now,
+        late_allowed=late_first_submission(block, submission),
     )
     if reason or submission is None:
         return reason

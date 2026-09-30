@@ -303,6 +303,8 @@ def _block_work_items(
             title = f"{title} — {row['block_title']}"
         if row["overrun"]:
             title = f"{title} (время превышено)"
+        if row["late"]:
+            title = f"{title} (сдано после срока)"
         items.append(ReviewItem(
             domain=DOMAIN_BLOCK_WORK,
             item_id=row["submission_id"],

@@ -1005,6 +1005,89 @@ def get_deadline_stats(db: DBSession) -> dict:
     }
 
 
+def get_timed_stats(db: DBSession) -> dict:
+    """Контрольные на время: кто уложился в таймер, кто превысил, кто сдал
+    после срока (владелец 03.09.2026: «будем отслеживать статистику, сколько
+    детей превысили время… пометить красненьким»; сводка — 30.09.2026).
+
+    Правила не свои: превышение — `task_blocks.timed_overrun`, опоздание —
+    `task_blocks.completed_after_deadline`, те же функции рисуют отметки у
+    ученика и на экране проверки, и цифры здесь с ними не разъедутся.
+    """
+    from app.models.task_block import BLOCK_TIMED, TaskBlock
+    from app.services.task_blocks import (
+        completed_after_deadline, get_submit_deadlines, get_task_submit_deadlines,
+        timed_overrun,
+    )
+
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(TaskBlockState, TaskBlock, TrackerTask, User.name, User.tariff)
+        .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .join(User, User.id == TaskBlockState.user_id)
+        .filter(
+            TaskBlock.block_type == BLOCK_TIMED,
+            TaskBlockState.user_id.in_(_student_ids(db)),
+            or_(TaskBlockState.started_at.isnot(None), TaskBlockState.completed_at.isnot(None)),
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    )
+    block_deadlines = get_submit_deadlines(db, list({r[1].id for r in rows}))
+    task_deadlines = get_task_submit_deadlines(db, list({r[2].id for r in rows}))
+
+    by_block: dict[int, dict] = {}
+    students: list[dict] = []
+    for state, block, task, name, tariff in rows:
+        title = f"{task.title} — {block.title}" if block.title else task.title
+        item = by_block.setdefault(block.id, {
+            "title": title, "limit": block.time_limit_minutes,
+            "started": 0, "submitted": 0, "in_time": 0, "overrun": 0,
+            "late": 0, "running_over": 0,
+        })
+        started = _utc(state.started_at)
+        finished = _utc(state.completed_at)
+        if started is not None:
+            item["started"] += 1
+        overrun = timed_overrun(block, state)
+        late = completed_after_deadline(
+            block, task, state, user_tariff=tariff,
+            block_overrides=block_deadlines.get(block.id),
+            task_overrides=task_deadlines.get(task.id),
+        )
+        if finished is not None:
+            item["submitted"] += 1
+            item["overrun" if overrun else "in_time"] += 1
+            item["late"] += 1 if late else 0
+        elif (
+            started is not None and block.time_limit_minutes
+            and (now - started).total_seconds() > block.time_limit_minutes * 60
+        ):
+            # Начал, время вышло, а работы нет — ещё рисует или бросил.
+            item["running_over"] += 1
+        if overrun or late:
+            students.append({
+                "name": name, "tariff": tariff, "title": title,
+                "minutes": (
+                    int((finished - started).total_seconds() // 60)
+                    if started is not None and finished is not None else None
+                ),
+                "limit": block.time_limit_minutes,
+                "overrun": overrun, "late": late,
+            })
+
+    students.sort(key=lambda row: (row["title"], row["name"] or ""))
+    blocks = sorted(by_block.values(), key=lambda row: row["title"])
+    return {
+        "blocks": blocks,
+        "students": students,
+        "submitted": sum(b["submitted"] for b in blocks),
+        "overrun": sum(b["overrun"] for b in blocks),
+        "late": sum(b["late"] for b in blocks),
+    }
+
+
 def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
     """Действия сотрудников (ранг ≥ 2) по одной строке на человека.
 

@@ -17,7 +17,9 @@
    добавленный в задание, которое ученик уже видел: иначе запись занятия,
    доложенная в открытое задание, прошла бы молча.
 3. **Срок сдачи** — за сутки и за 3 часа (владелец), если блок сдачи или
-   ответа (`DEADLINE_BLOCKS_COMPLETION`) не закрыт или домашка не сдана.
+   ответа (`DEADLINE_BLOCKS_COMPLETION`) или контрольная на время
+   (`LATE_SUBMISSION_BLOCK_TYPES` — после срока её примут, но опозданием)
+   не закрыты или домашка не сдана.
    Момент срока — `submission_edit.upload_deadline`, та же функция, что
    запирает сдачу: напоминание не может разойтись с настоящим сроком.
 4. **Конец доступа** (`User.access_until`) — за 3 дня и за сутки.
@@ -59,6 +61,7 @@ from app.models.student_reminder import (
 )
 from app.models.task_block import (
     DEADLINE_BLOCKS_COMPLETION,
+    LATE_SUBMISSION_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
     TaskBlock,
     TaskBlockState,
@@ -335,7 +338,10 @@ def _collect_deadlines(
         ).all()
     }
     blocks_by_task = {
-        task_id: [b for b in blocks if b.block_type in DEADLINE_BLOCKS_COMPLETION]
+        task_id: [
+            b for b in blocks
+            if b.block_type in DEADLINE_BLOCKS_COMPLETION + LATE_SUBMISSION_BLOCK_TYPES
+        ]
         for task_id, blocks in get_blocks_for_tasks(db, list(tasks)).items()
     }
     block_ids = [b.id for blocks in blocks_by_task.values() for b in blocks]

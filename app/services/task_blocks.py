@@ -1761,6 +1761,57 @@ def timed_overrun(block: TaskBlock, state: TaskBlockState | None) -> bool:
     return (finished - started).total_seconds() > block.time_limit_minutes * 60
 
 
+def timed_seconds_left(
+    block: TaskBlock, state: TaskBlockState | None, *, now: datetime | None = None
+) -> int | None:
+    """Сколько секунд осталось по таймеру контрольной; меньше нуля — время
+    вышло. `None` — не начата или лимита нет.
+
+    Считает сервер, а не браузер: часы на телефоне ученика бывают сбиты на
+    минуты, и обратный отсчёт по ним показал бы не то время, по которому
+    потом решает `timed_overrun` (владелец 30.09.2026 попросил отсчёт на экране).
+    """
+    if state is None or state.started_at is None or block.time_limit_minutes is None:
+        return None
+    started = state.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    spent = ((now or _now()) - started).total_seconds()
+    return int(block.time_limit_minutes * 60 - spent)
+
+
+def completed_after_deadline(
+    block: TaskBlock,
+    task,
+    state: TaskBlockState | None,
+    *,
+    user_tariff: str | None,
+    block_overrides: dict[str, datetime | None] | None = None,
+    task_overrides: dict[str, datetime | None] | None = None,
+) -> bool:
+    """Закрыт ли блок позже срока сдачи — отметка «сдано после срока».
+
+    Срок — `submit_deadline_for`, тот же, что видит ученик и что запирает
+    сдачу; момент — `completed_at`, первая сдача, как в статистике
+    (`activity_stats.get_deadline_stats`). Запасного срока «конец цикла»
+    здесь нет: он только для отчёта, ученику такого срока не показывали.
+    """
+    if state is None or state.completed_at is None:
+        return False
+    deadline = submit_deadline_for(
+        block, task, user_tariff=user_tariff,
+        block_overrides=block_overrides, task_overrides=task_overrides,
+    )
+    if deadline is None:
+        return False
+    finished = state.completed_at
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    return finished > deadline
+
+
 def block_status(
     block: TaskBlock, state: TaskBlockState | None, *, accessible: bool
 ) -> str:
@@ -2239,9 +2290,13 @@ def submission_review_queue(
             .all()
         ):
             state_map[(state.block_id, state.user_id)] = state
+    # Сроки по тарифам — одним запросом на всю выборку, как в ленте.
+    block_deadlines = get_submit_deadlines(db, list({block.id for _, block, _, _ in rows}))
+    task_deadlines = get_task_submit_deadlines(db, list({task.id for _, _, task, _ in rows}))
 
     items = []
     for submission, block, task, student in rows:
+        state = state_map.get((block.id, student.id))
         items.append({
             "submission_id": submission.id,
             "block_id": block.id,
@@ -2253,7 +2308,14 @@ def submission_review_queue(
             "comment": submission.comment,
             "review_comment": submission.review_comment,
             "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
-            "overrun": timed_overrun(block, state_map.get((block.id, student.id))),
+            "overrun": timed_overrun(block, state),
+            # Сдано после срока (владелец 30.09.2026): после срока принимают
+            # только контрольную на время, но отметка общая для всех сдач.
+            "late": completed_after_deadline(
+                block, task, state, user_tariff=student.tariff,
+                block_overrides=block_deadlines.get(block.id),
+                task_overrides=task_deadlines.get(task.id),
+            ),
             "reviewed": submission.reviewed_at is not None,
             "needs_revision": submission.needs_revision,
             "score": int(submission.score) if submission.score is not None else None,
