@@ -13,7 +13,8 @@
     /* ── Ink & Text ─────────────────────────── */
     --ink:          #0E1116;
     --text:         #1A1F29;
-    --muted:        #6B7280;
+    /* Было #6B7280 — на --bg 4.43, на --surface-2 4.35 при норме 4.5 (аудит 11.7); это — 5.14 / 5.05. */
+    --muted:        #616875;
     --dim:          #666E80;
     /* Серая заливка под белую цифру: старая попытка в календаре, «Не оценено»,
        балл соседа. Отдельно от --dim, потому что --dim — цвет подписей и в
@@ -42,7 +43,8 @@
 
     /* ── Status ─────────────────────────────── */
     --success:      #15803D;
-    --error:        #DC2626;
+    /* Было #DC2626 — на --bg 4.43, на розовых плашках 4.0–4.3 (аудит 11.7); это — 5.26, плашки от 4.7. */
+    --error:        #C81E1E;
     --warning:      #B45309;
     --warning-deep: #92400E;
     --warning-ink:  #78350F;
@@ -51,6 +53,9 @@
     /* Заливка под белым текстом (счётчики непроверенного, «Продолжить»): сам --warning
        в тёмной теме светлый — белое на нём 1.67 (аудит 11.4б). */
     --warning-fill: var(--warning);
+    /* Заливка под белым текстом (нажатая .btn-danger, крестики удаления): сам --error
+       в тёмной теме светлый — белое на нём 2.77 (аудит 11.7). */
+    --error-fill:   var(--error);
     --warning-tint: #FDE68A;
     --ok:           #047857;
     --ok-strong:    #047857;
@@ -260,6 +265,8 @@
     /* Зелёные чернила плашек: светлый вариант на тёмном холсте давал контраст 2.8.
        Сильный зелёный не трогаем — это заливка под белым текстом. */
     --ok:           var(--success);
+    /* Белое 5.89; светлая тема — 5.74 на самом --error. */
+    --error-fill:   color-mix(in srgb, var(--error) 65%, black);
     /* Белое на этих заливках 5.89 и 5.71 (светлые --error/--success — 2.77 и 1.92). */
     --score-red-fill:   color-mix(in srgb, var(--error) 65%, black);
     --score-green-fill: color-mix(in srgb, var(--success) 55%, black);
@@ -684,7 +691,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     text-decoration: none;
     transition: background var(--duration-fast), color var(--duration-fast);
 }
-.btn-danger:hover { background: var(--error); color: #fff; opacity: 1; }
+.btn-danger:hover { background: var(--error-fill); color: #fff; opacity: 1; }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger:focus-visible { outline: 2px solid var(--error); outline-offset: 2px; }
 
@@ -1498,7 +1505,7 @@ button.desk-nav-item {
     .btn-blue:hover { transform: none; box-shadow: none; filter: none; }
     .btn-danger:hover { background: transparent; color: var(--error); }
     .btn-warn:hover { background: transparent; color: var(--warning-deep); }
-    .btn-danger:active { background: var(--error); color: #fff; }
+    .btn-danger:active { background: var(--error-fill); color: #fff; }
     .btn-warn:active { background: var(--warning-deep); color: #fff; }
     .card:hover, .card-dark:hover, .card-blue:hover { transform: none; box-shadow: var(--sh-sm); }
     .desk-nav-item:hover { background: none; color: var(--muted); }

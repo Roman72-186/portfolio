@@ -723,3 +723,61 @@ def test_calendar_and_cycle_scores_use_the_score_fills():
         assert fill in _css_rule(lib, f".cal-hero-score.score-{tier}"), tier
         assert fill in _css_rule(base, f".cal-peer-score--{tier}"), tier
         assert fill in _css_rule(cycle, f".ios-cycle .fb-list .fb-score-badge.score-{tier}"), tier
+
+
+# ── Шаг 11, фаза 3 ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("opener", "backgrounds"),
+    [
+        (":root {", ("bg", "surface", "surface-2")),
+        (':root[data-theme="dark"] {', ("bg", "surface", "surface-2")),
+    ],
+)
+def test_grey_and_red_text_is_readable_on_page_backgrounds(opener, backgrounds):
+    # 30.09.2026, 11.7: в светлой теме `--muted` на фоне страницы 4.43 («← К профилю»),
+    # `--error` — 4.43 («Удалить»), на `--surface-2` оба 4.35. Токены общие на весь сайт —
+    # правится значение токена, а не место.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    tokens = {**_theme_tokens(css, ":root {"), **_theme_tokens(css, opener)}
+    for name in ("muted", "error"):
+        for bg in backgrounds:
+            assert _contrast(tokens[name], tokens[bg]) >= 4.5, f"--{name} на --{bg}"
+
+
+# Точки без текста: запись голоса, урок в трекере.
+RED_DOTS = {".mrf-rec-dot", ".trk-dot--lesson"}
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_white_on_red_uses_the_error_fill(opener):
+    # 11.7: белое на `--error` в тёмной теме — 2.77 (там `--error` светлый, `#F87171`): нажатая
+    # `.btn-danger`, круглые крестики в программе и трекере, крестики удаления фото. Заливка —
+    # `--error-fill`, как `--warning-fill` в 11.4б; `--error` текстом остаётся.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    assert _contrast("#FFFFFF", _token_color(css, opener, "error-fill")) >= 4.5
+    bare = re.compile(r"(?<![-\w])background(?:-color|-image)?\s*:[^;]*var\(--error\)(?!\s*\d+%)")
+    offenders = []
+    for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html")]:
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", path.read_text(encoding="utf-8")):
+            if bare.search(body) and selector.strip().splitlines()[-1].strip() not in RED_DOTS:
+                offenders.append(f"{path.relative_to(APP)}: {selector.strip().splitlines()[-1]}")
+            if "rgba(220,38,38" in body.replace(" ", "") and "photo-del" in selector:
+                offenders.append(f"{path.relative_to(APP)}: {selector.strip().splitlines()[-1]} (красный числом)")
+    assert not offenders, "белое на --error — заливка var(--error-fill):\n" + "\n".join(offenders)
+
+
+def test_feedback_link_reads_on_its_plate():
+    # 11.7: «Открыть обратную связь» — `--success` на своей 12 % подложке, 4.39; «Дать обратную
+    # связь» — голый `--blue` на `--blue-soft`, 3.35. Оба собирались встроенным стилем в JS,
+    # и сторожа файла стилей их не видели. Теперь — классы с текстом «токен с 18 % --text»
+    # и `--blue-text`.
+    script = _script()
+    build = script[script.index("function buildFeedbackButton(w) {"):]
+    build = build[:build.index("\n}\n")]
+    assert "style=" not in build, "стиль кнопки — в cabinet_students.css"
+    assert "work-fb-link" in build and "work-fb-link--done" in build
+    styles = _styles()
+    assert "color: var(--blue-text)" in _css_rule(styles, ".work-fb-link")
+    assert "color: color-mix(in srgb, var(--success) 82%, var(--text))" in _css_rule(styles, ".work-fb-link--done")

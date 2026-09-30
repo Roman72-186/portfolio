@@ -1185,11 +1185,8 @@ function buildFeedbackButton(w) {
               : '/cabinet/curator/feedback/';
     var hasFb = !!w.has_feedback;
     var lbl = hasFb ? 'Открыть обратную связь' : 'Дать обратную связь';
-    var bg = hasFb ? 'rgba(22,163,74,0.12)' : 'var(--blue-soft)';
-    var col = hasFb ? 'var(--success)' : 'var(--blue)';
     return '<a href="' + prefix + w.cycle_id + '#work-' + w.id + '" '
-         + 'style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 12px;border-radius:8px;'
-         + 'background:' + bg + ';color:' + col + ';font-size:13px;font-weight:700;text-decoration:none;border:1px solid transparent;transition:opacity .15s">'
+         + 'class="work-fb-link' + (hasFb ? ' work-fb-link--done' : '') + '">'
          + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
          + '<span>' + lbl + '</span>'
          + '</a>';
