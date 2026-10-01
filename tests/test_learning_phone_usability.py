@@ -242,3 +242,19 @@ def test_feed_colors_come_from_tokens_where_a_token_exists():
     assert not offenders, offenders
     subject = [body for s, body in _feed_rule_bodies(tracker) if s.startswith(".lrn-subject-btn[data-subject=")]
     assert len(subject) == 2 and not any(re.search(r"color:\s*#", b) for b in subject)
+
+
+def test_menu_pill_label_wraps_instead_of_cutting():
+    """Находка 16: в нижней «пилюле» меню подпись раздела резалась многоточием —
+    «Актуальное образовательное про…». Название едино у всех ролей (владелец
+    16.09.2026), сокращать нельзя; владелец 01.10.2026 выбрал перенос в две
+    строки. Многоточие остаётся страховкой только на третьей строке."""
+    css = (STATIC / "css" / "bottom_nav_burger.css").read_text(encoding="utf-8")
+    for label in ("burger-toggle-label", "burger-item-label"):  # пилюля и пункт открытого списка
+        rule = re.search(r"\." + label + r"\s*\{([^}]*)\}", css).group(1)
+        assert "nowrap" not in rule, label
+        assert "-webkit-line-clamp: 2" in rule, label
+    toggle = re.search(r"\.burger-toggle\s*\{([^}]*)\}", css).group(1)
+    assert not re.search(r"(?<![-\w])height:\s*56px", toggle), "жёсткая высота обрежет вторую строку"
+    narrow = re.search(r"@media \(max-width: 359px\)\s*\{\s*\.burger-toggle-label\s*\{([^}]*)\}", css)
+    assert narrow and "font-size: 13px" in narrow.group(1), "на 320px в 15px нужна третья строка"
