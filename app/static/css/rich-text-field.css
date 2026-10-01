@@ -47,10 +47,22 @@
     border-color: var(--blue-soft);
 }
 
+/* Шрифт задан явно, а не `font: inherit`. Редактор встаёт внутрь родителя
+   textarea, а в конструкторе это `<label class="prg-field">` — подпись поля:
+   700 11px, капслок, разрядка (`program_ios.css`). Наследуя её, набранный
+   текст выходил ЗАГЛАВНЫМИ и жирным, а «Ж» ничего не меняла — текст и так был
+   жирным (созвон 30.09.2026, «всё капсом и всё жирное, и я не могу его
+   поменять»). То же в админке видео и целей. Семейство шрифта — от экрана. */
 .rt-editable {
     min-height: 96px;
     padding: var(--s-2);
-    font: inherit;
+    font-family: inherit;
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.45;
+    text-transform: none;
+    letter-spacing: normal;
     color: var(--text);
     outline: none;
     white-space: pre-wrap;
@@ -79,6 +91,11 @@
     .rt-btn {
         min-width: 44px;
         min-height: 44px;
+    }
+
+    /* Мельче 16px айфон приближает страницу при касании поля. */
+    .rt-editable {
+        font-size: 16px;
     }
 }
 
