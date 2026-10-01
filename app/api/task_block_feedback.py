@@ -37,6 +37,7 @@ from app.services.task_block_feedback import (
     role_from_rank,
     send_message,
     serialize_messages,
+    student_can_reply,
 )
 from app.services.task_blocks import list_submission_images
 from app.services.upload_validation import read_image_uploads
@@ -121,6 +122,8 @@ def _render(
         "block": block,
         "task": task,
         "messages": serialize_messages(messages, names),
+        # Может ли ученик ответить — одно правило на роут и экран (01.10.2026).
+        "reply": student_can_reply(db, submission, feedback),
         "back_url": back_url,
     })
 
@@ -280,11 +283,17 @@ async def student_message(
 ):
     submission = _submission_or_404(db, submission_id)
     _student_guard(user, submission)
-    feedback = _feedback(db, submission.id)
-    if feedback is None or not feedback.messages:
-        raise HTTPException(
-            status_code=403, detail="Преподаватель ещё не ответил – дождись первого сообщения"
-        )
+    # Строка диалога под блокировкой до коммита: два одновременных ответа
+    # иначе оба насчитали бы «осталось одно сообщение» и прошли бы мимо
+    # лимита (на SQLite в тестах `FOR UPDATE` молча пропускается).
+    feedback = db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).with_for_update().first()
+    reply = student_can_reply(db, submission, feedback)
+    if not reply.allowed:
+        # JSON с `error`, а не HTTPException: форма показывает ученику
+        # именно это поле (`task_block_feedback_detail.html`).
+        return JSONResponse({"ok": False, "error": reply.student_text}, status_code=403)
     return await _post_message(
         submission=submission, feedback=feedback, db=db, user=user, text=text,
         photo=photo, video_link=video_link, background_tasks=background_tasks,

@@ -224,9 +224,11 @@
                 <div class="dlg-form">
                     <div class="dlg-waiting">Цикл закрыт. Отправка сообщений недоступна.</div>
                 </div>
-            {% elif viewer_role == 'student' and not has_staff_message %}
+            {% elif viewer_role == 'student' %}
+                {# На пробник ученик ОС только получает (01.10.2026) — форма
+                   ответа ему не рисуется, роут тоже отказывает. #}
                 <div class="dlg-form">
-                    <div class="dlg-waiting">Жди первое сообщение – после него сможешь ответить.</div>
+                    <div class="dlg-waiting">{% if has_staff_message %}На эту обратную связь ответить нельзя.{% else %}Преподаватель ещё не оставил обратную связь – она появится здесь.{% endif %}</div>
                 </div>
             {% elif viewer_role != 'student' and not has_staff_message %}
                 <form class="dlg-form dlg-form-structured" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}" data-structured="1">

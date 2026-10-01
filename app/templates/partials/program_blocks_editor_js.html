@@ -15,7 +15,8 @@
 т.п.), а `{% include %}` по умолчанию делит контекст с включающим шаблоном.
 Родительская страница обязана передать в контекст: `question_types`,
 `max_block_images`, `block_types`, `catalog_videos`, `subjects`, `tariffs`,
-`deadline_blocks_completion`, `late_submission_block_types` — те же имена, что уже использует
+`deadline_blocks_completion`, `late_submission_block_types`, `dialog_block_types`,
+`dialog_reply_limit_max` — те же имена, что уже использует
 `cabinet_program_day.html`.
 
 Что осталось СНАРУЖИ этого partial, в самой странице (не сюда): предпросмотр
@@ -50,6 +51,10 @@ var DEADLINE_BLOCKS_COMPLETION = {{ deadline_blocks_completion|tojson }};
 // Контрольная на время (владелец 30.09.2026): после срока работу всё равно
 // примут, но запишут опозданием — `LATE_SUBMISSION_BLOCK_TYPES` на сервере.
 var LATE_SUBMISSION_BLOCK_TYPES = {{ (late_submission_block_types or [])|tojson }};
+// Блоки сдачи с панелью «Настройка диалога» (владелец 01.10.2026) —
+// `DIALOG_BLOCK_TYPES` на сервере; у контрольной на время ответа нет вовсе.
+var DIALOG_BLOCK_TYPES = {{ (dialog_block_types or [])|tojson }};
+var DIALOG_REPLY_LIMIT_MAX = {{ (dialog_reply_limit_max or 20)|tojson }};
 
 // До 17.09.2026 здесь стояла статичная текстовая подсказка про **жирный**/
 // *курсив* под textarea — заменена нативным WYSIWYG (владелец: «выделили,
@@ -127,6 +132,38 @@ function requiredTariffChecksHTML() {
             + '<input type="checkbox" data-b-required-tariff value="' + escapeHTML(tariff) + '">'
             + '<span>' + escapeHTML(tariff) + '</span></label>';
     }).join('');
+}
+
+// «Настройка диалога» (владелец 01.10.2026, созвон 30.09): кто из учеников
+// может ответить на обратную связь куратора и сколькими сообщениями. Своя
+// свёрнутая панель рядом с «Доступностью блока», а не внутри неё: это третья
+// ось, отдельная от видимости и обязательности. Ни одного тарифа — ответ
+// закрыт всем (обратно «Тарифам» блока, где пусто = видно всем).
+function blockDialogSettingsHTML(type) {
+    if (DIALOG_BLOCK_TYPES.indexOf(type) < 0) return '';
+    var emptySummary = 'По умолчанию: ученик не отвечает';
+    var checks = ({{ tariffs|tojson }}).map(function (tariff) {
+        return '<label class="prg-field prg-field--row">'
+            + '<input type="checkbox" data-b-dialog-tariff value="' + escapeHTML(tariff) + '">'
+            + '<span>' + escapeHTML(tariff) + '</span></label>';
+    }).join('');
+    return ''
+        + '<details class="prg-settings" data-settings-panel data-dialog-settings data-settings-empty="' + emptySummary + '">'
+        + '  <summary><span class="prg-settings-head">'
+        + '    <span class="prg-settings-title">Настройка диалога</span>'
+        + '    <span class="prg-settings-summary" data-settings-summary>' + emptySummary + '</span>'
+        + '  </span></summary>'
+        + '  <div class="prg-settings-body">'
+        + '  <div class="prg-blk-setting" data-sum-list="отвечают">'
+        + '    <p class="prg-hint">Кто может ответить на обратную связь куратора. Не отметили ни одного тарифа – ученик только читает ответ.</p>'
+        + checks
+        + '  </div>'
+        + '  <label class="prg-field prg-blk-setting">Сколько сообщений может отправить ученик'
+        + '    <input type="number" min="1" max="' + DIALOG_REPLY_LIMIT_MAX + '" step="1" data-b-dialog-limit data-sum="до" data-sum-unit=" сообщ." placeholder="1" aria-label="Сколько сообщений может отправить ученик">'
+        + '    <span class="prg-hint">Считаются только сообщения ученика, одно сообщение может быть с несколькими фото. Куратор пишет без ограничений.</span>'
+        + '  </label>'
+        + '  </div>'
+        + '</details>';
 }
 
 // Срок приёма работ по тарифам (владелец 27.09.2026: «для одного тарифа один
@@ -510,6 +547,7 @@ function blockRowHTML(type) {
         + '  </div>'
         + blockBodyHTML(type)
         + blockSettingsHTML(type)
+        + blockDialogSettingsHTML(type)
         + '</div>';
 }
 
@@ -940,6 +978,12 @@ function fillBlockRow(row, block) {
         var box = row.querySelector('[data-b-required-tariff][value="' + tariff + '"]');
         if (box) box.checked = true;
     });
+    (block.dialog_tariffs || []).forEach(function (tariff) {
+        var box = row.querySelector('[data-b-dialog-tariff][value="' + tariff + '"]');
+        if (box) box.checked = true;
+    });
+    var dialogLimit = row.querySelector('[data-b-dialog-limit]');
+    if (dialogLimit) dialogLimit.value = block.dialog_reply_limit || '';
     var submitUntil = row.querySelector('[data-b-submit-until]');
     if (submitUntil) submitUntil.value = block.submit_until || '';
     // Строка тарифа со временем — свой срок; строка без времени — галочка
@@ -1155,6 +1199,13 @@ function collectFormBlocks(form) {
         row.querySelectorAll('[data-b-required-tariff]:checked').forEach(function (box) {
             item.required_tariffs.push(box.value);
         });
+        item.dialog_tariffs = [];
+        row.querySelectorAll('[data-b-dialog-tariff]:checked').forEach(function (box) {
+            item.dialog_tariffs.push(box.value);
+        });
+        var dialogLimitField = row.querySelector('[data-b-dialog-limit]');
+        item.dialog_reply_limit = (dialogLimitField && dialogLimitField.value)
+            ? Number(dialogLimitField.value) : null;
         var submitUntilField = row.querySelector('[data-b-submit-until]');
         item.submit_until = (submitUntilField && submitUntilField.value)
             ? submitUntilField.value : null;

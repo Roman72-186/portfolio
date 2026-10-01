@@ -98,7 +98,14 @@
         </div></div>
         {% endif %}
 
-        {% if viewer_role != 'student' or messages %}
+        {# Может ли ученик ответить — `task_block_feedback.student_can_reply`
+           («Настройка диалога», 01.10.2026). Сотруднику та же причина видна
+           строкой: ждать ли от ученика вопроса. #}
+        {% if viewer_role != 'student' %}
+        <p class="card-desc hw-hint" data-reply-state>{{ reply.staff_text }}</p>
+        {% endif %}
+        {% if viewer_role != 'student' or reply.allowed %}
+        {% if viewer_role == 'student' %}<p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>{% endif %}
         <form class="hw-async-form hw-form" method="post"
               action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}"
               enctype="multipart/form-data">
@@ -118,7 +125,7 @@
             <p class="prg-message" aria-live="polite"></p>
         </form>
         {% else %}
-        <p class="card-desc hw-hint">Ответить можно после первого сообщения преподавателя.</p>
+        <p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>
         {% endif %}
     </section>
 </div>

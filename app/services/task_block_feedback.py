@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.exc import IntegrityError
 
 from app.cache import invalidate_unread
 from app.models.notification import Notification
-from app.models.task_block import TaskBlockSubmission
+from app.models.task_block import DIALOG_BLOCK_TYPES, TaskBlock, TaskBlockSubmission
+from app.models.user import User
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import ROLE_STUDENT, role_from_rank, role_label_ru
@@ -44,6 +46,83 @@ def get_or_create_feedback(
             raise
         return existing, False
 
+
+
+def _messages_word(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return "сообщение"
+    if count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        return "сообщения"
+    return "сообщений"
+
+
+@dataclass(frozen=True)
+class ReplyState:
+    """Может ли ученик сейчас ответить в диалоге по своей сдаче.
+
+    `student_text` — подсказка ученику под диалогом, `staff_text` — та же
+    причина для сотрудника: куратору видно, ждать ли от ученика вопроса."""
+
+    allowed: bool
+    student_text: str
+    staff_text: str
+
+
+def student_can_reply(
+    db: DBSession, submission: TaskBlockSubmission,
+    feedback: TaskBlockFeedback | None,
+) -> ReplyState:
+    """**Единственное место правила «может ли ученик ответить на ОС»**
+    (владелец 01.10.2026, план `plans/2026-10-01-apparchi-call-30-09-followup.md`,
+    О1–О9, О22). Читают роут `student_message` и экран диалога.
+
+    Порядок проверок:
+    1. Блок вне `DIALOG_BLOCK_TYPES` — ответа нет никогда. Это контрольная на
+       время: «просто получить обратку и всё, на любом тарифе» (созвон
+       00:08:51–00:09:09).
+    2. Тариф ученика **сейчас** (О6, а не на момент сдачи) не отмечен в
+       «Настройке диалога» блока — ответа нет. Пусто = закрыто всем (О9).
+    3. Преподаватель ещё не написал — ждать первого сообщения.
+    4. Ученик уже отправил `dialog_reply_limit` сообщений — лимит исчерпан.
+       Считаются только его сообщения, одна отправка — одно (О3); куратор
+       пишет без ограничений (О4), срока у диалога нет (О5).
+    """
+    # Импорт здесь: `task_blocks` тянет за собой половину доменных сервисов.
+    from app.services.task_blocks import get_dialog_tariffs
+
+    closed = ReplyState(
+        False,
+        "На эту обратную связь ответить нельзя.",
+        "Ученик не может ответить на эту обратную связь.",
+    )
+    block = db.get(TaskBlock, submission.block_id)
+    if block is None or block.block_type not in DIALOG_BLOCK_TYPES:
+        return closed
+    student = db.get(User, submission.user_id)
+    tariffs = get_dialog_tariffs(db, [block.id]).get(block.id, set())
+    if student is None or student.tariff not in tariffs:
+        return closed
+    limit = block.dialog_reply_limit or 1
+    messages = feedback.messages if feedback is not None else []
+    if not any(message.sender_role != ROLE_STUDENT for message in messages):
+        return ReplyState(
+            False,
+            "Задать вопрос можно после первого сообщения преподавателя.",
+            f"Ученик сможет задать вопрос: до {limit} {_messages_word(limit)}.",
+        )
+    sent = sum(1 for message in messages if message.sender_role == ROLE_STUDENT)
+    left = limit - sent
+    if left <= 0:
+        return ReplyState(
+            False,
+            "Вопрос отправлен – ответ преподавателя придёт сюда.",
+            "Ученик отправил все свои сообщения. Ответить ему можно.",
+        )
+    return ReplyState(
+        True,
+        f"Можно отправить ещё {left} {_messages_word(left)}.",
+        f"Ученик может отправить ещё {left} {_messages_word(left)}.",
+    )
 
 async def _upload_photo(
     submission_id: int, filename: str, data: bytes,
@@ -233,6 +312,6 @@ def serialize_messages(
 
 
 __all__ = [
-    "get_or_create_feedback", "notify_counterpart", "role_from_rank",
-    "send_message", "serialize_messages",
+    "ReplyState", "get_or_create_feedback", "notify_counterpart", "role_from_rank",
+    "send_message", "serialize_messages", "student_can_reply",
 ]

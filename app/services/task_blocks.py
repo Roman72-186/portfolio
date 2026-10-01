@@ -27,6 +27,9 @@ from app.models.task_block import (
     BLOCK_TYPES,
     BLOCK_VIDEO,
     IMAGE_BLOCK_TYPES,
+    DIALOG_BLOCK_TYPES,
+    DIALOG_REPLY_LIMIT_DEFAULT,
+    DIALOG_REPLY_LIMIT_MAX,
     MAX_BLOCK_IMAGES,
     MEDIA_KINDS,
     POLL_BLOCK_TYPES,
@@ -37,6 +40,7 @@ from app.models.task_block import (
     TaskBlockAnswer,
     TaskBlockAnswerOption,
     TaskBlockCompareStep,
+    TaskBlockDialogTariff,
     TaskBlockImage,
     TaskBlockOption,
     TaskBlockRequiredTariff,
@@ -355,6 +359,54 @@ def _sync_required_tariffs(
         seen.add(tariff)
         db.add(TaskBlockRequiredTariff(block_id=block.id, tariff=tariff))
 
+
+
+def get_dialog_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
+    """Тарифы, которым разрешён ответ на обратную связь по сдаче блока.
+    **Пустой набор = ответ закрыт всем** (владелец 01.10.2026) — обратно
+    `get_tariffs`, где пусто значит «видно всем»."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockDialogTariff)
+        .filter(TaskBlockDialogTariff.block_id.in_(block_ids))
+        .all()
+    )
+    grouped: dict[int, set[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.block_id, set()).add(row.tariff)
+    return grouped
+
+
+def _sync_dialog_settings(db: DBSession, block: TaskBlock, item: dict) -> None:
+    """«Настройка диалога»: тарифы ответа и лимит сообщений ученика.
+
+    Снос и пересборка тарифов — как у `_sync_tariffs`, с той же молчаливой
+    отбраковкой неизвестного тарифа. У типов вне `DIALOG_BLOCK_TYPES` (в том
+    числе у контрольной на время) настройка стирается: блок могли
+    переключить с домашки на контрольную, а там ответ закрыт всегда.
+    Отмечен тариф, а число не задано — одно сообщение, как на созвоне
+    («одно сообщение он может написать и спросить»)."""
+    db.query(TaskBlockDialogTariff).filter(
+        TaskBlockDialogTariff.block_id == block.id
+    ).delete(synchronize_session=False)
+    if block.block_type not in DIALOG_BLOCK_TYPES:
+        block.dialog_reply_limit = None
+        return
+    seen: set[str] = set()
+    for raw in item.get("dialog_tariffs") or []:
+        tariff = (raw or "").strip().upper()
+        if tariff not in TARIFFS or tariff in seen:
+            continue
+        seen.add(tariff)
+        db.add(TaskBlockDialogTariff(block_id=block.id, tariff=tariff))
+    if not seen:
+        block.dialog_reply_limit = None
+        return
+    limit = item.get("dialog_reply_limit") or DIALOG_REPLY_LIMIT_DEFAULT
+    block.dialog_reply_limit = max(
+        DIALOG_REPLY_LIMIT_DEFAULT, min(int(limit), DIALOG_REPLY_LIMIT_MAX)
+    )
 
 def _moment(value) -> datetime | None:
     """Момент из того, что прислали: строка `datetime-local`, `date` или
@@ -952,6 +1004,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         )
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
+        _sync_dialog_settings(db, row, item)
         sync_submit_deadlines(db, row, item.get("submit_deadlines"))
     removed = [row for block_id, row in existing.items() if block_id not in matched_ids]
     _refuse_dropping_submitted(db, removed)

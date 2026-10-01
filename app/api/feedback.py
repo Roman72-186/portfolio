@@ -331,21 +331,11 @@ async def post_dialog_message(
     if sender_role == fb_service.ROLE_STUDENT:
         if user["user_id"] != work.user_id:
             raise HTTPException(status_code=403, detail="Это не ваш цикл")
-        fb = db.query(Feedback).filter(Feedback.work_id == work_id).first()
-        if fb is None:
-            raise HTTPException(status_code=403, detail="Жди первое сообщение, потом сможешь ответить")
-        has_staff_msg = (
-            db.query(FeedbackMessage)
-            .filter(
-                FeedbackMessage.feedback_id == fb.id,
-                FeedbackMessage.sender_role != fb_service.ROLE_STUDENT,
-            )
-            .first()
-            is not None
-        )
-        if not has_staff_msg:
-            raise HTTPException(status_code=403, detail="Жди первое сообщение, потом сможешь ответить")
-        recipient_id = fb.curator_id
+        # На пробник ученик ОС только получает, ответить нельзя на любом
+        # тарифе (созвон 30.09.2026, 00:08:51–00:09:09; правила ОС
+        # подтверждены владельцем 01.10.2026). До этого ученик отвечал после
+        # первого сообщения преподавателя — то поведение снято намеренно.
+        raise HTTPException(status_code=403, detail="На эту обратную связь ответить нельзя")
     else:
         # feedback.write: куратор/модератор/админ/суперадмин. Модератор имеет
         # права ГП (см. rbac.py::effective_role_rank), отдельного запрета на

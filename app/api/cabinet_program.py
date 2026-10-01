@@ -49,6 +49,9 @@ from app.models.task_block import (
     MEDIA_KINDS,
     MEDIA_VOICE,
     DEADLINE_BLOCKS_COMPLETION,
+    DIALOG_BLOCK_TYPES,
+    DIALOG_REPLY_LIMIT_DEFAULT,
+    DIALOG_REPLY_LIMIT_MAX,
     LATE_SUBMISSION_BLOCK_TYPES,
     QUESTION_TEXT,
 )
@@ -56,6 +59,7 @@ from app.services.feedback import read_audio_upload, read_video_upload
 from app.services.task_blocks import (
     get_blocks as get_task_blocks,
     get_blocks_for_tasks as get_task_blocks_for_tasks,
+    get_dialog_tariffs as get_task_block_dialog_tariffs,
     get_images as get_task_block_images,
     get_options as get_task_block_options,
     get_required_tariffs as get_task_block_required_tariffs,
@@ -471,6 +475,7 @@ def _edit_payloads(
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
+        block_dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
         block_submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
         item_blocks: list[dict] = []
         diagnostic_emitted = False
@@ -548,6 +553,10 @@ def _edit_payloads(
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
                 "portfolio_window_hours": b.portfolio_window_hours,
+                # «Настройка диалога» (01.10.2026): без неё повторное
+                # сохранение молча закрыло бы ученикам открытый ответ.
+                "dialog_tariffs": sorted(block_dialog_tariffs.get(b.id, set())),
+                "dialog_reply_limit": b.dialog_reply_limit,
                 **_submit_deadline_fields(b, block_submit_deadlines.get(b.id)),
                 # Варианты нужны форме правки у трёх типов: вопрос (текст +
                 # верный ответ), шкала навыков (текст + описание + подписи
@@ -1256,6 +1265,14 @@ class BlockItem(BaseModel):
     # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
     # один час»). У остальных типов игнорируется сервисом.
     time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
+    # «Настройка диалога» у блока сдачи (владелец 01.10.2026): тарифы, которым
+    # разрешён ответ на ОС куратора (пусто = никому), и лимит сообщений
+    # ученика. Значения и тип блока проверяет `sync_blocks`
+    # (`_sync_dialog_settings`), как у `tariffs`.
+    dialog_tariffs: list[str] = Field(default_factory=list, max_length=10)
+    dialog_reply_limit: int | None = Field(
+        default=None, ge=DIALOG_REPLY_LIMIT_DEFAULT, le=DIALOG_REPLY_LIMIT_MAX,
+    )
     # Для блока портфолио: сколько часов доступна загрузка каждому ученику с
     # момента, когда блок впервые стал ему доступен. Поддерживает 24, 48, 72
     # и любое другое целое значение в разумных пределах.
@@ -1526,6 +1543,10 @@ def program_cycle_items(
             # Типы, где после срока сдачу принимают опозданием (контрольная на
             # время, владелец 30.09.2026) — у них под полем срока своя подсказка.
             "late_submission_block_types": list(LATE_SUBMISSION_BLOCK_TYPES),
+            # Блоки сдачи с панелью «Настройка диалога» (01.10.2026) — тот же
+            # кортеж, по которому `sync_blocks` хранит или стирает настройку.
+            "dialog_block_types": list(DIALOG_BLOCK_TYPES),
+            "dialog_reply_limit_max": DIALOG_REPLY_LIMIT_MAX,
         },
     )
 
@@ -2005,6 +2026,7 @@ def blocks_source_content(
     images = get_task_block_images(db, [b.id for b in blocks])
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
     required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
+    dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
     copied = [
         {
             "block_type": b.block_type,
@@ -2043,6 +2065,9 @@ def blocks_source_content(
             # от абсолютных opens_at/closes_at она начнёт отсчёт заново у
             # каждого ученика, когда копия блока станет доступна.
             "portfolio_window_hours": b.portfolio_window_hours,
+            # Право ответа от даты не зависит — копируется, как тарифы.
+            "dialog_tariffs": sorted(dialog_tariffs.get(b.id, set())),
+            "dialog_reply_limit": b.dialog_reply_limit,
             "images": [
                 {"url": i.image_s3_url, "path": i.image_s3_path, "is_pick": i.is_pick}
                 for i in images.get(b.id, [])
@@ -2127,6 +2152,10 @@ def program_day(
             # Типы, где после срока сдачу принимают опозданием (контрольная на
             # время, владелец 30.09.2026) — у них под полем срока своя подсказка.
             "late_submission_block_types": list(LATE_SUBMISSION_BLOCK_TYPES),
+            # Блоки сдачи с панелью «Настройка диалога» (01.10.2026) — тот же
+            # кортеж, по которому `sync_blocks` хранит или стирает настройку.
+            "dialog_block_types": list(DIALOG_BLOCK_TYPES),
+            "dialog_reply_limit_max": DIALOG_REPLY_LIMIT_MAX,
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.

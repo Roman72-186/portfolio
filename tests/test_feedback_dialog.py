@@ -261,10 +261,12 @@ def test_student_cannot_send_before_staff_message(auth_client, db):
     assert resp.status_code == 403
 
 
-def test_admin_can_send_first_message_and_student_can_reply(
+def test_admin_can_send_first_message_and_student_cannot_reply(
     client, admin_user, regular_user, session_factory, db
 ):
-    """Админ пишет первым → создаётся Feedback и сообщение → студент может ответить."""
+    """Админ пишет первым → создаётся Feedback и сообщение. Ученик на пробник
+    ОС только получает: ответить нельзя на любом тарифе (созвон 30.09.2026,
+    правила ОС подтверждены владельцем 01.10.2026)."""
     cycle = _mk_cycle(db, regular_user.id)
     work = _mk_final_work(db, regular_user.id, cycle.id)
 
@@ -286,7 +288,6 @@ def test_admin_can_send_first_message_and_student_can_reply(
     assert msgs[0].sender_role == "superadmin"
     assert msgs[0].text == "Привет, разбираем работу"
 
-    # Now student replies
     student_sess = session_factory(regular_user)
     client.cookies.set("session_id", student_sess.id)
     resp = client.post(
@@ -294,10 +295,8 @@ def test_admin_can_send_first_message_and_student_can_reply(
         data={"text": "Понял, переделаю"},
         headers={"Accept": "application/json"},
     )
-    assert resp.status_code == 200
-    msgs = db.query(FeedbackMessage).filter(FeedbackMessage.feedback_id == fb.id).order_by(FeedbackMessage.id).all()
-    assert len(msgs) == 2
-    assert msgs[1].sender_role == "student"
+    assert resp.status_code == 403
+    assert db.query(FeedbackMessage).filter(FeedbackMessage.feedback_id == fb.id).count() == 1
 
 
 def test_other_student_cannot_reply_in_foreign_dialog(
@@ -869,16 +868,16 @@ def test_dialog_single_window_targets_probnik_final(
     assert f'/cabinet/feedback/{otrabotka.id}/message' not in html
 
 
-def test_student_can_reply_in_multi_final_cycle(
+def test_student_cannot_reply_in_multi_final_cycle(
     client, admin_user, regular_user, session_factory, db
 ):
-    """Студент может ответить в единственном окне после ОС staff, даже когда в цикле
-    есть финалка Отработки (форма и POST-гейт совпадают на финалке Пробника)."""
+    """Ответ на пробник закрыт и тогда, когда в цикле есть финалка Отработки,
+    а staff уже написал (01.10.2026; до этого ученик здесь отвечал)."""
     cycle = _mk_cycle(db, regular_user.id)
     probnik = _mk_final_work(db, regular_user.id, cycle.id, attempt=1)
     _mk_otrabotka_final(db, regular_user.id, cycle.id, attempt=1)
     _mk_staff_message(db, probnik.id, curator_id=admin_user.id, sender_role="superadmin",
-                      text="Жду ответ")
+                      text="Разбор")
 
     student_sess = session_factory(regular_user)
     client.cookies.set("session_id", student_sess.id)
@@ -887,8 +886,7 @@ def test_student_can_reply_in_multi_final_cycle(
         data={"text": "Понял, спасибо"},
         headers={"Accept": "application/json"},
     )
-    assert resp.status_code == 200
-    assert resp.json()["ok"] is True
+    assert resp.status_code == 403
 
 
 def test_staff_probnik_calendar_renders_via_partial(

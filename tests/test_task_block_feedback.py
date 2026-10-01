@@ -5,12 +5,14 @@ from unittest.mock import patch
 
 import pytest
 
+from app.constants import TARIFF_WITH_YOU
 from app.models.notification import Notification
 from app.models.task_block import (
     BLOCK_PHOTO_UPLOAD,
     BLOCK_TIMED,
     BLOCK_UPLOAD,
     TaskBlock,
+    TaskBlockDialogTariff,
     TaskBlockSubmission,
 )
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
@@ -364,8 +366,13 @@ def test_student_can_reply_after_teacher_started_dialog(
     curator = user_factory(vk_id=970_012, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_013, name="Ученик")
     student.curator_id = curator.id
+    student.tariff = TARIFF_WITH_YOU
     db.commit()
     submission = _submission(db, student)
+    # Ответ ученику открыт «Настройкой диалога» блока (01.10.2026): без неё
+    # ответ закрыт всем.
+    db.add(TaskBlockDialogTariff(block_id=submission.block_id, tariff=TARIFF_WITH_YOU))
+    db.commit()
     _login(client, session_factory, curator)
     with patch("app.api.task_block_feedback.notify"):
         first = client.post(
