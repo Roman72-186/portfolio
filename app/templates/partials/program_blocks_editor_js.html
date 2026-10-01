@@ -52,7 +52,7 @@ var DEADLINE_BLOCKS_COMPLETION = {{ deadline_blocks_completion|tojson }};
 // примут, но запишут опозданием — `LATE_SUBMISSION_BLOCK_TYPES` на сервере.
 var LATE_SUBMISSION_BLOCK_TYPES = {{ (late_submission_block_types or [])|tojson }};
 // Блоки сдачи с панелью «Настройка диалога» (владелец 01.10.2026) —
-// `DIALOG_BLOCK_TYPES` на сервере; у контрольной на время ответа нет вовсе.
+// `DIALOG_BLOCK_TYPES` на сервере: домашка, «фото + сдача» и работа на время.
 var DIALOG_BLOCK_TYPES = {{ (dialog_block_types or [])|tojson }};
 var DIALOG_REPLY_LIMIT_MAX = {{ (dialog_reply_limit_max or 20)|tojson }};
 

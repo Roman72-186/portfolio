@@ -150,18 +150,24 @@ def test_student_waits_for_first_teacher_message(db, user_factory, session_facto
     assert "после первого сообщения" in response.json()["error"]
 
 
-@pytest.mark.parametrize("dialog_tariffs", [[], [TARIFF_WITH_YOU, TARIFF_SELF, TARIFF_CONFIDENT_MAX]])
-def test_timed_block_reply_closed_whatever_settings(
-    db, user_factory, session_factory, client, dialog_tariffs,
-):
-    """Контрольная на время: ответа нет на любом тарифе (созвон 00:08:51), даже
-    если строки тарифов в базе каким-то путём оказались."""
+def test_timed_block_reply_closed_by_default(db, user_factory, session_factory, client):
+    """Контрольная на время по умолчанию закрыта, как любой блок сдачи."""
+    curator, student, submission = _setup(db, user_factory, base=990_051, block_type=BLOCK_TIMED)
+    _staff_says(client, session_factory, curator, submission)
+
+    assert _student_says(client, session_factory, student, submission).status_code == 403
+
+
+def test_timed_block_reply_opens_by_dialog_settings(db, user_factory, session_factory, client):
+    """…и открывается той же «Настройкой диалога» (владелец 01.10.2026: «оставим
+    как настраиваемые доступы в диалог» — жёсткого запрета в коде нет)."""
     curator, student, submission = _setup(
-        db, user_factory, base=990_051 + len(dialog_tariffs) * 10, block_type=BLOCK_TIMED,
-        dialog_tariffs=dialog_tariffs, limit=5,
+        db, user_factory, base=990_061, block_type=BLOCK_TIMED,
+        dialog_tariffs=[TARIFF_WITH_YOU], limit=1,
     )
     _staff_says(client, session_factory, curator, submission)
 
+    assert _student_says(client, session_factory, student, submission).status_code == 200
     assert _student_says(client, session_factory, student, submission).status_code == 403
 
 
@@ -202,7 +208,7 @@ def _task(db):
     return task
 
 
-def test_sync_keeps_dialog_settings_only_on_dialog_blocks(db):
+def test_sync_keeps_dialog_settings_only_on_submission_blocks(db):
     task = _task(db)
     rows = sync_blocks(db, task_id=task.id, items=[
         {"block_type": BLOCK_UPLOAD, "title": "Домашка",
@@ -211,9 +217,11 @@ def test_sync_keeps_dialog_settings_only_on_dialog_blocks(db):
         {"block_type": BLOCK_TIMED, "title": "Контрольная", "time_limit_minutes": 60,
          "dialog_tariffs": [TARIFF_WITH_YOU], "dialog_reply_limit": 3},
         {"block_type": BLOCK_UPLOAD, "title": "Без ответа", "dialog_reply_limit": 4},
+        {"block_type": "text", "body": "Текст", "dialog_tariffs": [TARIFF_WITH_YOU],
+         "dialog_reply_limit": 2},
     ])
     db.commit()
-    upload, photo, timed, closed = rows
+    upload, photo, timed, closed, text = rows
     tariffs = get_dialog_tariffs(db, [row.id for row in rows])
 
     assert tariffs.get(upload.id) == {TARIFF_WITH_YOU}
@@ -221,8 +229,11 @@ def test_sync_keeps_dialog_settings_only_on_dialog_blocks(db):
     # Тариф отмечен, число не задано — одно сообщение, как на созвоне.
     assert tariffs.get(photo.id) == {TARIFF_SELF}
     assert photo.dialog_reply_limit == 1
-    assert timed.id not in tariffs and timed.dialog_reply_limit is None
+    assert tariffs.get(timed.id) == {TARIFF_WITH_YOU}
+    assert timed.dialog_reply_limit == 3
     assert closed.id not in tariffs and closed.dialog_reply_limit is None
+    # У блока без сдачи настройки нет: строки тарифов не пишутся.
+    assert text.id not in tariffs and text.dialog_reply_limit is None
 
 
 def test_block_item_validates_dialog_limit():
