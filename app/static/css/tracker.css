@@ -1474,8 +1474,12 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }
 .lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }
 
-/* Запертый не притворяется кликабельным. */
-.lrn-step--locked { opacity: 0.5; }
+/* Запертый не притворяется кликабельным, но объяснение «почему закрыто»
+   читается (аудит 30.09.2026): `opacity: 0.5` гасила подпись «Откроется,
+   когда…» до 2.1–2.5 и заголовок до 3.55. Отличает пунктирная рамка, текст —
+   серый `--ios-label-2` без прозрачности, 6.0 на карточке в обеих темах. */
+.lrn-step--locked { border-style: dashed; }
+.lrn-step--locked .lrn-step-title { color: var(--ios-label-2); }
 .lrn-step-locked { margin-top: 10px; font-style: italic; }
 
 /* Пройденные циклы: возврат к своим ответам (владелец 03.09.2026). Заодно

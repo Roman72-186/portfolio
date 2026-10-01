@@ -80,3 +80,18 @@ def test_done_step_opens_by_tap_not_by_hover():
     assert ".lrn-step--done.is-open .lrn-step-body { display: block; }" in tracker
     rule = re.search(r"\.lrn-step-toggle\s*\{([^}]*)\}", tracker).group(1)
     assert "min-height: 44px" in rule
+
+
+def test_locked_step_explains_itself_readably():
+    """Находка 6: `opacity: 0.5` у запертой карточки гасила и объяснение,
+    почему закрыто: «Откроется, когда будет сделано предыдущее» — 2.14 / 2.48,
+    заголовок 3.55. Запертый шаг отличает пунктирная рамка, а текст — серый
+    `--ios-label-2` без прозрачности (≥ 4.5 на карточке в обеих темах)."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    assert not re.search(r"\.lrn-step--locked\s*\{[^}]*opacity", tracker)
+    assert ".lrn-step--locked .lrn-step-title { color: var(--ios-label-2); }" in tracker
+    assert ".ios-learning .lrn-card-note { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }" in tracker
+    base = BASE_CSS.read_text(encoding="utf-8")
+    light_label = re.search(r"--ios-label-2:\s*(#[0-9A-Fa-f]{6})", base).group(1)
+    light_card = re.search(r"--surface:\s*(#[0-9A-Fa-f]{6})", base).group(1)
+    assert _contrast(light_label, light_card) >= 4.5
