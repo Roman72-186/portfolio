@@ -78,7 +78,7 @@ def test_curator_cannot_score_any_submission_type(
 ):
     """Домашка, контрольная на время, «фото + сдача» — у всех одна сдача
     `TaskBlockSubmission`, и балл куратору закрыт везде (владелец 30.09.2026).
-    Проверка работы куратором — «проверено», доработка и диалог."""
+    Проверка работы куратором — «проверено» и диалог."""
     curator = user_factory(vk_id=970_011, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_012, name="Ученик")
     student.curator_id = curator.id
@@ -91,16 +91,10 @@ def test_curator_cannot_score_any_submission_type(
             f"/cabinet/staff/task-block-submissions/{submission.id}/score",
             json={"score": 87},
         )
-        revision = client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
-            json={"comment": "Дотяни тон"},
-        )
 
     assert response.status_code == 403
-    assert revision.status_code == 200
     db.refresh(submission)
     assert submission.score is None
-    assert submission.needs_revision
 
 
 def test_curator_sees_chief_teacher_score_read_only(
@@ -118,7 +112,7 @@ def test_curator_sees_chief_teacher_score_read_only(
     assert 'id="submission-score"' not in page.text
     assert "Главный преподаватель ещё не поставил оценку" in page.text
     assert "Пометить проверенной" in page.text
-    assert "Вернуть на доработку" in page.text
+    assert "Вернуть на доработку" not in page.text
 
     submission.score = 64
     db.commit()
@@ -410,85 +404,52 @@ def test_student_can_reply_after_teacher_started_dialog(
     assert f'/cabinet/staff/task-block-submissions/{submission.id}/feedback' in page.text
 
 
-def test_staff_can_send_submission_to_revision_and_notify(
-    db, user_factory, session_factory, client,
+@pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
+def test_nobody_can_send_submission_to_revision(
+    db, user_factory, session_factory, client, role_name,
 ):
-    curator = user_factory(vk_id=970_020, name="Куратор", role_name="куратор")
+    """«Вернуть на доработку» убрано у всех (созвон 30.09.2026: «мы не
+    используем вернуть на доработку… убираем возврат»; владелец 01.10.2026 —
+    у всех ролей). Куратор проверяет работу сразу и пишет обратную связь."""
+    staff = user_factory(vk_id=970_020, name="Сотрудник", role_name=role_name)
     student = user_factory(vk_id=970_021, name="Ученик")
-    student.curator_id = curator.id
+    student.curator_id = staff.id
     db.commit()
     submission = _submission(db, student)
-    _login(client, session_factory, curator)
+    _login(client, session_factory, staff)
 
-    with patch("app.api.task_block_feedback.notify"):
-        response = client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
-            json={"comment": "Добавь фон"},
-        )
+    response = client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+        json={"comment": "Добавь фон"},
+    )
+    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
 
-    assert response.status_code == 200
+    assert response.status_code in (404, 405)
     db.refresh(submission)
-    assert submission.needs_revision is True
-    assert submission.needs_revision_at is not None
-    assert submission.review_comment == "Добавь фон"
-    notification = db.query(Notification).filter_by(
-        user_id=student.id, task_block_submission_id=submission.id
-    ).one()
-    assert notification.title == "Работу нужно доработать"
-    assert "Добавь фон" in notification.text
+    assert submission.needs_revision is False
+    assert page.status_code == 200
+    assert "Вернуть на доработку" not in page.text
+    assert "data-revision-form" not in page.text
 
 
-def test_revision_without_comment_keeps_previous_review_comment(
+def test_old_revision_flag_still_shows_chip_to_staff(
     db, user_factory, session_factory, client,
 ):
+    """Работы, возвращённые до 01.10.2026, сохраняют отметку для сотрудника."""
     curator = user_factory(vk_id=970_022, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_023, name="Ученик")
     student.curator_id = curator.id
     db.commit()
-    submission = _submission(db, student, legacy_comment="Старый комментарий")
-    _login(client, session_factory, curator)
-
-    with patch("app.api.task_block_feedback.notify"):
-        response = client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/revision", json={},
-        )
-
-    assert response.status_code == 200
-    db.refresh(submission)
-    assert submission.needs_revision is True
-    assert submission.review_comment == "Старый комментарий"
-
-
-def test_revision_unlocks_edit_even_after_score(
-    db, user_factory, session_factory, client,
-):
-    """block_work_reason блокирует правку у оценённой/просмотренной сдачи —
-    возврат на доработку обязан это разрешение снимать."""
-    from app.models.task_block import TaskBlock
-    from app.services.submission_edit import block_work_reason
-
-    curator = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=970_025, name="Ученик")
-    student.curator_id = curator.id
-    db.commit()
     submission = _submission(db, student)
-    submission.reviewed_at = datetime.now(timezone.utc)
-    submission.score = 90
+    submission.needs_revision = True
+    submission.needs_revision_at = datetime.now(timezone.utc)
     db.commit()
-    block = db.get(TaskBlock, submission.block_id)
-    task = db.get(TrackerTask, block.task_id)
-
-    assert block_work_reason(db, task, block, submission) is not None
-
     _login(client, session_factory, curator)
-    with patch("app.api.task_block_feedback.notify"):
-        client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
-            json={"comment": "Переделай тени"},
-        )
-    db.refresh(submission)
 
-    assert block_work_reason(db, task, block, submission) is None
+    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
+
+    assert page.status_code == 200
+    assert "На доработке" in page.text
 
 
 def test_mark_submitted_clears_revision_flag_and_old_comment(db, user_factory):
@@ -507,24 +468,3 @@ def test_mark_submitted_clears_revision_flag_and_old_comment(db, user_factory):
     assert submission.needs_revision is False
     assert submission.review_comment is None
     assert submission.needs_revision_at is not None  # история сохраняется
-
-
-def test_moderator_cannot_send_revision(
-    db, user_factory, session_factory, client,
-):
-    """Модератор — наблюдатель (решение владельца 28.09.2026)."""
-    owner = user_factory(vk_id=970_027, name="Владелец", role_name="куратор")
-    teacher = user_factory(vk_id=970_028, name="Преподаватель", role_name="модератор")
-    student = user_factory(vk_id=970_029, name="Ученик")
-    student.curator_id = owner.id
-    db.commit()
-    submission = _submission(db, student)
-    _login(client, session_factory, teacher)
-
-    with patch("app.api.task_block_feedback.notify"):
-        response = client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
-            json={"comment": "Чужая работа"},
-        )
-
-    assert response.status_code == 403

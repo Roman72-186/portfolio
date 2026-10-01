@@ -27,7 +27,6 @@ from app.models.homework import HomeworkAssignment
 from app.models.homework_feedback import HomeworkFeedback
 from app.models.homework_submission import (
     STATUS_ACCEPTED,
-    STATUS_NEEDS_REVISION,
     HomeworkSubmission,
     HomeworkSubmissionImage,
 )
@@ -627,55 +626,6 @@ async def accept_homework_submission(
         if task is not None:
             close_task_for_user(db, task, submission.user_id, source="staff")
     db.commit()
-    return JSONResponse({"ok": True})
-
-
-@router.post("/staff/homework/submissions/{submission_id}/revision", response_class=JSONResponse)
-async def send_homework_to_revision(
-    submission_id: int,
-    background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    comment: str = Form(default=""),
-):
-    """Куратор возвращает сдачу на доработку — снимает разрешение на правку у
-    `homework_reason` (переходом в STATUS_NEEDS_REVISION) и уведомляет ученика.
-    Уже принятую работу так не вернуть — задача в трекере уже закрыта, и её
-    переоткрытие не входит в эту фичу (нужен отдельный reopen)."""
-    submission = db.get(HomeworkSubmission, submission_id)
-    if submission is None:
-        raise HTTPException(status_code=404, detail="Сдача не найдена")
-    get_student_for_staff_access(
-        db, user, submission.user_id,
-        not_found_detail="Сдача не найдена",
-        forbidden_detail="Это не ваш студент",
-    )
-    if submission.status == STATUS_ACCEPTED:
-        raise HTTPException(status_code=409, detail="Работа уже принята — на доработку не вернуть")
-
-    comment_clean = comment.strip()[:500]
-    submission.status = STATUS_NEEDS_REVISION
-    submission.needs_revision_at = datetime.now(timezone.utc)
-
-    if comment_clean:
-        fb, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=user["user_id"])
-        await send_feedback_message(
-            db, feedback=fb, sender_id=user["user_id"], sender_role=_viewer_role(user),
-            text=comment_clean, photo=None, video=None, audio=None, video_link=None,
-        )
-
-    notification = notify_counterpart(
-        db, submission=submission, recipient_id=submission.user_id,
-        sender_role=_viewer_role(user),
-        title_override="Работу нужно доработать",
-        text_override=(
-            f"{comment_clean}\n\nМожно отредактировать и отправить работу заново."
-            if comment_clean else "Можно отредактировать и отправить работу заново."
-        ),
-    )
-    db.commit()
-    background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True})
 
 
