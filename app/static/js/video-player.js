@@ -1,0 +1,755 @@
+(function () {
+    window.lrnVideoPlayer = window.lrnVideoPlayer || {};
+
+    // `sourceUrl` приходит из данных плеера (`player_js_url`): при включённом
+    // мосте это зеркало, иначе прежний адрес Bunny. Файл через мост идёт
+    // байт в байт, поэтому SRI-хэш ниже общий для обоих адресов.
+    function loadPlayerJs(sourceUrl) {
+        if (window.playerjs && window.playerjs.Player) return Promise.resolve();
+        if (window.__lrnPlayerJsPromise) return window.__lrnPlayerJsPromise;
+        window.__lrnPlayerJsPromise = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = sourceUrl || 'https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js';
+            script.integrity = 'sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC';
+            script.crossOrigin = 'anonymous';
+            script.onload = function () { resolve(); };
+            script.onerror = function () { reject(new Error('playerjs_load_failed')); };
+            document.head.appendChild(script);
+        });
+        return window.__lrnPlayerJsPromise;
+    }
+
+    // Скрипт грузится с каждым вхождением партиала (иногда и дважды на одной
+    // странице, если у задачи и вкладка «Видео», и блоки с видео) —
+    // переопределение той же функции идемпотентно, как и `loadPlayerJs` выше.
+    window.lrnVideoPlayer.mount = function (root, options) {
+        var endpoint = options && options.endpoint;
+        var csrfToken = options && options.csrfToken;
+        var preloadedData = options && options.data;
+        var watchRequired = !(options && options.watchRequired === false);
+        var onCompleted = options && typeof options.onCompleted === 'function'
+            ? options.onCompleted
+            : null;
+
+        var statusEl = root.querySelector('[data-role="status"]');
+        var shell = root.querySelector('[data-role="shell"]');
+        var frameWrap = root.querySelector('[data-role="frame-wrap"]');
+        var iframe = root.querySelector('[data-role="iframe"]');
+        var cover = root.querySelector('[data-role="cover"]');
+        var coverPlay = root.querySelector('[data-role="cover-play"]');
+        var coverFallbackTimer = null;
+        var activePlayer = null;
+        var watermark = root.querySelector('[data-role="watermark"]');
+        var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
+        var progressStatus = root.querySelector('[data-role="progress-status"]');
+
+        function showError(message) {
+            statusEl.hidden = false;
+            statusEl.textContent = message;
+            statusEl.classList.add('is-error');
+        }
+
+        if (preloadedData) {
+            // Данные уже проверены и собраны сервером при рендере страницы —
+            // ошибку недоступности он в этом случае отражает кодом ответа
+            // страницы (503) и своей веткой шаблона, сюда попадает только
+            // успешный случай.
+            statusEl.hidden = true;
+            shell.hidden = false;
+            populatePlayer(preloadedData);
+        } else if (endpoint) {
+            fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (resp) {
+                    if (resp.status === 403) {
+                        return resp.json().then(function (body) {
+                            throw new Error((body && body.detail) || 'Видео недоступно.');
+                        });
+                    }
+                    if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуй позже.');
+                    return resp.json();
+                })
+                .then(function (data) {
+                    if (!data.ok || !data.player_url) {
+                        showError('Видео временно недоступно.');
+                        return;
+                    }
+                    statusEl.hidden = true;
+                    shell.hidden = false;
+                    populatePlayer(data);
+                })
+                .catch(function (err) {
+                    showError(err.message || 'Не удалось загрузить видео.');
+                });
+        }
+
+        function showCover() {
+            if (coverFallbackTimer) {
+                window.clearTimeout(coverFallbackTimer);
+                coverFallbackTimer = null;
+            }
+            if (cover && cover.getAttribute('src')) {
+                cover.hidden = false;
+                // Кнопка не должна зависеть от Player.js ready: на мобильном
+                // iframe может сообщить ready позже, а обложка уже видна.
+                if (coverPlay) coverPlay.hidden = false;
+                frameWrap.classList.remove('is-started');
+            }
+        }
+
+        function hideCover() {
+            if (coverFallbackTimer) {
+                window.clearTimeout(coverFallbackTimer);
+                coverFallbackTimer = null;
+            }
+            if (cover) cover.hidden = true;
+            if (coverPlay) coverPlay.hidden = true;
+            frameWrap.classList.add('is-started');
+        }
+
+        // Кнопка «Смотреть» открывает плеер и больше ничего не делает — так
+        // решил владелец 21.09.2026. Раньше она пыталась запустить видео сама:
+        // на мобильном перезагружала iframe с `autoplay=true&muted=true`, ждала
+        // 8 секунд и, если запуск не случился, показывала красным «Видео не
+        // запустилось само». iOS этот автозапуск запрещает (энергосбережение тут
+        // ни при чём, проверено на iPhone без него), поэтому предупреждение
+        // выскакивало у каждого второго и выглядело поломкой. Теперь путь
+        // прямой: обложка уходит, зритель жмёт play внутри самого плеера —
+        // этот тап iOS пропускает всегда. Отметка просмотра не страдает, она
+        // живёт на событиях `play` и `timeupdate` от плеера.
+        if (coverPlay) {
+            coverPlay.addEventListener('click', function () {
+                hideCover();
+            });
+        }
+
+        function populatePlayer(data) {
+            watermark.innerHTML = '';
+            [data.viewer_watermark.name, data.viewer_watermark.username].forEach(function (line) {
+                var span = document.createElement('span');
+                span.textContent = line;
+                watermark.appendChild(span);
+            });
+            iframe.title = data.video_title || '';
+            if (cover) {
+                if (data.cover_url) {
+                    cover.src = data.cover_url;
+                    cover.hidden = false;
+                } else {
+                    cover.removeAttribute('src');
+                    cover.hidden = true;
+                }
+            }
+            showCover();
+            iframe.addEventListener('load', function () { frameWrap.classList.add('is-ready'); }, { once: true });
+
+            progressStatus.hidden = false;
+            progressStatus.textContent = (data.resume_position_seconds || 0) >= 5
+                ? 'Продолжим с сохранённого места.'
+                : 'Место просмотра сохраняется автоматически.';
+
+            loadPlayerJs(data.player_js_url).then(function () {
+                attachPlayerBehaviour(data);
+            }).catch(function () {
+                progressStatus.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
+                progressStatus.classList.add('is-error');
+                iframe.src = data.player_url;
+                // Player.js может не загрузиться из-за сети, CSP или
+                // несовпавшего SRI. Под обложкой при этом уже живёт родной
+                // плеер Bunny: через пять секунд открываем к нему доступ.
+                coverFallbackTimer = window.setTimeout(hideCover, 5000);
+            });
+        }
+
+        function attachPlayerBehaviour(data) {
+            var playerContainer = frameWrap;
+            var watermarkCopy = watermark;
+            var watermarkCycleTimer = null;
+            var watermarkResizeObserver = null;
+            var watermarkBounds = null;
+            var watermarkFadeMs = 900;
+            var lastWatermarkPoint = null;
+            var lastWatermarkCell = -1;
+            var pseudoFullscreen = false;
+
+            function measureWatermarkBounds() {
+                if (!watermarkCopy) return;
+                // `getBoundingClientRect()`, а не `clientWidth`/`clientHeight` —
+                // владелец 02.09.2026 поймал на мобильном надпись, гуляющую
+                // выше/ниже видео вместо рамки; `clientWidth`/`clientHeight`
+                // округляют до целого пикселя и не учитывают то, что элемент
+                // мог измениться в тот же кадр — `getBoundingClientRect()`
+                // даёт актуальный размер с учётом фактического рендера.
+                // Нулевой/крошечный размер (рамка ещё не размещена в потоке —
+                // до первого layout, до `is-ready`) не запоминаем: границы
+                // остаются прежними, следующий цикл/ResizeObserver пересчитает.
+                var containerRect = playerContainer.getBoundingClientRect();
+                if (containerRect.width < 20 || containerRect.height < 20) return;
+                // Ролик — 16:9, плеер показывает его через object-fit: contain.
+                // В псевдо-полноэкранном режиме на высоком узком телефоне рамка
+                // (100vw x 100dvh) намного выше самого ролика, и сверху/снизу
+                // остаются чёрные поля — Bunny показывает их внутри своего
+                // iframe. Раньше границы дрейфа считались по всей рамке,
+                // включая эти поля, и водяной знак реально уходил в чёрную
+                // область над и под видимой картинкой, а не оставался на ней
+                // (владелец 02.09.2026, «летает выше/ниже видео» на мобильном,
+                // видно даже без разворота в альбомную ориентацию — фуллскрин
+                // на тач-устройствах включается сразу, см. shouldUsePseudo-
+                // Fullscreen). Пересчитываем видимый прямоугольник ролика
+                // внутри рамки тем же прижатием, что и у contain, и держим
+                // границы дрейфа внутри него, а не всей рамки. В обычном
+                // режиме рамка и так 16:9 (CSS aspect-ratio) — здесь это
+                // no-op.
+                var videoAspect = 16 / 9;
+                var frameAspect = containerRect.width / containerRect.height;
+                var visibleWidth = containerRect.width;
+                var visibleHeight = containerRect.height;
+                var visibleOffsetX = 0;
+                var visibleOffsetY = 0;
+                if (frameAspect > videoAspect) {
+                    visibleWidth = containerRect.height * videoAspect;
+                    visibleOffsetX = (containerRect.width - visibleWidth) / 2;
+                } else if (frameAspect < videoAspect) {
+                    visibleHeight = containerRect.width / videoAspect;
+                    visibleOffsetY = (containerRect.height - visibleHeight) / 2;
+                }
+                var containerWidth = visibleWidth;
+                var containerHeight = visibleHeight;
+                var watermarkWidth = watermarkCopy.offsetWidth;
+                var watermarkHeight = watermarkCopy.offsetHeight;
+                var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
+                var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
+                // Нижний отступ крупнее прочих: там панель управления Bunny и своя
+                // кнопка фуллскрина — надпись не должна на них наезжать.
+                var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
+                var minX = visibleOffsetX + sidePadding;
+                var maxX = Math.max(minX, visibleOffsetX + containerWidth - watermarkWidth - sidePadding);
+                var minY = visibleOffsetY + topPadding;
+                var maxY = Math.max(minY, visibleOffsetY + containerHeight - watermarkHeight - bottomPadding);
+
+                watermarkBounds = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+                // Пересчёт обязан сразу вернуть надпись внутрь новых границ. При
+                // выходе из фуллскрина контейнер уменьшается, а у слоя
+                // overflow: hidden — старая координата оказывается за краем, и
+                // ватермарки попросту не видно до следующего показа.
+                placeWatermark(lastWatermarkPoint);
+            }
+
+            function placeWatermark(point) {
+                if (!watermarkCopy || !watermarkBounds || !point) return;
+                var x = Math.min(Math.max(point.x, watermarkBounds.minX), watermarkBounds.maxX);
+                var y = Math.min(Math.max(point.y, watermarkBounds.minY), watermarkBounds.maxY);
+                lastWatermarkPoint = { x: x, y: y };
+                watermarkCopy.style.transform =
+                    'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
+            }
+
+            function pickWatermarkSpot() {
+                if (!watermarkBounds) return null;
+                // Четыре угловые зоны оставляют центр кадра свободным. Небольшой
+                // случайный сдвиг внутри угла мешает надписи застыть в одной
+                // точке, но не уводит её на лицо, чертёж или основной текст.
+                var safeCorners = [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 0 },
+                    { x: 0, y: 1 },
+                    { x: 1, y: 1 }
+                ];
+                var cell = Math.floor(Math.random() * safeCorners.length);
+                if (cell === lastWatermarkCell) {
+                    cell = (cell + 1 + Math.floor(Math.random() * (safeCorners.length - 1)))
+                        % safeCorners.length;
+                }
+                lastWatermarkCell = cell;
+                var corner = safeCorners[cell];
+                var jitterX = (watermarkBounds.maxX - watermarkBounds.minX) * 0.08 * Math.random();
+                var jitterY = (watermarkBounds.maxY - watermarkBounds.minY) * 0.08 * Math.random();
+                return {
+                    x: corner.x
+                        ? watermarkBounds.maxX - jitterX
+                        : watermarkBounds.minX + jitterX,
+                    y: corner.y
+                        ? watermarkBounds.maxY - jitterY
+                        : watermarkBounds.minY + jitterY
+                };
+            }
+
+            function runWatermarkCycle() {
+                if (!watermarkCopy) return;
+                measureWatermarkBounds();
+                placeWatermark(pickWatermarkSpot());
+                watermarkCopy.classList.add('is-visible');
+                // Видно заметно дольше, чем не видно: пауза нужна, чтобы надпись не
+                // мозолила глаз, но при этом почти любой отрезок записи должен
+                // застать зрителя на кадре.
+                watermarkCycleTimer = window.setTimeout(function () {
+                    watermarkCopy.classList.remove('is-visible');
+                    watermarkCycleTimer = window.setTimeout(runWatermarkCycle, watermarkFadeMs + 2400);
+                }, 5200);
+            }
+
+            function startWatermarkDrift() {
+                if (!watermarkCopy) return;
+                // Идемпотентно: страница возвращается из bfcache уже остановленной,
+                // а второй запуск поверх живого цикла дал бы два таймера и два
+                // наблюдателя за размером.
+                stopWatermarkDrift();
+                watermarkCopy.classList.add('is-drifting');
+
+                var reduceMotion = window.matchMedia
+                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                // Тот же цикл, но без плавности: при prefers-reduced-motion надпись
+                // просто появляется и пропадает.
+                watermarkFadeMs = reduceMotion ? 0 : 900;
+                watermarkCopy.style.transitionDuration = watermarkFadeMs + 'ms';
+
+                runWatermarkCycle();
+
+                if ('ResizeObserver' in window) {
+                    watermarkResizeObserver = new ResizeObserver(measureWatermarkBounds);
+                    watermarkResizeObserver.observe(playerContainer);
+                } else {
+                    window.addEventListener('resize', measureWatermarkBounds);
+                }
+            }
+
+            function stopWatermarkDrift() {
+                if (watermarkCycleTimer !== null) {
+                    window.clearTimeout(watermarkCycleTimer);
+                    watermarkCycleTimer = null;
+                }
+                // Замирает видимой, а не погашенной. Остановка приходит на
+                // pagehide, а он срабатывает и при уходе во вкладку-фон, откуда
+                // страница возвращается живой: погашенная надпись оставила бы
+                // опознанное видео идти вообще без имени зрителя.
+                if (watermarkCopy) watermarkCopy.classList.add('is-visible');
+                if (watermarkResizeObserver) {
+                    watermarkResizeObserver.disconnect();
+                    watermarkResizeObserver = null;
+                } else {
+                    window.removeEventListener('resize', measureWatermarkBounds);
+                }
+            }
+
+            startWatermarkDrift();
+
+            function fullscreenElement() {
+                return document.fullscreenElement || document.webkitFullscreenElement || null;
+            }
+            function isFullscreenActive() {
+                return pseudoFullscreen || fullscreenElement() === playerContainer;
+            }
+            // `100vh`/`100dvh` в CSS не спасают на части мобильных браузеров
+            // (старый WebKit без dvh, встроенные webview VK/Telegram): при
+            // видимой адресной строке `100vh` больше реального видимого
+            // экрана, кнопка выхода (bottom:8px) уезжает за нижний край, а
+            // `overflow:hidden` на body одновременно блокирует скролл до неё —
+            // тупик без выхода (баг владельца 31.08.2026). `visualViewport`
+            // отдаёт реальную видимую высоту в любой момент, включая смену
+            // адресной строки — держим размер синхронным с ней, а не с
+            // постоянными vh/dvh.
+            function syncPseudoFullscreenSize() {
+                if (!pseudoFullscreen) return;
+                var vv = window.visualViewport;
+                playerContainer.style.height = (vv ? vv.height : window.innerHeight) + 'px';
+                playerContainer.style.width = (vv ? vv.width : window.innerWidth) + 'px';
+            }
+            function enterPseudoFullscreen() {
+                if (pseudoFullscreen) return;
+                pseudoFullscreen = true;
+                playerContainer.classList.add('is-pseudo-fullscreen');
+                document.documentElement.classList.add('has-video-pseudo-fullscreen');
+                document.body.classList.add('has-video-pseudo-fullscreen');
+                syncPseudoFullscreenSize();
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', syncPseudoFullscreenSize);
+                    window.visualViewport.addEventListener('scroll', syncPseudoFullscreenSize);
+                } else {
+                    window.addEventListener('resize', syncPseudoFullscreenSize);
+                }
+                updateFullscreenButton();
+            }
+            function exitPseudoFullscreen(restoreFocus) {
+                if (!pseudoFullscreen) return;
+                pseudoFullscreen = false;
+                playerContainer.classList.remove('is-pseudo-fullscreen');
+                playerContainer.style.height = '';
+                playerContainer.style.width = '';
+                document.documentElement.classList.remove('has-video-pseudo-fullscreen');
+                document.body.classList.remove('has-video-pseudo-fullscreen');
+                if (window.visualViewport) {
+                    window.visualViewport.removeEventListener('resize', syncPseudoFullscreenSize);
+                    window.visualViewport.removeEventListener('scroll', syncPseudoFullscreenSize);
+                } else {
+                    window.removeEventListener('resize', syncPseudoFullscreenSize);
+                }
+                updateFullscreenButton();
+                if (restoreFocus !== false && fullscreenButton) fullscreenButton.focus();
+            }
+            function updateFullscreenButton() {
+                if (!fullscreenButton) return;
+                var isFullscreen = isFullscreenActive();
+                var label = isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран';
+                fullscreenButton.setAttribute('aria-label', label);
+                fullscreenButton.setAttribute('title', label);
+                fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+                window.requestAnimationFrame(measureWatermarkBounds);
+                window.setTimeout(measureWatermarkBounds, 250);
+            }
+            function reportFullscreenError() {
+                showStatus('Не удалось включить полноэкранный режим. Разреши его в настройках браузера.', true);
+            }
+
+            var requestFullscreen = playerContainer.requestFullscreen
+                || playerContainer.webkitRequestFullscreen;
+            var exitFullscreen = document.exitFullscreen
+                || document.webkitExitFullscreen;
+            function shouldUsePseudoFullscreen() {
+                if (!requestFullscreen || !exitFullscreen) return true;
+                return window.matchMedia
+                    && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+            }
+            // Вход в полноэкранный режим — только по клику на кнопку (владелец
+            // 11.09.2026 отменил автовключение от 31.08.2026: разворот на весь
+            // экран без действия ученика мешал). Нативный `requestFullscreen()`
+            // иногда всё равно отклоняется (например, если браузер решил, что
+            // клик был недостаточно «живым») — `.catch(enterPseudoFullscreen)`/
+            // `try…catch` переключают на свой псевдо-полноэкранный режим,
+            // которому разрешение браузера не нужно.
+            function activateFullscreen() {
+                if (pseudoFullscreen || fullscreenElement() === playerContainer) return;
+                if (shouldUsePseudoFullscreen()) { enterPseudoFullscreen(); return; }
+                try {
+                    var requestResult = requestFullscreen.call(playerContainer);
+                    if (requestResult && typeof requestResult.catch === 'function') requestResult.catch(enterPseudoFullscreen);
+                } catch (error) { enterPseudoFullscreen(); }
+            }
+            if (fullscreenButton) {
+                fullscreenButton.addEventListener('click', function () {
+                    if (pseudoFullscreen) { exitPseudoFullscreen(); return; }
+                    if (fullscreenElement() === playerContainer) {
+                        try {
+                            var exitResult = exitFullscreen.call(document);
+                            if (exitResult && typeof exitResult.catch === 'function') exitResult.catch(reportFullscreenError);
+                        } catch (error) { reportFullscreenError(); }
+                        return;
+                    }
+                    activateFullscreen();
+                });
+                document.addEventListener('fullscreenchange', updateFullscreenButton);
+                document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+                document.addEventListener('keydown', function (event) {
+                    if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
+                });
+                updateFullscreenButton();
+            }
+
+            window.addEventListener('pagehide', function () {
+                stopWatermarkDrift();
+                exitPseudoFullscreen(false);
+            });
+
+            var playerUrlEndpoint = data.player_url_endpoint || '';
+            var playerUrlTtlSeconds = data.player_url_ttl_seconds || 300;
+            var playerUrlMintedAt = Date.now();
+            var playerUrlRefreshInFlight = false;
+            var playerUrlRefreshDisabled = false;
+            var reattachPlayer = null;
+            var playerGeneration = 0;
+            var isPlaying = false;
+            var hasEverPlayed = false;
+
+            function showStatus(message, isError) {
+                progressStatus.hidden = false;
+                progressStatus.textContent = message;
+                progressStatus.classList.toggle('is-error', Boolean(isError));
+            }
+
+            function isPlayerUrlStale() {
+                var safeLifetimeMs = Math.max(30, playerUrlTtlSeconds - 60) * 1000;
+                return Date.now() - playerUrlMintedAt > safeLifetimeMs;
+            }
+
+            function refreshPlayerUrl() {
+                if (!playerUrlEndpoint || playerUrlRefreshInFlight || playerUrlRefreshDisabled) return;
+                playerUrlRefreshInFlight = true;
+                fetch(playerUrlEndpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                    .then(function (response) {
+                        if (response.status === 401) { playerUrlRefreshDisabled = true; throw new Error('session_expired'); }
+                        if (response.status === 403 || response.status === 404) { playerUrlRefreshDisabled = true; throw new Error('access_closed'); }
+                        if (!response.ok) throw new Error('refresh_failed');
+                        return response.json();
+                    })
+                    .then(function (body) {
+                        if (!body || !body.player_url) throw new Error('refresh_failed');
+                        // Свежий подписанный адрес держим в `data`: отсюда его
+                        // берёт следующая перезагрузка iframe, иначе она собрала
+                        // бы адрес с истёкшим токеном.
+                        data.player_url = body.player_url;
+                        if (body.ttl_seconds) playerUrlTtlSeconds = body.ttl_seconds;
+                        playerUrlMintedAt = Date.now();
+                        frameWrap.classList.remove('is-ready');
+                        showCover();
+                        iframe.addEventListener('load', function () {
+                            frameWrap.classList.add('is-ready');
+                            if (reattachPlayer) reattachPlayer();
+                        }, { once: true });
+                        iframe.src = body.player_url;
+                    })
+                    .catch(function (error) {
+                        if (error.message === 'access_closed') showStatus('Доступ к уроку закрыт. Обнови страницу.', true);
+                        else if (error.message === 'session_expired') showStatus('Обнови страницу, чтобы продолжить просмотр.', true);
+                    })
+                    .finally(function () { playerUrlRefreshInFlight = false; });
+            }
+
+            function refreshPlayerUrlIfStale() {
+                if (isPlaying || !isPlayerUrlStale()) return;
+                refreshPlayerUrl();
+            }
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+            });
+            // Страница видео отдаётся с `Cache-Control: private, no-store`, поэтому
+            // возврат из bfcache не гарантирован — чаще браузер просто перезагрузит
+            // страницу целиком. Но часть браузеров всё же вернут её живой: `pagehide`
+            // уже погасил цикл водяного знака (см. ниже), без перезапуска здесь он
+            // остался бы стоять в одной точке — то есть перестал бы мешать записи
+            // экрана (владелец 31.08.2026; было в `cabinet_video.html` до переезда
+            // 03.09.2026 на общий плеер, но отсутствовало здесь для видео-блока и
+            // вкладки «Видео» — перенесено сюда, чтобы у всех мест был один фикс).
+            window.addEventListener('pageshow', function (event) {
+                if (!event.persisted) return;
+                startWatermarkDrift();
+                refreshPlayerUrlIfStale();
+            });
+            window.setInterval(function () {
+                if (document.visibilityState !== 'visible' || hasEverPlayed) return;
+                refreshPlayerUrlIfStale();
+            }, 60000);
+
+            if (!window.playerjs || !window.playerjs.Player) {
+                playerUrlRefreshDisabled = true;
+                showStatus('Автосохранение временно недоступно. Видео продолжит работать.', true);
+                iframe.src = data.player_url;
+                // Без player.js событие play из iframe недоступно. Оставляем
+                // обложку на пять секунд, затем отдаём управление нативному
+                // плееру Bunny.
+                coverFallbackTimer = window.setTimeout(hideCover, 5000);
+                return;
+            }
+
+            var resumeSeconds = data.resume_position_seconds || 0;
+            var currentSeconds = resumeSeconds;
+            var durationSeconds = null;
+            var lastSavedSeconds = resumeSeconds;
+            var lastAutomaticSaveAt = Date.now();
+            var saveInFlight = false;
+            var pendingProgress = null;
+            var savingDisabled = false;
+            var hasReportedSaved = false;
+            var completionReported = false;
+            // Разовый сбой сохранения ученику не показываем: выкатка
+            // перезапускает приложение на 10–20 секунд, и heartbeat (раз в
+            // 10 сек) попадает в эту паузу. До 18.09.2026 красная надпись
+            // появлялась с первого же сбоя и не уходила после успешных
+            // сохранений следом. Порог — три сбоя подряд, около 30 секунд.
+            var SAVE_FAILURES_BEFORE_ERROR = 3;
+            var saveFailures = 0;
+
+            function finiteNumber(value) {
+                var number = Number(value);
+                return Number.isFinite(number) ? number : null;
+            }
+            function timingData(raw) {
+                if (typeof raw === 'string') {
+                    try { raw = JSON.parse(raw); } catch (error) { return null; }
+                }
+                if (!raw || typeof raw !== 'object') return null;
+                return { seconds: finiteNumber(raw.seconds), duration: finiteNumber(raw.duration) };
+            }
+            function formatTime(seconds) {
+                var whole = Math.max(0, Math.floor(seconds));
+                var hours = Math.floor(whole / 3600);
+                var minutes = Math.floor((whole % 3600) / 60);
+                var remainder = whole % 60;
+                if (hours > 0) return hours + ':' + String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+                return minutes + ':' + String(remainder).padStart(2, '0');
+            }
+            function setStatus(message, isError) {
+                if (progressStatus.textContent.trim() === message) return;
+                showStatus(message, isError);
+            }
+
+            function sendProgress(progress, keepalive) {
+                if (savingDisabled) return;
+                if (saveInFlight) { pendingProgress = progress; return; }
+                saveInFlight = true;
+                // Ключ берём свежим (`static/js/csrf.js`): при 403 ниже плеер
+                // выключает сохранение до конца жизни страницы, а до 26.09.2026
+                // именно протухший ключ давал этот 403 — за 20 часов 139
+                // отказов на прогрессе, и место просмотра у ученика не
+                // сохранялось до перезагрузки.
+                var sendProgressRequest = window.csrfFetch || function (url, options) {
+                    options.headers['X-CSRF-Token'] = csrfToken;
+                    return fetch(url, options);
+                };
+                sendProgressRequest(data.progress_endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    keepalive: Boolean(keepalive),
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        position_seconds: progress.position_seconds,
+                        duration_seconds: progress.duration_seconds,
+                        playback_active: Boolean(progress.playback_active),
+                        ended: Boolean(progress.ended)
+                    })
+                }).then(function (response) {
+                    if (response.status === 401) { savingDisabled = true; throw new Error('session_expired'); }
+                    if (response.status === 403) { savingDisabled = true; throw new Error('session_expired'); }
+                    if (!response.ok) throw new Error('save_failed');
+                    lastSavedSeconds = progress.position_seconds;
+                    var recovered = saveFailures >= SAVE_FAILURES_BEFORE_ERROR;
+                    saveFailures = 0;
+                    if (recovered && !progress.completed) setStatus('Место просмотра сохранено.', false);
+                    if (!hasReportedSaved && !progress.completed) {
+                        hasReportedSaved = true;
+                        setStatus('Место просмотра сохранено.', false);
+                    }
+                    return response.json().catch(function () { return null; });
+                }).then(function (respData) {
+                    if (respData && respData.completed === true) {
+                        setStatus(
+                            onCompleted
+                                ? 'Видео просмотрено. Можно отметить выполнение.'
+                                : 'Видео просмотрено.',
+                            false
+                        );
+                        if (!completionReported && onCompleted) onCompleted();
+                        completionReported = true;
+                    } else if (!progress.completed) {
+                        return;
+                    } else if (!watchRequired) {
+                        setStatus('Место просмотра сохранено.', false);
+                    } else {
+                        setStatus('Просмотр пока не подтверждён. Обнови страницу и продолжи с сохранённого места.', true);
+                    }
+                }).catch(function (error) {
+                    if (error.message === 'session_expired') setStatus('Обнови страницу, чтобы сохранять место просмотра.', true);
+                    // Сохранение в конце ролика следом уже не повторится —
+                    // его сбой показываем сразу.
+                    else if (++saveFailures >= SAVE_FAILURES_BEFORE_ERROR || progress.completed) {
+                        setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
+                    }
+                }).finally(function () {
+                    saveInFlight = false;
+                    if (pendingProgress) {
+                        var nextProgress = pendingProgress;
+                        pendingProgress = null;
+                        sendProgress(nextProgress, false);
+                    }
+                });
+            }
+
+            function saveProgress(force, completed, keepalive) {
+                if (savingDisabled || currentSeconds === null || currentSeconds < 0) return;
+                if (!force && Math.abs(currentSeconds - lastSavedSeconds) < 2) return;
+                sendProgress({
+                    position_seconds: Math.max(0, currentSeconds),
+                    duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
+                    completed: Boolean(completed),
+                    playback_active: Boolean(isPlaying),
+                    ended: Boolean(completed)
+                }, keepalive);
+            }
+
+            function attachPlayer() {
+                var generation = ++playerGeneration;
+                var player = new window.playerjs.Player(iframe);
+                activePlayer = player;
+
+                player.on('ready', function () {
+                    if (generation !== playerGeneration) return;
+                    if (coverPlay && cover && cover.getAttribute('src')
+                        && !frameWrap.classList.contains('is-started')) {
+                        coverPlay.hidden = false;
+                    }
+                    frameWrap.classList.add('is-ready');
+                    player.getDuration(function (value) {
+                        durationSeconds = finiteNumber(value);
+                        if (resumeSeconds >= 5) {
+                            player.setCurrentTime(resumeSeconds);
+                            currentSeconds = resumeSeconds;
+                            setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
+                        } else {
+                            currentSeconds = 0;
+                            setStatus('Место просмотра сохраняется автоматически.', false);
+                        }
+                    });
+                });
+                player.on('timeupdate', function (raw) {
+                    if (generation !== playerGeneration) return;
+                    var timing = timingData(raw);
+                    if (!timing || timing.seconds === null) return;
+                    currentSeconds = timing.seconds;
+                    if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
+                    if (Date.now() - lastAutomaticSaveAt >= 10000) {
+                        lastAutomaticSaveAt = Date.now();
+                        saveProgress(false, false, false);
+                    }
+                });
+                player.on('play', function () {
+                    if (generation !== playerGeneration) return;
+                    isPlaying = true;
+                    hasEverPlayed = true;
+                    hideCover();
+                    // Каждый play создаёт серверную точку отсчёта. Без неё короткий
+                    // ролик успевал закончиться до первого 10-секундного heartbeat и навсегда
+                    // оставался с watched_seconds=0. Точка при каждом возобновлении ещё и
+                    // отсекает время, проведённое на паузе.
+                    saveProgress(true, false, false);
+                });
+                player.on('pause', function () {
+                    if (generation !== playerGeneration) return;
+                    // Последний кусок до паузы тоже был просмотрен. Флаг активного
+                    // воспроизведения должен попасть в тело запроса до смены состояния.
+                    saveProgress(true, false, false);
+                    isPlaying = false;
+                });
+                player.on('seeked', function () {
+                    if (generation !== playerGeneration) return;
+                    player.getCurrentTime(function (value) {
+                        var seconds = finiteNumber(value);
+                        if (seconds !== null) currentSeconds = seconds;
+                        saveProgress(true, false, false);
+                    });
+                });
+                player.on('ended', function () {
+                    if (generation !== playerGeneration) return;
+                    isPlaying = false;
+                    if (durationSeconds !== null) currentSeconds = durationSeconds;
+                    saveProgress(true, true, false);
+                });
+            }
+
+            iframe.src = data.player_url;
+            attachPlayer();
+            reattachPlayer = function () {
+                resumeSeconds = currentSeconds;
+                isPlaying = false;
+                attachPlayer();
+            };
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'hidden') saveProgress(true, false, true);
+            });
+            window.addEventListener('pagehide', function () {
+                saveProgress(true, false, true);
+            });
+        }
+    };
+})();

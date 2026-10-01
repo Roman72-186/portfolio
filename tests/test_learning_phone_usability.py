@@ -154,3 +154,45 @@ def test_subject_colors_are_readable_on_light_card():
     for subject, token in (("Рисунок", "--subj-drawing"), ("Композиция", "--subj-composition")):
         rule = re.search(r'\.ios-learning \.lrn-subject-btn\[data-subject="' + subject + r'"\]\.active\s*\{([^}]*)\}', tracker).group(1)
         assert f"color: var({token});" in rule
+
+
+_INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S)
+
+
+def test_feed_code_is_cached_not_inlined(auth_client, assert_static_versioned):
+    """Находка 11: плеер, лента, лайтбокс и колокольчик — файлами, а не в странице.
+
+    Встроенными они весили 70 КБ из 95 КБ JS ленты и заново качались при
+    каждом заходе: статика кэшируется на год, HTML — нет. После выноса
+    (01.10.2026) встроенного JS в ленте 25 КБ — тема до стилей, Telegram,
+    меню ученика. Потолок с запасом: новый крупный скрипт пусть ложится файлом.
+    """
+    client, _ = auth_client
+    html = client.get("/cabinet/learning").text
+    inline = "".join(_INLINE_SCRIPT.findall(html))
+
+    for src, marker in (
+        ("video-player.js", "window.lrnVideoPlayer"),
+        ("cycle-feed.js", "lrnBlockRender.el"),
+        ("lightbox.js", "getElementById('lightbox-img')"),
+        ("notif-bell.js", "getElementById('notifPopBody')"),
+    ):
+        assert f'src="/static/js/{src}?v=' in html, f"лента не подключает {src}"
+        assert marker not in inline, f"код {src} снова встроен в страницу"
+        assert marker in (STATIC / "js" / src).read_text(encoding="utf-8")
+    assert_static_versioned(html)
+    assert len(inline.encode()) < 32 * 1024, f"встроенного JS {len(inline.encode()) // 1024} КБ"
+
+
+def test_csrf_key_rides_on_the_script_tag():
+    """Файл кэшируется на год, а ключ у каждой сессии свой — вшить его в файл нельзя.
+
+    Ключ идёт атрибутом тега и читается сразу, синхронно: внутри
+    `DOMContentLoaded` `document.currentScript` уже `null`, и колокольчик
+    слал бы пустой ключ.
+    """
+    for src in ("cycle-feed.js", "notif-bell.js"):
+        code = (STATIC / "js" / src).read_text(encoding="utf-8")
+        assert "{{" not in code, f"в {src} осталась разметка Jinja"
+        head = code.split("addEventListener('DOMContentLoaded'", 1)[0]
+        assert "document.currentScript" in head and "data-csrf-token" in head, src

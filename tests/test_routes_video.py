@@ -117,7 +117,7 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert "@\\u003cscript\\u003ealert(2)\\u003c/script\\u003e" in response.text
 
 
-def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypatch):
+def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypatch, served):
     """Надпись со зрителем не летает по кругу, а проявляется и гаснет в
     случайной точке безопасной зоны кадра (владелец 01.09.2026)."""
     client, _ = auth_client
@@ -126,102 +126,103 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert "function measureWatermarkBounds()" in response.text
-    assert "function pickWatermarkSpot()" in response.text
-    assert "function runWatermarkCycle()" in response.text
-    assert "Math.random()" in response.text
-    assert "watermarkCopy.classList.add('is-visible')" in response.text
-    assert "watermarkCopy.classList.remove('is-visible')" in response.text
-    assert "safeCorners" in response.text
-    assert "Math.random() * 9" not in response.text
-    assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in response.text
-    assert 'data-role="cover-play"' in response.text
-    assert "coverPlay.hidden = false" in response.text
+    page = served(response)
+    assert "function measureWatermarkBounds()" in page
+    assert "function pickWatermarkSpot()" in page
+    assert "function runWatermarkCycle()" in page
+    assert "Math.random()" in page
+    assert "watermarkCopy.classList.add('is-visible')" in page
+    assert "watermarkCopy.classList.remove('is-visible')" in page
+    assert "safeCorners" in page
+    assert "Math.random() * 9" not in page
+    assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in page
+    assert 'data-role="cover-play"' in page
+    assert "coverPlay.hidden = false" in page
     # Автозапуска нет совсем (владелец 21.09.2026): кнопка «Смотреть» только
     # убирает обложку, дальше зритель жмёт play внутри самого плеера. Прежняя
     # попытка запускать видео за него упиралась в запрет iOS и показывала
     # красное «Видео не запустилось само» вместо картинки.
-    assert "Видео не запустилось само" not in response.text
-    assert "playThroughBunny" not in response.text
-    assert "armPlaybackAttemptTimer" not in response.text
-    assert "searchParams.set('autoplay', 'true')" not in response.text
-    assert "searchParams.set('muted', 'true')" not in response.text
-    assert "playRequested" not in response.text
-    assert "window.matchMedia('(pointer: coarse)').matches" not in response.text
+    assert "Видео не запустилось само" not in page
+    assert "playThroughBunny" not in page
+    assert "armPlaybackAttemptTimer" not in page
+    assert "searchParams.set('autoplay', 'true')" not in page
+    assert "searchParams.set('muted', 'true')" not in page
+    assert "playRequested" not in page
+    assert "window.matchMedia('(pointer: coarse)').matches" not in page
     # Кнопка звука жила только ради беззвучного автозапуска.
-    assert 'data-role="mute-btn"' not in response.text
-    assert "data.player_url = body.player_url" in response.text
-    assert "player.on('play'" in response.text
-    assert "hideCover();" in response.text
-    assert "saveProgress(true, false, false);" in response.text
+    assert 'data-role="mute-btn"' not in page
+    assert "data.player_url = body.player_url" in page
+    assert "player.on('play'" in page
+    assert "hideCover();" in page
+    assert "saveProgress(true, false, false);" in page
     # Стили обложки с 27.09.2026 живут в video.css (храповик переиспользования).
-    assert "/static/css/video.css?v=" in response.text
+    assert "/static/css/video.css?v=" in page
     video_css = (Path(__file__).resolve().parents[1] / "app/static/css/video.css").read_text(encoding="utf-8")
     assert "video-frame.is-started .video-cover" in video_css
     # Слой «Загружаем видео» обязан пропускать касания: автозапуска нет, видео
     # стартует тапом внутри плеера, а этот слой лежит поверх него во весь размер.
-    assert "font-size: 13px; pointer-events: none;" in response.text
+    assert "font-size: 13px; pointer-events: none;" in page
     # Разрешение `autoplay` в iframe оставлено сознательно: программного play()
     # у нас больше нет (21.09.2026), но плеер Bunny внутри сам решает, что делать
     # после тапа зрителя, и урезать ему права смысла нет. Автостарт при этом
     # выключен в подписанном URL параметром autoplay=false.
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in response.text
-    assert "new ResizeObserver(measureWatermarkBounds)" in response.text
-    assert "(prefers-reduced-motion: reduce)" in response.text
-    assert "bottomPadding" in response.text
+    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in page
+    assert "new ResizeObserver(measureWatermarkBounds)" in page
+    assert "(prefers-reduced-motion: reduce)" in page
+    assert "bottomPadding" in page
     # Перелёта между точками быть не должно: анимируется только прозрачность,
     # новая координата ставится, пока надпись уже не видна.
-    assert "transition: opacity 900ms" in response.text
-    assert "Math.cos(angle)" not in response.text
+    assert "transition: opacity 900ms" in page
+    assert "Math.cos(angle)" not in page
     # Прозрачная и без тени под текстом (владелец 01.09.2026).
-    assert "color: rgba(255, 255, 255, .22)" in response.text
-    assert "text-shadow" not in response.text
+    assert "color: rgba(255, 255, 255, .22)" in page
+    assert "text-shadow" not in page
 
 
-def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
-    auth_client, monkeypatch
-):
+def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(auth_client, monkeypatch, served):
     client, _ = auth_client
     _configure_bunny(monkeypatch)
 
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert 'data-role="fullscreen-btn"' in response.text
-    assert ".video-frame:fullscreen" in response.text
-    assert "playerContainer.requestFullscreen" in response.text
-    assert "requestFullscreen.call(playerContainer)" in response.text
-    assert "document.exitFullscreen" in response.text
-    assert "document.addEventListener('fullscreenchange'" in response.text
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in response.text
-    assert "allowfullscreen" not in response.text.lower()
+    page = served(response)
+    assert 'data-role="fullscreen-btn"' in page
+    assert ".video-frame:fullscreen" in page
+    assert "playerContainer.requestFullscreen" in page
+    assert "requestFullscreen.call(playerContainer)" in page
+    assert "document.exitFullscreen" in page
+    assert "document.addEventListener('fullscreenchange'" in page
+    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in page
+    assert "allowfullscreen" not in page.lower()
     # Ни фуллскрина, ни картинки-в-картинке у iframe: оба режима выносят кадр
     # из-под слоя с данными зрителя, и видео поехало бы дальше без ватермарки.
-    assert "picture-in-picture" not in response.text
+    assert "picture-in-picture" not in page
 
 
-def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch):
+def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch, served):
     client, _ = auth_client
     _configure_bunny(monkeypatch)
 
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert ".video-frame.is-pseudo-fullscreen" in response.text
-    assert "height: 100dvh" in response.text
-    assert "safe-area-inset-right" in response.text
-    assert "function shouldUsePseudoFullscreen()" in response.text
-    assert "(max-width: 900px), (pointer: coarse)" in response.text
-    assert "enterPseudoFullscreen()" in response.text
-    assert "exitPseudoFullscreen()" in response.text
-    assert "requestResult.catch(enterPseudoFullscreen)" in response.text
-    assert "fullscreenButton.hidden = true" not in response.text
-    assert "playsinline=true" in response.text
-    assert "disableIosPlayer=true" in response.text
-    assert 'id="video-ios-install-hint"' in response.text
-    assert "function isIosDevice()" in response.text
-    assert "function isStandaloneApp()" in response.text
-    assert "На экран „Домой“" in response.text
+    page = served(response)
+    assert ".video-frame.is-pseudo-fullscreen" in page
+    assert "height: 100dvh" in page
+    assert "safe-area-inset-right" in page
+    assert "function shouldUsePseudoFullscreen()" in page
+    assert "(max-width: 900px), (pointer: coarse)" in page
+    assert "enterPseudoFullscreen()" in page
+    assert "exitPseudoFullscreen()" in page
+    assert "requestResult.catch(enterPseudoFullscreen)" in page
+    assert "fullscreenButton.hidden = true" not in page
+    assert "playsinline=true" in page
+    assert "disableIosPlayer=true" in page
+    assert 'id="video-ios-install-hint"' in page
+    assert "function isIosDevice()" in page
+    assert "function isStandaloneApp()" in page
+    assert "На экран „Домой“" in page
 
 
 def test_legacy_url_cannot_bypass_catalogue_unpublish(auth_client, db, monkeypatch):
@@ -590,68 +591,70 @@ def test_legacy_player_url_disappears_once_catalogue_exists(auth_client, db, mon
     assert after_catalogue.status_code == 404
 
 
-def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch):
+def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch, served):
     client, _ = auth_client
     _configure_bunny(monkeypatch)
 
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert '"player_url_endpoint": "/cabinet/video/player-url"' in response.text
-    assert '"player_url_ttl_seconds": 300' in response.text
-    assert "function isPlayerUrlStale()" in response.text
-    assert "function refreshPlayerUrl()" in response.text
-    assert "iframe.src = data.player_url;" in response.text
-    assert "if (reattachPlayer) reattachPlayer();" in response.text
-    assert "resumeSeconds = currentSeconds;" in response.text
-    assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in response.text
-    assert "if (!event.persisted) return;" in response.text
+    page = served(response)
+    assert '"player_url_endpoint": "/cabinet/video/player-url"' in page
+    assert '"player_url_ttl_seconds": 300' in page
+    assert "function isPlayerUrlStale()" in page
+    assert "function refreshPlayerUrl()" in page
+    assert "iframe.src = data.player_url;" in page
+    assert "if (reattachPlayer) reattachPlayer();" in page
+    assert "resumeSeconds = currentSeconds;" in page
+    assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in page
+    assert "if (!event.persisted) return;" in page
     # Возврат из bfcache: pagehide гасит цикл ватермарки, и без перезапуска она
     # осталась бы висеть в одной точке — то есть перестала бы мешать записи экрана.
     # Общий плеер (`_video_player.html`) — не завязываемся на точные отступы строк.
-    assert "window.addEventListener('pageshow'" in response.text
-    assert "startWatermarkDrift();" in response.text
-    assert "refreshPlayerUrlIfStale();" in response.text
+    assert "window.addEventListener('pageshow'" in page
+    assert "startWatermarkDrift();" in page
+    assert "refreshPlayerUrlIfStale();" in page
     # Обвязка пересоздаётся, а старая замолкает по поколению: иначе прогресс
     # сохранялся бы дважды после каждого обновления ссылки.
-    assert "function attachPlayer()" in response.text
-    assert "var generation = ++playerGeneration;" in response.text
-    assert "if (generation !== playerGeneration) return;" in response.text
+    assert "function attachPlayer()" in page
+    assert "var generation = ++playerGeneration;" in page
+    assert "if (generation !== playerGeneration) return;" in page
 
 
-def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkeypatch):
+def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkeypatch, served):
     client, _ = auth_client
     _configure_bunny(monkeypatch)
 
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert "player-0.1.0.min.js" in response.text
+    page = served(response)
+    assert "player-0.1.0.min.js" in page
     # Скрипт грузится динамически общим плеером (`loadPlayerJs()` в
     # `_video_player.html`), не статичным тегом `<script src=... integrity=...>` —
     # хэш ставится JS-присваиванием, а не HTML-атрибутом.
-    assert "sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC" in response.text
-    assert "player.on('ready'" in response.text
-    assert "player.on('timeupdate'" in response.text
-    assert "player.on('pause'" in response.text
-    assert "player.on('seeked'" in response.text
-    assert "player.on('ended'" in response.text
-    assert "player.setCurrentTime(resumeSeconds)" in response.text
-    assert "if (resumeSeconds >= 5) {" in response.text
-    assert "Date.now() - lastAutomaticSaveAt >= 10000" in response.text
+    assert "sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC" in page
+    assert "player.on('ready'" in page
+    assert "player.on('timeupdate'" in page
+    assert "player.on('pause'" in page
+    assert "player.on('seeked'" in page
+    assert "player.on('ended'" in page
+    assert "player.setCurrentTime(resumeSeconds)" in page
+    assert "if (resumeSeconds >= 5) {" in page
+    assert "Date.now() - lastAutomaticSaveAt >= 10000" in page
     # Ключ ставит общий хелпер (`static/js/csrf.js`), а не сам плеер: с
     # 26.09.2026 прогресс шлётся свежим токеном. Прежний сторож ждал строку
     # `'X-CSRF-Token': csrfToken` в разметке — она означала обратное, что
     # плеер шлёт ключ, вшитый в страницу при отрисовке. За 20 часов до правки
     # именно такой ключ протухал и давал 139 отказов 403 на прогрессе, после
     # чего плеер выключал сохранение до перезагрузки страницы.
-    assert "window.csrfFetch" in response.text
-    assert "sendProgressRequest(data.progress_endpoint" in response.text
-    assert "keepalive: Boolean(keepalive)" in response.text
-    assert "if (saveInFlight)" in response.text
-    assert "body: JSON.stringify({" in response.text
-    assert "typeof options.onCompleted === 'function'" in response.text
-    assert "if (!completionReported && onCompleted) onCompleted();" in response.text
+    assert "window.csrfFetch" in page
+    assert "sendProgressRequest(data.progress_endpoint" in page
+    assert "keepalive: Boolean(keepalive)" in page
+    assert "if (saveInFlight)" in page
+    assert "body: JSON.stringify({" in page
+    assert "typeof options.onCompleted === 'function'" in page
+    assert "if (!completionReported && onCompleted) onCompleted();" in page
 
 
 def test_done_step_stays_open_while_its_video_runs():

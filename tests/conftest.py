@@ -8,6 +8,7 @@ same test database.
 import os
 import re
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 # ─── CWD must be portfolio-saas/ so relative paths (app/templates, app/static)
@@ -162,6 +163,28 @@ def assert_static_versioned():
         assert not missing, "ссылки на статику без версии: " + ", ".join(missing)
 
     return _check
+
+
+@pytest.fixture()
+def served():
+    """Что получил браузер: HTML страницы плюс локальные скрипты, которые она подключает.
+
+    Сторожа поведения (плеер, лента, лайтбокс) когда-то искали код прямо в
+    тексте страницы: он был встроен. С 01.10.2026 этот код лежит в
+    `app/static/js/` и кэшируется (аудит АОП ученика, п. 4.1). Проверять только
+    файл мало — сторож пропустит страницу, которая файл больше не подключает.
+    Поэтому файл добавляется к тексту, лишь если на странице есть его `<script src>`.
+    """
+    static_root = Path(__file__).resolve().parents[1] / "app" / "static"
+
+    def _served(response_or_html) -> str:
+        html = getattr(response_or_html, "text", response_or_html)
+        parts = [html]
+        for src in re.findall(r'<script[^>]*\bsrc="/static/(js/[^"?]+)(?:\?[^"]*)?"', html):
+            parts.append((static_root / src).read_text(encoding="utf-8"))
+        return "\n".join(parts)
+
+    return _served
 
 
 @pytest.fixture(autouse=True)

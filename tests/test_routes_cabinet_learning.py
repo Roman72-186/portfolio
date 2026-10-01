@@ -587,7 +587,7 @@ def test_learning_hides_cycle_chips_when_there_is_one_cycle(auth_client, db):
 
 # ── подпись шага: ровно одна (16.09.2026) ───────────────────────────────────
 
-def test_feed_lets_the_page_print_the_block_caption(auth_client, db):
+def test_feed_lets_the_page_print_the_block_caption(auth_client, db, served):
     """Подпись блока печатает карточка шага, рендерер внутри блока молчит.
 
     До 16.09.2026 её печатали оба, и ученик читал заголовок дважды подряд —
@@ -600,7 +600,7 @@ def test_feed_lets_the_page_print_the_block_caption(auth_client, db):
 
     resp = client.get("/cabinet/learning")
 
-    assert "titlesOutside: true" in resp.text
+    assert "titlesOutside: true" in served(resp)
     # Сторож от «убрали дубль, убрав не ту подпись»: внешняя остаётся.
     assert 'class="lrn-step-title"' in resp.text
     assert "Оцени себя" in resp.text

@@ -88,7 +88,7 @@ def test_player_iframe_cannot_take_video_out_of_the_page(auth_client, db, monkey
 
 
 def test_player_reports_success_only_after_server_confirmation():
-    source = _read("app/templates/partials/inline/_video_player.html")
+    source = _read("app/static/js/video-player.js")
 
     assert "respData && respData.completed === true" in source
     assert "playback_active: Boolean(isPlaying)" in source

@@ -18,7 +18,7 @@ from app.services import s3 as s3_service
 from app.services.works import THUMB_MAX_PX, delete_works_with_dependents, upload_work_thumb
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
-LIGHTBOX = Path(__file__).resolve().parent.parent / "app" / "templates" / "partials" / "lightbox.html"
+LIGHTBOX = Path(__file__).resolve().parent.parent / "app" / "static" / "js" / "lightbox.js"
 
 
 def _jpeg(width=1600, height=1200) -> bytes:
