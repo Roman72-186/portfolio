@@ -1052,14 +1052,22 @@ input[type="radio"]:checked::after {
 input[type="checkbox"]:focus-visible,
 input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 
-/* ── File input area ── */
-.file-input-wrap {
-    border: 2px dashed var(--line); border-radius: var(--r-md);
-    padding: 32px; text-align: center; cursor: pointer;
-    background: var(--surface-2); transition: border-color var(--duration-base), background var(--duration-base);
+/* ── Выбор файла ── */
+/* Системное поле говорит на языке телефона («Choose Files / No file chosen»).
+   Поле остаётся настоящим, но скрыто визуально, а не `display: none`: так оно
+   держит фокус с клавиатуры и читается экранным диктором. Нажимают на
+   кнопку-`label` (`.btn-outline.file-pick-btn`), имена выбранных файлов —
+   строкой `.file-pick-names`. Первое место — блоки «Домашнее задание» в ленте
+   ученика (`task-blocks-render.js`, `uploadForm`; аудит АОП 30.09.2026).
+   Заменил неиспользуемый `.file-input-wrap`. */
+.file-pick { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: var(--s-3); }
+.file-pick-input {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.file-input-wrap:hover { border-color: var(--blue); background: var(--blue-soft); }
-.file-input-wrap input[type="file"] { display: none; }
+.file-pick-input:focus-visible + .file-pick-btn { outline: 2px solid var(--blue); outline-offset: 2px; }
+.file-pick-btn { min-height: 44px; }
+.file-pick-names { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 
 /* ═══════════════════════════════════════
    ALERTS

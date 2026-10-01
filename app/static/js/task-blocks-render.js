@@ -936,11 +936,31 @@ scope)` и свойством `answered` (одна попытка: после о
                 var fileId = 'lrn-upl-' + api.uid + '-' + block.id;
                 var label = el('label', 'field-label', 'Фото работы (до ' + left + ')');
                 label.setAttribute('for', fileId);
-                var input = el('input', 'form-input');
+                // Системное поле говорило на языке телефона («Choose Files /
+                // No file chosen», аудит АОП 30.09.2026). Поле остаётся
+                // настоящим, но скрыто визуально (`base.css`, `.file-pick`):
+                // нажимают на кнопку-`label`, выбранные имена видны строкой.
+                var pick = el('div', 'file-pick');
+                var input = el('input', 'file-pick-input');
                 input.type = 'file';
                 input.id = fileId;
                 input.accept = 'image/*';
                 input.multiple = true;
+                var pickButton = el('label', 'btn-outline file-pick-btn', 'Выбрать фото');
+                pickButton.setAttribute('for', fileId);
+                var pickNames = el('p', 'file-pick-names', 'Фото не выбраны');
+                pickNames.id = fileId + '-names';
+                input.setAttribute('aria-describedby', pickNames.id);
+                input.addEventListener('change', function () {
+                    var names = Array.prototype.map.call(input.files || [], function (file) {
+                        return file.name;
+                    });
+                    pickNames.textContent = names.length ? 'Выбрано: ' + names.join(', ') : 'Фото не выбраны';
+                    pickButton.textContent = names.length ? 'Выбрать другие' : 'Выбрать фото';
+                });
+                pick.appendChild(input);
+                pick.appendChild(pickButton);
+                pick.appendChild(pickNames);
 
                 var commentId = fileId + '-note';
                 var commentLabel = el('label', 'field-label', 'Описание работы');
@@ -1034,7 +1054,7 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 if (left > 0) {
                     wrap.appendChild(label);
-                    wrap.appendChild(input);
+                    wrap.appendChild(pick);
                     if (!block.submitted_files || !block.submitted_files.length) {
                         wrap.appendChild(commentLabel);
                         wrap.appendChild(comment);

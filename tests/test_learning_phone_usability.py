@@ -95,3 +95,21 @@ def test_locked_step_explains_itself_readably():
     light_label = re.search(r"--ios-label-2:\s*(#[0-9A-Fa-f]{6})", base).group(1)
     light_card = re.search(r"--surface:\s*(#[0-9A-Fa-f]{6})", base).group(1)
     assert _contrast(light_label, light_card) >= 4.5
+
+
+def test_file_picker_speaks_the_screen_language():
+    """Находка 7: поле выбора файла было системным — «Choose Files / No file
+    chosen» на языке телефона, не в стиле экрана. Теперь нажимают на кнопку
+    `label` «Выбрать фото», имена выбранных файлов видны строкой под ней.
+    Само поле остаётся настоящим и скрыто только визуально: `display: none`
+    убрал бы его из фокуса с клавиатуры и из экранного диктора."""
+    render = (STATIC / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
+    assert "el('input', 'file-pick-input')" in render
+    assert "el('label', 'btn-outline file-pick-btn', 'Выбрать фото')" in render
+    assert "'file-pick-names'" in render
+
+    base = BASE_CSS.read_text(encoding="utf-8")
+    rule = re.search(r"\.file-pick-input\s*\{([^}]*)\}", base).group(1)
+    assert "display: none" not in rule
+    assert "clip-path: inset(50%)" in rule
+    assert ".file-pick-input:focus-visible + .file-pick-btn" in base
