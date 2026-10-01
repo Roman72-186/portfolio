@@ -25,3 +25,46 @@ def test_hidden_attribute_beats_any_display():
     assert re.search(r"(^|\n)\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}", css), (
         "в base.css нет общего `[hidden] { display: none !important; }`"
     )
+
+
+TRACKER_CSS = STATIC / "css" / "tracker.css"
+
+
+def _hex_luminance(value: str) -> float:
+    value = value.lstrip("#")
+    channels = []
+    for i in (0, 2, 4):
+        c = int(value[i:i + 2], 16) / 255
+        channels.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = channels
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_hex_luminance(a), _hex_luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_done_marks_are_readable_on_bright_green():
+    """Находка 4: «СДЕЛАНО» и «ЗАДАНИЕ ВЫПОЛНЕНО» — белое на `--ios-green` давало
+    2.2 / 2.0. Владелец 01.10.2026 выбрал «яркий зелёный, тёмные буквы»: заливка
+    прежняя, буквы `--on-ios-green`, ≥ 4.5 в обеих темах."""
+    base = BASE_CSS.read_text(encoding="utf-8")
+    greens = re.findall(r"--ios-green:\s*(#[0-9A-Fa-f]{6})", base)
+    assert len(greens) == 2, "ждём --ios-green светлой и тёмной темы"
+    ink = re.search(r"--on-ios-green:\s*(#[0-9A-Fa-f]{6})", base).group(1)
+    for green in greens:
+        assert _contrast(green, ink) >= 4.5, f"буквы {ink} на {green}: {_contrast(green, ink):.2f}"
+
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    for selector in (".trk-badge--done", ".ios-learning .trk-badge--done", ".ios-learning .trk-toggle-btn.is-done"):
+        rule = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", tracker).group(1)
+        assert "color: var(--on-ios-green)" in rule, selector
+
+
+def test_done_step_is_dimmed_by_title_not_by_opacity():
+    """Находка 4: `opacity: 0.6` у выполненного шага гасила и зелёную плашку внутри
+    (1.6 / 1.5). Приглушает серый заголовок, прозрачности у карточки нет."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    assert not re.search(r"\.lrn-step--done\s*\{[^}]*opacity", tracker)
+    assert ".lrn-step--done .lrn-step-title { color: var(--ios-label-2); }" in tracker

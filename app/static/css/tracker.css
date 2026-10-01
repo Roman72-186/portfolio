@@ -75,9 +75,10 @@
 .trk-badge--live { color: var(--blue-on-soft); background: var(--blue-soft); }
 .trk-badge--draft { color: var(--warning); background: var(--warning-soft); }
 /* «Сделано» у ученика — успех, а не черновик: сплошной зелёный капслоком,
-   в пару к кнопке «Задание выполнено» (владелец 30.09.2026). */
+   в пару к кнопке «Задание выполнено» (владелец 30.09.2026). Буквы тёмные:
+   белое на ярком зелёном 2.2 (владелец 01.10.2026, вариант А). */
 .trk-badge--done {
-    color: var(--on-color); background: var(--ios-green);
+    color: var(--on-ios-green); background: var(--ios-green);
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 
@@ -774,7 +775,7 @@
 }
 .ios-learning .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-learning .trk-badge--draft { background: rgba(255,149,0,0.14); color: #B25000; }
-.ios-learning .trk-badge--done { background: var(--ios-green); color: var(--on-color); font-weight: 700; letter-spacing: 0.04em; }
+.ios-learning .trk-badge--done { background: var(--ios-green); color: var(--on-ios-green); font-weight: 700; letter-spacing: 0.04em; }
 
 .ios-learning .trk-row-actions { align-items: center; gap: 10px; }
 .ios-learning .trk-row-actions .btn-blue,
@@ -801,9 +802,10 @@
                 background 120ms var(--ios-ease), border-color 120ms var(--ios-ease),
                 color 120ms var(--ios-ease);
 }
-/* Выполненное — капслоком (владелец 30.09.2026), как плашка «Сделано». */
+/* Выполненное — капслоком (владелец 30.09.2026), как плашка «Сделано»; буквы
+   тёмные, белое на ярком зелёном не читается (01.10.2026, вариант А). */
 .ios-learning .trk-toggle-btn.is-done {
-    background: var(--ios-green); border-color: var(--ios-green); color: var(--on-color);
+    background: var(--ios-green); border-color: var(--ios-green); color: var(--on-ios-green);
     font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
 }
 .ios-learning .trk-toggle-btn:active { transform: scale(0.96); }
@@ -1434,10 +1436,11 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 /* Текущий шаг — единственный, на котором взгляд должен остановиться. */
 .lrn-step--current { border-color: var(--blue); }
 
-/* Сделанный гаснет, но остаётся читаемым: ученик возвращается к материалу. */
-.lrn-step--done { opacity: 0.6; }
+/* Сделанный приглушён серым заголовком, а не прозрачностью всей карточки
+   (владелец 01.10.2026): `opacity: 0.6` гасила и зелёное «СДЕЛАНО» внутри —
+   контраст 1.6 / 1.5 — и заставляла держать обходы для полного экрана видео. */
+.lrn-step--done .lrn-step-title { color: var(--ios-label-2); }
 .lrn-step--done .lrn-step-body { display: none; }
-.lrn-step--done:hover { opacity: 1; }
 .lrn-step--done:hover .lrn-step-body { display: block; }
 /* Видео держит сделанный шаг раскрытым (владелец 21.09.2026: на ПК полный
    экран показывал всю страницу вместо ролика). Тело сделанного шага видно
@@ -1448,15 +1451,10 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    ролик посреди просмотра, стоило увести мышь в сторону.
    Правила разнесены по одному: браузер, не знающий один из селекторов,
    выбрасывает всю группу через запятую целиком. */
-.lrn-step--done:has(.video-frame.is-started) { opacity: 1; }
 .lrn-step--done:has(.video-frame.is-started) .lrn-step-body { display: block; }
 .lrn-step--done:has(.video-frame:fullscreen) .lrn-step-body { display: block; }
 .lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }
 .lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }
-/* Псевдо-полный экран на телефоне — `position: fixed` внутри страницы, а не
-   верхний слой, поэтому `opacity` 0.6 у предка заводит свой контекст
-   наложения и гасит видео. Ровно тот же приём, что для `.trk-item` выше. */
-body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
 
 /* Запертый не притворяется кликабельным. */
 .lrn-step--locked { opacity: 0.5; }

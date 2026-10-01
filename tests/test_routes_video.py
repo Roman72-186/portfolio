@@ -663,6 +663,7 @@ def test_done_step_stays_open_while_its_video_runs():
     ролика — у владельца 21.09.2026 рамка в полном экране была 0x0. Тот же
     механизм прятал ролик посреди просмотра, стоило увести мышь.
     """
+    import re
     from pathlib import Path
 
     css = Path("app/static/css/tracker.css").read_text(encoding="utf-8")
@@ -672,7 +673,12 @@ def test_done_step_stays_open_while_its_video_runs():
     assert ".lrn-step--done:has(.video-frame:fullscreen) .lrn-step-body { display: block; }" in css
     assert ".lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }" in css
     assert ".lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }" in css
-    assert "body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }" in css
+    # Псевдо-полный экран на телефоне — `position: fixed` внутри страницы: любая
+    # `opacity` у предка завела бы свой контекст наложения и погасила видео. До
+    # 01.10.2026 это лечил обход `body.has-video-pseudo-fullscreen .lrn-step
+    # { opacity: 1 !important }`; теперь сделанный шаг приглушён цветом заголовка,
+    # а прозрачности у него нет вовсе.
+    assert not re.search(r"\.lrn-step--done\s*\{[^}]*opacity", css)
     # Разнесены по одному: неизвестный браузеру селектор в группе через запятую
     # выбрасывает всю группу, и открытие шага пропало бы целиком.
     assert ":has(.video-frame:fullscreen),\n" not in css
