@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
-from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
+from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds
@@ -42,7 +42,7 @@ from app.services.task_blocks import (
     get_tariffs,
     is_block_accessible,
     is_block_open_for_tariff,
-    is_block_required_for_user,
+    required_by_block_for_task,
     poll_inner_block_ids,
     portfolio_window_expired,
     start_portfolio_window,
@@ -310,25 +310,11 @@ def build_cycle_feed(
         task = entry["task"]
         task_blocks = blocks_by_task.get(task.id, [])
         ordered_blocks.extend(task_blocks)
-        # Флаг задания стоит над флагами его блоков. Если преподаватель снял
-        # обязательность у задания целиком, ни один дочерний блок не должен
-        # запирать хвост ленты или следующий цикл. Пробник сохраняет прежнее
-        # исключение: он блокирует месяц, а не учебную ленту.
-        task_blocks_progress = task.is_required and task.kind != ITEM_MOCK_EXAM
-        # Внутри опроса обязателен только последний вопрос — см.
-        # `task_blocks.poll_inner_block_ids`.
-        poll_inner = poll_inner_block_ids(task_blocks)
-        for block in task_blocks:
-            if task.kind == ITEM_ARCHI_PROFILE:
-                required_by_block[block.id] = bool(task_blocks_progress and block is task_blocks[-1])
-                continue
-            required_by_block[block.id] = bool(
-                task_blocks_progress
-                and block.id not in poll_inner
-                and is_block_required_for_user(
-                    block, is_intake_student=is_intake_student
-                )
-            )
+        # Флаг задания над флагами блоков, опрос, диагностика — одно правило
+        # с `feed_state` и кнопкой «Завершить задание».
+        required_by_block.update(required_by_block_for_task(
+            task, task_blocks, is_intake_student=is_intake_student
+        ))
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)

@@ -263,12 +263,77 @@ def visible_blocks_for_student(
     ]
 
 
+def unfinished_required_steps(
+    db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
+) -> list[TaskBlock]:
+    """Обязательные шаги задания, которые ученик ещё не сделал, но может.
+
+    До 01.10.2026 «Завершить задание» смотрела только на вопросы, и ученик
+    закрывал задание с непросмотренным обязательным роликом и незагруженной
+    работой — а закрытое задание снимает долг цикла. Кнопка остаётся ради
+    необязательных шагов (`completion_button_needed`), обязательные она не
+    пропускает.
+
+    Обязательность — `required_by_block_for_task`, «ещё можно сделать» —
+    `holds_sequence`: то же правило, по которому шаг запирает очередь ленты.
+    Шаг чужого тарифа, закрытый по календарю или с прошедшим сроком сдачи
+    кнопку не держит — сделать его уже нечем. Скрытые до сдачи
+    (`hidden_until_done`) не входят: ученик их не видит.
+    """
+    from app.models.tracker import TrackerTask
+    from app.models.user import User
+
+    blocks = [
+        block for block in visible_blocks_for_student(
+            db, get_blocks(db, task_id), user_tariff=user_tariff
+        )
+        if not block.hidden_until_done
+    ]
+    if not blocks:
+        return []
+    task = db.get(TrackerTask, task_id)
+    student = db.get(User, user_id)
+    required_by_block = required_by_block_for_task(
+        task, blocks,
+        is_intake_student=bool(student and student.access_until is not None),
+    )
+    candidates = [block for block in blocks if required_by_block[block.id]]
+    if not candidates:
+        return []
+    block_ids = [block.id for block in candidates]
+    states = get_states(db, block_ids=block_ids, user_id=user_id)
+    tariffs_by_block = get_tariffs(db, block_ids)
+    required_tariffs_by_block = get_required_tariffs(db, block_ids)
+    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
+    task_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
+    now = _now()
+    return [
+        block for block in candidates
+        if holds_sequence(
+            block,
+            states=states,
+            tariffs_by_block=tariffs_by_block,
+            user_tariff=user_tariff,
+            required_tariffs_by_block=required_tariffs_by_block,
+            required_by_block=required_by_block,
+            submit_deadlines_by_block=submit_deadlines_by_block,
+            tasks_by_id={task_id: task} if task is not None else None,
+            task_submit_deadlines_by_task=(
+                {task_id: task_deadlines} if task_deadlines else None
+            ),
+            now=now,
+        )
+    ]
+
+
 def completion_blocker(
     db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
 ) -> str | None:
     """Почему ученик ещё не может закрыть задание кнопкой; `None` — может.
 
-    Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026).
+    Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026) и
+    «пока не сделаны обязательные шаги» (владелец 01.10.2026,
+    `unfinished_required_steps`).
     **Одно правило на два места:** кнопка `toggle` (`api/cabinet_tracker.py`)
     отказывает с этим текстом, а лента (`api/cabinet_learning.py`) рисует по нему
     кнопку выключенной с той же подписью. До 30.09.2026 условие жило только в
@@ -286,8 +351,6 @@ def completion_blocker(
         )
         if not block.hidden_until_done
     ]
-    if not pending:
-        return None
     # Диагностика проверяется отдельно от остальных вопросов задания
     # (владелец 24.09.2026: она может лежать в одном задании с обычными
     # блоками) — по признаку блока, а не по `task.kind` целиком.
@@ -299,6 +362,18 @@ def completion_blocker(
         get_response(db, task_id=task_id, user_id=user_id) is None
     ):
         return "Сначала ответь на вопросы задания"
+    unfinished = unfinished_required_steps(
+        db, task_id=task_id, user_id=user_id, user_tariff=user_tariff
+    )
+    if unfinished:
+        names = ", ".join(
+            f"«{block.title}»" if block.title
+            else BLOCK_TYPE_LABELS.get(block.block_type, block.block_type)
+            for block in unfinished
+        )
+        if len(unfinished) == 1:
+            return f"Сначала сделай обязательный шаг: {names}"
+        return f"Сначала сделай обязательные шаги: {names}"
     return None
 
 
@@ -1782,71 +1857,109 @@ def is_block_accessible(
         return False
     if target.bypass_sequence:
         return True
-    for prior in blocks[:block_index]:
-        prior_is_required = (
-            required_by_block.get(prior.id, prior.is_required)
-            if required_by_block is not None else prior.is_required
+    return not any(
+        holds_sequence(
+            prior,
+            states=states,
+            tariffs_by_block=tariffs_by_block,
+            user_tariff=user_tariff,
+            required_tariffs_by_block=required_tariffs_by_block,
+            required_by_block=required_by_block,
+            submit_deadlines_by_block=submit_deadlines_by_block,
+            tasks_by_id=tasks_by_id,
+            task_submit_deadlines_by_task=task_submit_deadlines_by_task,
+            now=moment,
         )
-        if not prior_is_required:
-            continue
-        if not is_block_open_for_tariff(tariffs_by_block.get(prior.id), user_tariff):
-            continue
-        prior_required_tariffs = (
-            required_tariffs_by_block.get(prior.id) if required_tariffs_by_block else None
+        for prior in blocks[:block_index]
+    )
+
+
+def holds_sequence(
+    prior: TaskBlock,
+    *,
+    states: dict[int, TaskBlockState],
+    tariffs_by_block: dict[int, set[str]],
+    user_tariff: str | None,
+    required_tariffs_by_block: dict[int, set[str]] | None = None,
+    required_by_block: dict[int, bool] | None = None,
+    submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
+    tasks_by_id: dict | None = None,
+    task_submit_deadlines_by_task: dict[int, dict[str, datetime | None]] | None = None,
+    now=None,
+) -> bool:
+    """Держит ли блок `prior` всё, что идёт после него: он обязателен этому
+    ученику, ещё не сделан и сделать его ещё можно.
+
+    Пункт 4 `is_block_accessible`, вынесенный отдельно (владелец 01.10.2026):
+    по нему же кнопка «Завершить задание» не даёт закрыть задание с
+    несделанным обязательным шагом (`unfinished_required_steps`). Обязательный
+    шаг, который сделать уже нельзя (чужой тариф, `closes_at`, истёкшее окно
+    портфолио, прошедший срок сдачи), не держит ни очередь, ни кнопку — иначе
+    тупик без выхода.
+    """
+    moment = now or _now()
+    prior_is_required = (
+        required_by_block.get(prior.id, prior.is_required)
+        if required_by_block is not None else prior.is_required
+    )
+    if not prior_is_required:
+        return False
+    if not is_block_open_for_tariff(tariffs_by_block.get(prior.id), user_tariff):
+        return False
+    prior_required_tariffs = (
+        required_tariffs_by_block.get(prior.id) if required_tariffs_by_block else None
+    )
+    if prior_required_tariffs and user_tariff not in prior_required_tariffs:
+        return False
+    state = states.get(prior.id)
+    if (
+        prior.block_type == BLOCK_PORTFOLIO
+        and prior.portfolio_window_hours
+        and portfolio_window_expired(prior, state, now=moment)
+    ):
+        return False
+    prior_closes_at = (
+        None
+        if prior.block_type == BLOCK_PORTFOLIO and prior.portfolio_window_hours
+        else prior.closes_at
+    )
+    if prior_closes_at is not None:
+        prior_closes = (
+            prior_closes_at if prior_closes_at.tzinfo
+            else prior_closes_at.replace(tzinfo=timezone.utc)
         )
-        if prior_required_tariffs and user_tariff not in prior_required_tariffs:
-            continue
-        state = states.get(prior.id)
-        if (
-            prior.block_type == BLOCK_PORTFOLIO
-            and prior.portfolio_window_hours
-            and portfolio_window_expired(prior, state, now=moment)
-        ):
-            continue
-        prior_closes_at = (
-            None
-            if prior.block_type == BLOCK_PORTFOLIO and prior.portfolio_window_hours
-            else prior.closes_at
-        )
-        if prior_closes_at is not None:
-            prior_closes = (
-                prior_closes_at if prior_closes_at.tzinfo
-                else prior_closes_at.replace(tzinfo=timezone.utc)
-            )
-            if prior_closes <= moment:
-                continue
-        # Срок у обязательного блока прошёл, а ученик не закрыл его: если
-        # действие отобрал сам срок (сдача, ответ, правила), закрыть блок уже
-        # нечем, и без этой развязки лента встала бы навсегда — ровно тот же
-        # тупик, что выше снимают тариф и `closes_at` (владелец 27.09.2026).
-        #
-        # У видео, фото и голосового срок ничего не отбирает: отметить
-        # «Выполнено» можно и после него, это просто зачтётся опозданием в
-        # статистике. Такой блок очередь держит дальше — иначе срок,
-        # поставленный ради отчётности, молча снимал бы обязательность.
-        # Задание берётся по самому блоку, а не «то, ради которого позвали»:
-        # в ленте цикла блоки идут подряд из разных заданий, и чужой срок
-        # задания запер бы или отпустил не тот блок.
-        prior_task = (tasks_by_id or {}).get(prior.task_id)
-        prior_submit_until = (
-            submit_deadline_for(
-                prior, prior_task,
-                user_tariff=user_tariff,
-                block_overrides=(submit_deadlines_by_block or {}).get(prior.id),
-                task_overrides=(task_submit_deadlines_by_task or {}).get(prior.task_id),
-            )
-            if prior.block_type in DEADLINE_BLOCKS_COMPLETION else None
-        )
-        if prior_submit_until is not None:
-            prior_submit = (
-                prior_submit_until if prior_submit_until.tzinfo
-                else prior_submit_until.replace(tzinfo=timezone.utc)
-            )
-            if prior_submit <= moment:
-                continue
-        if state is None or state.status != STATUS_DONE:
+        if prior_closes <= moment:
             return False
-    return True
+    # Срок у обязательного блока прошёл, а ученик не закрыл его: если
+    # действие отобрал сам срок (сдача, ответ, правила), закрыть блок уже
+    # нечем, и без этой развязки лента встала бы навсегда — ровно тот же
+    # тупик, что выше снимают тариф и `closes_at` (владелец 27.09.2026).
+    #
+    # У видео, фото и голосового срок ничего не отбирает: отметить
+    # «Выполнено» можно и после него, это просто зачтётся опозданием в
+    # статистике. Такой блок очередь держит дальше — иначе срок,
+    # поставленный ради отчётности, молча снимал бы обязательность.
+    # Задание берётся по самому блоку, а не «то, ради которого позвали»:
+    # в ленте цикла блоки идут подряд из разных заданий, и чужой срок
+    # задания запер бы или отпустил не тот блок.
+    prior_task = (tasks_by_id or {}).get(prior.task_id)
+    prior_submit_until = (
+        submit_deadline_for(
+            prior, prior_task,
+            user_tariff=user_tariff,
+            block_overrides=(submit_deadlines_by_block or {}).get(prior.id),
+            task_overrides=(task_submit_deadlines_by_task or {}).get(prior.task_id),
+        )
+        if prior.block_type in DEADLINE_BLOCKS_COMPLETION else None
+    )
+    if prior_submit_until is not None:
+        prior_submit = (
+            prior_submit_until if prior_submit_until.tzinfo
+            else prior_submit_until.replace(tzinfo=timezone.utc)
+        )
+        if prior_submit <= moment:
+            return False
+    return state is None or state.status != STATUS_DONE
 
 
 def start_timed_block(db: DBSession, *, block: TaskBlock, user_id: int) -> TaskBlockState:
@@ -1972,6 +2085,39 @@ def is_block_required_for_user(
     return block.is_required
 
 
+def required_by_block_for_task(
+    task, blocks: list[TaskBlock], *, is_intake_student: bool
+) -> dict[int, bool]:
+    """Обязателен ли этому ученику каждый блок задания `task`.
+
+    Одно определение на очередь ленты цикла (`cycle_feed.build_cycle_feed`),
+    статусы задания (`feed_state`) и кнопку «Завершить задание»
+    (`unfinished_required_steps`); до 01.10.2026 первые два держали по копии.
+
+    Флаг задания стоит над флагами его блоков: снял преподаватель
+    обязательность у задания — ни один блок не обязателен. Пробник держит
+    месяц, а не учебную ленту. Внутри опроса обязателен только последний
+    вопрос (`poll_inner_block_ids`), у диагностики АРХИ-ПРОФИЛЯ — только
+    последний блок.
+    """
+    from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM
+
+    progress = bool(task is not None and task.is_required and task.kind != ITEM_MOCK_EXAM)
+    if task is not None and task.kind == ITEM_ARCHI_PROFILE:
+        return {
+            block.id: bool(progress and block is blocks[-1]) for block in blocks
+        }
+    poll_inner = poll_inner_block_ids(blocks)
+    return {
+        block.id: bool(
+            progress
+            and block.id not in poll_inner
+            and is_block_required_for_user(block, is_intake_student=is_intake_student)
+        )
+        for block in blocks
+    }
+
+
 def poll_inner_block_ids(blocks: list[TaskBlock]) -> set[int]:
     """Блоки опроса, кроме последнего в своём опросе.
 
@@ -2000,7 +2146,7 @@ def feed_state(
     TaskBlockState | None}` в порядке `sort_order` — ровно то, что нужно
     шаблону единой ленты для рендера, без похода в базу на каждый блок.
     """
-    from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
+    from app.models.tracker import TrackerTask
     from app.models.user import User
 
     blocks = visible_blocks_for_student(
@@ -2008,21 +2154,10 @@ def feed_state(
     )
     task = db.get(TrackerTask, task_id)
     student = db.get(User, user_id)
-    is_intake_student = bool(student and student.access_until is not None)
-    task_blocks_progress = bool(
-        task and task.is_required and task.kind != ITEM_MOCK_EXAM
+    required_by_block = required_by_block_for_task(
+        task, blocks,
+        is_intake_student=bool(student and student.access_until is not None),
     )
-    poll_inner = poll_inner_block_ids(blocks)
-    required_by_block = {
-        block.id: bool(
-            task_blocks_progress
-            and block.id not in poll_inner
-            and is_block_required_for_user(
-                block, is_intake_student=is_intake_student
-            )
-        )
-        for block in blocks
-    }
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)

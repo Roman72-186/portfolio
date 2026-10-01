@@ -550,6 +550,69 @@ def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db
     assert button and button.group(1) == "Завершить задание"
 
 
+def _task_with_required_and_optional_step(db, user):
+    """Необязательный ролик, за ним обязательная сдача работы: кнопка у задания
+    есть (`completion_button_needed`) и стоит в карточке сдачи — открытой, ролик
+    очередь не держит. Так её и нажимали, не сдав работу."""
+    from app.models.task_block import BLOCK_UPLOAD, BLOCK_VIDEO
+
+    task = _task(db, user, title="Перспектива", kind="material", day=today_msk())
+    task.due_at = day_bounds(today_msk())[1] - timedelta(minutes=1)
+    video = TaskBlock(
+        task_id=task.id, block_type=BLOCK_VIDEO, title="Разбор работ",
+        sort_order=0, is_required=False,
+    )
+    upload = TaskBlock(
+        task_id=task.id, block_type=BLOCK_UPLOAD, body="Сдай работу",
+        sort_order=1, is_required=True,
+    )
+    db.add_all([upload, video])
+    db.commit()
+    return task, upload
+
+
+def test_completion_button_waits_for_required_steps(auth_client, db):
+    """Владелец 01.10.2026: «Завершить задание закрывает, даже когда задания не
+    выполнены». Кнопка смотрела только на вопросы — ученик закрывал задание с
+    несданной обязательной работой и снимал этим долг цикла. Теперь она выключена
+    с названием шага, сервер отказывает тем же текстом; необязательный ролик
+    по-прежнему можно пропустить."""
+    client, user = auth_client
+    task, upload = _task_with_required_and_optional_step(db, user)
+    reason = "Сначала сделай обязательный шаг: Домашнее задание"
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
+    assert "disabled" in button
+    assert (
+        f'<p class="lrn-card-note" id="task-completion-note-{task.id}">{reason}</p>'
+    ) in html
+    blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == reason
+
+    close_block_for_user(db, upload, user.id, source="upload")
+    db.commit()
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
+    assert "disabled" not in button
+    toggle = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert toggle.status_code == 200, toggle.text
+
+
+def test_completion_button_ignores_a_required_step_that_closed_for_good(auth_client, db):
+    """Обязательный шаг, закрытый по календарю, сделать уже нечем — кнопку он не
+    держит, как не держит и очередь ленты (`holds_sequence`). Иначе тупик."""
+    client, user = auth_client
+    task, upload = _task_with_required_and_optional_step(db, user)
+    upload.closes_at = now_msk() - timedelta(hours=1)
+    db.commit()
+
+    toggle = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert toggle.status_code == 200, toggle.text
+
+
 def test_closed_task_counts_its_text_and_link_as_done(auth_client, db):
     """Аудит АОП ученика, находка 3 (владелец 01.10.2026, вариант «а»): текст и
     ссылку отметить нечем, поэтому они «сделаны», когда закрыто задание. До этого
