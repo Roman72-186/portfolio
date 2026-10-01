@@ -1526,6 +1526,47 @@ def close_block_for_user(
 _SELF_CLOSING_TASK_KINDS = ("homework", "mock_exam")
 
 
+def autoclose_steps(db: DBSession, task_id: int, user_tariff: str | None) -> list[TaskBlock]:
+    """Шаги, по которым задание закрывается само (`maybe_close_task_by_blocks`).
+
+    Блоки, видимые ученику по тарифу, кроме скрытых до сдачи
+    (`hidden_until_done`) и тех, что отметить нечем (текст, ссылка —
+    `COMPLETABLE_BLOCK_TYPES`). Одно определение на автозакрытие и на кнопку
+    «Завершить задание» в ленте (`completion_button_needed`) — разойдись они,
+    кнопка пропала бы там, где задание само не закроется.
+    """
+    blocks = visible_blocks_for_student(db, get_blocks(db, task_id), user_tariff=user_tariff)
+    return [
+        block for block in blocks
+        if block.block_type in COMPLETABLE_BLOCK_TYPES and not block.hidden_until_done
+    ]
+
+
+def completion_button_needed(
+    db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
+) -> bool:
+    """Нужна ли ученику кнопка «Завершить задание» у незакрытого задания из блоков.
+
+    Владелец 01.10.2026 (аудит АОП, находка 8): «убираем лишнюю». Лишняя она там,
+    где задание закроется само, как только ученик сделает обязательное, — то есть
+    все шаги автозакрытия обязательные. Кнопка остаётся:
+
+    - у задания без шагов (только текст и ссылка) — закрыть его больше нечем;
+    - если хоть один шаг необязательный: автозакрытие ждёт и его, и без кнопки
+      необязательный ролик стал бы обязательным;
+    - если все шаги уже отмечены, а задание открыто (отметки до автозакрытия
+      30.09.2026, сбой) — страховка от тупика.
+    """
+    steps = autoclose_steps(db, task_id, user_tariff)
+    if not steps or not all(block.is_required for block in steps):
+        return True
+    states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
+    return all(
+        states.get(block.id) is not None and states[block.id].status == STATUS_DONE
+        for block in steps
+    )
+
+
 def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> bool:
     """Закрыть задание, когда ученик сделал все свои шаги (владелец 30.09.2026).
 
@@ -1534,11 +1575,10 @@ def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> boo
     кнопка скрыта, а кружки работают) — 30.09 цикл 3 «не сдали» 27 человек,
     из них 17 без кнопки. Теперь последний отмеченный шаг закрывает и задание.
 
-    Шаги — блоки, видимые ученику по тарифу, кроме скрытых до сдачи
-    (`hidden_until_done`) и тех, что отметить нечем (текст, ссылка —
-    `COMPLETABLE_BLOCK_TYPES`). Необязательные блоки входят: закрыть задание
-    раньше, пропустив их, можно кнопкой, а сама система не закрывает его,
-    пока что-то не сделано. Задание без выполнимых шагов само не закрывается.
+    Шаги — `autoclose_steps`. Необязательные блоки входят: закрыть задание
+    раньше, пропустив их, можно кнопкой (поэтому у такого задания она остаётся,
+    `completion_button_needed`), а сама система не закрывает его, пока что-то
+    не сделано. Задание без выполнимых шагов само не закрывается.
 
     Зовётся из `close_block_for_user` — через неё идут все источники отметки,
     своих копий в роутах нет. Возвращает, закрыли ли задание сейчас.
@@ -1558,13 +1598,7 @@ def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> boo
     if current == STATUS_DONE:
         return False
     user = db.get(User, user_id)
-    blocks = visible_blocks_for_student(
-        db, get_blocks(db, task_id), user_tariff=user.tariff if user else None
-    )
-    steps = [
-        block for block in blocks
-        if block.block_type in COMPLETABLE_BLOCK_TYPES and not block.hidden_until_done
-    ]
+    steps = autoclose_steps(db, task_id, user.tariff if user else None)
     if not steps:
         return False
     states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)

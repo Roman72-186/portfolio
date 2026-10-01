@@ -35,7 +35,7 @@ from app.db.database import get_db
 from app.dependencies import require_student
 from app.services.cycle_feed import feed_for_student
 from app.services.program import item_details
-from app.services.task_blocks import completion_blocker
+from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
 from app.constants import SUPPORT_URL
 from app.tmpl import templates
@@ -92,10 +92,23 @@ def cabinet_learning(
     # Почему «Завершить задание» пока нельзя нажать — то же правило, по которому
     # откажет сама кнопка (`task_blocks.completion_blocker`). Только у незакрытых
     # заданий с блоками: у задания без блоков вопросов нет.
+    #
+    # Задание, которое закроется само, кнопку не получает вовсе (владелец
+    # 01.10.2026, `task_blocks.completion_button_needed`); «Задание выполнено»
+    # у закрытого остаётся.
     completion_blockers = {}
+    completion_hidden = set()
     for step in feed["steps"]:
         task_id = step["task"].id
-        if not step.get("block") or step["entry"]["status"] == "done" or task_id in completion_blockers:
+        if (
+            not step.get("block") or step["entry"]["status"] == "done"
+            or task_id in completion_blockers or task_id in completion_hidden
+        ):
+            continue
+        if not completion_button_needed(
+            db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
+        ):
+            completion_hidden.add(task_id)
             continue
         completion_blockers[task_id] = completion_blocker(
             db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
@@ -111,6 +124,7 @@ def cabinet_learning(
         # него видео получило бы кнопку «Отметить» вместо ссылки на плеер.
         "details": item_details(db, [step["task"] for step in feed["steps"]]),
         "completion_blockers": completion_blockers,
+        "completion_hidden": completion_hidden,
         "onboarding_auto_open": request.query_params.get("welcome") == "1",
         "onboarding_on_learning": True,
         "onboarding_access_until_text": msk_text(user.get("access_until")),

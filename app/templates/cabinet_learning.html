@@ -202,6 +202,7 @@
 
             {% if step.block and step.last_in_task and step.status != 'locked'
                   and step.task.kind not in ('video', 'homework', 'mock_exam')
+                  and step.task.id not in completion_hidden
                   and not feed.is_archive %}
             <div class="trk-row-actions lrn-step-actions lrn-task-completion">
                 {% set task = step.task %}

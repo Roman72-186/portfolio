@@ -483,6 +483,70 @@ def test_completion_button_is_off_with_reason_until_questions_answered(auth_clie
     assert f"task-completion-note-{task.id}" not in html
 
 
+
+def _task_with_upload(db, user, *, title, upload_required):
+    """Задание: текст + «Домашнее задание». Отметить можно только сдачу работы."""
+    from app.models.task_block import BLOCK_UPLOAD
+
+    task = _task(db, user, title=title, kind="material", day=today_msk())
+    task.due_at = day_bounds(today_msk())[1] - timedelta(minutes=1)
+    # Текст — необязательный, как его заводит конструктор: обязательный текст
+    # запер бы всё ниже, и до кнопки дело не дошло бы.
+    _block(db, task, title="Как сдавать", order=0, is_required=False)
+    upload = TaskBlock(
+        task_id=task.id, block_type=BLOCK_UPLOAD, body="Сдай работу",
+        sort_order=1, is_required=upload_required,
+    )
+    db.add(upload)
+    db.commit()
+    return task, upload
+
+
+def test_completion_button_hidden_where_the_task_closes_itself(auth_client, db):
+    """Владелец 01.10.2026 (аудит АОП, находка 8): «убираем лишнюю». Все шаги
+    задания обязательные — оно закроется само, кнопки нет; закрылось — видна
+    отметка «Задание выполнено»."""
+    client, user = auth_client
+    task, upload = _task_with_upload(db, user, title="Перспектива", upload_required=True)
+
+    html = client.get("/cabinet/learning").text
+    assert f'data-toggle-task="{task.id}"' not in html
+    # Сервер по-прежнему принимает ручное закрытие: прятать — не запрещать.
+    close_block_for_user(db, upload, user.id, source="upload")
+    db.commit()
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
+    assert button and button.group(1) == "Задание выполнено"
+
+
+def test_completion_button_stays_for_an_optional_step(auth_client, db):
+    """Необязательный шаг автозакрытие тоже ждёт: без кнопки ученику пришлось бы
+    делать необязательное, чтобы закрыть задание."""
+    client, user = auth_client
+    task, _ = _task_with_upload(db, user, title="Перспектива", upload_required=False)
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
+    assert button and button.group(1) == "Завершить задание"
+
+
+def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db):
+    """Страховка от тупика: шаги отмечены, а задание открыто (отметки до
+    автозакрытия 30.09.2026) — кнопка возвращается."""
+    from app.models.task_block import TaskBlockState
+    from app.models.tracker import STATUS_DONE
+
+    client, user = auth_client
+    task, upload = _task_with_upload(db, user, title="Перспектива", upload_required=True)
+    # Прямой записью, мимо `close_block_for_user`: она закрыла бы задание сама.
+    db.add(TaskBlockState(block_id=upload.id, user_id=user.id, status=STATUS_DONE))
+    db.commit()
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
+    assert button and button.group(1) == "Завершить задание"
+
 def test_completion_script_shows_the_server_reason():
     """Запасной путь: если сервер всё же откажет, ученик видит его причину, а не
     «Не получилось. Попробовать ещё раз»."""
