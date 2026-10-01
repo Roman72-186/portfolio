@@ -196,3 +196,16 @@ def test_csrf_key_rides_on_the_script_tag():
         assert "{{" not in code, f"в {src} осталась разметка Jinja"
         head = code.split("addEventListener('DOMContentLoaded'", 1)[0]
         assert "document.currentScript" in head and "data-csrf-token" in head, src
+
+
+def test_poll_options_and_rules_are_a_finger_tall():
+    """Находка 13: варианты опроса и пункты правил были 42px — `padding` 8px
+    сверху и снизу плюс строка. Оба рендера (`task-blocks-render.js`, ветки
+    опроса и `lrn-blk-rules`) берут один класс `.lrn-blk-option`, поэтому
+    норма касания держится на нём — `min-height`, а не отступами: длинный
+    вариант и так выше."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    rule = re.search(r"\.lrn-blk-option\s*\{([^}]*)\}", tracker).group(1)
+    assert "min-height: 44px" in rule
+    render = (STATIC / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
+    assert render.count("el('label', 'lrn-blk-option')") >= 2, "опрос и правила рисуются одним классом"

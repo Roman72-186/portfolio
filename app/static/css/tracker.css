@@ -1325,6 +1325,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 
 .lrn-blk-option {
     display: flex; align-items: center; gap: var(--s-2);
+    min-height: 44px; /* норма касания: отступы с одной строкой давали 42px */
     padding: var(--s-2) var(--s-3);
     border: 1px solid var(--line); border-radius: var(--r-sm);
     background: var(--surface);
