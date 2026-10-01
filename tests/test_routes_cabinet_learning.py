@@ -244,6 +244,32 @@ def test_learning_done_step_opens_the_next(auth_client, db):
     assert "lrn-step--locked" not in resp.text
 
 
+
+def test_done_step_has_a_show_button_and_the_page_handles_it(auth_client, db):
+    """Выполненный шаг свёрнут и раскрывается кнопкой, а не наведением
+    (аудит 30.09.2026, находка 5): у кнопки `aria-expanded` и `aria-controls`
+    на тело своего шага; у невыполненного шага кнопки нет — там нечего
+    раскрывать."""
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    first = _block(db, task, title="Первый шаг", order=1)
+    second = _block(db, task, title="Второй шаг", order=2)
+    close_block_for_user(db, block=first, user_id=user.id, source="manual")
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+
+    assert re.search(
+        r'<button type="button" class="lrn-step-toggle"[^>]*'
+        rf'aria-expanded="false"[^>]*aria-controls="lrn-body-{first.id}"',
+        resp.text,
+    )
+    assert f'id="lrn-body-{first.id}"' in resp.text
+    assert f'aria-controls="lrn-body-{second.id}"' not in resp.text
+    assert resp.text.count('class="lrn-step-toggle"') == 1
+    assert "function lrnToggleStep(" in resp.text
+
+
 def test_learning_shows_progress_counter(auth_client, db):
     client, user = auth_client
     task = _task(db, user, title="Задание")

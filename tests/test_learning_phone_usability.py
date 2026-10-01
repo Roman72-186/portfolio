@@ -68,3 +68,15 @@ def test_done_step_is_dimmed_by_title_not_by_opacity():
     tracker = TRACKER_CSS.read_text(encoding="utf-8")
     assert not re.search(r"\.lrn-step--done\s*\{[^}]*opacity", tracker)
     assert ".lrn-step--done .lrn-step-title { color: var(--ios-label-2); }" in tracker
+
+
+def test_done_step_opens_by_tap_not_by_hover():
+    """Находка 5: тело выполненного шага раскрывалось только наведением
+    (`.lrn-step--done:hover`). На телефоне наведения нет: Chromium случайно
+    считает им касание, iPhone — через раз, а касание мимо снова сворачивает.
+    Теперь раскрывает кнопка «Показать» классом `.is-open`; цель касания ≥ 44px."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    assert ":hover .lrn-step-body" not in tracker
+    assert ".lrn-step--done.is-open .lrn-step-body { display: block; }" in tracker
+    rule = re.search(r"\.lrn-step-toggle\s*\{([^}]*)\}", tracker).group(1)
+    assert "min-height: 44px" in rule

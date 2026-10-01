@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=76">
+<link rel="stylesheet" href="/static/css/tracker.css?v=77">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -139,6 +139,13 @@
                 <div class="trk-meta">
                     {% if step.subject %}<span class="trk-badge trk-badge--kind">{{ step.subject }}</span>{% endif %}
                     {% if step.status == 'done' %}<span class="trk-badge trk-badge--done">Сделано</span>{% endif %}
+                    {# Тело выполненного шага свёрнуто; раскрывает кнопка, а не
+                       наведение (аудит 30.09.2026): на телефоне наведения нет,
+                       Chromium случайно считает им касание, iPhone — через раз,
+                       а касание мимо снова сворачивало материал. #}
+                    {% if step.status == 'done' and step.block %}
+                    <button type="button" class="lrn-step-toggle" aria-expanded="false" aria-controls="lrn-body-{{ step.block.id }}" onclick="lrnToggleStep(this)">Показать</button>
+                    {% endif %}
                 </div>
                 {% endif %}
                 {# Имя задания — только над первым его блоком (владелец
@@ -182,7 +189,7 @@
             {% elif step.block %}
             {# Содержимое подставит скрипт ниже: по одному запросу на задание,
                а не на каждый блок. #}
-            <div class="lrn-step-body" data-role="block-body">
+            <div class="lrn-step-body" id="lrn-body-{{ step.block.id }}" data-role="block-body">
                 <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем…</p>
             </div>
             {% else %}
@@ -240,12 +247,27 @@ function lrnApplySubjectFilter() {
     if (empty) empty.hidden = shown > 0 || !document.querySelector('.lrn-feed');
 }
 
+function lrnToggleStep(button, open) {
+    // Раскрыть или свернуть тело выполненного шага. Видимость держит класс
+    // `.is-open` на карточке (`tracker.css`), кнопка лишь сообщает состояние.
+    var step = button.closest('.lrn-step');
+    if (!step) return;
+    if (typeof open !== 'boolean') open = !step.classList.contains('is-open');
+    step.classList.toggle('is-open', open);
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    button.textContent = open ? 'Свернуть' : 'Показать';
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     lrnApplySubjectFilter();
     var focusTaskId = {{ focus_task_id | tojson }};
     if (focusTaskId === null) return;
     var target = document.getElementById('learning-task-' + focusTaskId);
-    if (target) target.focus({preventScroll: true});
+    if (!target) return;
+    // Пришёл по ссылке к конкретному заданию — показать его, даже если сделано.
+    var toggle = target.querySelector('.lrn-step-toggle');
+    if (toggle) lrnToggleStep(toggle, true);
+    target.focus({preventScroll: true});
 });
 </script>
 

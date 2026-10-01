@@ -655,13 +655,16 @@ def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkey
 
 
 def test_done_step_stays_open_while_its_video_runs():
-    """Видео держит сделанный шаг АОП раскрытым.
+    """Полный экран держит сделанный шаг АОП раскрытым.
 
-    Тело сделанного шага видно только под курсором (`:hover`). Полноэкранная
-    рамка уходит в верхний слой, курсор формально покидает карточку, тело
-    получает `display: none`, и полный экран на ПК показывал страницу вместо
-    ролика — у владельца 21.09.2026 рамка в полном экране была 0x0. Тот же
-    механизм прятал ролик посреди просмотра, стоило увести мышь.
+    До 01.10.2026 тело сделанного шага было видно только под курсором
+    (`:hover`). Полноэкранная рамка уходит в верхний слой, курсор формально
+    покидает карточку, тело получает `display: none`, и полный экран на ПК
+    показывал страницу вместо ролика — у владельца 21.09.2026 рамка в полном
+    экране была 0x0. Теперь тело раскрывает кнопка «Показать» (аудит
+    30.09.2026, находка 5), правила полного экрана остались страховкой.
+    Правило «пока ролик запущен» (`.is-started`) снято: с кнопкой оно не
+    давало свернуть шаг после просмотра.
     """
     import re
     from pathlib import Path
@@ -669,7 +672,8 @@ def test_done_step_stays_open_while_its_video_runs():
     css = Path("app/static/css/tracker.css").read_text(encoding="utf-8")
 
     assert ".lrn-step--done .lrn-step-body { display: none; }" in css
-    assert ".lrn-step--done:has(.video-frame.is-started) .lrn-step-body { display: block; }" in css
+    assert ".lrn-step--done.is-open .lrn-step-body { display: block; }" in css
+    assert ":has(.video-frame.is-started) .lrn-step-body" not in css
     assert ".lrn-step--done:has(.video-frame:fullscreen) .lrn-step-body { display: block; }" in css
     assert ".lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }" in css
     assert ".lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }" in css
