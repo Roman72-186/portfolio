@@ -1481,7 +1481,9 @@ def test_feed_state_end_to_end(db, regular_user):
     task = _task(db)
     blocks = sync_blocks(
         db, task_id=task.id,
-        items=[_text("Видео", is_required=True), _text("Опрос"), _text("Итог")],
+        # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+        # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+        items=[{"block_type": "upload", "body": "Сдай работу", "is_required": True}, _text("Опрос"), _text("Итог")],
     )
     db.commit()
     first, second, third = blocks

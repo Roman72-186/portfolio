@@ -63,9 +63,9 @@ def _task(db, owner, *, title, due_on=TODAY, kind="material", is_required=True, 
     return task
 
 
-def _block(db, task, *, title, order=0, is_required=True):
+def _block(db, task, *, title, order=0, is_required=True, block_type=BLOCK_TEXT):
     block = TaskBlock(
-        task_id=task.id, block_type=BLOCK_TEXT, title=title,
+        task_id=task.id, block_type=block_type, title=title,
         body="текст", sort_order=order, is_required=is_required,
     )
     db.add(block)
@@ -185,7 +185,9 @@ def test_blocks_follow_the_order_the_teacher_set(db, regular_user):
 def test_required_block_locks_everything_below_it(db, regular_user):
     _cycle(db, regular_user)
     task = _task(db, regular_user, title="Задание")
-    _block(db, task, title="Первый", order=1)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, task, title="Первый", order=1, block_type="upload")
     _block(db, task, title="Второй", order=2)
 
     steps = _feed(db, regular_user)
@@ -193,13 +195,35 @@ def test_required_block_locks_everything_below_it(db, regular_user):
     assert [step["status"] for step in steps] == ["current", "locked"]
 
 
+
+def test_required_text_and_link_never_lock_the_feed(db, regular_user):
+    """Текст и ссылку отметить нечем, поэтому галочка «обязательный» на них не
+    действует (владелец 01.10.2026). Иначе всё ниже было бы заперто навсегда:
+    «Откроется, когда будет сделано предыдущее», а сделать предыдущее нечем."""
+    from app.models.task_block import BLOCK_LINK
+
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Задание")
+    _block(db, task, title="Как строить", order=1, is_required=True)
+    _block(db, task, title="Разбор", order=2, is_required=True, block_type=BLOCK_LINK)
+    _block(db, task, title="Сдай работу", order=3, block_type="upload")
+    _block(db, _task(db, regular_user, title="Следующее"), title="Дальше", order=1, block_type="upload")
+
+    steps = _feed(db, regular_user)
+
+    assert [step["status"] for step in steps] == ["current", "current", "current", "locked"]
+    # Держит очередь сдача работы — её и называет подпись, не текст.
+    assert steps[3]["blocked_by"]["title"] == "Сдай работу"
+
 def test_lock_carries_across_the_task_boundary(db, regular_user):
     """Главное отличие от вкладок: обязательный блок первого задания запирает
     блоки следующего, а не только собственную вкладку."""
     _cycle(db, regular_user)
     first = _task(db, regular_user, title="Первое", due_on=TODAY - timedelta(days=1))
     second = _task(db, regular_user, title="Второе", due_on=TODAY)
-    _block(db, first, title="Блок первого", order=1)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, first, title="Блок первого", order=1, block_type="upload")
     _block(db, second, title="Блок второго", order=1)
 
     steps = _feed(db, regular_user)
@@ -443,7 +467,9 @@ def test_sequence_lock_keeps_its_own_reason(db, regular_user):
     """Заперто очередью, а не календарём — подпись у ученика другая."""
     _cycle(db, regular_user)
     task = _task(db, regular_user, title="Задание")
-    _block(db, task, title="Первый", order=1)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, task, title="Первый", order=1, block_type="upload")
     _block(db, task, title="Второй", order=2)
 
     steps = _feed(db, regular_user)

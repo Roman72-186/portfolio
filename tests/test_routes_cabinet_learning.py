@@ -59,9 +59,9 @@ def _task(db, user, *, title, kind="homework", day=None, is_required=True, order
     return task
 
 
-def _block(db, task, *, title, order=0, is_required=True):
+def _block(db, task, *, title, order=0, is_required=True, block_type=BLOCK_TEXT):
     block = TaskBlock(
-        task_id=task.id, block_type=BLOCK_TEXT, title=title, body="текст",
+        task_id=task.id, block_type=block_type, title=title, body="текст",
         sort_order=order, is_required=is_required,
     )
     db.add(block)
@@ -200,7 +200,9 @@ def test_learning_locks_the_step_after_an_unfinished_one(auth_client, db):
     не сделан предыдущий."""
     client, user = auth_client
     task = _task(db, user, title="Задание")
-    _block(db, task, title="Первый шаг", order=1)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, task, title="Первый шаг", order=1, block_type="upload")
     _block(db, task, title="Второй шаг", order=2)
 
     resp = client.get("/cabinet/learning")
@@ -633,7 +635,9 @@ def test_locked_step_names_its_holder_and_the_holders_tab(auth_client, db):
     держит общий шаг — подпись называет его и вкладку «Общее»."""
     client, user = auth_client
     general = _task(db, user, title="Общий блок", kind="material", order=0)
-    _block(db, general, title="Введение в экзамен", is_required=True)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, general, title="Введение в экзамен", is_required=True, block_type="upload")
     drawing = _task(db, user, title="Рисунок", kind="material", order=1)
     drawing.subject = "Рисунок"
     _block(db, drawing, title="Шаг рисунка")
@@ -648,7 +652,9 @@ def test_locked_step_in_the_same_tab_names_holder_without_a_tab(auth_client, db)
     client, user = auth_client
     first = _task(db, user, title="Рисунок 1", kind="material", order=0)
     first.subject = "Рисунок"
-    _block(db, first, title="Набросок", is_required=True)
+    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
+    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
+    _block(db, first, title="Набросок", is_required=True, block_type="upload")
     second = _task(db, user, title="Рисунок 2", kind="material", order=1)
     second.subject = "Рисунок"
     _block(db, second, title="Тон")

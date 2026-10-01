@@ -318,3 +318,19 @@ def test_preview_uses_the_student_renderer_not_its_own(
     # шага с `.lrn-step-title`, как в ленте ученика, здесь нет. Флаг
     # `titlesOutside` (16.09.2026) передаёт только лента.
     assert "titlesOutside" not in script
+
+
+
+def test_text_and_link_have_no_lock_checkbox():
+    """У текста и ссылки нет галочки «Блокирует дальнейшую выдачу» и списка «кого
+    обязать»: сервер их обязательность не учитывает (`is_block_required_for_user`,
+    владелец 01.10.2026), и галочка обещала бы то, чего нет."""
+    editor = (
+        pathlib.Path(__file__).resolve().parents[1] / "app" / "templates" / "partials"
+        / "program_blocks_editor_js.html"
+    ).read_text(encoding="utf-8")
+    settings = editor.split("function blockSettingsHTML(type) {", 1)[1]
+    assert "var lockable = type !== 'text' && type !== 'link';" in settings
+    for marker in ("data-b-required data-sum-on", "prg-blk-required-tariffs"):
+        guarded = settings.split(marker, 1)[0].rsplit("(lockable ? ''", 1)
+        assert len(guarded) == 2 and ": '')" not in guarded[1], marker

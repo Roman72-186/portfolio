@@ -1902,8 +1902,18 @@ def is_block_required_for_user(
     """Какой флаг обязательности действует для этого ученика.
 
     Отдельное правило «Пробы» пока есть только у загрузки
-    портфолио. Остальные типы всегда смотрят на общий `is_required`.
+    портфолио. Остальные типы смотрят на общий `is_required`.
+
+    **Текст и ссылка обязательными не бывают** (владелец 01.10.2026, аудит АОП
+    ученика): отметить их нечем (`COMPLETABLE_BLOCK_TYPES`), и обязательный
+    текст запирал бы всё ниже навсегда — «Откроется, когда будет сделано
+    предыдущее» без выхода. Флаг в базе остаётся, но не действует; в
+    конструкторе галочки у них нет (`blockSettingsHTML`). Через эту функцию
+    идут очередь ленты (`cycle_feed.build_cycle_feed`, `feed_state`) и
+    подпись «что держит» — своей копии условия у них нет.
     """
+    if block.block_type not in COMPLETABLE_BLOCK_TYPES:
+        return False
     if is_intake_student and block.block_type == BLOCK_PORTFOLIO:
         return block.is_required_for_intake
     return block.is_required

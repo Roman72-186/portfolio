@@ -432,6 +432,10 @@ function blockSettingsHTML(type) {
     // (partials/program_settings_panel.html); сводку в заголовке пересчитывает
     // `refreshSettingsPanel`, метки `data-sum*` — в шапке его партиала.
     var emptySummary = 'По умолчанию: по очереди, без срока, всем тарифам';
+    // Текст и ссылку отметить нечем — обязательными они не бывают (владелец
+    // 01.10.2026), сервер флаг не учитывает (`is_block_required_for_user`).
+    // Галочку не показываем: иначе она обещала бы то, чего нет.
+    var lockable = type !== 'text' && type !== 'link';
     return ''
         + '<details class="prg-settings" data-settings-panel data-settings-empty="' + emptySummary + '">'
         + '  <summary><span class="prg-settings-head">'
@@ -439,10 +443,12 @@ function blockSettingsHTML(type) {
         + '    <span class="prg-settings-summary" data-settings-summary>' + emptySummary + '</span>'
         + '  </span></summary>'
         + '  <div class="prg-settings-body">'
-        + '  <label class="prg-field prg-field--row prg-blk-setting">'
-        + '    <input type="checkbox" data-b-required data-sum-on="закрывает всё ниже">'
-        + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
-        + '  </label>'
+        + (lockable ? ''
+            + '  <label class="prg-field prg-field--row prg-blk-setting">'
+            + '    <input type="checkbox" data-b-required data-sum-on="закрывает всё ниже">'
+            + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
+            + '  </label>'
+            : '')
         // Дата и время, а не только дата (владелец 27.09.2026): «теория
         // откроется в 10:00» раньше было не выразить — поле принимало день, и
         // блок всегда открывался в полночь.
@@ -470,10 +476,12 @@ function blockSettingsHTML(type) {
         + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
         + tariffChecksHTML()
         + '  </div>'
-        + '  <div class="prg-blk-required-tariffs prg-blk-setting" data-sum-list="обязательно для">'
-        + '    <p class="prg-hint">Кого обязать выполнить: не отметили ни одного — обязательно для всех, кому видно.</p>'
-        + requiredTariffChecksHTML()
-        + '  </div>'
+        + (lockable ? ''
+            + '  <div class="prg-blk-required-tariffs prg-blk-setting" data-sum-list="обязательно для">'
+            + '    <p class="prg-hint">Кого обязать выполнить: не отметили ни одного — обязательно для всех, кому видно.</p>'
+            + requiredTariffChecksHTML()
+            + '  </div>'
+            : '')
         // Владелец 15.09.2026: галочку «не ждать очереди» из формы убрали —
         // преподавателю она не нужна. Поле осталось скрытым, чтобы у блоков,
         // где флаг уже включён, он не слетал при следующем сохранении:
