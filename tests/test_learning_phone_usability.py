@@ -219,3 +219,26 @@ def test_week_tab_styles_are_gone():
     tracker = TRACKER_CSS.read_text(encoding="utf-8")
     assert not re.findall(r"\.lrn-tab[\w-]*", tracker)
     assert ".lrn-subject-btn" in tracker
+
+
+def _feed_rule_bodies(css: str):
+    """Тела правил ленты (`.lrn-*`, `.ios-learning …`) без комментариев;
+    сам блок токенов `.ios-learning { --ios-pink: … }` не входит."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        selector = selector.strip().splitlines()[-1].strip()
+        if re.search(r"lrn-|ios-learning", selector) and selector != ".ios-learning":
+            yield selector, body
+
+
+def test_feed_colors_come_from_tokens_where_a_token_exists():
+    """Находка 15: белое на заливке — `--on-color`, полупрозрачные оранжевый,
+    красный и фиолетовый — `color-mix` от `--ios-orange`/`--ios-red`/`--ios-blue`,
+    цвета предметов — их токены (оттенок — решение владельца 26.08, не меняется).
+    Тени, системные серые iOS и подложки видео токенов не имеют — остаются числом."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    literal = re.compile(r"#fff\b|#ffffff\b|rgba\(\s*(255,\s*149,\s*0|255,\s*59,\s*48|175,\s*82,\s*222)\s*,", re.I)
+    offenders = [s for s, body in _feed_rule_bodies(tracker) if literal.search(body)]
+    assert not offenders, offenders
+    subject = [body for s, body in _feed_rule_bodies(tracker) if s.startswith(".lrn-subject-btn[data-subject=")]
+    assert len(subject) == 2 and not any(re.search(r"color:\s*#", b) for b in subject)
