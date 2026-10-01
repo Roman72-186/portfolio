@@ -177,6 +177,30 @@
 
     <section class="prg-items" data-deadline-scope>
         <h2>Уже в этом цикле</h2>
+        {# Весь цикл глазами ученика (созвон 30.09.2026, 00:37:17: «кнопочка,
+           что можно просмотреть цикл… весь цикл, что я могу посмотреть глазами
+           ученика»). Рисуется на клиенте из `editPayloads` тем же рендерером,
+           что «Глазами ученика» у одного задания: в базу ничего не пишет, в
+           статистику не попадает, работает и для неопубликованного цикла. #}
+        {% if items %}
+        <div class="prg-actions prg-cycle-preview-bar">
+            <button type="button" class="btn-outline" data-cycle-preview-open aria-expanded="false" aria-controls="cyclePreview">Весь цикл глазами ученика</button>
+            <label class="prg-field">Тариф
+                <select data-cycle-preview-tariff>
+                    <option value="">Все тарифы</option>
+                    {% for tariff in tariffs %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="prg-field">Вкладка
+                <select data-cycle-preview-subject>
+                    <option value="*">Все</option>
+                    <option value="">Общее</option>
+                    {% for subject in subjects %}<option value="{{ subject }}">{{ subject }}</option>{% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="prg-preview prg-cycle-preview" id="cyclePreview" data-cycle-preview hidden></div>
+        {% endif %}
         {% if items %}
         {% for item in items %}
         <article class="prg-item" data-item-id="{{ item.id }}">
@@ -412,20 +436,13 @@ function uploadBlockPhotos(row, files) {
         });
     }
 
-    function previewBlocks(form) {
-        var box = form.querySelector('[data-preview]');
+    // Строки конструктора → блоки предпросмотра: опрос разворачивается в
+    // вопросы, диагностика внутри «Задания» — в N вопросов на своём месте
+    // (владелец 24.09.2026, второй раунд). Одна функция на предпросмотр
+    // одного задания и всего цикла.
+    function previewBlocksOf(items) {
         var blocks = [];
-        // Отдельный вид archi_profile (легаси) — свой статичный редактор вне
-        // `[data-blocks]`, добавляем его вопросы отдельно.
-        if (!form.querySelector('[data-diagnostic-note]').hidden) {
-            blocks = blocks.concat(diagnosticPreviewBlocks(diagnosticBuilder.questions()));
-        }
-        // Диагностика внутри обычного «Задания» (владелец 24.09.2026, второй
-        // раунд) — одна строка `block_type: 'diagnostic'` среди обычных
-        // блоков; на месте этой строки разворачиваем её в N вопросов, чтобы
-        // предпросмотр показывал их так же, как их увидит ученик, и там же,
-        // где куратор поставил диагностику среди остальных блоков.
-        expandPollsForPreview(collectFormBlocks(form)).forEach(function (block) {
+        expandPollsForPreview(items).forEach(function (block) {
             if (block.block_type !== 'diagnostic') { blocks.push(block); return; }
             blocks = blocks.concat(diagnosticPreviewBlocks(
                 block.diagnostic && block.diagnostic.questions,
@@ -433,14 +450,15 @@ function uploadBlockPhotos(row, files) {
                 block.body ? window.RichTextField.markdownToHtml(block.body) : ''
             ));
         });
-        box.innerHTML = '';
-        if (!blocks.length) {
-            box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
-            box.hidden = false;
-            return;
-        }
+        return blocks;
+    }
+
+    // Рисует блоки в контейнер общим рендерером ученика. `startIndex` —
+    // чтобы у несохранённых блоков разных заданий не совпали временные id.
+    function renderPreviewBlocks(box, blocks, startIndex) {
         var renderer = window.lrnBlockRender.create({csrfToken: csrfToken, answered: false});
-        blocks.forEach(function (block, index) {
+        blocks.forEach(function (block, position) {
+            var index = (startIndex || 0) + position;
             var wrap = el('div', 'prg-preview-blk');
             wrap.setAttribute('data-block-type', block.block_type);
             var node = block.block_type === 'video'
@@ -469,8 +487,99 @@ function uploadBlockPhotos(row, files) {
             }
             box.appendChild(wrap);
         });
+    }
+
+    function previewBlocks(form) {
+        var box = form.querySelector('[data-preview]');
+        var blocks = [];
+        // Отдельный вид archi_profile (легаси) — свой статичный редактор вне
+        // `[data-blocks]`, добавляем его вопросы отдельно.
+        if (!form.querySelector('[data-diagnostic-note]').hidden) {
+            blocks = blocks.concat(diagnosticPreviewBlocks(diagnosticBuilder.questions()));
+        }
+        blocks = blocks.concat(previewBlocksOf(collectFormBlocks(form)));
+        box.innerHTML = '';
+        if (!blocks.length) {
+            box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
+            box.hidden = false;
+            return;
+        }
+        renderPreviewBlocks(box, blocks, 0);
         freezePreview(box);
         box.hidden = false;
+    }
+
+    // ── Весь цикл глазами ученика (созвон 30.09.2026, владелец 01.10.2026) ──
+    //
+    // Задания по порядку цикла из `editPayloads` — сохранённое состояние, а
+    // не открытая форма. Тариф и вкладка — те же правила, что у ленты
+    // ученика: блок с тарифами виден только этим тарифам, предмет блока —
+    // `block.subject || task.subject`, «Общее» — без предмета. Очередь
+    // (запертые шаги) не показываем: у ученика она зависит от его ответов.
+    var cyclePreviewBox = document.querySelector('[data-cycle-preview]');
+    var cyclePreviewOpen = document.querySelector('[data-cycle-preview-open]');
+
+    function previewCycle() {
+        var tariff = document.querySelector('[data-cycle-preview-tariff]').value;
+        var subject = document.querySelector('[data-cycle-preview-subject]').value;
+        cyclePreviewBox.innerHTML = '';
+        var shown = 0;
+        var index = 0;
+        document.querySelectorAll('.prg-items [data-item-id]').forEach(function (card) {
+            var data = editPayloads[card.getAttribute('data-item-id')];
+            if (!data) return;
+            var rows = (data.blocks || []).filter(function (block) {
+                var tariffs = block.tariffs || [];
+                var ownSubject = block.subject || data.subject || '';
+                return (!tariff || !tariffs.length || tariffs.indexOf(tariff) !== -1)
+                    && (subject === '*' || ownSubject === subject);
+            });
+            var taskSubject = data.subject || '';
+            if (!rows.length && !(subject === '*' || taskSubject === subject)) return;
+            var blocks = previewBlocksOf(rows);
+            var section = el('section', 'prg-cycle-preview-task');
+            var head = el('header', 'prg-cycle-preview-head');
+            if (data.subject) head.appendChild(el('span', 'prg-badge', data.subject));
+            head.appendChild(el('h3', null, data.title || 'Задание'));
+            section.appendChild(head);
+            if (data.description) {
+                var note = el('div', 'prg-hint');
+                note.innerHTML = window.RichTextField.markdownToHtml(data.description);
+                section.appendChild(note);
+            }
+            if (blocks.length) {
+                renderPreviewBlocks(section, blocks, index);
+                index += blocks.length;
+            } else {
+                section.appendChild(el('p', 'prg-hint', 'Для этого тарифа в задании нет блоков.'));
+            }
+            cyclePreviewBox.appendChild(section);
+            shown += 1;
+        });
+        if (!shown) {
+            cyclePreviewBox.appendChild(el('p', 'prg-hint', 'На этой вкладке у выбранного тарифа заданий нет.'));
+        }
+        freezePreview(cyclePreviewBox);
+        cyclePreviewBox.hidden = false;
+        cyclePreviewOpen.setAttribute('aria-expanded', 'true');
+        cyclePreviewOpen.textContent = 'Скрыть просмотр цикла';
+    }
+
+    if (cyclePreviewOpen) {
+        cyclePreviewOpen.addEventListener('click', function () {
+            if (!cyclePreviewBox.hidden) {
+                cyclePreviewBox.hidden = true;
+                cyclePreviewOpen.setAttribute('aria-expanded', 'false');
+                cyclePreviewOpen.textContent = 'Весь цикл глазами ученика';
+                return;
+            }
+            previewCycle();
+        });
+        document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-subject]').forEach(function (select) {
+            select.addEventListener('change', function () {
+                if (!cyclePreviewBox.hidden) previewCycle();
+            });
+        });
     }
 
     {% include "partials/program_take_blocks_js.html" %}

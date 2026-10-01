@@ -690,6 +690,16 @@
    первого нажатия «Глазами ученика» под кнопками висела пустая пунктирная
    рамка (замечено 29.09.2026 при проверке «Взять содержимое»). */
 .prg-preview[hidden] { display: none; }
+/* Весь цикл глазами ученика (01.10.2026): панель с тарифом и вкладкой над
+   списком заданий, в просмотре — задания по порядку с разделителем. */
+.prg-cycle-preview-bar { align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.prg-cycle-preview-bar .prg-field { min-width: 160px; }
+.prg-cycle-preview { margin-bottom: 16px; }
+.prg-cycle-preview-task + .prg-cycle-preview-task {
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.prg-cycle-preview-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prg-cycle-preview-head h3 { margin: 0; font: 700 16px/1.3 var(--font-display); color: var(--text); }
 /* Карточка + полоса по типу — то же деление, что у `.prg-blk` в самом
    редакторе (program_ios.css): предпросмотр не должен выглядеть честнее
    или хуже, чем реальный экран ученика. */

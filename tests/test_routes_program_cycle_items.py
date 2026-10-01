@@ -279,3 +279,32 @@ def test_cycle_without_title_shows_period_as_label(client, db, user_factory, ses
 
     cycles_list = client.get("/cabinet/staff/program/cycles")
     assert expected_start in cycles_list.text
+
+
+def test_whole_cycle_preview_is_offered_and_never_touches_the_server(
+    client, db, user_factory, session_factory
+):
+    """Весь цикл глазами ученика (созвон 30.09.2026: «кнопочка, что можно
+    просмотреть цикл… весь цикл»). Рисуется из `editPayloads` на клиенте:
+    ни записи состояний ученика, ни статистики — поэтому ни одного запроса."""
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Введение", "is_required": True, "blocks": [
+            {"block_type": "text", "title": "Теория", "body": "Текст"},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
+
+    assert "Весь цикл глазами ученика" in page.text
+    assert "data-cycle-preview-tariff" in page.text
+    assert '<option value="">Общее</option>' in page.text
+    script = page.text[page.text.index("function previewCycle("):]
+    script = script[:script.index("if (cyclePreviewOpen)")]
+    assert "editPayloads[" in script
+    assert "fetch(" not in script and "api(" not in script
+    assert "freezePreview(cyclePreviewBox)" in script
