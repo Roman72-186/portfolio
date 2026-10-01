@@ -1454,7 +1454,11 @@ button.desk-nav-item {
     cursor: pointer; padding: 0; flex-shrink: 0;
     transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
-.hint-trigger::before { content: ''; position: absolute; inset: -12px; }
+/* Область касания 44×44 при кружке 20×20. Отступ считается от внутренней
+   границы, без рамки: 18 + 2 × 13 = 44 (до аудита АОП 30.09.2026 стояло −12,
+   то есть 42). Соседа ниже, который перекрыл бы область, держать под кнопкой
+   по `z-index` — см. `.ios-learning .lrn-hero h1` в tracker.css. */
+.hint-trigger::before { content: ''; position: absolute; inset: -13px; }
 .hint-trigger:hover { background: var(--blue-soft); color: var(--blue-text); }
 .hint-trigger[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue-text); border-color: var(--blue-tint); }
 .hint-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

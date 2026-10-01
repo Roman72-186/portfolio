@@ -586,8 +586,11 @@
     background: rgba(255,255,255,0.05);
     bottom: -60px; right: 80px;
 }
+/* Заголовок выше описания (2 против 1): в нём живёт «?», и невидимая область
+   касания кнопки свисает на 12px вниз — абзац с тем же `z-index: 1` позже в
+   разметке и рисовался поверх, съедая низ области (аудит АОП 30.09.2026). */
 .ios-learning .lrn-hero h1 {
-    position: relative; z-index: 1;
+    position: relative; z-index: 2;
     font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: #fff;
 }
 .ios-learning .lrn-hero p {

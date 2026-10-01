@@ -113,3 +113,19 @@ def test_file_picker_speaks_the_screen_language():
     assert "display: none" not in rule
     assert "clip-path: inset(50%)" in rule
     assert ".file-pick-input:focus-visible + .file-pick-btn" in base
+
+
+def test_hint_trigger_catches_a_finger_44px_wide():
+    """Находка 9: у «?» видимый кружок 20×20, область касания добирает
+    невидимый `::before`. Отступ считается от внутренней границы (без рамки
+    в 1px): `inset: -12px` давал 18 + 24 = 42, нужно −13 → 44. В шапке ленты
+    низ области съедал абзац описания: у заголовка и абзаца был одинаковый
+    `z-index: 1`, абзац позже в разметке и рисуется поверх — заголовок выше."""
+    base = BASE_CSS.read_text(encoding="utf-8")
+    assert ".hint-trigger::before { content: ''; position: absolute; inset: -13px; }" in base
+    assert "width: 20px; height: 20px; border-radius: 50%;" in base  # 20 − 2 рамки + 2 × 13 = 44
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    h1 = re.search(r"\.ios-learning \.lrn-hero h1\s*\{([^}]*)\}", tracker).group(1)
+    p = re.search(r"\.ios-learning \.lrn-hero p\s*\{([^}]*)\}", tracker).group(1)
+    z = lambda rule: int(re.search(r"z-index:\s*(\d+)", rule).group(1))
+    assert z(h1) > z(p)
