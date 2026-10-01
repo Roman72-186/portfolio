@@ -748,9 +748,9 @@ def test_grey_and_red_text_is_readable_on_page_backgrounds(opener, backgrounds):
             assert _contrast(tokens[name], tokens[bg]) >= 4.5, f"--{name} на --{bg}"
 
 
-# Точки без текста: запись голоса, урок в трекере, метка на вкладке недели, просрочка и урок в iOS-трекере.
+# Точки без текста: запись голоса, урок в трекере, просрочка и урок в iOS-трекере.
 RED_DOTS = {
-    ".mrf-rec-dot", ".trk-dot--lesson", ".lrn-tab-dot",
+    ".mrf-rec-dot", ".trk-dot--lesson",
     ".ios-tracker .trk-item.trk-item--overdue .trk-kind-dot",
     '.ios-tracker .trk-item[data-kind="lesson"] .trk-kind-dot',
 }

@@ -235,60 +235,6 @@
 .lrn-subject-btn[data-subject="Рисунок"].active { background: var(--surface); color: #0A84FF; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .lrn-subject-btn[data-subject="Композиция"].active { background: var(--surface); color: #FF2D55; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 
-/* Вкладки недели — восемь-девять пунктов в фиксированном порядке, .nav-pill
-   из base.css. Мобильная правка владельца 27.08.2026 (карусель вместо
-   плоской прокрутки): стрелки теперь лежат ВНУТРИ поля прокрутки (overlay
-   поверх .lrn-tabs, не отдельные элементы сбоку от неё — раньше растягивали
-   ряд по горизонтали), а сама прокрутка — с center-snap: кнопка, попавшая в
-   центр (свайпом или от стрелки), «ловится» скриптом `lrnUpdateCenteredTab`
-   в cabinet_learning.html и получает .is-centered (увеличение + отдельная
-   полупрозрачная плашка, см. .ios-learning ниже). Листание зациклено —
-   `lrnFocusTab` в шаблоне переходит с последней кнопки на первую и обратно
-   по модулю, поэтому стрелки больше не гаснут на краях. */
-.lrn-tabs-row { position: relative; margin: 0 0 16px; }
-/* padding-inline даёт запас, чтобы первая и последняя кнопка тоже могли
-   доехать до центра поля при скролле — без него им физически некуда
-   сместиться дальше края. Вертикальный — под увеличение + плашку
-   .is-centered (ios-learning ниже), иначе `overflow-x: auto` заодно
-   считает overflow-y как auto по спеке и обрезает их вылет сверху/снизу. */
-.lrn-tabs-row .lrn-tabs { margin: 0; padding: 16px 30vw; }
-.lrn-tabs {
-    display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x mandatory;
-}
-.lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; position: relative; scroll-snap-align: center; }
-
-/* Стрелки — overlay поверх поля прокрутки (владелец 27.08.2026), 44px
-   минимум по стороне для touch-target (WCAG AA). Листание зациклено —
-   больше не гаснут на краях списка. */
-.lrn-tab-arrow {
-    position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
-    width: 44px; height: 44px; border-radius: 50%;
-    border: none; background: var(--surface-2); color: var(--ink);
-    font-size: 20px; line-height: 1; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-}
-.lrn-tab-arrow--prev { left: 2px; }
-.lrn-tab-arrow--next { right: 2px; }
-.lrn-tab-arrow:disabled { opacity: 0.3; cursor: default; }
-
-/* Точка-маркер незакрытой задачи на кнопке вкладки, как непрочитанное
-   уведомление в iOS (решение владельца 25.08.2026) — рисуется только когда
-   в разметке есть `.lrn-tab-dot` (`tab.has_unread` из
-   `tracker.py::build_week_tabs`, снимается на лету `lrnUpdateTabBadge` в
-   cabinet_learning.html). `--ios-red` берётся у `.ios-learning` — своего
-   переменного блока странице не нужно. */
-.lrn-tab-dot {
-    position: absolute; top: 4px; right: 6px;
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--ios-red);
-    box-shadow: 0 0 0 1.5px var(--ios-card-bg, #fff);
-}
-
-.lrn-tabpanel { display: flex; flex-direction: column; gap: 12px; }
-.lrn-tabpanel[hidden] { display: none; }
-
 .lrn-cards { display: flex; flex-direction: column; gap: 12px; }
 .lrn-card {
     display: block; padding: 16px 18px; border: 1px solid var(--line);
@@ -657,113 +603,6 @@
     background: var(--ios-card-bg); color: var(--subj-composition);
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
-
-/* ── Вкладки недели → капсулы-чипы, главный уровень иерархии (решение
-   владельца, разбор созвона 26.08) — крупнее и жирнее переключателя
-   предмета выше, минимум 44px по высоте под touch-target (WCAG AA). ── */
-.ios-learning .lrn-tabs { scrollbar-width: none; }
-.ios-learning .lrn-tabs::-webkit-scrollbar { display: none; }
-.ios-learning .lrn-tabs .nav-pill-item {
-    font: 700 14px var(--ios-font); color: var(--ios-label-2);
-    background: var(--ios-card-bg);
-    border: none; border-radius: 999px;
-    padding: 10px 18px; min-height: 44px;
-    display: inline-flex; align-items: center;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 160ms var(--ios-ease), box-shadow 160ms var(--ios-ease), filter 120ms var(--ios-ease);
-}
-/* Нажатие — владелец 28.08.2026 зафиксировал финально: «не меняет размер,
-   а только меняет цвет» (был промежуточный заход с уменьшением scale(0.92),
-   владелец его отменил тем же сообщением, где расписал экран целиком).
-   Белая/плашечная кнопка темнеет фоном (тот же приём, что `.trk-item:active`
-   у «Личного трекера» выше по файлу); уже открытая синяя — темнеет фильтром
-   (тот же приём, что `.btn-blue:active`). Transform здесь не трогаем вообще
-   — размер, если кнопка ещё и `.is-centered` (ниже по файлу), остаётся от
-   неё, спорить не с чем.
-
-   `.is-pressed` — тот же эффект от pointerdown/pointerup в
-   cabinet_learning.html, не только нативный `:active`: без обработчика
-   касания на странице WebKit на iPhone вообще не включает `:active` по тапу
-   (owner 27.08.2026 сообщил «нет изменений» — деплой дошёл до прода
-   без ошибок, значит дело было именно в этом). `:active` остаётся для
-   мыши/клавиатуры, `.is-pressed` — гарантия на touch. */
-.ios-learning .lrn-tabs .nav-pill-item:active:not(.active),
-.ios-learning .lrn-tabs .nav-pill-item.is-pressed:not(.active) {
-    background: rgba(120,120,128,0.18);
-}
-.ios-learning .lrn-tabs .nav-pill-item.active:active,
-.ios-learning .lrn-tabs .nav-pill-item.active.is-pressed {
-    filter: brightness(0.88);
-}
-.ios-learning .lrn-tabs .nav-pill-item.active {
-    background: var(--blue-fill); color: #fff; box-shadow: 0 2px 8px rgba(175,82,222,0.30);
-}
-
-/* Кнопка вкладки, запертой последовательностью (`tab.is_locked`) — раньше
-   это было видно только после клика внутри панели, теперь гаснет сама
-   кнопка (решение владельца 27.08.2026). `:not(.active)` — на случай если
-   почему-то заперта первая вкладка, она всё равно открыта по умолчанию и
-   не должна выглядеть противоречиво (активна, но погашена). */
-.ios-learning .lrn-tabs .nav-pill-item.is-locked:not(.active) { opacity: 0.42; }
-
-/* Кнопка, пойманная по центру поля прокрутки — при свайпе и при переходе
-   стрелкой одинаково (владелец 27.08.2026: «при перелистовании ловить
-   кнопку по центру и она должна стать больше и на отдельной полупрозрачной
-   плашке»). Владелец 28.08.2026 уточнил: это касается и уже открытой
-   (синей) вкладки тоже — «по умолчанию стоит первая кнопка синяя и она уже
-   должна быть на полупрозрачной плашке и уже синего цвета», без
-   `:not(.active)`. Цвет текста (`.is-centered:not(.active)`) трогаем только
-   у неактивных — у активной он и так белый на синей заливке, менять
-   незачем. `lrnUpdateCenteredTab` в cabinet_learning.html вешает/снимает
-   класс по событию scroll — сам показ декларативный, здесь только стили.
-   `::after` — сама плашка: отдельный полупрозрачный слой позади увеличенной
-   кнопки, не смена её собственного фона. */
-.ios-learning .lrn-tabs .nav-pill-item.is-centered {
-    transform: scale(1.2);
-    z-index: 2;
-}
-.ios-learning .lrn-tabs .nav-pill-item.is-centered:not(.active) {
-    color: var(--ios-label);
-}
-.ios-learning .lrn-tabs .nav-pill-item.is-centered::after {
-    content: '';
-    position: absolute; inset: -8px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.55);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
-    z-index: -1;
-}
-
-/* Наведение мышью — владелец 27.08.2026 сначала попросил подъём + блюр
-   вокруг, потом передумал в пользу того же принципа, что и у нажатия чуть
-   выше: размер не трогаем, вместо этого красим. Синий тон — не новый, тот
-   же `rgba(175,82,222,0.12)`, что уже красит `.trk-badge--kind` в этом же
-   файле. `(hover: hover) and (pointer: fine)` — только устройства с
-   настоящим курсором; без этого условия тап по кнопке на телефоне
-   «залипает» в hover-состоянии до следующего тапа в другое место экрана.
-   `:not(.active)` — у уже открытой вкладки свой сплошной синий, разбавлять
-   его тем же тоном не нужно. */
-@media (hover: hover) and (pointer: fine) {
-    .ios-learning .lrn-tabs .nav-pill-item:hover:not(.active) {
-        background: rgba(175,82,222,0.12);
-        color: var(--blue-text);
-    }
-}
-
-/* ── Стрелки-переключатели, overlay внутри поля .lrn-tabs (решение
-   владельца 27.08.2026) — листание зациклено, стрелки не гаснут на краях.
-   `:active` компонует scale поверх translateY(-50%) из базового правила
-   (tracker.css выше) — простая замена transform на scale() без translateY
-   сбила бы вертикальное центрирование кнопки в момент нажатия. ── */
-.ios-learning .lrn-tab-arrow {
-    background: var(--ios-card-bg); color: var(--blue-text);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-    transition: transform 120ms var(--ios-ease), opacity 120ms var(--ios-ease);
-}
-.ios-learning .lrn-tab-arrow:active:not(:disabled) { transform: translateY(-50%) scale(0.88); }
-.ios-learning .lrn-tab-arrow:disabled { opacity: 0.25; box-shadow: none; }
 
 /* ── Карточки вкладки (Занятие/Обратная связь/пустые состояния) ── */
 .ios-learning .lrn-card {
@@ -1518,17 +1357,16 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    владелец 24.09.2026) — оно ведёт на сам этап, не на отдельный блок.
 
    Стекло на текущей плашке (владелец 24.09.2026, повторно после отката):
-   найден и переиспользован дословный приём `.is-centered` из вкладок недели
-   ниже по файлу (`.ios-learning .lrn-tabs .nav-pill-item.is-centered`,
-   написан 27-28.08.2026, осиротел после замены вкладок единой лентой в
-   28ef8a8) — тот же scale(1.2) и полупрозрачная плашка-стекло через ::after,
-   один в один. Отличие только в цвете подложки: там был хардкод
+   найден и переиспользован дословный приём `.is-centered` вкладок недели
+   (27-28.08.2026; вкладки сняты 06.09.2026, их стили — 01.10.2026) — тот же
+   scale(1.2) и полупрозрачная плашка-стекло через ::after, один в один.
+   Отличие только в цвете подложки: там был хардкод
    rgba(255,255,255,.55) под неизменно светлый .ios-learning, здесь
    `color-mix(in srgb, var(--surface) …, transparent)` — от --surface, чтобы
    стекло само перекрашивалось под тёмную тему вместе с остальной страницей.
    Вертикальный padding контейнера увеличен под вылет масштабированной
-   плашки — тот же приём, что `.lrn-tabs-row .lrn-tabs` комментирует выше по
-   файлу, иначе `overflow-x: auto` обрежет её сверху/снизу. */
+   плашки: `overflow-x: auto` по спеке делает и `overflow-y` auto и обрежет
+   её сверху/снизу. */
 .lrn-cycles {
     display: flex;
     gap: 10px;

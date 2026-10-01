@@ -209,3 +209,13 @@ def test_poll_options_and_rules_are_a_finger_tall():
     assert "min-height: 44px" in rule
     render = (STATIC / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
     assert render.count("el('label', 'lrn-blk-option')") >= 2, "опрос и правила рисуются одним классом"
+
+
+def test_week_tab_styles_are_gone():
+    """Находка 14: вкладки недели сняты 06.09.2026, стили `.lrn-tabs*`,
+    `.lrn-tab-arrow*`, `.lrn-tab-dot`, `.lrn-tabpanel` остались сиротами —
+    разметки под них нет ни в шаблонах, ни в JS. Вкладки предметов
+    «Общее / Композиция / Рисунок» — другие классы (`.lrn-subject-*`)."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    assert not re.findall(r"\.lrn-tab[\w-]*", tracker)
+    assert ".lrn-subject-btn" in tracker
