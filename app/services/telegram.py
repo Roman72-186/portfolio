@@ -6,6 +6,7 @@
 приложения (app/main.py), общий request_with_retry для устойчивости к
 временным сбоям API.
 """
+import json
 import logging
 
 import httpx
@@ -46,14 +47,15 @@ def _api_url(method: str) -> str:
 
 async def send_message(
     chat_id: int, text: str, *, reply_markup: dict | None = None,
-    message_thread_id: int | None = None,
+    message_thread_id: int | None = None, reply_to_message_id: int | None = None,
 ) -> bool:
     """Отправить сообщение пользователю. Ошибки не поднимает — логирует и
     возвращает False, включая случай, когда пользователь заблокировал бота
     (403): рассылка уведомлений не должна падать целиком из-за одного
     недоступного получателя.
 
-    `message_thread_id` — топик супергруппы (служебный топик оценок ОС,
+    `message_thread_id` — топик супергруппы, `reply_to_message_id` — ответ на
+    сообщение (оба — служебный топик оценок ОС,
     `feedback_rating.send_rating_to_care_topic`)."""
     if not settings.telegram_bot_token:
         logger.warning("telegram.send_message: TELEGRAM_BOT_TOKEN не настроен")
@@ -74,6 +76,12 @@ async def send_message(
         payload["reply_markup"] = reply_markup
     if message_thread_id:
         payload["message_thread_id"] = message_thread_id
+    if reply_to_message_id:
+        # Сообщение, на которое отвечаем, могли успеть удалить — тогда пусть
+        # уйдёт просто сообщением, а не ошибкой.
+        payload["reply_parameters"] = {
+            "message_id": reply_to_message_id, "allow_sending_without_reply": True,
+        }
 
     try:
         resp = await request_with_retry(
@@ -110,38 +118,106 @@ async def send_voice(
     Как и `send_message`, ошибок не поднимает — логирует и возвращает False,
     включая блокировку бота (403).
     """
-    if not settings.telegram_bot_token:
-        logger.warning("telegram.send_voice: TELEGRAM_BOT_TOKEN не настроен")
-        return False
-
-    client = await _get_client()
     payload: dict = {"chat_id": str(chat_id)}
     if caption:
         payload["caption"] = caption
+    body = await _post_files(
+        "sendVoice", chat_id, payload, {"voice": (filename, voice, content_type)},
+    )
+    return body is not None
 
+
+async def send_photo(
+    chat_id: int, photo: bytes, *, filename: str, caption: str = "",
+    message_thread_id: int | None = None,
+) -> int | None:
+    """Отправить фото загрузкой файла (multipart). Ссылкой не отдаём: с нашего
+    S3 Telegram скачивает не всегда. `caption` — HTML, до 1024 символов после
+    разбора: длину проверяет вызывающий.
+
+    Возвращает `message_id` отправленного сообщения или None при любой
+    ошибке — как `send_message`, ничего не поднимает."""
+    payload = _media_payload(chat_id, message_thread_id)
+    if caption:
+        payload["caption"] = caption
+        payload["parse_mode"] = "HTML"
+    body = await _post_files("sendPhoto", chat_id, payload, {"photo": (filename, photo, "image/jpeg")})
+    return _first_message_id(body)
+
+
+async def send_media_group(
+    chat_id: int, photos: list[tuple[str, bytes]], *, caption: str = "",
+    message_thread_id: int | None = None,
+) -> int | None:
+    """Альбом из 2–10 фото загрузкой файлов: каждое — частью multipart под
+    своим именем, в `media` на него ссылается `attach://<имя>`. Подпись
+    Telegram показывает под альбомом, если она есть только у первого фото.
+
+    Возвращает `message_id` первого сообщения альбома (на него можно
+    ответить) или None при любой ошибке."""
+    media = []
+    files = {}
+    for index, (filename, data) in enumerate(photos):
+        name = f"photo{index}"
+        item: dict = {"type": "photo", "media": f"attach://{name}"}
+        if index == 0 and caption:
+            item["caption"] = caption
+            item["parse_mode"] = "HTML"
+        media.append(item)
+        files[name] = (filename, data, "image/jpeg")
+    payload = _media_payload(chat_id, message_thread_id)
+    payload["media"] = json.dumps(media)
+    body = await _post_files("sendMediaGroup", chat_id, payload, files)
+    return _first_message_id(body)
+
+
+def _media_payload(chat_id: int, message_thread_id: int | None) -> dict:
+    payload: dict = {"chat_id": str(chat_id)}
+    if message_thread_id:
+        payload["message_thread_id"] = str(message_thread_id)
+    return payload
+
+
+def _first_message_id(body: dict | None) -> int | None:
+    """`sendPhoto` отвечает одним Message, `sendMediaGroup` — их списком."""
+    if body is None:
+        return None
+    result = body.get("result")
+    if isinstance(result, list):
+        result = result[0] if result else None
+    return result.get("message_id") if isinstance(result, dict) else None
+
+
+async def _post_files(method: str, chat_id: int, data: dict, files: dict) -> dict | None:
+    """Общий multipart-запрос для методов с файлами. Тело ответа Telegram или
+    None: нет токена, сеть, блокировка бота (403), любой другой отказ."""
+    if not settings.telegram_bot_token:
+        logger.warning("telegram.%s: TELEGRAM_BOT_TOKEN не настроен", method)
+        return None
+
+    client = await _get_client()
     try:
         resp = await request_with_retry(
-            lambda: client.post(
-                _api_url("sendVoice"), data=payload,
-                files={"voice": (filename, voice, content_type)},
-                timeout=60.0,
-            ),
-            label="Telegram sendVoice",
+            lambda: client.post(_api_url(method), data=data, files=files, timeout=60.0),
+            label=f"Telegram {method}",
         )
     except Exception as exc:
-        logger.warning("Telegram sendVoice failed chat_id=%s: %s", chat_id, exc)
-        return False
+        logger.warning("Telegram %s failed chat_id=%s: %s", method, chat_id, exc)
+        return None
 
     if resp.status_code == 403:
-        logger.info("Telegram sendVoice: бот заблокирован chat_id=%s", chat_id)
-        return False
+        logger.info("Telegram %s: бот заблокирован chat_id=%s", method, chat_id)
+        return None
     if resp.status_code >= 400:
         logger.warning(
-            "Telegram sendVoice HTTP %s chat_id=%s body=%s",
-            resp.status_code, chat_id, resp.text[:300],
+            "Telegram %s HTTP %s chat_id=%s body=%s",
+            method, resp.status_code, chat_id, resp.text[:300],
         )
-        return False
-    return True
+        return None
+    try:
+        return resp.json()
+    except ValueError:
+        return {}
 
 
 async def check_channel_membership(user_id: int) -> bool | None:

@@ -149,3 +149,56 @@ def test_send_voice_uploads_file_multipart(monkeypatch):
     assert b"opus-bytes" in body
     assert b'name="chat_id"' in body and b"42" in body
     assert "Уровень 1".encode() in body
+
+
+def _capture_telegram(monkeypatch, result):
+    telegram = notify_module.telegram_service
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["type"] = request.headers["content-type"]
+        seen["body"] = request.read()
+        return httpx.Response(200, json={"ok": True, "result": result})
+
+    monkeypatch.setattr(telegram.settings, "telegram_bot_token", "123:abc")
+    monkeypatch.setattr(telegram, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    return telegram, seen
+
+
+def test_send_media_group_uploads_files_caption_on_first(monkeypatch):
+    """Альбом — файлами через `attach://`, подпись только у первого фото,
+    в ответ — id первого сообщения альбома (на него отвечает текст оценки)."""
+    telegram, seen = _capture_telegram(monkeypatch, [{"message_id": 11}, {"message_id": 12}])
+
+    first_id = asyncio.run(telegram.send_media_group(
+        -100500, [("a.jpg", b"jpeg-a"), ("b.jpg", b"jpeg-b")],
+        caption="<b>Оценка</b>", message_thread_id=77,
+    ))
+
+    assert first_id == 11
+    assert seen["path"].endswith("/sendMediaGroup")
+    assert seen["type"].startswith("multipart/form-data")
+    body = seen["body"]
+    assert b'name="photo0"; filename="a.jpg"' in body and b"jpeg-a" in body
+    assert b'name="photo1"; filename="b.jpg"' in body and b"jpeg-b" in body
+    assert b'name="message_thread_id"' in body and b"77" in body
+    media_start = body.index(b'name="media"')
+    media = body[media_start:body.index(b"--", media_start)].decode()
+    assert media.count("attach://") == 2
+    assert media.count('"caption"') == 1
+
+
+def test_send_photo_returns_message_id(monkeypatch):
+    telegram, seen = _capture_telegram(monkeypatch, {"message_id": 21})
+
+    assert asyncio.run(telegram.send_photo(-100500, b"jpeg", filename="a.jpg", caption="x")) == 21
+    assert seen["path"].endswith("/sendPhoto")
+    assert b'name="photo"; filename="a.jpg"' in seen["body"]
+
+
+def test_send_message_reply_to(monkeypatch):
+    telegram, seen = _capture_telegram(monkeypatch, {"message_id": 31})
+
+    assert asyncio.run(telegram.send_message(-100500, "текст", reply_to_message_id=11)) is True
+    assert b'"reply_parameters":{"message_id":11' in seen["body"].replace(b" ", b"")

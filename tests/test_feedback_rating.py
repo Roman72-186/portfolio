@@ -25,6 +25,7 @@ from app.models.feedback_rating import (
     FEEDBACK_HOMEWORK,
     FEEDBACK_MOCK,
     FeedbackRating,
+    FeedbackRatingImage,
 )
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
@@ -253,7 +254,8 @@ def test_staff_sees_rating_comment_in_dialog(db, user_factory, session_factory, 
 def test_rating_goes_to_care_topic_with_thread(
     db, user_factory, session_factory, client, monkeypatch, _quiet_side_effects,
 ):
-    """О17, О18: каждая оценка — одно сообщение в топик служебной группы."""
+    """О17, О18: каждая оценка — сообщение в топик служебной группы. Без
+    скриншотов — обычный текст; ссылки на диалог нет (владелец 01.10.2026)."""
     monkeypatch.setattr(settings, "telegram_care_chat_id", -100500)
     monkeypatch.setattr(settings, "telegram_care_thread_id", 77)
     curator, student, _task, submission = _setup_block(db, user_factory, base=991_071)
@@ -271,7 +273,9 @@ def test_rating_goes_to_care_topic_with_thread(
     for part in ("Оценка ОС: 4 из 5", "Ученик Оценка", TARIFF_WITH_YOU, "Куратор Оценка",
                  "Домашка: Домашка недели", "&lt;b&gt;Спасибо&lt;/b&gt;"):
         assert part in text, part
-    assert f"/cabinet/staff/task-block-submissions/{submission.id}/feedback" in text
+    assert "Открыть диалог" not in text
+    assert "/cabinet/" not in text
+    assert "Скриншоты" not in text
 
 
 def test_care_topic_skipped_without_env(db, user_factory, session_factory, client, _quiet_side_effects):
@@ -298,9 +302,127 @@ def test_telegram_failure_does_not_lose_rating(db, user_factory, monkeypatch, _q
     db.add(rating)
     db.commit()
 
-    asyncio.run(rating_service.send_rating_to_care_topic(rating.id, "/x"))
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
 
     assert db.query(FeedbackRating).count() == 1
+
+
+# ── Скриншоты в топике картинками ────────────────────────────────────────────
+
+@pytest.fixture
+def care_photos(monkeypatch):
+    """Топик включён; S3 отдаёт байты по пути, Telegram принимает фото и
+    альбом и возвращает id первого сообщения."""
+    monkeypatch.setattr(settings, "telegram_care_chat_id", -100500)
+    monkeypatch.setattr(settings, "telegram_care_thread_id", 77)
+    with patch("app.services.feedback_rating.s3_service.download_from_s3",
+               side_effect=lambda path: f"bytes:{path}".encode()) as download, \
+         patch("app.services.feedback_rating.telegram_service.send_photo",
+               new_callable=AsyncMock, return_value=501) as photo, \
+         patch("app.services.feedback_rating.telegram_service.send_media_group",
+               new_callable=AsyncMock, return_value=601) as album:
+        yield download, photo, album
+
+
+def _rating_with_screenshots(db, user_factory, *, base, count, comment="Всё понятно"):
+    student = user_factory(vk_id=base, name="Ученик Скрин")
+    rating = FeedbackRating(
+        dialog_kind=DIALOG_TASK_BLOCK, dialog_id=base, student_id=student.id,
+        feedback_type=FEEDBACK_HOMEWORK, task_title="Домашка недели", score=5, comment=comment,
+        images=[
+            FeedbackRatingImage(
+                image_s3_path=f"ratings/{index}.jpg",
+                image_s3_url=f"https://s3.test/ratings/{index}.jpg", sort_order=index,
+            )
+            for index in range(count)
+        ],
+    )
+    db.add(rating)
+    db.commit()
+    return rating
+
+
+def test_one_screenshot_goes_as_photo_with_caption(db, user_factory, care_photos, _quiet_side_effects):
+    _download, photo, album = care_photos
+    rating = _rating_with_screenshots(db, user_factory, base=991_111, count=1)
+
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
+
+    photo.assert_awaited_once()
+    args, kwargs = photo.call_args
+    assert args[0] == -100500
+    assert args[1] == b"bytes:ratings/0.jpg"
+    assert kwargs["filename"] == "0.jpg"
+    assert kwargs["message_thread_id"] == 77
+    assert "Оценка ОС: 5 из 5" in kwargs["caption"]
+    assert "Всё понятно" in kwargs["caption"]
+    assert "Скриншоты" not in kwargs["caption"]
+    album.assert_not_awaited()
+    _quiet_side_effects.assert_not_awaited()
+
+
+def test_three_screenshots_go_as_album_caption_once(db, user_factory, care_photos, _quiet_side_effects):
+    _download, photo, album = care_photos
+    rating = _rating_with_screenshots(db, user_factory, base=991_121, count=3)
+
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
+
+    album.assert_awaited_once()
+    args, kwargs = album.call_args
+    assert args[0] == -100500
+    assert [name for name, _ in args[1]] == ["0.jpg", "1.jpg", "2.jpg"]
+    assert kwargs["message_thread_id"] == 77
+    assert "Оценка ОС: 5 из 5" in kwargs["caption"]
+    photo.assert_not_awaited()
+    _quiet_side_effects.assert_not_awaited()
+
+
+def test_long_comment_goes_as_reply_to_album(db, user_factory, care_photos, _quiet_side_effects):
+    """Подпись — до 1024 символов после разбора, комментарий — до 2000:
+    альбом уходит без подписи, оценка — ответом на его первое сообщение."""
+    _download, _photo, album = care_photos
+    comment = "Очень подробно. " * 120
+    rating = _rating_with_screenshots(db, user_factory, base=991_131, count=2, comment=comment.strip())
+
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
+
+    assert album.call_args.kwargs["caption"] == ""
+    _quiet_side_effects.assert_awaited_once()
+    args, kwargs = _quiet_side_effects.call_args
+    assert kwargs["reply_to_message_id"] == 601
+    assert kwargs["message_thread_id"] == 77
+    assert comment.strip() in args[1]
+
+
+def test_photo_refused_falls_back_to_links(db, user_factory, care_photos, _quiet_side_effects):
+    _download, _photo, album = care_photos
+    album.return_value = None
+    rating = _rating_with_screenshots(db, user_factory, base=991_141, count=2)
+
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
+
+    _quiet_side_effects.assert_awaited_once()
+    args, kwargs = _quiet_side_effects.call_args
+    assert "reply_to_message_id" not in kwargs
+    assert kwargs["message_thread_id"] == 77
+    assert 'Скриншоты: <a href="https://s3.test/ratings/0.jpg">1</a>' in args[1]
+
+
+def test_s3_failure_falls_back_to_links(db, user_factory, care_photos, _quiet_side_effects):
+    download, photo, album = care_photos
+    download.side_effect = lambda path: None
+    rating = _rating_with_screenshots(db, user_factory, base=991_151, count=1)
+
+    asyncio.run(rating_service.send_rating_to_care_topic(rating.id))
+
+    photo.assert_not_awaited()
+    album.assert_not_awaited()
+    assert "Скриншоты:" in _quiet_side_effects.call_args.args[1]
+
+
+def test_caption_length_counts_what_telegram_shows():
+    assert rating_service.caption_length("<b>Оценка</b> &lt;b&gt;") == len("Оценка <b>")
+    assert rating_service.caption_length("😀") == 2
 
 
 # ── Пробник ──────────────────────────────────────────────────────────────────

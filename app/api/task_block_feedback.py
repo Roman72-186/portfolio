@@ -392,8 +392,5 @@ async def student_rating(
     except RatingError as exc:
         return JSONResponse({"ok": False, "error": exc.message}, status_code=exc.status_code)
     db.commit()
-    background_tasks.add_task(
-        send_rating_to_care_topic, rating.id,
-        f"/cabinet/staff/task-block-submissions/{submission.id}/feedback",
-    )
+    background_tasks.add_task(send_rating_to_care_topic, rating.id)
     return JSONResponse({"ok": True})
