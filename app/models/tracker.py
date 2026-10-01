@@ -392,6 +392,21 @@ EVENT_KIND_LABELS = {
     EVENT_BROADCAST: "Общий эфир",
 }
 
+# Цвет метки события в календаре ученика (созвон 30.09.2026: «означать им
+# цвет… рыжим, жёлтым, либо голубое, розовое, фиолетовое — в нашей
+# стилистике»). Цвет выбирает команда у каждого события, от типа он не
+# зависит. Хранится ключом, а не числом: сам цвет — токен в program.css
+# (`.dgst-color--<ключ>`), и палитра меняется в одном месте.
+EVENT_COLOR_DEFAULT = "purple"
+EVENT_COLORS = ("orange", "yellow", "sky", "pink", "purple")
+EVENT_COLOR_LABELS = {
+    "orange": "Рыжий",
+    "yellow": "Жёлтый",
+    "sky": "Голубой",
+    "pink": "Розовый",
+    "purple": "Фиолетовый",
+}
+
 
 class ScheduleEvent(Base):
     """Строка внутри дайджеста. Диапазон дат нужен для окон вроде пробника —
@@ -413,6 +428,10 @@ class ScheduleEvent(Base):
     # Ссылка на созвон — по требованию созвона 17.08 зашивается в кнопку, а не
     # показывается текстом, который надо копировать.
     meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Ключ из EVENT_COLORS. Проверка — в схеме роута, не в БД.
+    color: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=EVENT_COLOR_DEFAULT, server_default=EVENT_COLOR_DEFAULT
+    )
 
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
@@ -422,6 +441,24 @@ class ScheduleEvent(Base):
     __table_args__ = (
         Index("ix_schedule_events_digest_date", "digest_id", "starts_on"),
     )
+
+
+class ScheduleEventTariff(Base):
+    """Тариф, которому показывается событие дайджеста. Пусто — всем тарифам.
+
+    Созвон 30.09.2026: расписание месяца «для разных тарифов». Тариф на уровне
+    события, а не дайджеста: ученик видит один дайджест месяца
+    (`active_digest_for_student`), и «общий + тарифный» не сложились бы.
+    Зеркало `TaskBlockTariff` — строки с составным ключом, значения проверяет
+    сервисный слой по `app.constants.TARIFFS`.
+    """
+
+    __tablename__ = "schedule_event_tariffs"
+
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("schedule_events.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
 
 
 class TrackerGoal(Base):

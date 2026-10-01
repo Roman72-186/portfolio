@@ -1,19 +1,27 @@
 {#
-  Дайджест месяца у ученика: заголовок «месяц · тема» и список событий.
+  Дайджест месяца: заголовок «месяц · тема», календарь месяца с цветными
+  метками и список событий с пояснениями под ним.
 
-  Решение владельца 17.09.2026: «календарь не нужен, просто показываем по
-  вкладке в трекере Дайджест, там весь список из дайджеста». Отменяет
-  календарную сетку от 16.09 — ученик читает месяц списком, а не по клеткам.
-  Второй сетки календаря в проекте по-прежнему нет: у ученика её теперь нет
-  вовсе, `.prg-grid`/`.prg-day` остались только у преподавателя.
+  Календарная сетка вернулась 01.10.2026 (созвон 30.09: «кружочки, отмечены
+  даты… пояснения за событием… цвет — рыжим, жёлтым… в нашей стилистике»;
+  владелец 01.10 — сетка, цвет и тарифы у события). Отменяет «календарь не
+  нужен, просто список» от 17.09; вкладка «Дайджест» в трекере осталась.
 
-  Партиал лежит внутри вкладки «Дайджест» (cabinet_tracker.html) и своего
-  места в потоке страницы не занимает.
+  Цвет метки выбирает команда у каждого события, легенды под сеткой нет:
+  тот же кружок стоит в списке рядом с датой и названием — по нему и читается,
+  что значит цвет. Сетка — общие .prg-grid/.prg-day из program.css (те же, что
+  у календаря программы преподавателя), клетка не ссылка: ученику некуда
+  проваливаться.
 
   Подписи типов свои, не EVENT_KIND_LABELS: там служебное «Дедлайн», а ученику
-  нужна «сдача работ» — тот же текст, что стоял в легенде календаря.
+  нужна «сдача работ».
 
-  Ждёт в контексте: digest_heading, digest_events, format_event_dates.
+  Партиал общий для ученика (вкладка в cabinet_tracker.html, события уже
+  отфильтрованы по его тарифу) и для преподавателя (cabinet_digest_events.html,
+  все события — предпросмотр до публикации).
+
+  Ждёт в контексте: digest_heading, digest_events, digest_days,
+  digest_weekday_labels, format_event_dates.
 #}
 {% set kind_labels = {
     'deadline': 'Сдача работ',
@@ -27,11 +35,31 @@
         <h2 class="dgst-title">{{ digest_heading }}</h2>
     </header>
 
+    {% if digest_days %}
+    <div class="prg-grid dgst-grid" aria-label="Календарь месяца">
+        {% for label in digest_weekday_labels %}
+        <div class="prg-dowhead" aria-hidden="true">{{ label }}</div>
+        {% endfor %}
+        {% for day in digest_days %}
+        <div class="prg-day prg-day--static{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if day.events %} has-events{% endif %}"
+             data-dow="{{ day.dow }}"
+             {% if day.events %}aria-label="{{ day.number }} число: {{ day.events | map(attribute='title') | join(', ') }}"{% endif %}>
+            <span class="prg-daynum">{{ day.number }}</span>
+            {% if day.colors %}
+            <span class="dgst-marks" aria-hidden="true">
+                {% for color in day.colors %}<span class="dgst-dot dgst-color--{{ color }}"></span>{% endfor %}
+            </span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if digest_events %}
     <ul class="dgst-list">
         {% for event in digest_events %}
         <li class="dgst-event">
-            <span class="dgst-event-date">{{ format_event_dates(event) }}</span>
+            <span class="dgst-event-date"><span class="dgst-dot dgst-color--{{ event.color }}" aria-hidden="true"></span>{{ format_event_dates(event) }}</span>
             <span class="dgst-event-title">
                 {{ event.title }}
                 <span class="trk-badge trk-badge--kind dgst-event-kind">{{ kind_labels.get(event.kind, 'Событие') }}</span>

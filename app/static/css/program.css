@@ -77,6 +77,45 @@
     margin: 14px 0 0; color: var(--muted); font-size: 12px;
 }
 
+/* ── Календарь дайджеста (ученик и предпросмотр у преподавателя) ───────── */
+/* Вернулся 01.10.2026 (созвон 30.09, владелец 01.10: сетка + цвет + тарифы у
+   события). Та же сетка, что у преподавателя, клетка не ссылка. Метка — кружок
+   цвета события; цвет выбирает команда у каждого события, палитра — токены
+   base.css, своих цветов числом здесь нет. */
+
+.dgst-color--orange { --dgst-color: var(--blk-media); }
+.dgst-color--yellow { --dgst-color: var(--blk-compare); }
+.dgst-color--sky    { --dgst-color: var(--blk-link); }
+.dgst-color--pink   { --dgst-color: var(--blk-question); }
+.dgst-color--purple { --dgst-color: var(--blue); }
+
+.dgst-grid { margin-bottom: 4px; }
+/* Клетка без ссылки: подсветку под курсором убираем, она обещала бы переход. */
+.prg-day--static:hover { border-color: var(--line); box-shadow: none; }
+.prg-day--static[data-dow="6"]:hover,
+.prg-day--static[data-dow="7"]:hover { border-color: var(--blue-mid); }
+/* Прошедшие дни гасим слабее, чем в календаре преподавателя: по этому
+   календарю ученик вспоминает, что уже было, метка должна читаться. */
+.dgst .prg-day.is-past { opacity: .78; }
+
+.dgst-marks { display: flex; flex-wrap: wrap; gap: 4px; }
+.dgst-dot {
+    display: inline-block; flex: none; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--dgst-color, var(--blue));
+}
+/* На тёмных клетках выходных кружок без обводки сливается с фоном. */
+.prg-day[data-dow="6"] .dgst-dot,
+.prg-day[data-dow="7"] .dgst-dot { box-shadow: 0 0 0 1.5px white; }
+.dgst-event-date .dgst-dot { margin-right: 6px; vertical-align: 0; }
+
+@media (max-width: 760px) {
+    /* Семь колонок на телефоне узкие: число читается, метки сжимаются. */
+    .dgst .prg-day { min-height: 48px; padding: 5px 4px; gap: 3px; }
+    .dgst .prg-daynum { font-size: 13px; }
+    .dgst-marks { gap: 3px; }
+    .dgst-marks .dgst-dot { width: 8px; height: 8px; }
+}
+
 /* ── Экран дня ──────────────────────────────────────────────────────── */
 
 /* auto-fit, а не repeat(3): новая плитка добавляется одним блоком в шаблоне

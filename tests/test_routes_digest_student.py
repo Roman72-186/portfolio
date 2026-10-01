@@ -209,3 +209,93 @@ def test_event_list_shows_dates_and_kind(client, db, user_factory, session_facto
     assert "Окно пробника" in response.text
     assert "Пробник" in response.text
     assert f"1–6 {MONTH_GENITIVE[today.month]}" in response.text
+
+
+# ── Календарь, цвет и тарифы события (созвон 30.09.2026, владелец 01.10.2026) ──
+
+
+def _digest_with_events(db, author_id, events):
+    """events: [(title, color, tariffs)] — все на сегодня."""
+    from app.services.tracker import set_event_tariffs
+
+    today = today_msk()
+    digest = create_digest(
+        db, title="Октябрь", year=today.year, month=today.month,
+        assign_to_all=True, user_id=author_id, theme="Старт курса",
+    )
+    for title, color, tariffs in events:
+        event = create_event(
+            db, digest.id, kind="lesson", title=title, note=None,
+            starts_on=today, ends_on=today, meeting_url=None, color=color,
+        )
+        set_event_tariffs(db, event, tariffs)
+    publish_digest(digest, user_id=author_id)
+    db.commit()
+    return digest
+
+
+def test_calendar_grid_marks_event_day_with_event_color(client, db, user_factory, session_factory):
+    """Сетка месяца над списком: день события помечен кружком цвета события,
+    тот же кружок стоит в списке рядом с датой — по нему читается цвет."""
+    student = user_factory(vk_id=430_020, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    _digest_with_events(db, student.id, [("Эфир с преподавателем", "orange", [])])
+
+    response = client.get(PAGE)
+
+    assert response.status_code == 200
+    assert 'class="prg-grid dgst-grid"' in response.text
+    assert 'aria-label="Календарь месяца"' in response.text
+    assert response.text.count("dgst-dot dgst-color--orange") == 2  # клетка и строка списка
+    assert f'{today_msk().day} число: Эфир с преподавателем' in response.text
+    assert "/static/css/program.css?v=" in response.text
+
+
+def test_student_sees_only_common_events_and_events_of_own_tariff(
+    client, db, user_factory, session_factory,
+):
+    student = user_factory(vk_id=430_021, name="Ученик", role_name="ученик", tariff="Я САМ")
+    client.cookies.set("session_id", session_factory(student).id)
+    _digest_with_events(db, student.id, [
+        ("Общий созвон", "purple", []),
+        ("Разбор для Я сам", "sky", ["Я САМ"]),
+        ("Разбор для Я с вами", "pink", ["Я С ВАМИ"]),
+    ])
+
+    response = client.get(PAGE)
+
+    assert "Общий созвон" in response.text
+    assert "Разбор для Я сам" in response.text
+    assert "Разбор для Я с вами" not in response.text
+    # Метка чужого события не попадает и в сетку.
+    assert "dgst-color--pink" not in response.text
+
+
+def test_student_without_tariff_sees_only_common_events(client, db, user_factory, session_factory):
+    student = user_factory(vk_id=430_022, name="Ученик", role_name="ученик", tariff=None)
+    client.cookies.set("session_id", session_factory(student).id)
+    _digest_with_events(db, student.id, [
+        ("Общий созвон", "purple", []),
+        ("Только максимум", "yellow", ["УВЕРЕННЫЙ МАКСИМУМ"]),
+    ])
+
+    response = client.get(PAGE)
+
+    assert "Общий созвон" in response.text
+    assert "Только максимум" not in response.text
+
+
+def test_staff_sees_every_event_whatever_the_tariff(client, db, user_factory, session_factory):
+    """Сотрудник проверяет расписание целиком — тарифа у него нет."""
+    curator = user_factory(vk_id=430_023, name="Куратор", role_name="куратор", tariff=None)
+    client.cookies.set("session_id", session_factory(curator).id)
+    _digest_with_events(db, curator.id, [
+        ("Разбор для Я сам", "sky", ["Я САМ"]),
+        ("Разбор для Я с вами", "pink", ["Я С ВАМИ"]),
+    ])
+
+    response = client.get(PAGE)
+
+    assert response.status_code == 200
+    assert "Разбор для Я сам" in response.text
+    assert "Разбор для Я с вами" in response.text

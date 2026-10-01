@@ -119,18 +119,26 @@
    28.09.2026). Здесь была одна из трёх дословных копий. */
 
 /* ── Пикер тегов — чипы ── */
-.ios-digest .trk-tag-picker, .ios-goals .trk-tag-picker {
+.ios-digest .trk-tag-picker, .ios-digest-events .trk-tag-picker, .ios-goals .trk-tag-picker {
     background: transparent; border: none; padding: 0; gap: 8px; max-height: none;
 }
-.ios-digest .trk-tag-picker label, .ios-goals .trk-tag-picker label {
+.ios-digest .trk-tag-picker label, .ios-digest-events .trk-tag-picker label, .ios-goals .trk-tag-picker label {
     padding: 8px 13px; border-radius: 999px; background: var(--ios-grouped-bg);
     color: var(--ios-label); font: 600 12px/1 var(--ios-font); cursor: pointer;
     transition: background 100ms var(--ios-ease), color 100ms var(--ios-ease);
 }
-.ios-digest .trk-tag-picker label:has(input:checked), .ios-goals .trk-tag-picker label:has(input:checked) {
+.ios-digest .trk-tag-picker label:has(input:checked), .ios-digest-events .trk-tag-picker label:has(input:checked),
+.ios-goals .trk-tag-picker label:has(input:checked) {
     background: rgba(175,82,222,0.14); color: var(--blue-text);
 }
-.ios-digest .trk-tag-picker input, .ios-goals .trk-tag-picker input { width: 15px; height: 15px; }
+.ios-digest .trk-tag-picker input, .ios-digest-events .trk-tag-picker input, .ios-goals .trk-tag-picker input { width: 15px; height: 15px; }
+/* Цвет и тарифы события (01.10.2026): кружок цвета внутри чипа, чип
+   переносится строкой, выбор держит та же заливка, что у тегов. */
+.ios-digest-events .trk-tag-picker { display: flex; flex-wrap: wrap; }
+.ios-digest-events .trk-tag-picker label { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.ios-digest-events .de-kind-row { align-items: center; }
+.ios-digest-events .de-preview-title { margin: 28px 0 4px; color: var(--ios-label); font: 700 17px/1.3 var(--ios-font); }
+.ios-digest-events .dgst { margin-top: 12px; }
 
 .ios-digest .trk-message, .ios-digest-events .trk-message, .ios-goals .trk-message {
     color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font);

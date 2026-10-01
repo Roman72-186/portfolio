@@ -16,7 +16,7 @@ from typing import Literal
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
-from app.constants import MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
+from app.constants import MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS, TARIFFS
 from app.models.exam_cycle import ExamCycle
 from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
@@ -31,10 +31,12 @@ from app.models.tracker import (
     SOURCE_LEARNING_TOPIC,
     STATUS_DONE,
     STATUS_OPEN,
+    EVENT_COLOR_DEFAULT,
     ScheduleDigest,
     ScheduleDigestAssignee,
     ScheduleDigestTag,
     ScheduleEvent,
+    ScheduleEventTariff,
     TrackerGoal,
     TrackerGoalAssignee,
     TrackerGoalTag,
@@ -47,6 +49,7 @@ from app.models.user import User
 from app.services.program import (
     MONTH_NAMES,
     day_bounds,
+    month_days,
     msk_date,
     week_start,
 )
@@ -1477,6 +1480,7 @@ def create_event(
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
+    color: str = EVENT_COLOR_DEFAULT,
 ) -> ScheduleEvent:
     event = ScheduleEvent(
         digest_id=digest_id,
@@ -1487,6 +1491,7 @@ def create_event(
         ends_on=ends_on,
         meeting_url=meeting_url,
         sort_order=sort_order,
+        color=color,
     )
     db.add(event)
     db.flush()
@@ -1503,6 +1508,7 @@ def update_event(
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
+    color: str = EVENT_COLOR_DEFAULT,
 ) -> None:
     event.kind = kind
     event.title = title
@@ -1511,6 +1517,58 @@ def update_event(
     event.ends_on = ends_on
     event.meeting_url = meeting_url
     event.sort_order = sort_order
+    event.color = color
+
+
+def set_event_tariffs(db: Session, event: ScheduleEvent, tariffs: list[str]) -> None:
+    """Тарифы, которым показывается событие. Пустой список — всем тарифам.
+
+    Неизвестное значение — ValueError: схема роута проверяет раньше, здесь
+    страховка для вызовов не из роута (скрипты, тесты)."""
+    unknown = [t for t in tariffs if t not in TARIFFS]
+    if unknown:
+        raise ValueError(f"Unknown tariff: {unknown}")
+    db.query(ScheduleEventTariff).filter(
+        ScheduleEventTariff.event_id == event.id
+    ).delete(synchronize_session=False)
+    for tariff in dict.fromkeys(tariffs):
+        db.add(ScheduleEventTariff(event_id=event.id, tariff=tariff))
+    db.flush()
+
+
+def event_tariffs_map(db: Session, event_ids: list[int]) -> dict[int, list[str]]:
+    """{event_id: [тарифы]} — у события без строк ключа нет («всем»)."""
+    if not event_ids:
+        return {}
+    result: dict[int, list[str]] = {}
+    rows = (
+        db.query(ScheduleEventTariff.event_id, ScheduleEventTariff.tariff)
+        .filter(ScheduleEventTariff.event_id.in_(event_ids))
+        .all()
+    )
+    order = {tariff: index for index, tariff in enumerate(TARIFFS)}
+    for event_id, tariff in rows:
+        result.setdefault(event_id, []).append(tariff)
+    for tariffs in result.values():
+        tariffs.sort(key=lambda t: order.get(t, len(order)))
+    return result
+
+
+def events_for_tariff(
+    db: Session, events: list[ScheduleEvent], tariff: str | None
+) -> list[ScheduleEvent]:
+    """События дайджеста, которые видит ученик этого тарифа.
+
+    Событие без тарифов — всем; с тарифами — только этим тарифам. Ученик без
+    тарифа видит только общие события: показать ему чужое тарифное было бы
+    обещанием, которого платформа не давала. Одно правило и для сетки, и для
+    списка — разойтись они не могут.
+    """
+    tariffs = event_tariffs_map(db, [event.id for event in events])
+    return [
+        event for event in events
+        if event.id not in tariffs or (tariff is not None and tariff in tariffs[event.id])
+    ]
 
 
 # Родительный падеж месяца: заголовок читается как «Сентябрь · Тема», а дата
@@ -1551,6 +1609,37 @@ def format_event_dates(event: ScheduleEvent) -> str:
         f"{event.starts_on.day} {MONTH_GENITIVE[event.starts_on.month]} – "
         f"{event.ends_on.day} {MONTH_GENITIVE[event.ends_on.month]}"
     )
+
+
+def digest_calendar(
+    digest: ScheduleDigest, events: list[ScheduleEvent], *, today: date | None = None
+) -> list[dict]:
+    """Сетка месяца дайджеста с событиями, разложенными по дням.
+
+    Вернулась 01.10.2026 (созвон 30.09: «кружочки, отмечены даты… пояснения за
+    событием», владелец 01.10 — сетка, цвета и тарифы у события; отменяет
+    «календарь не нужен» от 17.09). Событие-диапазон («пробник с 25 по 30»)
+    закрашивает каждый свой день: ученик смотрит на число и должен видеть,
+    идёт ли окно сегодня. Дни чужих месяцев в сетке есть (иначе недели не
+    выстроятся в строки), но событий в них нет — у соседнего месяца свой
+    дайджест.
+    """
+    days = month_days(digest.year, digest.month, today)
+    by_day: dict[str, list[ScheduleEvent]] = {}
+    for event in events:
+        cursor = event.starts_on
+        # Диапазон задом наперёд форма не пропускает (EventPayload), но
+        # данные старше той проверки неизвестны — цикл просто не выполнится.
+        while cursor <= event.ends_on:
+            by_day.setdefault(cursor.isoformat(), []).append(event)
+            cursor += timedelta(days=1)
+    for day in days:
+        day["events"] = by_day.get(day["iso"], []) if day["in_month"] else []
+        # Один цвет — одна метка в клетке, даже если событий этого цвета в дне
+        # несколько: на телефоне в клетку больше не помещается, названия
+        # ученик читает в списке под календарём.
+        day["colors"] = list(dict.fromkeys(event.color for event in day["events"]))
+    return days
 
 
 def delete_event(db: Session, event: ScheduleEvent) -> None:

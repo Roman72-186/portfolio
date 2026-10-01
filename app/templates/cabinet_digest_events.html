@@ -9,8 +9,9 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}События — {{ digest.title }}{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=52">
 <link rel="stylesheet" href="/static/css/tracker.css?v=77">
-<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=9">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=10">
 {% endblock %}
 {% block content %}
 <div class="trk-page ios-digest-events">
@@ -50,6 +51,20 @@ FORM: Operate, расширение существующего кабинета 
         <label class="trk-field">Ссылка на созвон, необязательно
             <input data-event-url type="url" maxlength="500" placeholder="https://...">
         </label>
+        {# Цвет метки в календаре ученика и тарифы (созвон 30.09.2026). Чипы —
+           тот же `.trk-tag-picker`, что у тегов в форме дайджеста. #}
+        <div class="trk-hint" id="eventColorHint">Цвет в календаре:</div>
+        <div class="trk-tag-picker" role="radiogroup" aria-labelledby="eventColorHint">
+            {% for color in event_colors %}
+            <label><input type="radio" name="event-color" data-event-color value="{{ color }}"{% if loop.last %} checked{% endif %}><span class="dgst-dot dgst-color--{{ color }}" aria-hidden="true"></span>{{ event_color_labels[color] }}</label>
+            {% endfor %}
+        </div>
+        <div class="trk-hint" id="eventTariffHint">Кому показывать — ничего не отмечено: всем тарифам.</div>
+        <div class="trk-tag-picker" role="group" aria-labelledby="eventTariffHint">
+            {% for tariff in tariff_choices %}
+            <label><input type="checkbox" data-event-tariff value="{{ tariff }}">{{ tariff_display.get(tariff, tariff) }}</label>
+            {% endfor %}
+        </div>
         <div class="trk-actions">
             <button type="button" class="btn-blue" data-event-save>Сохранить событие</button>
             <button type="button" class="btn-outline" data-event-cancel>Отмена</button>
@@ -66,10 +81,15 @@ FORM: Operate, расширение существующего кабинета 
                  data-starts="{{ event.starts_on.isoformat() }}"
                  data-ends="{{ event.ends_on.isoformat() }}"
                  data-note="{{ event.note or '' }}"
-                 data-url="{{ event.meeting_url or '' }}">
+                 data-url="{{ event.meeting_url or '' }}"
+                 data-color="{{ event.color }}"
+                 data-tariffs="{{ event_tariffs.get(event.id, []) | join('|') }}">
             <div>
                 <div class="trk-meta de-kind-row">
+                    <span class="dgst-dot dgst-color--{{ event.color }}" title="{{ event_color_labels.get(event.color, '') }}"></span>
                     <span class="trk-badge trk-badge--kind">{{ event_kind_labels.get(event.kind, event.kind) }}</span>
+                    {% set tariffs = event_tariffs.get(event.id) %}
+                    <span>{% if tariffs %}{% for t in tariffs %}{{ tariff_display.get(t, t) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}Все тарифы{% endif %}</span>
                 </div>
                 <h3>{{ event.title }}</h3>
                 {% if event.note %}<p>{{ event.note }}</p>{% endif %}
@@ -92,6 +112,11 @@ FORM: Operate, расширение существующего кабинета 
     {% else %}
     <div class="trk-empty">Событий пока нет.</div>
     {% endif %}
+
+    {# Так месяц увидит ученик — все события, без отбора по тарифу. #}
+    <h2 class="de-preview-title">Календарь глазами ученика</h2>
+    <p class="trk-hint">Здесь все события месяца. Ученик видит только общие и события своего тарифа.</p>
+    {% include "partials/digest_list.html" %}
 </div>
 
 <script>
@@ -142,6 +167,14 @@ FORM: Operate, расширение существующего кабинета 
         field('ends').value = row ? row.dataset.ends : today;
         field('note').value = row ? row.dataset.note : '';
         field('url').value = row ? row.dataset.url : '';
+        var color = row ? row.dataset.color : 'purple';
+        form.querySelectorAll('[data-event-color]').forEach(function (input) {
+            input.checked = input.value === color;
+        });
+        var tariffs = row && row.dataset.tariffs ? row.dataset.tariffs.split('|') : [];
+        form.querySelectorAll('[data-event-tariff]').forEach(function (input) {
+            input.checked = tariffs.indexOf(input.value) !== -1;
+        });
         field('title').focus();
     }
 
@@ -169,7 +202,12 @@ FORM: Operate, расширение существующего кабинета 
                 note: field('note').value,
                 starts_on: startsOn,
                 ends_on: endsOn,
-                meeting_url: field('url').value
+                meeting_url: field('url').value,
+                color: (form.querySelector('[data-event-color]:checked') || {}).value || 'purple',
+                tariffs: Array.prototype.map.call(
+                    form.querySelectorAll('[data-event-tariff]:checked'),
+                    function (input) { return input.value; }
+                )
             }).then(function () {
                 window.location.reload();
             }).catch(function (error) {

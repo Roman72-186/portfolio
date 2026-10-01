@@ -23,7 +23,14 @@ from sqlalchemy.orm import Session as DBSession
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header
 from app.models.audit_log import AuditLog
-from app.models.tracker import EVENT_KIND_LABELS, EVENT_KINDS
+from app.constants import TARIFF_DISPLAY, TARIFFS, TARIFFS_CURRENT
+from app.models.tracker import (
+    EVENT_COLOR_DEFAULT,
+    EVENT_COLOR_LABELS,
+    EVENT_COLORS,
+    EVENT_KIND_LABELS,
+    EVENT_KINDS,
+)
 from app.services.tags import get_all_tags
 from app.services.tracker import (
     assignee_usernames,
@@ -32,6 +39,10 @@ from app.services.tracker import (
     create_event,
     delete_digest,
     delete_event,
+    digest_calendar,
+    digest_heading,
+    event_tariffs_map,
+    format_event_dates,
     get_digest,
     get_digest_assignee_ids,
     get_digest_tag_ids,
@@ -42,11 +53,14 @@ from app.services.tracker import (
     resolve_assignees,
     set_digest_assignees,
     set_digest_tags,
+    set_event_tariffs,
     unpublish_digest,
     update_digest,
     update_event,
 )
 from app.services.video_topics import ambiguous_tag_names
+from app.services.program import WEEKDAY_LABELS
+from app.services.tz import today_msk
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/digest")
@@ -95,6 +109,27 @@ class EventPayload(BaseModel):
     ends_on: date
     meeting_url: str | None = Field(default=None, max_length=500)
     sort_order: int = Field(default=0, ge=0, le=1000)
+    # Цвет метки в календаре ученика и тарифы, которым событие показывается
+    # (созвон 30.09.2026). Пустые тарифы — всем.
+    color: str = Field(default=EVENT_COLOR_DEFAULT, max_length=16)
+    tariffs: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str) -> str:
+        value = (value or "").strip() or EVENT_COLOR_DEFAULT
+        if value not in EVENT_COLORS:
+            raise ValueError("Неизвестный цвет события")
+        return value
+
+    @field_validator("tariffs")
+    @classmethod
+    def validate_tariffs(cls, value: list[str]) -> list[str]:
+        cleaned = [t.strip().upper() for t in value if t and t.strip()]
+        unknown = [t for t in cleaned if t not in TARIFFS]
+        if unknown:
+            raise ValueError("Неизвестный тариф: " + ", ".join(unknown))
+        return list(dict.fromkeys(cleaned))
 
     @field_validator("kind")
     @classmethod
@@ -345,7 +380,19 @@ def digest_events_page(
             "events": events,
             "event_kinds": EVENT_KINDS,
             "event_kind_labels": EVENT_KIND_LABELS,
+            "event_colors": EVENT_COLORS,
+            "event_color_labels": EVENT_COLOR_LABELS,
+            "event_tariffs": event_tariffs_map(db, [event.id for event in events]),
+            "tariff_choices": TARIFFS_CURRENT,
+            "tariff_display": TARIFF_DISPLAY,
             "month_names": MONTH_NAMES,
+            # Календарь со всеми событиями — так команда видит сетку, пока
+            # заводит месяц, ещё до публикации (тот же партиал, что у ученика).
+            "digest_heading": digest_heading(digest),
+            "digest_events": events,
+            "digest_days": digest_calendar(digest, events, today=today_msk()),
+            "digest_weekday_labels": WEEKDAY_LABELS,
+            "format_event_dates": format_event_dates,
         },
     )
 
@@ -376,7 +423,9 @@ def create_digest_event(
         ends_on=payload.ends_on,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
+        color=payload.color,
     )
+    set_event_tariffs(db, event, payload.tariffs)
     db.commit()
     return JSONResponse({"ok": True, "event_id": event.id})
 
@@ -401,7 +450,9 @@ def update_digest_event(
         ends_on=payload.ends_on,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
+        color=payload.color,
     )
+    set_event_tariffs(db, event, payload.tariffs)
     db.commit()
     return JSONResponse({"ok": True})
 

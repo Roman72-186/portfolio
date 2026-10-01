@@ -63,6 +63,7 @@ from app.models.tracker import (
     ScheduleDigestAssignee,
     ScheduleDigestTag,
     ScheduleEvent,
+    ScheduleEventTariff,
     TrackerGoal,
     TrackerGoalAssignee,
     TrackerGoalTag,

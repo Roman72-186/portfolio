@@ -229,3 +229,74 @@ def test_event_meeting_url_must_be_http_or_https(client, db, user_factory, sessi
 
     assert response.status_code == 422
     assert db.query(ScheduleEvent).filter_by(digest_id=digest_id).count() == 0
+
+
+# ── Цвет и тарифы события (созвон 30.09.2026, владелец 01.10.2026) ──────────
+
+def _digest_id(client):
+    resp = client.post(
+        PAGE,
+        json={"title": "Октябрь", "year": 2026, "month": 10, "assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+    )
+    return resp.json()["digest_id"]
+
+
+def _event_body(**extra):
+    body = {
+        "kind": "lesson", "title": "Разбор работ", "note": "Подготовьте финал",
+        "starts_on": "2026-10-07", "ends_on": "2026-10-07", "meeting_url": None, "sort_order": 0,
+    }
+    body.update(extra)
+    return body
+
+
+def test_event_keeps_color_and_tariffs_and_page_shows_the_calendar(client, db, user_factory, session_factory):
+    from app.services.tracker import event_tariffs_map
+
+    _staff_client(client, user_factory, session_factory)
+    digest_id = _digest_id(client)
+
+    created = client.post(
+        f"{PAGE}/{digest_id}/events",
+        json=_event_body(color="sky", tariffs=["Я С ВАМИ", "УВЕРЕННЫЙ МАКСИМУМ"]),
+    )
+    assert created.status_code == 200
+    event_id = created.json()["event_id"]
+    event = db.get(ScheduleEvent, event_id)
+    assert event.color == "sky"
+    assert sorted(event_tariffs_map(db, [event_id])[event_id]) == ["УВЕРЕННЫЙ МАКСИМУМ", "Я С ВАМИ"]
+
+    page = client.get(f"{PAGE}/{digest_id}/events")
+    assert page.status_code == 200
+    assert 'data-color="sky"' in page.text
+    assert "Календарь глазами ученика" in page.text
+    assert 'class="prg-grid dgst-grid"' in page.text
+    assert "dgst-color--sky" in page.text
+
+    # Снятые галочки — событие снова «всем тарифам».
+    updated = client.post(f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(color="orange", tariffs=[]))
+    assert updated.status_code == 200
+    db.refresh(event)
+    assert event.color == "orange"
+    assert event_tariffs_map(db, [event_id]) == {}
+
+
+def test_event_without_color_gets_brand_purple(client, db, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+    digest_id = _digest_id(client)
+
+    created = client.post(f"{PAGE}/{digest_id}/events", json=_event_body())
+
+    assert created.status_code == 200
+    assert db.get(ScheduleEvent, created.json()["event_id"]).color == "purple"
+
+
+def test_event_rejects_unknown_color_and_unknown_tariff(client, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+    digest_id = _digest_id(client)
+
+    bad_color = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(color="#ff0000"))
+    bad_tariff = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(tariffs=["ПРЕМИУМ"]))
+
+    assert bad_color.status_code == 422
+    assert bad_tariff.status_code == 422

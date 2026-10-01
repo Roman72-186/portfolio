@@ -52,6 +52,7 @@ from app.models.tracker import (
 )
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import (
+    WEEKDAY_LABELS,
     day_bounds,
     msk_date,
     week_start,
@@ -102,12 +103,15 @@ from app.services.task_blocks import (
     save_response as save_task_block_response,
 )
 from app.services.tracker import (
+    STUDENT_ROLE_RANK,
     accessible_task_entries,
     accessible_task_ids,
     active_digest_for_student,
     active_goal_for_student,
+    digest_calendar,
     digest_heading,
     effective_week_start,
+    events_for_tariff,
     format_event_dates,
     list_events,
     mark_task_started,
@@ -149,6 +153,11 @@ def cabinet_tracker(
     # отменяет «первый блок на экране» от 22.08).
     digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)
     digest_events = list_events(db, digest.id) if digest is not None else []
+    # Событие с тарифами видит только ученик этих тарифов (созвон 30.09.2026,
+    # владелец 01.10.2026). Сотрудник, открывший трекер под собой, видит все —
+    # тарифа у него нет, а проверять расписание ему нужно целиком.
+    if user.get("role_rank", 0) <= STUDENT_ROLE_RANK:
+        digest_events = events_for_tariff(db, digest_events, user.get("tariff"))
     goal = active_goal_for_student(db, user["user_id"], today=today)
 
     overdue = [e for e in entries if e["status"] == "overdue"]
@@ -181,10 +190,15 @@ def cabinet_tracker(
         "learning_task_ids": learning_task_ids,
         "digest": digest,
         "digest_events": digest_events,
-        # Заголовок «Сентябрь · тема месяца». Календарной сетки у ученика нет
-        # (решение владельца 17.09.2026: «календарь не нужен, просто список»),
-        # дайджест лежит на своей вкладке списком событий.
+        # Заголовок «Сентябрь · тема месяца» и сетка месяца с цветными метками
+        # над списком (вернулась 01.10.2026, отменяет «календарь не нужен» от
+        # 17.09). Сетку строит общая month_days, та же, что у преподавателя.
         "digest_heading": digest_heading(digest) if digest is not None else None,
+        "digest_days": (
+            digest_calendar(digest, digest_events, today=today)
+            if digest is not None else []
+        ),
+        "digest_weekday_labels": WEEKDAY_LABELS,
         "format_event_dates": format_event_dates,
         "goal": goal,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
