@@ -129,3 +129,28 @@ def test_hint_trigger_catches_a_finger_44px_wide():
     p = re.search(r"\.ios-learning \.lrn-hero p\s*\{([^}]*)\}", tracker).group(1)
     z = lambda rule: int(re.search(r"z-index:\s*(\d+)", rule).group(1))
     assert z(h1) > z(p)
+
+
+def test_subject_colors_are_readable_on_light_card():
+    """Находка 10: цвета предметов на белой карточке давали 3.65 (`#0A84FF`
+    «Рисунок», `#FF2D55` «Композиция»). Оттенок — решение владельца 26.08.2026,
+    меняется только светлота: в светлой теме смесь 86 % цвета с чёрным
+    (`color-mix`), в тёмной — исходный цвет (там и так 4.66)."""
+    tracker = TRACKER_CSS.read_text(encoding="utf-8")
+    hue = {
+        "drawing": re.search(r"--subj-drawing-hue:\s*(#[0-9A-Fa-f]{6})", tracker).group(1),
+        "composition": re.search(r"--ios-pink:\s*(#[0-9A-Fa-f]{6})", tracker).group(1),
+    }
+    assert hue == {"drawing": "#0A84FF", "composition": "#FF2D55"}, "оттенки предметов не меняем"
+    light = re.search(r"\.ios-learning\s*\{([^}]*)\}", tracker).group(1)
+    assert "--subj-drawing: color-mix(in srgb, var(--subj-drawing-hue) 86%, black);" in light
+    assert "--subj-composition: color-mix(in srgb, var(--ios-pink) 86%, black);" in light
+    dark = re.search(r':root\[data-theme="dark"\] \.ios-learning\s*\{([^}]*)\}', tracker).group(1)
+    assert "--subj-drawing: var(--subj-drawing-hue);" in dark
+    assert "--subj-composition: var(--ios-pink);" in dark
+    for value in hue.values():
+        mixed = "#" + "".join(f"{round(int(value[i:i + 2], 16) * 0.86):02X}" for i in (1, 3, 5))
+        assert _contrast(mixed, "#FFFFFF") >= 4.5, f"{value} → {mixed}: {_contrast(mixed, '#FFFFFF'):.2f}"
+    for subject, token in (("Рисунок", "--subj-drawing"), ("Композиция", "--subj-composition")):
+        rule = re.search(r'\.ios-learning \.lrn-subject-btn\[data-subject="' + subject + r'"\]\.active\s*\{([^}]*)\}', tracker).group(1)
+        assert f"color: var({token});" in rule

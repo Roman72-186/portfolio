@@ -541,10 +541,23 @@
        цвета, готового HEX в коде не нашлось, взят системный аналог того же
        семейства, что --ios-blue/--ios-red/--ios-green). */
     --ios-pink: #FF2D55;
+    /* Цвет предмета «Рисунок» — жёстко blue, не через --ios-blue, который с
+       28.08.2026 перекрашен в фиолетовый под общий акцент. */
+    --subj-drawing-hue: #0A84FF;
+    /* Цвета предметов текстом: на белой карточке исходные давали 3.65 (аудит
+       АОП 30.09.2026). Оттенок — решение владельца, поэтому меняется только
+       светлота: 86 % цвета с чёрным — 4.73 / 4.77. В тёмной теме исходные
+       цвета (4.66), см. `:root[data-theme="dark"] .ios-learning` ниже. */
+    --subj-drawing: color-mix(in srgb, var(--subj-drawing-hue) 86%, black);
+    --subj-composition: color-mix(in srgb, var(--ios-pink) 86%, black);
     position: relative;
     isolation: isolate;
     font-family: var(--ios-font);
     color: var(--ios-label);
+}
+:root[data-theme="dark"] .ios-learning {
+    --subj-drawing: var(--subj-drawing-hue);
+    --subj-composition: var(--ios-pink);
 }
 /* Тот же приём, что у .ios-tracker: плоский iOS-фон вместо обоев Spark,
    не выходит за пределы экрана благодаря isolation:isolate. */
@@ -624,13 +637,12 @@
 }
 .ios-learning .lrn-subject-btn[data-subject="Рисунок"].active {
     /* Цвет предмета «Рисунок» (см. комментарий у .lrn-subject-btn выше по
-       файлу), не общий акцент экрана — жёстко blue, не через --ios-blue,
-       который с 28.08.2026 перекрашен в фиолетовый под общий акцент. */
-    background: var(--ios-card-bg); color: #0A84FF;
+       файлу), не общий акцент экрана — токены у `.ios-learning`. */
+    background: var(--ios-card-bg); color: var(--subj-drawing);
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 .ios-learning .lrn-subject-btn[data-subject="Композиция"].active {
-    background: var(--ios-card-bg); color: var(--ios-pink);
+    background: var(--ios-card-bg); color: var(--subj-composition);
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 
