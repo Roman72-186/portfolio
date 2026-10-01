@@ -158,13 +158,13 @@
                 {# Имя задания — только над первым его блоком (владелец
                    16.09.2026): раньше его подставляло каждому блоку без
                    своего заголовка, и два видео подряд выходили подписаны
-                   одинаково. `<h3>` именно опускается, а не рендерится
+                   одинаково. `<h2>` именно опускается, а не рендерится
                    пустым, — `.lrn-step-head` flex column с gap, пустой узел
                    оставил бы дырку; тот же приём, что у `.trk-meta` выше. #}
                 {% if step.block and step.block.title %}
-                <h3 class="lrn-step-title">{{ step.block.title }}</h3>
+                <h2 class="lrn-step-title">{{ step.block.title }}</h2>
                 {% elif step.first_in_task %}
-                <h3 class="lrn-step-title">{{ step.task.title }}</h3>
+                <h2 class="lrn-step-title">{{ step.task.title }}</h2>
                 {% endif %}
                 {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description | rich_text | safe }}</p>{% endif %}
                 {% if step.entry.due_label %}

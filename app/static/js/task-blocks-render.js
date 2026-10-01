@@ -14,7 +14,7 @@ scope)` и свойством `answered` (одна попытка: после о
 
 `titlesOutside` — подпись блока печатает сам экран, внутри блока её не нужно
 (владелец 16.09.2026). Флаг передаёт только лента цикла: `cabinet_learning.html`
-рисует заголовок шага `<h3 class="lrn-step-title">`, и та же строка внутри блока
+рисует заголовок шага `<h2 class="lrn-step-title">`, и та же строка внутри блока
 шла второй подряд. Четыре остальных потребителя (панель «Материалы задания» в
 трекере и в самой ленте у задания без блоков, предпросмотр «глазами ученика» в
 конструкторе дня и в элементах цикла) флаг не передают — там внутренний
@@ -66,7 +66,8 @@ scope)` и свойством `answered` (одна попытка: после о
             wrap.setAttribute('aria-label', 'Результат диагностики');
             wrap.appendChild(el('p', 'lrn-blk-score', 'Твоя комбинация: ' + profile.combination));
             wrap.appendChild(el('p', 'lrn-card-note', 'Твой результат диагностики'));
-            wrap.appendChild(el('h4', 'lrn-blk-title', profile.title));
+            // h3: в ленте блок лежит под заголовком шага `<h2>` (аудит 30.09.2026).
+            wrap.appendChild(el('h3', 'lrn-blk-title', profile.title));
             if (profile.traits) wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
             // formula/architects поддерживают ручную стилизацию преподавателя
             // (жирный/курсив/список/ссылка) — сервер уже прогнал их через

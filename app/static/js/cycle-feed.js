@@ -49,7 +49,7 @@
 
     function renderTask(taskId, data) {
         // `titlesOutside` — подпись шага печатает сервер
-        // (`cabinet_learning.html`, `<h3 class="lrn-step-title">`), поэтому
+        // (`cabinet_learning.html`, `<h2 class="lrn-step-title">`), поэтому
         // внутри блока она не нужна: до 16.09.2026 ученик читал её дважды
         // подряд. Флаг только здесь — у панели «Материалы задания»
         // (`task_blocks.html`) и у обоих предпросмотров преподавателя

@@ -768,6 +768,20 @@ def test_feed_lets_the_page_print_the_block_caption(auth_client, db, served):
     assert "Оцени себя" in resp.text
 
 
+def test_step_titles_are_h2_right_under_the_page_h1(auth_client, db):
+    """Находка 12 аудита 30.09.2026: после H1 шапки цикла сразу шли H3 шагов —
+    читалка экрана теряла уровень. Шаг — `<h2 class="lrn-step-title">`, вид
+    держит класс, а не тег."""
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    _block(db, task, title="Оцени себя")
+
+    resp = client.get("/cabinet/learning")
+
+    assert '<h2 class="lrn-step-title">Оцени себя</h2>' in resp.text
+    assert '<h3 class="lrn-step-title">' not in resp.text
+
+
 def test_tracker_does_not_embed_task_blocks(auth_client, db):
     """Трекер показывает превью и переход, содержимое остаётся в ленте."""
     client, user = auth_client
