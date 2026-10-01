@@ -1,0 +1,57 @@
+{# «Завершить ОС» и оценка ученика — ОС, фаза 2 (созвон 30.09.2026, правила
+   подтверждены владельцем 01.10.2026, О10–О26, `docs/invariants/feedback.md`).
+   Один блок на оба диалога: сдача в задании (`task_block_feedback_detail.html`)
+   и пробник (`cabinet_feedback_detail.html`). Данные —
+   `services/feedback_rating.py::rating_panel`, поведение — `feedback-rating.js`.
+   Только классы `base.css`: экраны грузят разные скины. #}
+{% set p = rating_panel %}
+{% if p.can_close %}
+<section class="card" data-feedback-close data-url="{{ p.close_url }}" data-csrf="{{ csrf_token(request) }}">
+    <h2 class="section-label">Завершить обратную связь</h2>
+    <p class="card-desc">Когда всё сказано, нажми «Завершить ОС». Писать в диалог больше не сможете ни ты, ни ученик, а ученику придёт просьба оценить обратную связь.</p>
+    <button type="button" class="btn-outline">Завершить ОС</button>
+    <p class="card-desc" data-feedback-close-status role="status" aria-live="polite"></p>
+</section>
+{% elif p.closed %}
+<section class="card">
+    <h2 class="section-label">{{ 'Оценка ученика' if p.is_staff else 'Оценка обратной связи' }}</h2>
+    {% if p.rating %}
+    <p><strong>{{ p.rating.score }} из 5</strong>{% if not p.is_staff %} – твоя оценка{% endif %}</p>
+    <p>{{ p.rating.comment }}</p>
+    {% if p.rating.images %}
+    <div class="photo-grid">
+        {% for url in p.rating.images %}
+        <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть скриншот">
+            <img src="{{ url }}" alt="Скриншот к оценке" loading="lazy">
+        </button>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% elif p.is_staff %}
+    <p class="card-desc">Обратная связь завершена. Ученик её ещё не оценил.</p>
+    {% else %}
+    <p class="card-desc">Преподаватель завершил обратную связь. Поставь оценку от 1 до 5 и напиши, что помогло, а что осталось непонятным. Оценку увидят преподаватель и команда школы, после отправки её не изменить.</p>
+    {# novalidate: пустой комментарий ловит `feedback-rating.js` своим текстом,
+       а не всплывашкой браузера на языке телефона. #}
+    <form data-rating-form action="{{ p.rating_url }}" method="post" enctype="multipart/form-data" novalidate
+          data-max-screenshots="{{ p.max_screenshots }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <p class="form-label" id="rating-score-label">Оценка</p>
+        <div class="radio-group" role="radiogroup" aria-labelledby="rating-score-label">
+            {% for value in range(1, 6) %}
+            <label class="radio-btn"><input type="radio" name="score" value="{{ value }}" required>{{ value }}</label>
+            {% endfor %}
+        </div>
+        <label class="form-label" for="rating-comment">Комментарий</label>
+        <textarea id="rating-comment" class="field-input" name="comment" rows="4" required maxlength="{{ p.comment_max }}"></textarea>
+        <div class="file-pick">
+            <input id="rating-screenshots" class="file-pick-input" type="file" name="screenshots" accept="image/*" multiple>
+            <label class="btn-outline file-pick-btn" for="rating-screenshots">Добавить скриншоты</label>
+            <p class="file-pick-names" data-rating-files>До {{ p.max_screenshots }} скриншотов, по желанию</p>
+        </div>
+        <button type="submit" class="btn-blue">Отправить оценку</button>
+        <p class="card-desc" data-rating-status role="status" aria-live="polite"></p>
+    </form>
+    {% endif %}
+</section>
+{% endif %}

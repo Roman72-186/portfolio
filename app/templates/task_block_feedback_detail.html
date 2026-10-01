@@ -104,7 +104,8 @@
         {% if viewer_role != 'student' %}
         <p class="card-desc hw-hint" data-reply-state>{{ reply.staff_text }}</p>
         {% endif %}
-        {% if viewer_role != 'student' or reply.allowed %}
+        {# «Завершить ОС» закрывает диалог и сотруднику (ОС, фаза 2, О25). #}
+        {% if (viewer_role != 'student' and not rating_panel.closed) or reply.allowed %}
         {% if viewer_role == 'student' %}<p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>{% endif %}
         <form class="hw-async-form hw-form" method="post"
               action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}"
@@ -124,15 +125,18 @@
             <button type="submit" class="btn-blue hw-submit">Отправить</button>
             <p class="prg-message" aria-live="polite"></p>
         </form>
-        {% else %}
+        {% elif viewer_role == 'student' %}
         <p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>
         {% endif %}
     </section>
+
+    {% include "partials/feedback_rating.html" %}
 </div>
 
 {% include "partials/lightbox.html" %}
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script src="/static/js/media-recorder-field.js?v=8"></script>
+<script src="/static/js/feedback-rating.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};

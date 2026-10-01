@@ -31,6 +31,15 @@ class TaskBlockFeedback(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    # «Завершить ОС» (ОС, фаза 2; владелец 01.10.2026, О25): кнопка
+    # сотрудника, после неё диалог закрыт для обеих сторон, а ученику
+    # приходит одно уведомление «оцените ОС». Кто нажал — того и оценивают.
+    feedback_closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    feedback_closed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     messages: Mapped[list["TaskBlockFeedbackMessage"]] = relationship(
         "TaskBlockFeedbackMessage", back_populates="feedback", cascade="all, delete-orphan",

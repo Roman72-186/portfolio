@@ -1372,6 +1372,7 @@ def superadmin_activity(
         get_cycle_duration_stats,
         get_diagnostic_stats,
         get_feedback_curator_stats,
+        get_feedback_rating_by_task,
         get_login_link_stats,
         get_login_stats,
         get_mock_attempt_stats,
@@ -1396,6 +1397,8 @@ def superadmin_activity(
         "logins": get_login_stats(db),
         "review_speed": get_curator_review_speed(db),
         "feedback_curators": get_feedback_curator_stats(db),
+        # Средняя оценка ОС куратора по каждому заданию цикла (О19, 01.10.2026).
+        "feedback_ratings": get_feedback_rating_by_task(db),
         "notifications": get_notification_reaction(db),
         "revisions": get_revision_stats(db),
         "onboarding": get_onboarding_funnel(db),

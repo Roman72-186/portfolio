@@ -19,6 +19,7 @@ from app.dependencies import (
     require_scorer,
     require_student,
 )
+from app.models.feedback_rating import DIALOG_TASK_BLOCK
 from app.models.notification import Notification
 from app.models.task_block import TaskBlock, TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback
@@ -27,6 +28,17 @@ from app.models.user import User
 from app.services.feedback import (  # общие проверки вложений, не завязаны на Work
     read_audio_upload,
     read_video_upload,
+)
+from app.services.feedback_rating import (
+    RatingError,
+    close_dialog,
+    create_rating,
+    feedback_type_for_block,
+    is_closed,
+    rate_request_notification,
+    read_rating_form,
+    rating_panel,
+    send_rating_to_care_topic,
 )
 from app.services.notify import notify
 from app.services.rbac import can_score
@@ -124,6 +136,12 @@ def _render(
         "messages": serialize_messages(messages, names),
         # Может ли ученик ответить — одно правило на роут и экран (01.10.2026).
         "reply": student_can_reply(db, submission, feedback),
+        # ОС, фаза 2: «Завершить ОС» и оценка ученика (О10–О26).
+        "rating_panel": rating_panel(
+            db, dialog_kind=DIALOG_TASK_BLOCK, dialog=feedback, viewer_role=viewer_role,
+            close_url=f"/cabinet/staff/task-block-submissions/{submission.id}/close-feedback",
+            rating_url=f"/cabinet/task-block-submissions/{submission.id}/rating",
+        ),
         "back_url": back_url,
     })
 
@@ -261,6 +279,12 @@ async def staff_message(
     feedback, _ = get_or_create_feedback(
         db, submission_id=submission.id, initiator_id=user["user_id"],
     )
+    if is_closed(feedback):
+        # «Завершить ОС» закрывает диалог для обеих сторон (О25).
+        return JSONResponse(
+            {"ok": False, "error": "Обратная связь завершена – диалог закрыт."},
+            status_code=403,
+        )
     return await _post_message(
         submission=submission, feedback=feedback, db=db, user=user, text=text,
         photo=photo, video_link=video_link, background_tasks=background_tasks,
@@ -299,3 +323,77 @@ async def student_message(
         photo=photo, video_link=video_link, background_tasks=background_tasks,
         video=video, audio=audio,
     )
+
+
+def _student_link(submission_id: int) -> str:
+    return f"/cabinet/task-block-submissions/{submission_id}/feedback"
+
+
+@router.post("/staff/task-block-submissions/{submission_id}/close-feedback", response_class=JSONResponse)
+def close_feedback(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Завершить ОС» (ОС, фаза 2, О25): диалог закрыт для обеих сторон,
+    ученику одно уведомление «оцени ОС» (О26). Повтор ничего не делает."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    _block, task = _context(db, submission)
+    # Блокировка строки: два одновременных нажатия иначе прислали бы
+    # ученику два уведомления.
+    feedback = db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).with_for_update().first()
+    try:
+        closed_now = close_dialog(feedback, user["user_id"])
+    except RatingError as exc:
+        return JSONResponse({"ok": False, "error": exc.message}, status_code=exc.status_code)
+    notification = None
+    if closed_now:
+        notification = rate_request_notification(
+            db, student_id=submission.user_id, subject=f"«{task.title}»",
+            link_path=_student_link(submission.id), task_block_submission_id=submission.id,
+        )
+    db.commit()
+    if notification is not None:
+        background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True, "closed_now": closed_now})
+
+
+@router.post("/task-block-submissions/{submission_id}/rating", response_class=JSONResponse)
+async def student_rating(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    score: str = Form(default=""),
+    comment: str = Form(default=""),
+    screenshots: list[UploadFile] | None = File(default=None),
+):
+    """Оценка ОС учеником: 1–5, комментарий обязателен, до трёх скриншотов,
+    одна на диалог и без правок (О10–О14, О24). После коммита — сообщение в
+    служебный топик (О17, О18)."""
+    submission = _submission_or_404(db, submission_id)
+    _student_guard(user, submission)
+    block, task = _context(db, submission)
+    feedback = _feedback(db, submission.id)
+    try:
+        value, text, images = await read_rating_form(score, comment, screenshots)
+        rating = await create_rating(
+            db, dialog_kind=DIALOG_TASK_BLOCK, dialog=feedback, student_id=submission.user_id,
+            feedback_type=feedback_type_for_block(block.block_type),
+            task_id=task.id, task_title=task.title,
+            score=value, comment=text, screenshots=images,
+        )
+    except RatingError as exc:
+        return JSONResponse({"ok": False, "error": exc.message}, status_code=exc.status_code)
+    db.commit()
+    background_tasks.add_task(
+        send_rating_to_care_topic, rating.id,
+        f"/cabinet/staff/task-block-submissions/{submission.id}/feedback",
+    )
+    return JSONResponse({"ok": True})

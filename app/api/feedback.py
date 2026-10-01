@@ -17,6 +17,11 @@ Staff (куратор / админ / суперадмин):
   GET  /cabinet/superadmin/feedback/{cycle_id}  — диалог цикла (суперадмин)
   POST /cabinet/feedback/{cycle_id}/close       — закрыть цикл вручную после ОС
                                                    (ГП/SA, требует выставленного балла)
+  POST /cabinet/feedback/{work_id}/close-feedback — «Завершить ОС» (ОС, фаза 2):
+                                                   диалог закрыт, ученику «оцени ОС»
+
+Студент:
+  POST /cabinet/feedback/{work_id}/rating       — оценка ОС 1–5 после «Завершить ОС»
 
 Балл (итоговый и промежуточный) и закрытие цикла — только ГП и выше
 (`rbac.can_score`, владелец 30.09.2026). Куратор даёт обратную связь и видит балл.
@@ -37,10 +42,22 @@ from app.cache import invalidate_unread
 from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
+    require_csrf_header,
     require_curator,
     require_scorer,
     require_superadmin,
     require_csrf,
+)
+from app.models.feedback_rating import DIALOG_MOCK_EXAM, FEEDBACK_MOCK
+from app.services.feedback_rating import (
+    RatingError,
+    close_dialog,
+    create_rating,
+    is_closed,
+    rate_request_notification,
+    rating_panel,
+    read_rating_form,
+    send_rating_to_care_topic,
 )
 from app.services.notify import notify
 from app.services.rbac import can_score
@@ -108,7 +125,7 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
     if not finals:
         return {
             "attempts": [], "feedbacks": {}, "ticket": ticket_payload,
-            "student_upload_open": False,
+            "student_upload_open": False, "target_feedback": None,
         }
 
     final_ids = [w.id for w in finals]
@@ -194,6 +211,8 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
         "attempts": attempts,
         "thread": thread,
         "target_work_id": target.id,
+        # Диалог, который закрывает «Завершить ОС» и оценивает ученик (фаза 2).
+        "target_feedback": feedbacks_by_work.get(target.id),
         "has_staff_message": has_staff_message,
         "ticket": ticket_payload,
         "student_upload_open": any(
@@ -201,6 +220,20 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
             for w in finals
         ),
     }
+
+
+def _rating_panel(db: DBSession, payload: dict, viewer_role: str) -> dict | None:
+    """Блок «Завершить ОС / оценка» (ОС, фаза 2) — тот же партиал, что у
+    диалога сдачи в задании (`partials/feedback_rating.html`)."""
+    work_id = payload.get("target_work_id")
+    if work_id is None:
+        return None
+    return rating_panel(
+        db, dialog_kind=DIALOG_MOCK_EXAM, dialog=payload.get("target_feedback"),
+        viewer_role=viewer_role,
+        close_url=f"/cabinet/feedback/{work_id}/close-feedback",
+        rating_url=f"/cabinet/feedback/{work_id}/rating",
+    )
 
 
 # ── Студент ──────────────────────────────────────────────────────────────────
@@ -264,6 +297,7 @@ def student_feedback_detail(
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": "student",
+        "rating_panel": _rating_panel(db, payload, "student"),
         "student": {"id": user["user_id"], "name": user.get("name", "")},
         "back_url": "/cabinet/feedback/",
         "back_label": "К списку",
@@ -345,6 +379,9 @@ async def post_dialog_message(
         fb, _created = fb_service.get_or_create_feedback(
             db, work_id=work_id, initiator_id=user["user_id"]
         )
+        # «Завершить ОС» закрывает диалог и сотруднику (ОС, фаза 2, О25).
+        if is_closed(fb):
+            raise HTTPException(status_code=403, detail="Обратная связь завершена – диалог закрыт.")
         recipient_id = student.id
 
     # ── Сбор payload
@@ -539,6 +576,7 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
+        "rating_panel": _rating_panel(db, payload, viewer_role),
         "can_score": can_score(user["role_rank"]),
         "student": {"id": student.id, "name": student.name},
         "back_url": f"/cabinet/staff/students-review/{student.id}",
@@ -607,6 +645,87 @@ def close_cycle_route(
     if not close_cycle(db, cycle):
         raise HTTPException(status_code=409, detail="Сначала нужно выставить балл финальной работе")
     db.commit()
+    return JSONResponse({"ok": True})
+
+
+def _mock_final_or_404(db: DBSession, work_id: int) -> tuple[Work, ExamCycle]:
+    work = db.get(Work, work_id)
+    if (
+        work is None or not work.is_final or work.work_type != WORK_TYPE_MOCK_EXAM
+        or work.cycle_id is None
+    ):
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    cycle = db.get(ExamCycle, work.cycle_id)
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    return work, cycle
+
+
+@router.post("/cabinet/feedback/{work_id}/close-feedback")
+def close_mock_feedback(
+    work_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Завершить ОС» по пробнику (ОС, фаза 2, О25): то же правило, что у
+    сдачи в задании. Закрытие цикла ГП (`close_cycle_route`) — отдельный шаг."""
+    work, cycle = _mock_final_or_404(db, work_id)
+    get_student_for_staff_access(
+        db, user, work.user_id, exclude_deleted=True,
+        not_found_detail="Студент не найден", forbidden_detail="Это не ваш студент",
+    )
+    # Блокировка строки: два одновременных нажатия иначе прислали бы два
+    # уведомления.
+    fb = db.query(Feedback).filter(Feedback.work_id == work.id).with_for_update().first()
+    try:
+        closed_now = close_dialog(fb, user["user_id"])
+    except RatingError as exc:
+        return JSONResponse({"ok": False, "error": exc.message}, status_code=exc.status_code)
+    notification = None
+    if closed_now:
+        notification = rate_request_notification(
+            db, student_id=work.user_id, subject=f"пробник «{cycle.subject}»",
+            link_path=f"/cabinet/feedback/{cycle.id}", work_id=work.id,
+        )
+    db.commit()
+    if notification is not None:
+        background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True, "closed_now": closed_now})
+
+
+@router.post("/cabinet/feedback/{work_id}/rating")
+async def rate_mock_feedback(
+    work_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    score: str = Form(default=""),
+    comment: str = Form(default=""),
+    screenshots: list[UploadFile] | None = File(default=None),
+):
+    """Оценка ОС по пробнику учеником (ОС, фаза 2, О10–О14, О24)."""
+    if user["role_rank"] != 1:
+        raise HTTPException(status_code=403, detail="Обратную связь оценивает ученик")
+    work, cycle = _mock_final_or_404(db, work_id)
+    if work.user_id != user["user_id"]:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    fb = db.query(Feedback).filter(Feedback.work_id == work.id).first()
+    try:
+        value, text, images = await read_rating_form(score, comment, screenshots)
+        rating = await create_rating(
+            db, dialog_kind=DIALOG_MOCK_EXAM, dialog=fb, student_id=work.user_id,
+            feedback_type=FEEDBACK_MOCK, task_id=None, task_title=cycle.subject,
+            score=value, comment=text, screenshots=images,
+        )
+    except RatingError as exc:
+        return JSONResponse({"ok": False, "error": exc.message}, status_code=exc.status_code)
+    db.commit()
+    background_tasks.add_task(
+        send_rating_to_care_topic, rating.id, f"/cabinet/curator/feedback/{cycle.id}",
+    )
     return JSONResponse({"ok": True})
 
 

@@ -22,15 +22,17 @@ from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage
+from app.models.feedback_rating import FEEDBACK_TYPE_LABELS, FeedbackRating
 from app.models.homework_feedback import HomeworkFeedbackMessage
 from app.models.homework_submission import HomeworkSubmission, SUBMISSION_STATUSES
+from app.models.learning_topic import LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.login_token import LoginToken
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.task_block import TaskBlockAnswer, TaskBlockState, TaskBlockSubmission
-from app.models.task_block_feedback import TaskBlockFeedbackMessage
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.models.video_progress import VideoProgress
@@ -379,51 +381,87 @@ def get_cycle_duration_stats(db: DBSession) -> dict:
     }
 
 
-def get_feedback_curator_stats(db: DBSession) -> list[dict]:
-    """ОС-метрики по кураторам: диалогов, сообщений на диалог, скорость первой ОС.
+def _staff_names(db: DBSession, ids) -> dict[int, tuple[str, int]]:
+    """Имя и ранг сотрудников по id — подпись строки и вкладка роли."""
+    if not ids:
+        return {}
+    return {
+        uid: (_student_name(fn, ln, nm), rank or 0)
+        for uid, fn, ln, nm, rank in (
+            db.query(User.id, User.first_name, User.last_name, User.name, Role.rank)
+            .outerjoin(Role, User.role_id == Role.id)
+            .filter(User.id.in_(list(ids)))
+            .all()
+        )
+    }
 
-    Скорость первой ОС = от загрузки работы (Work.created_at) до первого
-    staff-сообщения в диалоге. Данные исторические.
+
+def get_feedback_curator_stats(db: DBSession) -> list[dict]:
+    """ОС по авторам: сколько раз дал ОС, сообщений на диалог, время до первой
+    ОС и средняя оценка ОС учениками (ОС, фаза 2; владелец 01.10.2026, О19, О21).
+
+    Диалогов два вида: пробник (`Feedback`, отсчёт от загрузки финальной
+    работы) и сдача в блоке задания (`TaskBlockFeedback`, от `submitted_at`).
+    «Время до первой ОС» — до первого сообщения сотрудника: балл с 30.09.2026
+    ставит только ГП, и прежняя «скорость проверки» у кураторов перестала
+    пополняться. Диалог заводит первое сообщение сотрудника, поэтому «дал ОС»
+    — это число диалогов автора. Средняя оценка — по тому, кто нажал
+    «Завершить ОС» (`FeedbackRating.curator_id`).
     """
-    fb_rows = (
+    dialogs: list[tuple[str, int, int, datetime | None]] = []
+    for fb_id, curator_id, started in (
         db.query(Feedback.id, Feedback.curator_id, Work.created_at)
         .join(Work, Feedback.work_id == Work.id)
         .filter(Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
         .all()
-    )
-    if not fb_rows:
-        return []
-    msgs_by_fb: dict[int, list] = defaultdict(list)
-    for m in (
-        db.query(FeedbackMessage.feedback_id, FeedbackMessage.sender_role, FeedbackMessage.created_at)
-        .order_by(FeedbackMessage.created_at, FeedbackMessage.id)
+    ):
+        dialogs.append(("mock", fb_id, curator_id, started))
+    for fb_id, curator_id, started in (
+        db.query(TaskBlockFeedback.id, TaskBlockFeedback.curator_id, TaskBlockSubmission.submitted_at)
+        .join(TaskBlockSubmission, TaskBlockFeedback.submission_id == TaskBlockSubmission.id)
+        .filter(TaskBlockSubmission.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
         .all()
     ):
-        msgs_by_fb[m.feedback_id].append(m)
+        dialogs.append(("block", fb_id, curator_id, started))
 
-    by_curator: dict[int, dict] = defaultdict(lambda: {"dialogs": 0, "messages": 0, "first_pairs": []})
-    for fb_id, curator_id, work_created in fb_rows:
+    msgs: dict[tuple[str, int], list] = defaultdict(list)
+    for kind, model in (("mock", FeedbackMessage), ("block", TaskBlockFeedbackMessage)):
+        for m in (
+            db.query(model.feedback_id, model.sender_role, model.created_at)
+            .order_by(model.created_at, model.id)
+            .all()
+        ):
+            msgs[(kind, m.feedback_id)].append(m)
+
+    by_curator: dict[int, dict] = defaultdict(
+        lambda: {"dialogs": 0, "messages": 0, "first_pairs": [], "scores": []}
+    )
+    for kind, fb_id, curator_id, started in dialogs:
         agg = by_curator[curator_id]
         agg["dialogs"] += 1
-        msgs = msgs_by_fb.get(fb_id, [])
-        agg["messages"] += len(msgs)
-        first_staff = next((m for m in msgs if m.sender_role != ROLE_STUDENT), None)
+        dialog_msgs = msgs.get((kind, fb_id), [])
+        agg["messages"] += len(dialog_msgs)
+        first_staff = next((m for m in dialog_msgs if m.sender_role != ROLE_STUDENT), None)
         if first_staff is not None:
-            agg["first_pairs"].append((work_created, first_staff.created_at))
-
-    names: dict[int, tuple[str, int]] = {}
-    for uid, fn, ln, nm, rank in (
-        db.query(User.id, User.first_name, User.last_name, User.name, Role.rank)
-        .outerjoin(Role, User.role_id == Role.id)
-        .filter(User.id.in_(by_curator.keys()))
+            agg["first_pairs"].append((started, first_staff.created_at))
+    for curator_id, score in (
+        db.query(FeedbackRating.curator_id, FeedbackRating.score)
+        .filter(
+            FeedbackRating.curator_id.isnot(None),
+            FeedbackRating.student_id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .all()
     ):
-        names[uid] = (_student_name(fn, ln, nm), rank or 0)
+        by_curator[curator_id]["scores"].append(score)
+    if not by_curator:
+        return []
 
+    names = _staff_names(db, by_curator.keys())
     result = []
     for cid, agg in by_curator.items():
         first_sec = _avg_seconds(agg["first_pairs"])
         name, rank = names.get(cid, (f"id={cid}", 0))
+        scores = agg["scores"]
         result.append({
             "curator_id": cid,
             "curator_name": name,
@@ -433,8 +471,76 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
             "avg_messages": round(agg["messages"] / agg["dialogs"], 1) if agg["dialogs"] else None,
             "avg_first_response_seconds": first_sec,
             "avg_first_response_text": fmt_duration(first_sec),
+            "ratings": len(scores),
+            "avg_rating": round(sum(scores) / len(scores), 1) if scores else None,
         })
     result.sort(key=lambda r: r["dialogs"], reverse=True)
+    return result
+
+
+def get_feedback_rating_by_task(db: DBSession) -> list[dict]:
+    """Средняя оценка ОС куратора по каждому заданию цикла (О19): «ОС по
+    домашке недели 3 октября» — отдельная строка с числом оценок. Пробник —
+    строкой по предмету. Подпись задания хранится в оценке на момент оценки,
+    неделя или цикл подтягивается по живому заданию."""
+    rows = (
+        db.query(
+            FeedbackRating.curator_id, FeedbackRating.feedback_type,
+            FeedbackRating.task_id, FeedbackRating.task_title, FeedbackRating.score,
+            FeedbackRating.created_at,
+        )
+        .filter(
+            FeedbackRating.curator_id.isnot(None),
+            FeedbackRating.student_id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
+        .all()
+    )
+    if not rows:
+        return []
+    task_ids = {r.task_id for r in rows if r.task_id is not None}
+    topics: dict[int, str] = {}
+    if task_ids:
+        topics = {
+            task_id: title
+            for task_id, title in (
+                db.query(TrackerTask.id, LearningTopic.title)
+                .join(LearningTopic, TrackerTask.topic_id == LearningTopic.id)
+                .filter(TrackerTask.id.in_(task_ids))
+                .all()
+            )
+        }
+    groups: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r.curator_id, r.feedback_type, r.task_id if r.task_id is not None else r.task_title)
+        group = groups.setdefault(key, {
+            "curator_id": r.curator_id, "feedback_type": r.feedback_type,
+            "task_title": r.task_title, "topic_title": topics.get(r.task_id),
+            "scores": [], "last_at": None,
+        })
+        group["scores"].append(r.score)
+        created = _utc(r.created_at)
+        if group["last_at"] is None or (created and created > group["last_at"]):
+            group["last_at"] = created
+
+    names = _staff_names(db, {g["curator_id"] for g in groups.values()})
+    result = []
+    for group in groups.values():
+        name, rank = names.get(group["curator_id"], (f"id={group['curator_id']}", 0))
+        scores = group["scores"]
+        result.append({
+            "curator_name": name,
+            "role_group": role_group(rank),
+            "feedback_label": FEEDBACK_TYPE_LABELS.get(group["feedback_type"], group["feedback_type"]),
+            "task_title": group["task_title"] or "—",
+            "topic_title": group["topic_title"],
+            "ratings": len(scores),
+            "avg_rating": round(sum(scores) / len(scores), 1),
+            "last_at": group["last_at"],
+        })
+    # Свежие задания сверху: смотрят обычно последнюю волну ОС.
+    result.sort(
+        key=lambda r: r["last_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True,
+    )
     return result
 
 
@@ -1133,6 +1239,17 @@ def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
         TaskBlockSubmission.scored_by_id == TaskBlockSubmission.reviewed_by_id,
     )
     answers = _count(TaskBlockAnswer.reviewed_by_id)
+    # «Дал ОС» (О21, вместо «оценено» у кураторов): в скольких диалогах
+    # сотрудник написал хоть одно сообщение — пробник, старая домашка, сдача.
+    feedback_given: dict[int, int] = defaultdict(int)
+    for model in (FeedbackMessage, HomeworkFeedbackMessage, TaskBlockFeedbackMessage):
+        for uid, n in (
+            db.query(model.sender_id, func.count(func.distinct(model.feedback_id)))
+            .filter(model.sender_id.in_(ids), model.sender_role != ROLE_STUDENT)
+            .group_by(model.sender_id)
+            .all()
+        ):
+            feedback_given[uid] += n
     messages: dict[int, int] = defaultdict(int)
     for model in (FeedbackMessage, HomeworkFeedbackMessage, TaskBlockFeedbackMessage):
         for uid, n in _count(model.sender_id, model.sender_role != ROLE_STUDENT).items():
@@ -1153,6 +1270,7 @@ def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
                 blocks_reviewed.get(s.id, 0) + blocks_scored.get(s.id, 0) - blocks_both.get(s.id, 0)
             ),
             "answers_reviewed": answers.get(s.id, 0),
+            "feedback_given": feedback_given.get(s.id, 0),
             "messages": messages.get(s.id, 0),
             "actions": actions.get(s.id, 0),
             "reports": reports.get(s.id, 0),

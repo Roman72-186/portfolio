@@ -44,11 +44,17 @@ def _api_url(method: str) -> str:
     return f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}"
 
 
-async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = None) -> bool:
+async def send_message(
+    chat_id: int, text: str, *, reply_markup: dict | None = None,
+    message_thread_id: int | None = None,
+) -> bool:
     """Отправить сообщение пользователю. Ошибки не поднимает — логирует и
     возвращает False, включая случай, когда пользователь заблокировал бота
     (403): рассылка уведомлений не должна падать целиком из-за одного
-    недоступного получателя."""
+    недоступного получателя.
+
+    `message_thread_id` — топик супергруппы (служебный топик оценок ОС,
+    `feedback_rating.send_rating_to_care_topic`)."""
     if not settings.telegram_bot_token:
         logger.warning("telegram.send_message: TELEGRAM_BOT_TOKEN не настроен")
         return False
@@ -66,6 +72,8 @@ async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = N
     }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if message_thread_id:
+        payload["message_thread_id"] = message_thread_id
 
     try:
         resp = await request_with_retry(

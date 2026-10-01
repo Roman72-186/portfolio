@@ -77,6 +77,8 @@ def student_can_reply(
     О1–О9, О22). Читают роут `student_message` и экран диалога.
 
     Порядок проверок:
+    0. Сотрудник нажал «Завершить ОС» — диалог закрыт для обеих сторон
+       (ОС, фаза 2, О25), дальше ученик только оценивает.
     1. Блок вне `DIALOG_BLOCK_TYPES` — ответа нет никогда. Сейчас туда входят
        все три вида сдачи, включая контрольную на время (владелец 01.10.2026:
        оставить и её настраиваемой); проверка стоит на случай нового типа
@@ -96,6 +98,12 @@ def student_can_reply(
         "На эту обратную связь ответить нельзя.",
         "Ученик не может ответить на эту обратную связь.",
     )
+    if feedback is not None and feedback.feedback_closed_at is not None:
+        return ReplyState(
+            False,
+            "Преподаватель завершил обратную связь – диалог закрыт.",
+            "Обратная связь завершена – диалог закрыт.",
+        )
     block = db.get(TaskBlock, submission.block_id)
     if block is None or block.block_type not in DIALOG_BLOCK_TYPES:
         return closed

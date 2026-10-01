@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     telegram_channel_id: int = 0      # закрытый канал, членство проверяет getChatMember
     telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
     telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
+    # Служебный топик для оценок ОС (ОС, фаза 2; владелец 01.10.2026, О17):
+    # общая группа команды без учеников, бот в ней состоит. Значения вносит
+    # владелец. Ноль — отправка молча пропускается с записью в лог.
+    telegram_care_chat_id: int = 0
+    telegram_care_thread_id: int = 0
 
     # Telegram Login (OIDC) — основной способ входа на сайте, заменяет
     # deep-link на бота (тот остаётся для /start-привязки существующих

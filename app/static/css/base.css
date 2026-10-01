@@ -1001,14 +1001,22 @@ audio { max-width: 100%; }
 }
 
 /* ── Radio buttons ── */
-.radio-group { display: flex; gap: 10px; }
+.radio-group { display: flex; gap: 10px; margin-bottom: var(--s-3); }
 .radio-btn {
     flex: 1; padding: 11px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
     text-align: center; cursor: pointer; transition: border-color var(--duration-base), color var(--duration-base), background var(--duration-base);
     font-size: 14px; font-weight: 500; color: var(--muted);
 }
 .radio-btn:hover { border-color: rgba(168,85,247,.30); color: var(--blue-text); }
-.radio-btn input { display: none; }
+/* Кнопка спрятана визуально, а не `display: none`: так выбор доступен с
+   клавиатуры и экранному диктору (первое место — оценка ОС учеником,
+   партиал `partials/feedback_rating`, 01.10.2026). Селектор с `[type="radio"]`:
+   общее правило радиокнопок ниже иначе вернуло бы ей 20×20 и сдвинуло цифру. */
+.radio-btn input[type="radio"] {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.radio-btn:has(input:focus-visible) { outline: 2px solid var(--blue); outline-offset: 2px; }
 .radio-btn.active, .radio-btn:has(input:checked) {
     border-color: var(--blue); color: var(--blue-text);
     background: var(--blue-soft);

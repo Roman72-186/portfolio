@@ -57,6 +57,7 @@ from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+from app.models.feedback_rating import FeedbackRating, FeedbackRatingImage
 from app.models.point_a_level_audio import PointALevelAudio
 from app.models.tracker import (
     ScheduleDigest,

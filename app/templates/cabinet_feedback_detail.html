@@ -230,6 +230,11 @@
                 <div class="dlg-form">
                     <div class="dlg-waiting">{% if has_staff_message %}На эту обратную связь ответить нельзя.{% else %}Преподаватель ещё не оставил обратную связь – она появится здесь.{% endif %}</div>
                 </div>
+            {% elif rating_panel and rating_panel.closed %}
+                {# «Завершить ОС» закрывает диалог и сотруднику (ОС, фаза 2, О25). #}
+                <div class="dlg-form">
+                    <div class="dlg-waiting">Обратная связь завершена – диалог закрыт.</div>
+                </div>
             {% elif viewer_role != 'student' and not has_staff_message %}
                 <form class="dlg-form dlg-form-structured" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}" data-structured="1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -317,6 +322,7 @@
                 </form>
             {% endif %}
         </section>
+        {% if rating_panel %}{% include "partials/feedback_rating.html" %}{% endif %}
     {% endif %}
 
     {# Балл и закрытие цикла — только ГП и выше (`rbac.can_score`, владелец
@@ -426,6 +432,7 @@
 
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script src="/static/js/media-recorder-field.js?v=8"></script>
+<script src="/static/js/feedback-rating.js?v=1"></script>
 <script>
 // AJAX submit, name preview, и автоскролл к низу ленты.
 document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scrollHeight; });

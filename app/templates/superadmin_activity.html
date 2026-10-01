@@ -4,19 +4,21 @@
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=11">
 {% endblock %}
 
-{# Таблица действий сотрудников — одна на три вкладки ролей. #}
-{% macro staff_table(rows, empty_text) %}
+{# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
+   вместо «Оценено работ» — «Дал ОС» (О21, 01.10.2026): балл с 30.09.2026
+   ставит только ГП, и колонка у кураторов перестала пополняться. #}
+{% macro staff_table(rows, empty_text, curators=false) %}
     {% if rows %}
     <div class="ss-table-wrap">
         <table class="ss-table">
-            <thead><tr><th>Сотрудник</th><th>Последний вход</th><th class="ss-ta-r">Входов за 30 дн.</th><th class="ss-ta-r">Оценено работ</th><th class="ss-ta-r">Проверено сдач в заданиях</th><th class="ss-ta-r">Просмотрено ответов</th><th class="ss-ta-r">Сообщений ОС</th><th class="ss-ta-r">Отчётов</th><th class="ss-ta-r">Действий за 30 дн.</th></tr></thead>
+            <thead><tr><th>Сотрудник</th><th>Последний вход</th><th class="ss-ta-r">Входов за 30 дн.</th><th class="ss-ta-r">{{ 'Дал ОС' if curators else 'Оценено работ' }}</th><th class="ss-ta-r">Проверено сдач в заданиях</th><th class="ss-ta-r">Просмотрено ответов</th><th class="ss-ta-r">Сообщений ОС</th><th class="ss-ta-r">Отчётов</th><th class="ss-ta-r">Действий за 30 дн.</th></tr></thead>
             <tbody>
             {% for s in rows %}
             <tr>
                 <td data-label="Сотрудник" class="ss-bold">{{ s.name }}{% if s.role_group == "head" %} <span class="act-badge ab-tariff">{{ s.role_label }}</span>{% endif %}</td>
                 <td data-label="Последний вход" class="ss-dim">{{ s.last_login_at.strftime('%d.%m.%Y %H:%M') if s.last_login_at else "не заходил с 11.07" }}</td>
                 <td data-label="Входов за 30 дн." class="ss-ta-r">{{ s.logins }}</td>
-                <td data-label="Оценено работ" class="ss-ta-r">{{ s.works_scored }}</td>
+                {% if curators %}<td data-label="Дал ОС" class="ss-ta-r">{{ s.feedback_given }}</td>{% else %}<td data-label="Оценено работ" class="ss-ta-r">{{ s.works_scored }}</td>{% endif %}
                 <td data-label="Проверено сдач" class="ss-ta-r">{{ s.blocks_checked }}</td>
                 <td data-label="Просмотрено ответов" class="ss-ta-r">{{ s.answers_reviewed }}</td>
                 <td data-label="Сообщений ОС" class="ss-ta-r">{{ s.messages }}</td>
@@ -57,14 +59,15 @@
     {% if rows %}
     <div class="ss-table-wrap">
         <table class="ss-table">
-            <thead><tr><th>Автор ОС</th><th class="ss-ta-r">Диалогов ОС</th><th class="ss-ta-r">Сообщений на диалог</th><th class="ss-ta-r">Скорость первой ОС</th></tr></thead>
+            <thead><tr><th>Автор ОС</th><th class="ss-ta-r">Дал ОС</th><th class="ss-ta-r">Сообщений на диалог</th><th class="ss-ta-r">Время до первой ОС</th><th class="ss-ta-r">Средняя оценка ОС</th></tr></thead>
             <tbody>
             {% for r in rows %}
             <tr>
                 <td data-label="Автор ОС" class="ss-bold">{{ r.curator_name }}</td>
-                <td data-label="Диалогов" class="ss-ta-r">{{ r.dialogs }}</td>
+                <td data-label="Дал ОС" class="ss-ta-r">{{ r.dialogs }}</td>
                 <td data-label="Сообщений на диалог" class="ss-ta-r">{{ r.avg_messages if r.avg_messages is not none else "—" }}</td>
-                <td data-label="Первая ОС" class="ss-ta-r">{{ r.avg_first_response_text or "—" }}</td>
+                <td data-label="Время до первой ОС" class="ss-ta-r">{{ r.avg_first_response_text or "—" }}</td>
+                <td data-label="Средняя оценка ОС" class="ss-ta-r">{% if r.avg_rating is not none %}{{ r.avg_rating }} <span class="ss-dim">· {{ r.ratings }} оц.</span>{% else %}—{% endif %}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -73,16 +76,41 @@
     {% else %}<div class="ss-empty">Диалогов обратной связи пока нет</div>{% endif %}
 {% endmacro %}
 
+{# Средняя оценка ОС куратора по каждому заданию цикла (О19, 01.10.2026):
+   ученик ставит 1–5 после «Завершить ОС». #}
+{% macro rating_table(rows) %}
+    {% if rows %}
+    <div class="ss-table-wrap">
+        <table class="ss-table">
+            <thead><tr><th>Куратор</th><th>Вид ОС</th><th>Задание</th><th class="ss-ta-r">Оценок</th><th class="ss-ta-r">Средняя</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td data-label="Куратор" class="ss-bold">{{ r.curator_name }}</td>
+                <td data-label="Вид ОС">{{ r.feedback_label }}</td>
+                <td data-label="Задание">{{ r.task_title }}{% if r.topic_title %} <span class="ss-dim">· {{ r.topic_title }}</span>{% endif %}</td>
+                <td data-label="Оценок" class="ss-ta-r">{{ r.ratings }}</td>
+                <td data-label="Средняя" class="ss-ta-r">{{ r.avg_rating }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<div class="ss-empty">Оценок обратной связи пока нет</div>{% endif %}
+{% endmacro %}
+
 {% block content %}
 {% set staff_curators = staff_activity | selectattr("role_group", "equalto", "curators") | list %}
 {% set staff_head = staff_activity | selectattr("role_group", "equalto", "head") | list %}
 {% set staff_super = staff_activity | selectattr("role_group", "equalto", "superadmin") | list %}
-{% set speed_curators = review_speed | selectattr("role_group", "equalto", "curators") | list %}
 {% set speed_head = review_speed | selectattr("role_group", "equalto", "head") | list %}
 {% set fb_curators = feedback_curators | selectattr("role_group", "equalto", "curators") | list %}
 {% set fb_head = feedback_curators | selectattr("role_group", "equalto", "head") | list %}
 {% set speed_super = review_speed | selectattr("role_group", "equalto", "superadmin") | list %}
 {% set fb_super = feedback_curators | selectattr("role_group", "equalto", "superadmin") | list %}
+{% set rt_curators = feedback_ratings | selectattr("role_group", "equalto", "curators") | list %}
+{% set rt_head = feedback_ratings | selectattr("role_group", "equalto", "head") | list %}
+{% set rt_super = feedback_ratings | selectattr("role_group", "equalto", "superadmin") | list %}
 <div class="ss-wrap ios-ss">
 
     <div class="ss-header">
@@ -627,19 +655,21 @@
     <details class="ss-acc" open>
         <summary><h2 class="ss-acc-title">Действия кураторов</h2><span class="ss-acc-badge">{{ staff_curators | length }} кураторов</span></summary>
         <div class="ss-acc-body">
-            {{ staff_table(staff_curators, "Активных кураторов нет") }}
+            {{ staff_table(staff_curators, "Активных кураторов нет", curators=true) }}
             <div class="ss-empty">Проверки считаются по последней попытке: пересдача обнуляет прежнего проверяющего.</div>
         </div>
     </details>
 
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ speed_curators | length }} проверяющих</span></summary>
-        <div class="ss-acc-body">{{ review_speed_table(speed_curators) }}</div>
-    </details>
-
+    {# «Скорость проверки работ» у кураторов снята 01.10.2026 (О21): балл
+       ставит только ГП, а время до первой ОС — в таблице ниже. #}
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Обратная связь кураторов</h2><span class="ss-acc-badge">{{ fb_curators | length }} авторов ОС</span></summary>
         <div class="ss-acc-body">{{ feedback_table(fb_curators) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Оценки ОС по заданиям</h2><span class="ss-acc-badge">{{ rt_curators | length }} строк</span></summary>
+        <div class="ss-acc-body">{{ rating_table(rt_curators) }}</div>
     </details>
 
     <details class="ss-acc">
@@ -696,6 +726,11 @@
         <div class="ss-acc-body">{{ feedback_table(fb_head) }}</div>
     </details>
 
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Оценки ОС по заданиям</h2><span class="ss-acc-badge">{{ rt_head | length }} строк</span></summary>
+        <div class="ss-acc-body">{{ rating_table(rt_head) }}</div>
+    </details>
+
     </div>
 
     {# ═══════════════ Суперадмин ═══════════════ #}
@@ -716,6 +751,11 @@
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Обратная связь</h2><span class="ss-acc-badge">{{ fb_super | length }} авторов ОС</span></summary>
         <div class="ss-acc-body">{{ feedback_table(fb_super) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Оценки ОС по заданиям</h2><span class="ss-acc-badge">{{ rt_super | length }} строк</span></summary>
+        <div class="ss-acc-body">{{ rating_table(rt_super) }}</div>
     </details>
 
     <details class="ss-acc">
