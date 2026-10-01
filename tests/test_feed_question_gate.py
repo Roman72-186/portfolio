@@ -79,7 +79,10 @@ def test_answering_a_required_question_opens_the_tail(auth_client, db):
     )
     db.add_all([
         question,
-        TaskBlock(task_id=task.id, block_type=BLOCK_TEXT, body="Дальше", sort_order=2),
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        TaskBlock(task_id=task.id, block_type="upload", body="Дальше", sort_order=2),
     ])
     db.commit()
 
@@ -107,7 +110,10 @@ def test_answer_with_options_closes_the_block(auth_client, db):
                 {"text": "Да", "is_correct": False},
             ],
         },
-        {"block_type": BLOCK_TEXT, "body": "Дальше"},
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        {"block_type": "upload", "body": "Дальше"},
     ])
     db.commit()
     question = blocks[0]
@@ -129,7 +135,10 @@ def _two_required_questions(db, task):
     )
     db.add_all([
         first, second,
-        TaskBlock(task_id=task.id, block_type=BLOCK_TEXT, body="Хвост", sort_order=3),
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        TaskBlock(task_id=task.id, block_type="upload", body="Хвост", sort_order=3),
     ])
     db.commit()
     return first, second
@@ -252,7 +261,10 @@ def test_scale_answer_closes_the_block(auth_client, db):
             "is_required": True,
             "options": [{"text": "Стрессоустойчивость"}],
         },
-        {"block_type": BLOCK_TEXT, "body": "Дальше"},
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        {"block_type": "upload", "body": "Дальше"},
     ])
     db.commit()
     scale = blocks[0]

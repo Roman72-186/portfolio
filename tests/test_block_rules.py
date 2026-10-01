@@ -83,7 +83,10 @@ def _rules_block(db, task, *, rules=RULES, required=True, tail=True):
         "options": [{"id": None, "text": text, "is_correct": False} for text in rules],
     }]
     if tail:
-        items.append({"block_type": BLOCK_TEXT, "body": "Тест по правилам"})
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        items.append({"block_type": "upload", "body": "Тест по правилам"})
     blocks = sync_blocks(db, task_id=task.id, items=items)
     db.commit()
     return blocks[0]
@@ -269,7 +272,10 @@ def test_rules_and_test_by_them_go_one_after_another(auth_client, db):
                 {"text": "Да", "is_correct": False},
             ],
         },
-        {"block_type": BLOCK_TEXT, "body": "Дальше по программе"},
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        {"block_type": "upload", "body": "Дальше по программе"},
     ])
     db.commit()
     rules, question = blocks[0], blocks[1]

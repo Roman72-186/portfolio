@@ -105,7 +105,10 @@ def _compare_item(*, block_id=None, pick=PICK, works=WORKS, required=True):
 def _compare_block(db, task, *, tail=True, **kwargs):
     items = [_compare_item(**kwargs)]
     if tail:
-        items.append({"block_type": BLOCK_TEXT, "body": "Разбор работ"})
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        items.append({"block_type": "upload", "body": "Разбор работ"})
     blocks = sync_blocks(db, task_id=task.id, items=items)
     db.commit()
     return blocks[0]

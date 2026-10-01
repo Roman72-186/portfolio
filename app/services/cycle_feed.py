@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
-from app.models.task_block import BLOCK_PORTFOLIO
+from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
 from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
@@ -431,7 +431,15 @@ def build_cycle_feed(
 
         for position, block in enumerate(task_blocks):
             state = states.get(block.id)
-            done = state is not None and state.status == STATUS_DONE
+            # Текст и ссылку отметить нечем (`COMPLETABLE_BLOCK_TYPES`), поэтому
+            # они «сделаны», когда закрыто их задание — кнопкой или само
+            # (владелец 01.10.2026, аудит АОП ученика, находка 3). Иначе
+            # закрытое задание из текста и ссылки показывало «Сделано 0 из 2»,
+            # а его шаги не сворачивались. На очередь ленты это не влияет:
+            # `is_block_accessible` смотрит состояния блоков в базе.
+            done = (state is not None and state.status == STATUS_DONE) or (
+                block.block_type not in COMPLETABLE_BLOCK_TYPES and _task_done(entry)
+            )
             block_waits_date = _not_open_yet(block.opens_at, now)
             block_closed = (
                 portfolio_window_expired(block, state, now=now)

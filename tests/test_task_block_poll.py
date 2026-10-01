@@ -294,7 +294,10 @@ def test_only_the_last_poll_question_holds_the_feed(auth_client, db):
     _cycle(db, user)
     task = _student_task(db, user, [
         _poll(_text("1?"), _text("2?"), is_required=True),
-        {"block_type": BLOCK_TEXT, "body": "Контрольная 2"},
+        # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+        # закрытого задания считается сделанным, и ответ на единственный вопрос
+        # закрыл бы задание вместе с хвостом — «открылась ли очередь» не проверить.
+        {"block_type": "upload", "body": "Контрольная 2"},
     ])
     first, second, _ = _blocks(db, task.id)
 

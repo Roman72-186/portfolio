@@ -547,6 +547,36 @@ def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db
     button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
     assert button and button.group(1) == "Завершить задание"
 
+
+def test_closed_task_counts_its_text_and_link_as_done(auth_client, db):
+    """Аудит АОП ученика, находка 3 (владелец 01.10.2026, вариант «а»): текст и
+    ссылку отметить нечем, поэтому они «сделаны», когда закрыто задание. До этого
+    задание из текста и ссылки, закрытое кнопкой, давало «Сделано 0 из 2», а его
+    шаги не сворачивались и были без отметки."""
+    from app.models.task_block import BLOCK_LINK
+
+    client, user = auth_client
+    task = _task(db, user, title="Вводный материал", kind="material", day=today_msk())
+    task.due_at = day_bounds(today_msk())[1] - timedelta(minutes=1)
+    _block(db, task, title="Как строить", order=0, is_required=False)
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_LINK, title="Разбор", url="https://example.com",
+        sort_order=1, is_required=False,
+    ))
+    db.commit()
+
+    html = client.get("/cabinet/learning").text
+    assert "Сделано 0 из 2" in html
+    assert "lrn-step--done" not in html
+
+    closed = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert closed.status_code == 200, closed.text
+    html = client.get("/cabinet/learning").text
+    assert "Сделано 2 из 2" in html
+    assert html.count('class="lrn-step lrn-step--done"') == 2
+    assert html.count("trk-badge--done") == 2
+    assert html.count('class="lrn-step-toggle"') == 2
+
 def test_completion_script_shows_the_server_reason():
     """Запасной путь: если сервер всё же откажет, ученик видит его причину, а не
     «Не получилось. Попробовать ещё раз»."""

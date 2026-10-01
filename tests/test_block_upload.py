@@ -508,8 +508,11 @@ def test_feed_opens_the_tail_after_the_work_is_sent(auth_client, db):
     _cycle(db, user)
     task = _task(db, user)
     block = _upload_block(db, task)
+    # Хвост — шаг, который можно отметить, а не текст: с 01.10.2026 текст
+    # закрытого задания считается сделанным, и сдача единственной работы
+    # закрыла бы задание вместе с хвостом — «открылась ли очередь» не проверить.
     second = TaskBlock(
-        task_id=task.id, block_type="text", body="Следующий шаг", sort_order=2,
+        task_id=task.id, block_type="upload", body="Следующий шаг", sort_order=2,
     )
     db.add(second)
     db.commit()
