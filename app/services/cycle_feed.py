@@ -502,7 +502,45 @@ def build_cycle_feed(
             block_index += 1
     if started_portfolio_window:
         db.commit()
+    _mark_sequence_holders(steps, required_by_block)
     return steps
+
+
+def _mark_sequence_holders(steps: list[dict], required_by_block: dict[int, bool]) -> None:
+    """Запертому очередью шагу — какой шаг его держит (`step["blocked_by"]`).
+
+    Очередь одна на весь цикл и предмета не знает (владелец 01.10.2026:
+    вкладки «Общее / Композиция / Рисунок» очередь не делят). Держащий шаг
+    может стоять в другой вкладке, и без подписи ученик видел бы «Откроется,
+    когда будет сделано предыдущее», не находя этого предыдущего на экране.
+    Держит первый невыполненный обязательный шаг выше — до него ученик и
+    должен дойти первым. Это подпись, а не правило: само запирание решает
+    `is_block_accessible` и флаг `blocked` выше. Держащий шаг того же
+    задания шаблон по имени не называет — он стоит прямо выше.
+    """
+    holder = None
+    for step in steps:
+        if (
+            holder is not None
+            and step["status"] == STATUS_LOCKED
+            and step["lock_reason"] == LOCK_BY_SEQUENCE
+        ):
+            step["blocked_by"] = holder
+        if holder is not None or step["status"] == STATUS_DONE:
+            continue
+        block = step["block"]
+        task = step["task"]
+        required = (
+            required_by_block.get(block.id, False)
+            if block is not None
+            else task.is_required and task.kind != ITEM_MOCK_EXAM
+        )
+        if required:
+            holder = {
+                "title": (block.title if block is not None and block.title else task.title),
+                "subject": step["subject"] or "",
+                "task_id": task.id,
+            }
 
 
 def started_cycles(
@@ -778,11 +816,32 @@ def feed_for_student(
         # трёх вопросов давал бы «Сделано 3 из 4» при двух карточках.
         "done_count": sum(1 for step in counted_steps if step["status"] == STATUS_DONE),
         "total_count": len(counted_steps),
-        # Переключатель «Рисунок / Композиция» показывается, только когда в
-        # цикле реально есть деление по предметам (владелец 03.09.2026: «в
-        # предыдущих циклах эти кнопки не нужны, мы просто не будем ставить
-        # разделение, и кнопок в принципе не будет»).
-        "subjects": sorted({
-            step["subject"] for step in steps if step["subject"]
-        }),
+        # Вкладки «Общее / Композиция / Рисунок» (созвон 30.09.2026, владелец
+        # 01.10.2026): если хоть у одного шага есть предмет — все три, иначе
+        # переключателя нет (владелец 03.09.2026: «мы просто не будем ставить
+        # разделение, и кнопок в принципе не будет»). «Общее» — шаги без
+        # предмета, значение пустое.
+        "subject_tabs": _subject_tabs(steps),
+        # Открытая по умолчанию вкладка — та, где первый невыполненный шаг:
+        # туда ученику и идти. Всё сделано — «Общее».
+        "default_subject": next(
+            (step["subject"] or "" for step in steps if step["status"] != STATUS_DONE), ""
+        ),
     }
+
+
+# Порядок вкладок и подписи — созвон 30.09.2026 («общая, композиция или
+# рисунок, то есть три вкладки»). Значение — то, что лежит в `subject` шага.
+SUBJECT_TAB_GENERAL = ("", "Общее")
+SUBJECT_TAB_ORDER = ("Композиция", "Рисунок")
+
+
+def _subject_tabs(steps: list[dict]) -> list[dict]:
+    present = {step["subject"] for step in steps if step["subject"]}
+    if not present:
+        return []
+    # Предмет вне привычной пары (если появится) не теряется — встаёт в конец.
+    subjects = list(SUBJECT_TAB_ORDER) + sorted(present - set(SUBJECT_TAB_ORDER))
+    return [{"value": SUBJECT_TAB_GENERAL[0], "label": SUBJECT_TAB_GENERAL[1]}] + [
+        {"value": subject, "label": subject} for subject in subjects
+    ]

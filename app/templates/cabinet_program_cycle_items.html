@@ -20,7 +20,7 @@
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=77">
+<link rel="stylesheet" href="/static/css/tracker.css?v=78">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=4">
 {% endblock %}
@@ -96,7 +96,7 @@
             </label>
             <label class="prg-field">Предмет
                 <select data-item-subject>
-                    <option value="">Без предмета</option>
+                    <option value="">Без предмета — вкладка «Общее»</option>
                     {% for subject in subjects %}
                     <option value="{{ subject }}">{{ subject }}</option>
                     {% endfor %}

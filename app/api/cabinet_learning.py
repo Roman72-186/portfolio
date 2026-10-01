@@ -87,7 +87,8 @@ def cabinet_learning(
         )
         if target is not None:
             focus_task_id = task
-            focus_subject = target["subject"]
+            # Пустая строка — вкладка «Общее»: задание без предмета.
+            focus_subject = target["subject"] or ""
 
     # Почему «Завершить задание» пока нельзя нажать — то же правило, по которому
     # откажет сама кнопка (`task_blocks.completion_blocker`). Только у незакрытых

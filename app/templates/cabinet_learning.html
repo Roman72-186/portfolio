@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=77">
+<link rel="stylesheet" href="/static/css/tracker.css?v=78">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -91,11 +91,19 @@
     </p>
     {% endif %}
 
-    {% if feed.subjects %}
-    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
-        {% for subject in feed.subjects %}
-        <button type="button" class="lrn-subject-btn{{ ' active' if (focus_subject and subject == focus_subject) or (not focus_subject and loop.first) }}"
-                data-subject="{{ subject }}" onclick="lrnSwitchSubject(this)">{{ subject }}</button>
+    {# Вкладки «Общее / Композиция / Рисунок» (созвон 30.09.2026, владелец
+       01.10.2026): «Общее» — шаги без предмета, предметная — только свой
+       предмет. Открыта вкладка задания из ссылки (`?task=`), иначе — та, где
+       первый невыполненный шаг. Кнопки с aria-pressed, не role="tab":
+       tablist обязан ходить по стрелкам, а этого здесь нет. #}
+    {% if feed.subject_tabs %}
+    {% set active_subject = focus_subject if focus_subject is not none else feed.default_subject %}
+    <div class="lrn-subject-toggle" role="group" aria-label="Направление"
+         data-topic-id="{{ feed.topic.id if feed.topic else '' }}">
+        {% for tab in feed.subject_tabs %}
+        <button type="button" class="lrn-subject-btn{{ ' active' if tab.value == active_subject }}"
+                aria-pressed="{{ 'true' if tab.value == active_subject else 'false' }}"
+                data-subject="{{ tab.value }}" onclick="lrnSwitchSubject(this)">{{ tab.label }}</button>
         {% endfor %}
     </div>
     {% endif %}
@@ -116,8 +124,7 @@
     {% if feed.steps %}
     <div class="lrn-feed" id="learningStart">
         {% for step in feed.steps %}
-        {# data-subject пустой у задач без предмета — такие видны в обоих
-           направлениях, прятать их переключателем нельзя. #}
+        {# data-subject пустой у задач без предмета — это вкладка «Общее». #}
         <article
             class="lrn-step lrn-step--{{ step.status }}"
             data-subject="{{ step.subject or '' }}"
@@ -182,6 +189,11 @@
                 Откроется {{ step.opens_on | msk_text }}.
                 {%- elif step.lock_reason == 'closed' -%}
                 Доступ закрыт.
+                {%- elif step.blocked_by and step.blocked_by.task_id != step.task.id -%}
+                {#- Держащий шаг называем по имени, а если он в другой вкладке —
+                    и вкладку: очередь одна на весь цикл (владелец 01.10.2026). -#}
+                Откроется после «{{ step.blocked_by.title }}»
+                {%- if feed.subject_tabs and step.blocked_by.subject != (step.subject or '') %} во вкладке «{{ step.blocked_by.subject or 'Общее' }}»{% endif %}.
                 {%- else -%}
                 Откроется, когда будет сделано предыдущее.
                 {%- endif -%}
@@ -225,27 +237,47 @@
 {% include "partials/inline/cycle_feed.html" %}
 {% include "partials/inline/panels_init.html" %}
 <script>
+// Вкладка помнится до конца сеанса браузера: после ответа страница
+// перезагружается, и без памяти ученика выбрасывало бы на вкладку по
+// умолчанию. Ключ — цикл: у другого цикла своя раскладка.
+function lrnSubjectKey() {
+    var toggle = document.querySelector('.lrn-subject-toggle');
+    return toggle ? 'lrn-subject-' + toggle.getAttribute('data-topic-id') : null;
+}
+
 function lrnSwitchSubject(button) {
-    // Переключатель направления: прячет шаги чужого предмета. Шаги без
-    // предмета видны всегда — они общие для обоих направлений.
     document.querySelectorAll('.lrn-subject-btn').forEach(function (btn) {
         btn.classList.toggle('active', btn === button);
+        btn.setAttribute('aria-pressed', btn === button ? 'true' : 'false');
     });
+    try { sessionStorage.setItem(lrnSubjectKey(), button.getAttribute('data-subject')); } catch (e) {}
     lrnApplySubjectFilter();
 }
 
 function lrnApplySubjectFilter() {
+    // Свой атрибут `data-subject-off`, а не `hidden`: `hidden` у карточек
+    // держат и другие скрипты (вопросы опроса, шаги диагностики), и фильтр,
+    // снимая его, раскрывал их пустыми.
     var active = document.querySelector('.lrn-subject-btn.active');
     var subject = active ? active.getAttribute('data-subject') : null;
     var shown = 0;
     document.querySelectorAll('.lrn-feed [data-subject]').forEach(function (node) {
-        var own = node.getAttribute('data-subject');
-        var visible = !own || !subject || own === subject;
-        node.hidden = !visible;
+        var visible = subject === null || node.getAttribute('data-subject') === subject;
+        node.toggleAttribute('data-subject-off', !visible);
         if (visible) shown += 1;
     });
     var empty = document.querySelector('.lrn-subject-empty');
-    if (empty) empty.hidden = shown > 0 || !document.querySelector('.lrn-feed');
+    if (empty) empty.hidden = subject === null || shown > 0 || !document.querySelector('.lrn-feed');
+}
+
+function lrnRestoreSubject(hasFocus) {
+    if (hasFocus) return;  // пришёл по ссылке к заданию — его вкладка важнее
+    var saved = null;
+    try { saved = sessionStorage.getItem(lrnSubjectKey()); } catch (e) {}
+    if (saved === null) return;
+    document.querySelectorAll('.lrn-subject-btn').forEach(function (btn) {
+        if (btn.getAttribute('data-subject') === saved) lrnSwitchSubject(btn);
+    });
 }
 
 function lrnToggleStep(button, open) {
@@ -260,8 +292,9 @@ function lrnToggleStep(button, open) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    lrnApplySubjectFilter();
     var focusTaskId = {{ focus_task_id | tojson }};
+    lrnRestoreSubject(focusTaskId !== null);
+    lrnApplySubjectFilter();
     if (focusTaskId === null) return;
     var target = document.getElementById('learning-task-' + focusTaskId);
     if (!target) return;

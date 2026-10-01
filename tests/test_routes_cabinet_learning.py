@@ -568,15 +568,77 @@ def test_learning_hides_the_switch_without_subjects(auth_client, db):
     assert 'class="lrn-subject-toggle"' not in resp.text
 
 
-def test_learning_switch_lists_only_present_subjects(auth_client, db):
+def test_learning_shows_three_tabs_once_any_step_has_a_subject(auth_client, db):
+    """Созвон 30.09.2026, владелец 01.10.2026: если хоть у одного задания есть
+    предмет — три вкладки «Общее», «Композиция», «Рисунок», в этом порядке,
+    даже если в цикле есть только рисунок."""
     client, user = auth_client
     task = _task(db, user, title="Только рисунок")
     task.subject = "Рисунок"
     db.commit()
 
     resp = client.get("/cabinet/learning")
-    assert 'data-subject="Рисунок"' in resp.text
-    assert 'data-subject="Композиция"' not in resp.text
+    buttons = re.findall(r'class="lrn-subject-btn[^"]*"[^>]*data-subject="([^"]*)"[^>]*>([^<]+)<', resp.text)
+    assert buttons == [("", "Общее"), ("Композиция", "Композиция"), ("Рисунок", "Рисунок")]
+
+
+def test_default_tab_is_where_the_first_unfinished_step_is(auth_client, db):
+    client, user = auth_client
+    general = _task(db, user, title="Введение в экзамен", kind="material", order=0)
+    _block(db, general, title="Введение", is_required=False)
+    drawing = _task(db, user, title="Рисунок", kind="material", order=1)
+    drawing.subject = "Рисунок"
+    _block(db, drawing, title="Шаг рисунка")
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+
+    # Первый невыполненный шаг — общее введение: открыта «Общее».
+    assert re.search(r'class="lrn-subject-btn active"[^>]*data-subject=""', resp.text)
+    assert 'aria-pressed="true"' in resp.text
+
+
+def test_locked_step_names_its_holder_and_the_holders_tab(auth_client, db):
+    """Очередь одна на весь цикл (владелец 01.10.2026): запертый шаг рисунка
+    держит общий шаг — подпись называет его и вкладку «Общее»."""
+    client, user = auth_client
+    general = _task(db, user, title="Общий блок", kind="material", order=0)
+    _block(db, general, title="Введение в экзамен", is_required=True)
+    drawing = _task(db, user, title="Рисунок", kind="material", order=1)
+    drawing.subject = "Рисунок"
+    _block(db, drawing, title="Шаг рисунка")
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+
+    assert "Откроется после «Введение в экзамен» во вкладке «Общее»." in resp.text
+
+
+def test_locked_step_in_the_same_tab_names_holder_without_a_tab(auth_client, db):
+    client, user = auth_client
+    first = _task(db, user, title="Рисунок 1", kind="material", order=0)
+    first.subject = "Рисунок"
+    _block(db, first, title="Набросок", is_required=True)
+    second = _task(db, user, title="Рисунок 2", kind="material", order=1)
+    second.subject = "Рисунок"
+    _block(db, second, title="Тон")
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+
+    assert "Откроется после «Набросок»." in resp.text
+    assert "во вкладке" not in resp.text
+
+
+def test_subject_filter_hides_with_its_own_attribute_not_hidden():
+    """`hidden` у карточек держат опрос и диагностика — фильтр вкладки его не
+    трогает, иначе снимал бы и раскрывал их вопросы пустыми."""
+    template = pathlib.Path("app/templates/cabinet_learning.html").read_text(encoding="utf-8")
+    script = template[template.index("function lrnApplySubjectFilter"):]
+    script = script[:script.index("function lrnRestoreSubject")]
+    assert "data-subject-off" in script
+    assert "node.hidden" not in script
+    assert ".lrn-step[data-subject-off] { display: none; }" in TRACKER_CSS
 
 
 def test_learning_cycle_period_widens_the_window(auth_client, db):
