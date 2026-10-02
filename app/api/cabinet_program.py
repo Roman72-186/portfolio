@@ -46,6 +46,7 @@ from app.models.task_block import (
     BLOCK_TYPE_LABELS,
     BLOCK_TYPES,
     BLOCK_TYPES_ADDABLE,
+    MAX_SUBMISSION_IMAGES,
     MAX_BLOCK_IMAGES,
     MAX_BLOCKS,
     MEDIA_KINDS,
@@ -74,6 +75,7 @@ from app.services.task_blocks import (
     sync_task_submit_deadlines as sync_task_level_submit_deadlines,
 )
 from app.services.cycle_stats import cycle_debtors, cycle_stats, reminder_message, remind_cycle_debtors
+from app.services.exam_cycle import MAX_INTERMEDIATE_PER_FINAL
 from app.services.notify import notify
 from app.services.rbac import MODERATOR_ROLE_NAME
 from app.services.video_catalog import publish_video
@@ -554,6 +556,7 @@ def _edit_payloads(
                 "locked_message": b.locked_message,
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
+                "required_photos": b.required_photos,
                 "portfolio_window_hours": b.portfolio_window_hours,
                 # «Настройка диалога» (01.10.2026): без неё повторное
                 # сохранение молча закрыло бы ученикам открытый ответ.
@@ -1267,6 +1270,9 @@ class BlockItem(BaseModel):
     # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
     # один час»). У остальных типов игнорируется сервисом.
     time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
+    # Сколько фото сдать — ровно (владелец 02.10.2026). Только у блоков сдачи,
+    # у остальных `sync_blocks` держит NULL.
+    required_photos: int | None = Field(default=None, ge=1, le=MAX_SUBMISSION_IMAGES)
     # «Настройка диалога» у блока сдачи (владелец 01.10.2026): тарифы, которым
     # разрешён ответ на ОС куратора (пусто = никому), и лимит сообщений
     # ученика. Значения и тип блока проверяет `sync_blocks`
@@ -2291,6 +2297,10 @@ class MockSchedulePayload(BaseModel):
     opens_at: str | None = Field(default=None, max_length=32)
     closes_at: str | None = Field(default=None, max_length=32)
     duration_minutes: int | None = Field(default=None, ge=1, le=720)
+    # Ровно столько этапных фото (владелец 02.10.2026), пусто — по желанию.
+    # Не время, поэтому в `is_empty` не входит: правка числа не должна
+    # сбрасывать сохранённое окно сдачи.
+    stage_photos: int | None = Field(default=None, ge=1, le=MAX_INTERMEDIATE_PER_FINAL)
 
     @property
     def is_empty(self) -> bool:
@@ -2452,6 +2462,7 @@ def _ticket_schedule_fields(ticket: ExamTicket) -> dict:
         "opens_at": opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M"),
         "closes_at": closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M"),
         "duration_minutes": ticket_duration_sec(ticket) // 60,
+        "stage_photos": ticket.required_stage_photos,
     }
 
 
@@ -2626,6 +2637,9 @@ def create_mock_item(
                 restrict_start_by_duration=restrict_start_by_duration,
                 start_date=start_date,
                 end_date=end_date,
+                required_stage_photos=(
+                    payload.schedule.stage_photos if payload.schedule else None
+                ),
                 assign_to_all=payload.audience.assign_to_all,
                 tag_ids=tag_ids,
                 assignee_ids=assignee_ids,
@@ -3315,6 +3329,8 @@ def _sync_mock_tickets(
     tariff_restricted: bool = False,
     tariffs: list[str] | None = None,
     schedule: dict | None = None,
+    stage_photos: int | None = None,
+    keep_stage_photos: bool = False,
 ) -> None:
     """Развести билеты из формы правки с уже сохранёнными — id-сохраняющая
     логика, как у мини-опроса (владелец 30.08.2026: править билет можно
@@ -3344,6 +3360,11 @@ def _sync_mock_tickets(
         for t in db.query(ExamTicket).filter(ExamTicket.assignment_id == assignment.id).all()
     }
     next_number = max((t.ticket_number for t in existing.values()), default=0) + 1
+    if keep_stage_photos:
+        # Поля в запросе нет (старая вкладка) — держим сохранённое число, как
+        # окно ниже: «не прислал» не значит «стёр».
+        saved_ticket = min(existing.values(), key=lambda t: t.ticket_number, default=None)
+        stage_photos = saved_ticket.required_stage_photos if saved_ticket else None
     if schedule is None:
         # Ничего не задали — держим то окно, что уже стоит на задании. Первый
         # билет тут за всех: окно у них общее (см. докстринг).
@@ -3381,6 +3402,7 @@ def _sync_mock_tickets(
             ticket.opens_at = window_opens_at
             ticket.closes_at = window_closes_at
             ticket.duration_minutes = duration_minutes
+            ticket.required_stage_photos = stage_photos
             ticket.start_date = window_start_date
             ticket.end_date = window_end_date
             set_ticket_tariffs(
@@ -3407,6 +3429,7 @@ def _sync_mock_tickets(
                 restrict_start_by_duration=restrict_start_by_duration,
                 start_date=start_date,
                 end_date=end_date,
+                required_stage_photos=stage_photos,
                 assign_to_all=assign_to_all,
                 tag_ids=tag_ids,
                 assignee_ids=assignee_ids,
@@ -3474,6 +3497,8 @@ def update_mock_item(
             None if payload.schedule.is_empty
             else _mock_schedule(payload.schedule, day)
         ),
+        stage_photos=payload.schedule.stage_photos,
+        keep_stage_photos="stage_photos" not in payload.schedule.model_fields_set,
     )
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)

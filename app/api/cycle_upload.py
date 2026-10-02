@@ -572,11 +572,18 @@ async def upload_probnik_intermediate(
             work_type=WORK_TYPE_MOCK_EXAM,
         )
     )
-    upload_state = intermediate_upload_state(existing)
-    if existing >= MAX_INTERMEDIATE_PER_FINAL:
+    # «Ровно N этапных» из настроек пробника (владелец 02.10.2026) — потолок N.
+    required = ticket.required_stage_photos
+    upload_state = intermediate_upload_state(existing, required)
+    limit = upload_state["limit"]
+    if existing >= limit:
         return JSONResponse({
             "success": False,
-            "error": f"Лимит этапных фото исчерпан: уже загружено {existing} из {MAX_INTERMEDIATE_PER_FINAL}",
+            "error": (
+                f"Этапные уже загружены: {existing} из {limit}. Теперь загрузи финальное фото"
+                if required else
+                f"Лимит этапных фото исчерпан: уже загружено {existing} из {limit}"
+            ),
             **upload_state,
         }, status_code=422)
 
@@ -585,8 +592,11 @@ async def upload_probnik_intermediate(
         return JSONResponse({
             "success": False,
             "error": (
+                f"Нужно ровно {required} этапных фото, уже загружено {existing}. "
+                f"Можно добавить ещё {max_files}, а выбрано {len(photos)}"
+                if required else
                 f"Можно добавить ещё {max_files} этапных фото: "
-                f"уже загружено {existing} из {MAX_INTERMEDIATE_PER_FINAL}"
+                f"уже загружено {existing} из {limit}"
             ),
             **upload_state,
         }, status_code=422)
@@ -615,7 +625,8 @@ async def upload_probnik_intermediate(
             db,
             cycle_id=cycle.id,
             work_type=WORK_TYPE_MOCK_EXAM,
-        )
+        ),
+        required,
     )
 
     return JSONResponse({

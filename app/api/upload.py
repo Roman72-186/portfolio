@@ -365,7 +365,9 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
             if cycle is not None
             else 0
         )
-        stage_upload_state_by_subject[attempt.subject] = intermediate_upload_state(existing)
+        stage_upload_state_by_subject[attempt.subject] = intermediate_upload_state(
+            existing, ticket.required_stage_photos if ticket is not None else None,
+        )
 
     return templates.TemplateResponse(request, "upload_mock.html", {
         "request": request,
@@ -828,11 +830,18 @@ async def upload_photos(
 
 # ── POST /upload/api (JSON) ──────────────────────────────────────────────────
 
-async def _validate_photos(photos: list[UploadFile]) -> tuple[list[tuple[str, bytes]], str | None]:
-    """Read & validate uploaded files. Returns (files_data, error_msg or None)."""
+async def _validate_photos(
+    photos: list[UploadFile], *, max_files: int = MAX_FILES,
+) -> tuple[list[tuple[str, bytes]], str | None]:
+    """Read & validate uploaded files. Returns (files_data, error_msg or None).
+
+    Финал пробника — одно фото (`max_files=1`): формы шлют его через
+    `/upload/probnik/final`, где так и было, а старые пути пробника принимали
+    до MAX_FILES финальных (найдено 02.10.2026).
+    """
     return await read_image_uploads(
         photos,
-        max_files=MAX_FILES,
+        max_files=max_files,
         max_size=MAX_SIZE,
         # Список форматов в ошибке раньше обещал только JPG, PNG и WebP, хотя
         # `is_allowed_image` принимает и HEIC с iPhone, и подсказка на экране
@@ -941,7 +950,7 @@ async def upload_mock_exam_api(
             status_code=403,
         )
 
-    files_data, err = await _validate_photos(photos)
+    files_data, err = await _validate_photos(photos, max_files=1)
     if err:
         return JSONResponse({"success": False, "error": err}, status_code=422)
 
@@ -963,7 +972,8 @@ async def upload_mock_exam_api(
     submission_state = (
         cycle_submission_state(db, cycle_id=cycle.id, work_type=WORK_TYPE_MOCK_EXAM)
         if cycle is not None
-        else {"verified": False, "final_work_id": None, "existing": 0, "remaining": MAX_INTERMEDIATE_PER_FINAL, "limit": MAX_INTERMEDIATE_PER_FINAL}
+        else {"verified": False, "final_work_id": None,
+              **intermediate_upload_state(0, active_ticket.required_stage_photos)}
     )
 
     if success_count > 0 and submission_state["verified"]:
@@ -1317,7 +1327,9 @@ def mock_exam_embed(
             ticket_id=ticket.id if ticket is not None else attempt.ticket_id,
         )
         existing = count_cycle_intermediates(db, cycle_id=cycle.id) if cycle is not None else 0
-        stage_state = intermediate_upload_state(existing)
+        stage_state = intermediate_upload_state(
+            existing, ticket.required_stage_photos if ticket is not None else None,
+        )
 
     # Вопросы отсюда убраны 31.08.2026: они стали блоками элемента и
     # показываются общей панелью содержимого (`partials/inline/task_blocks.html`)
@@ -1434,6 +1446,8 @@ def mock_exam_start(
                     duration_sec=ticket_duration_sec(existing_ticket),
                 ).isoformat(),
                 "duration_sec": ticket_duration_sec(existing_ticket),
+                # «Ровно N этапных» (02.10.2026): форма пишет правило сразу.
+                "stage_required": existing_ticket.required_stage_photos,
                 "resumed": True,
             })
         # Билет этой попытки больше не активен (период истёк / задание архивно) —
@@ -1485,6 +1499,7 @@ def mock_exam_start(
             duration_sec=ticket_duration_sec(ticket),
         ).isoformat(),
         "duration_sec": ticket_duration_sec(ticket),
+        "stage_required": ticket.required_stage_photos,
         "resumed": False,
     })
 
@@ -1535,7 +1550,7 @@ async def upload_mock_exam(
         return _err("Сначала нажми «Начать пробник». После выдачи билета есть заданное время на сдачу.")
     month = MONTHS[now.month - 1]
 
-    files_data, err = await _validate_photos(photos)
+    files_data, err = await _validate_photos(photos, max_files=1)
     if err:
         return _err(err)
 
@@ -1561,7 +1576,8 @@ async def upload_mock_exam(
     submission_state = (
         cycle_submission_state(db, cycle_id=cycle.id, work_type=WORK_TYPE_MOCK_EXAM)
         if cycle is not None
-        else {"verified": False, "final_work_id": None, "existing": 0, "remaining": MAX_INTERMEDIATE_PER_FINAL, "limit": MAX_INTERMEDIATE_PER_FINAL}
+        else {"verified": False, "final_work_id": None,
+              **intermediate_upload_state(0, active_ticket.required_stage_photos)}
     )
 
     if success_count > 0 and submission_state["verified"]:

@@ -1170,6 +1170,14 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         html += '</div>'; // data-gallery wrapper
     }
 
+    // Пробник с заданным числом этапных: финал приняли и при нехватке
+    // (владелец 02.10.2026), ГП видит её перед оценкой.
+    var shortfall = (works.find(function(w){ return w.stage_shortfall; }) || {}).stage_shortfall;
+    if (shortfall) {
+        html += '<p class="alert alert-error">Этапных фото ' + shortfall.existing + ' из '
+            + shortfall.required + ' – ученик сдал меньше, чем нужно.</p>';
+    }
+
     // Комментарий куратора — только по primary
     if (primary.comment_html) {
         html += '<div class="mock-comment">' + primary.comment_html + '</div>';

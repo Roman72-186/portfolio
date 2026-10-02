@@ -38,7 +38,7 @@ from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_COMPARE, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
     BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
-    MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
+    QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
     TaskBlockSubmissionImage,
 )
@@ -78,6 +78,9 @@ from app.services.task_blocks import (
     completed_after_deadline as task_block_completed_after_deadline,
     save_compare_step,
     count_submission_images as count_task_block_submission_images,
+    delete_submission_images as delete_task_block_submission_images,
+    is_submission_complete,
+    submission_photo_limit,
     get_submit_deadlines as get_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
     submit_deadline_for,
@@ -445,7 +448,11 @@ def _submission_payload(
         deadline_passed = aware <= datetime.now(timezone.utc)
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
-        "max_files": MAX_SUBMISSION_IMAGES,
+        "max_files": submission_photo_limit(block),
+        # «Сколько фото сдать» (владелец 02.10.2026): экран пишет «нужно ровно
+        # N», считает «загружено X из N» и вместо поштучного удаления даёт
+        # «Заменить фото».
+        "required_photos": block.required_photos,
         "submitted_files": [{"id": i.id, "url": i.image_s3_url} for i in images],
         "edit_reason": block_work_reason(
             db, task, block, submission,
@@ -1091,6 +1098,7 @@ async def upload_task_block_work(
     _csrf: Annotated[None, Depends(require_csrf_header)],
     photos: list[UploadFile] = File(...),
     comment: str | None = Form(default=None),
+    replace: bool = Form(default=False),
 ):
     """Приём работы прямо в блоке задания (владелец 07.09.2026).
 
@@ -1129,23 +1137,45 @@ async def upload_task_block_work(
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission = submission or get_or_create_task_block_submission(db, block=block, user_id=user["user_id"])
     existing = count_task_block_submission_images(db, submission.id)
-    if existing >= MAX_SUBMISSION_IMAGES:
-        _refused("лимит файлов", f"уже загружено {existing} из {MAX_SUBMISSION_IMAGES}")
+    limit = submission_photo_limit(block)
+    required = block.required_photos
+    # «Заменить фото» (владелец 02.10.2026) — только при заданном числе: там
+    # поштучное удаление закрыто, иначе при «ровно 1» не заменить ничего.
+    # Новые фото встают вместо всех старых одним запросом, поэтому их ровно N.
+    replacing = bool(replace and required and existing)
+    if replacing:
+        if len(photos or []) != required:
+            _refused("замена не тем числом", f"нужно {required}")
+            return JSONResponse(
+                {"ok": False, "error": _required_count_error(required, len(photos or []))},
+                status_code=422,
+            )
+        existing = 0
+    if existing >= limit:
+        _refused("лимит файлов", f"уже загружено {existing} из {limit}")
+        error = (
+            f"Работа уже сдана: загружено {existing} из {required}. "
+            "Чтобы поменять фото, нажми «Заменить фото»"
+            if required else
+            f"Лимит файлов исчерпан: уже загружено {existing} из {limit}"
+        )
+        return JSONResponse({"ok": False, "error": error}, status_code=422)
+    if required and len(photos or []) > limit - existing:
+        _refused("больше нужного", f"выбрано {len(photos)}, можно ещё {limit - existing} из {required}")
         return JSONResponse(
-            {
-                "ok": False,
-                "error": f"Лимит файлов исчерпан: уже загружено {existing} из {MAX_SUBMISSION_IMAGES}",
-            },
+            {"ok": False, "error": _required_count_error(required, len(photos), existing)},
             status_code=422,
         )
     files, err = await read_image_uploads(
         photos,
-        max_files=MAX_SUBMISSION_IMAGES - existing,
+        max_files=limit - existing,
         max_size=MAX_UPLOAD_FILE_SIZE,
     )
     if err:
         _refused("валидация файлов", err)
         return JSONResponse({"ok": False, "error": err}, status_code=422)
+    if replacing:
+        delete_task_block_submission_images(db, submission.id)
 
     created = 0
     for filename, data in files:
@@ -1163,7 +1193,9 @@ async def upload_task_block_work(
         )
         created += 1
 
-    if created:
+    # С заданным числом работа сдана только при N из N: неполная сдача не
+    # закрывает блок и не попадает к проверяющему (владелец 02.10.2026).
+    if created and is_submission_complete(block, existing + created):
         mark_task_block_submitted(db, submission=submission, comment=comment)
         # Закрываем блок фактом сдачи: работа приехала, лента едет дальше.
         # Проверка куратора на это не влияет — иначе ученик стоял бы в ленте,
@@ -1172,8 +1204,23 @@ async def upload_task_block_work(
         close_task_block_for_user(
             db, block=block, user_id=user["user_id"], source="submission"
         )
+    elif created and comment is not None:
+        # Описание, набранное к первой части фото, не должно теряться.
+        submission.comment = comment.strip() or None
     db.commit()
     return JSONResponse({"ok": True, "created": created})
+
+
+def _required_count_error(required: int, chosen: int, existing: int = 0) -> str:
+    """Текст отказа, когда выбрано не столько фото, сколько нужно сдать."""
+    if existing:
+        return (
+            f"Нужно ровно {required} фото, уже загружено {existing}. "
+            f"Догрузи ещё {required - existing}, а выбрано {chosen}"
+        )
+    if required == 1:
+        return f"Нужно ровно 1 фото, а выбрано {chosen}. Вся работа – на одном снимке"
+    return f"Нужно ровно {required} фото, а выбрано {chosen}"
 
 
 @router.post("/tracker/blocks/{block_id}/comment", response_class=JSONResponse)
@@ -1232,6 +1279,13 @@ def delete_task_block_image(
     ).one_or_none()
     if image is None:
         raise HTTPException(status_code=404, detail="Фото не найдено")
+    # При заданном числе фото поштучного удаления нет: «ровно N» держится,
+    # только если фото меняются все разом (владелец 02.10.2026).
+    if block.required_photos:
+        return JSONResponse(
+            {"ok": False, "error": "Чтобы поменять фото, нажми «Заменить фото»."},
+            status_code=409,
+        )
     if count_task_block_submission_images(db, submission.id) <= 1:
         return JSONResponse({"ok": False, "error": "Нельзя удалить последнее фото. Сначала загрузи замену."}, status_code=409)
     db.delete(image)

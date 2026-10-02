@@ -31,8 +31,10 @@ from app.models.task_block import (
     DIALOG_REPLY_LIMIT_DEFAULT,
     DIALOG_REPLY_LIMIT_MAX,
     MAX_BLOCK_IMAGES,
+    MAX_SUBMISSION_IMAGES,
     MEDIA_KINDS,
     POLL_BLOCK_TYPES,
+    SUBMISSION_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
     QUESTION_TEXT,
     QUESTION_TYPES,
@@ -1019,6 +1021,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         limit = item.get("time_limit_minutes")
         row.time_limit_minutes = (
             int(limit) if block_type == BLOCK_TIMED and limit else None
+        )
+        # Сколько фото сдать — только у блоков сдачи (владелец 02.10.2026).
+        required = item.get("required_photos")
+        row.required_photos = (
+            int(required) if block_type in SUBMISSION_BLOCK_TYPES and required else None
         )
         window_hours = item.get("portfolio_window_hours")
         row.portfolio_window_hours = (
@@ -2414,6 +2421,38 @@ def count_submission_images(db: DBSession, submission_id: int) -> int:
         .filter(TaskBlockSubmissionImage.submission_id == submission_id)
         .count()
     )
+
+
+def submission_photo_limit(block: TaskBlock) -> int:
+    """Сколько фото всего примет сдача в блоке.
+
+    Задано «сколько фото сдать» (владелец 02.10.2026) — ровно столько, иначе
+    общий потолок MAX_SUBMISSION_IMAGES.
+    """
+    return block.required_photos or MAX_SUBMISSION_IMAGES
+
+
+def is_submission_complete(block: TaskBlock, count: int) -> bool:
+    """Сдана ли работа при `count` загруженных фото.
+
+    С заданным числом — только при N из N: до этого `submitted_at` пуст, блок
+    не закрыт и проверяющий работу не видит (все выборки сдач фильтруют
+    `submitted_at IS NOT NULL`). Без числа — прежнее правило, с первого фото.
+    """
+    return count >= (block.required_photos or 1)
+
+
+def delete_submission_images(db: DBSession, submission_id: int) -> None:
+    """Снять все фото сдачи — для «Заменить фото» при заданном числе.
+
+    Объекты в S3 не удаляются, как и при поштучном удалении фото учеником.
+    """
+    (
+        db.query(TaskBlockSubmissionImage)
+        .filter(TaskBlockSubmissionImage.submission_id == submission_id)
+        .delete(synchronize_session=False)
+    )
+    db.flush()
 
 
 def list_submission_images(

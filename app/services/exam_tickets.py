@@ -165,6 +165,7 @@ def create_ticket(
     assignee_ids: list[int],
     tariff_restricted: bool = False,
     tariffs: list[str] | None = None,
+    required_stage_photos: int | None = None,
 ) -> ExamTicket:
     """Создать билет и разложить адресацию по трём местам.
 
@@ -190,6 +191,7 @@ def create_ticket(
         opens_at=opens_at,
         closes_at=closes_at,
         duration_minutes=duration_minutes,
+        required_stage_photos=required_stage_photos,
         restrict_start_by_duration=restrict_start_by_duration,
         target_tag_id=tag_ids[0] if tag_ids and not assign_to_all else None,
         assign_to_all=assign_to_all,

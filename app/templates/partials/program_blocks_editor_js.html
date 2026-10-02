@@ -63,6 +63,15 @@ var DIALOG_REPLY_LIMIT_MAX = {{ (dialog_reply_limit_max or 20)|tojson }};
 // умеет распарсить обратно) не изменилась, изменился только способ ввода.
 var BODY_FORMAT_HINT = '';
 
+// «Сколько фото сдать» у блоков сдачи (владелец 02.10.2026: «нужно, чтобы
+// они загружали 1 фото только, где сразу 2 эскиза»). Ровно столько примет
+// сервер, работа сдана только при N из N. Пусто — до 10, сдано с первого.
+var REQUIRED_PHOTOS_FIELD = ''
+    + '<label class="prg-field">Сколько фото сдать'
+    + '  <input type="number" min="1" max="10" step="1" data-b-required-photos aria-label="Сколько фото сдать" placeholder="Любое, до 10">'
+    + '  <span class="prg-hint">Ученик сдаст ровно столько. Нужен один снимок со всей работой – поставьте 1 и напишите это в условии.</span>'
+    + '</label>';
+
 // Пока в форме пишется или грузится запись блока «Голосовое / кружок»
 // (контейнер с `data-mrf-busy`, см. media-recorder-field.js), кнопки
 // сохранения не срабатывают (владелец 25.09.2026): иначе блок ушёл бы без
@@ -256,7 +265,8 @@ function blockBodyHTML(type) {
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Пришлите работу»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
-            + '<p class="prg-hint">Ученик загрузит до 10 фото с описанием прямо в задании. Работа уйдёт на проверку по ученику, шаг закроется в момент загрузки.</p>';
+            + REQUIRED_PHOTOS_FIELD
+            + '<p class="prg-hint">Ученик загрузит фото с описанием прямо в задании. Работа уйдёт на проверку, шаг закроется, когда загружено нужное число фото.</p>';
     }
     if (type === 'photo_upload') {
         // Комбинированный блок «Фото + сдача работы» (владелец 12.09.2026:
@@ -271,7 +281,8 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото задания"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу до 10 фото прямо здесь.</p>';
+            + REQUIRED_PHOTOS_FIELD
+            + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу прямо здесь.</p>';
     }
     if (type === 'compare') {
         // Сравнение работ (Лиза 27.09.2026): ученик видит работы парами и
@@ -309,7 +320,8 @@ function blockBodyHTML(type) {
             + '<div class="prg-blk-gallery" data-b-images></div>'
             + '<label class="prg-field">Лимит, минут'
             + '  <input type="number" min="5" max="600" step="5" value="60" data-b-time-limit aria-label="Лимит в минутах">'
-            + '</label>';
+            + '</label>'
+            + REQUIRED_PHOTOS_FIELD;
     }
     if (type === 'scale') {
         // Диагностика навыков (владелец 03.09.2026): варианты — названия
@@ -973,6 +985,8 @@ function fillBlockRow(row, block) {
     if (bypass) bypass.checked = !!block.bypass_sequence;
     var limitField = row.querySelector('[data-b-time-limit]');
     if (limitField && block.time_limit_minutes) limitField.value = block.time_limit_minutes;
+    var requiredPhotos = row.querySelector('[data-b-required-photos]');
+    if (requiredPhotos) requiredPhotos.value = block.required_photos || '';
     var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
     if (portfolioWindow) portfolioWindow.value = block.portfolio_window_hours || '';
     (block.tariffs || []).forEach(function (tariff) {
@@ -1193,6 +1207,9 @@ function collectFormBlocks(form) {
         var limitField = row.querySelector('[data-b-time-limit]');
         item.time_limit_minutes = (limitField && limitField.value)
             ? Number(limitField.value) : null;
+        var requiredPhotos = row.querySelector('[data-b-required-photos]');
+        item.required_photos = (requiredPhotos && requiredPhotos.value)
+            ? Number(requiredPhotos.value) : null;
         var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
         item.portfolio_window_hours = (portfolioWindow && portfolioWindow.value)
             ? Number(portfolioWindow.value) : null;

@@ -108,7 +108,7 @@
             <!-- Промежуточные фото — до 10, по желанию -->
             <div>
                 <label class="form-label" style="margin-bottom:10px">
-                    Промежуточные фото <span class="ios-hint-text">· по желанию, до {{ max_files }} штук</span>
+                    Промежуточные фото <span class="ios-hint-text" id="stageRule">· по желанию, до {{ max_stage_files }} штук</span>
                 </label>
                 <label class="upload-drop" id="stageDrop">
                     <input type="file" accept="image/*" multiple id="stageInput">
@@ -233,11 +233,15 @@ function getStageState() {
     var limit = Number(state.limit || MAX_STAGE_LIMIT);
     var remaining = Number(state.remaining);
     if (!Number.isFinite(remaining)) remaining = Math.max(limit - existing, 0);
-    return { existing: existing, remaining: Math.max(remaining, 0), limit: limit };
+    // «Ровно N этапных» из настроек пробника (владелец 02.10.2026).
+    return { existing: existing, remaining: Math.max(remaining, 0), limit: limit, required: Number(state.required || 0) };
 }
 
 function updateStageExistingHint() {
     var state = getStageState();
+    document.getElementById('stageRule').textContent = state.required
+        ? '· нужно ровно ' + state.required
+        : '· по желанию, до ' + state.limit + ' штук';
     var afterSelected = Math.max(state.remaining - stageFiles.length, 0);
     if (state.existing > 0) {
         stageExistingHint.textContent = state.remaining <= 0
@@ -259,6 +263,7 @@ function syncStageStateFromResponse(body) {
         existing: Number.isFinite(Number(body.existing)) ? Number(body.existing) : current.existing,
         remaining: Number.isFinite(Number(body.remaining)) ? Number(body.remaining) : current.remaining,
         limit: Number.isFinite(Number(body.limit)) ? Number(body.limit) : current.limit,
+        required: body.required !== undefined ? Number(body.required || 0) : current.required,
     };
     updateStageExistingHint();
     return getStageState();
@@ -295,7 +300,9 @@ function addStage(newFiles) {
         var state = getStageState();
         var remainingForSelection = state.remaining - stageFiles.length;
         if (remainingForSelection <= 0) {
-            alert('Лимит этапных фото исчерпан: уже загружено ' + state.existing + ' из ' + state.limit + '.');
+            alert(state.required
+                ? 'Нужно ровно ' + state.required + ' этапных, больше не добавить.'
+                : 'Лимит этапных фото исчерпан: уже загружено ' + state.existing + ' из ' + state.limit + '.');
             break;
         }
         stageFiles.push(files[j]);
@@ -473,7 +480,19 @@ function doUploadFinal() {
         });
 }
 
+// Нехватку этапных подтверждают на странице, а не окном: финал всё равно
+// примут (владелец 02.10.2026), но ребёнок должен это видеть.
+var shortStagesConfirmed = false;
 submitBtn.addEventListener('click', function() {
+    var state = getStageState();
+    var stagesTotal = state.existing + (stageUploaded ? 0 : stageFiles.length);
+    if (state.required && stagesTotal < state.required && !shortStagesConfirmed) {
+        shortStagesConfirmed = true;
+        showUploadMsg('Этапных ' + stagesTotal + ' из ' + state.required
+            + '. Можно добавить недостающие или отправить так – проверяющий увидит, что их меньше.', true);
+        submitBtn.innerHTML = 'Отправить всё равно';
+        return;
+    }
     if (!stageUploaded && stageFiles.length > 0) {
         doUploadIntermediate();
     } else {
@@ -658,8 +677,14 @@ document.getElementById('startBtn').addEventListener('click', function(){
             renderTicket(attempt);
             startTimerFromServer(attempt.started_at, attempt.expires_at);
             document.getElementById('uploadSection').style.display = 'block';
+            var stageRequired = Number(res.body.stage_required || 0);
             if (!STAGE_STATE_BY_SUBJECT[_currentSubject]) {
-                STAGE_STATE_BY_SUBJECT[_currentSubject] = { existing: 0, remaining: MAX_STAGE_LIMIT, limit: MAX_STAGE_LIMIT };
+                STAGE_STATE_BY_SUBJECT[_currentSubject] = {
+                    existing: 0,
+                    remaining: stageRequired || MAX_STAGE_LIMIT,
+                    limit: stageRequired || MAX_STAGE_LIMIT,
+                    required: stageRequired,
+                };
             }
             updateStageExistingHint();
         })

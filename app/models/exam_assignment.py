@@ -61,6 +61,11 @@ class ExamTicket(Base):
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ровно столько этапных фото ждёт пробник (владелец 02.10.2026). Финальное
+    # по-прежнему одно. Не запирает финал: не успел догрузить этапные — финал
+    # всё равно примут, а проверяющий увидит «этапных 2 из 3». NULL — этапные
+    # по желанию, до MAX_INTERMEDIATE_PER_FINAL.
+    required_stage_photos: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Если True — получить билет нельзя позже (closes_at - duration_minutes), т.е.
     # когда до конца периода остаётся меньше «времени на выполнение». Если False —
     # получить билет можно до самого closes_at, время на выполнение при этом всё

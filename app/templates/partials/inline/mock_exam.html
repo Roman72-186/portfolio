@@ -62,7 +62,7 @@ mock_exam-задания одной недели), синглтон-id стол�
                 <div>
                     <label class="form-label">
                         Промежуточные фото
-                        <span class="ios-hint-text">· по желанию, до <span data-role="stage-limit"></span> штук</span>
+                        <span class="ios-hint-text" data-role="stage-rule">· по желанию, до <span data-role="stage-limit"></span> штук</span>
                     </label>
                     <label class="upload-drop" data-role="stage-drop">
                         <input type="file" accept="image/*" multiple data-role="stage-input">
@@ -139,6 +139,7 @@ mock_exam-задания одной недели), синглтон-id стол�
         var timerEl = root.querySelector('[data-role="timer"]');
         var timerValueEl = root.querySelector('[data-role="timer-value"]');
         var stageLimitEl = root.querySelector('[data-role="stage-limit"]');
+        var stageRuleEl = root.querySelector('[data-role="stage-rule"]');
         var stageDropEl = root.querySelector('[data-role="stage-drop"]');
         var stageInputEl = root.querySelector('[data-role="stage-input"]');
         var stagePreviewAreaEl = root.querySelector('[data-role="stage-preview-area"]');
@@ -224,9 +225,17 @@ mock_exam-задания одной недели), синглтон-id стол�
                 existing: Number((raw && raw.existing) || 0),
                 remaining: Number.isFinite(Number(raw && raw.remaining)) ? Number(raw.remaining) : stageLimitDefault,
                 limit: Number((raw && raw.limit) || stageLimitDefault),
+                // «Ровно N этапных» из настроек пробника (владелец 02.10.2026).
+                required: Number((raw && raw.required) || 0),
             };
+            stageRuleEl.textContent = stageState.required
+                ? '· нужно ровно ' + stageState.required
+                : '· по желанию, до ' + stageState.limit + ' штук';
             updateStageExistingHint();
         }
+        // Нехватку этапных подтверждают на странице, а не окном: финал всё
+        // равно примут (владелец 02.10.2026), но ребёнок должен это видеть.
+        var shortStagesConfirmed = false;
 
         function updateStageExistingHint() {
             var afterSelected = Math.max(stageState.remaining - stageFiles.length, 0);
@@ -419,7 +428,13 @@ mock_exam-задания одной недели), синглтон-id стол�
                         started_at: res.body.started_at,
                         expires_at: res.body.expires_at,
                     };
-                    applyStageState({ existing: 0, remaining: stageLimitDefault, limit: stageLimitDefault });
+                    var stageRequired = Number(res.body.stage_required || 0);
+                    applyStageState({
+                        existing: 0,
+                        remaining: stageRequired || stageLimitDefault,
+                        limit: stageRequired || stageLimitDefault,
+                        required: stageRequired,
+                    });
                     prepEl.hidden = true;
                     renderTicket(attempt);
                     startTimer(attempt.started_at, attempt.expires_at);
@@ -464,7 +479,9 @@ mock_exam-задания одной недели), синглтон-id стол�
                 if (files[j].size > MAX_SIZE) { alert(files[j].name + ' — слишком большой'); continue; }
                 var remainingForSelection = stageState.remaining - stageFiles.length;
                 if (remainingForSelection <= 0) {
-                    alert('Лимит этапных фото исчерпан: уже загружено ' + stageState.existing + ' из ' + stageState.limit + '.');
+                    alert(stageState.required
+                        ? 'Нужно ровно ' + stageState.required + ' этапных, больше не добавить.'
+                        : 'Лимит этапных фото исчерпан: уже загружено ' + stageState.existing + ' из ' + stageState.limit + '.');
                     break;
                 }
                 stageFiles.push(files[j]);
@@ -625,6 +642,14 @@ mock_exam-задания одной недели), синглтон-id стол�
         }
 
         submitBtn.addEventListener('click', function () {
+            var stagesTotal = stageState.existing + (stageUploaded ? 0 : stageFiles.length);
+            if (stageState.required && stagesTotal < stageState.required && !shortStagesConfirmed) {
+                shortStagesConfirmed = true;
+                showUploadMsg('Этапных ' + stagesTotal + ' из ' + stageState.required
+                    + '. Можно добавить недостающие или отправить так – проверяющий увидит, что их меньше.', true);
+                submitBtn.innerHTML = 'Отправить всё равно';
+                return;
+            }
             if (!stageUploaded && stageFiles.length > 0) doUploadIntermediate();
             else doUploadFinal();
         });

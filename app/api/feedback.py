@@ -167,6 +167,9 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
             .all()
         }
 
+    # Нехватка этапных (владелец 02.10.2026) — видна и в диалоге цикла.
+    from app.services.exam_cycle import stage_photo_shortfalls
+    shortfalls = stage_photo_shortfalls(db, [w.cycle_id for w in finals])
     attempts: list[dict] = []
     for w in finals:
         fb = feedbacks_by_work.get(w.id)
@@ -185,6 +188,9 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
                 {"id": iw.id, "s3_url": iw.s3_url, "filename": iw.filename}
                 for iw in intermediates_by_parent.get(w.id, [])
             ],
+            "stage_shortfall": (
+                shortfalls.get(w.cycle_id) if w.work_type == WORK_TYPE_MOCK_EXAM else None
+            ),
             "feedback_id": fb.id if fb else None,
             "has_staff_message": any(
                 m["sender_role"] != fb_service.ROLE_STUDENT for m in messages

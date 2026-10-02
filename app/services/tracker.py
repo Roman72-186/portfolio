@@ -1148,6 +1148,10 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
             media_s3_path=block.media_s3_path,
             question_type=block.question_type,
             hidden_until_done=block.hidden_until_done,
+            # Настройки сдачи: без них копия недели молча снимала с контрольной
+            # таймер и «сколько фото сдать» (02.10.2026).
+            time_limit_minutes=block.time_limit_minutes,
+            required_photos=block.required_photos,
         )
         db.add(clone)
         db.flush()

@@ -911,7 +911,21 @@ scope)` и свойством `answered` (одна попытка: после о
                     }
                     wrap.appendChild(el('p', 'video-help', deadlineText));
                 }
-                (block.submitted_files || []).forEach(function (file, index) {
+                // «Сколько фото сдать» (владелец 02.10.2026): ровно N, работа
+                // сдана при N из N. Поштучного удаления тогда нет — фото
+                // меняются все разом кнопкой «Заменить фото», иначе при
+                // «ровно 1» поменять снимок было бы нечем.
+                var required = block.required_photos || 0;
+                var uploaded = (block.submitted_files || []).length;
+                if (required) {
+                    var needText = 'Нужно сдать ровно ' + required + ' фото.';
+                    if (uploaded && uploaded < required) {
+                        needText += ' Загружено ' + uploaded + ' из ' + required
+                            + ', догрузи ещё ' + (required - uploaded) + '.';
+                    }
+                    wrap.appendChild(el('p', 'video-help', needText));
+                }
+                if (!required) (block.submitted_files || []).forEach(function (file, index) {
                     var remove = el('button', 'btn-outline', 'Удалить фото ' + (index + 1));
                     remove.type = 'button';
                     remove.addEventListener('click', function () {
@@ -931,11 +945,19 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(remove);
                 });
 
-                var left = (block.max_files || 10) - (block.submitted_files || []).length;
-                if (left <= 0) wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
+                var left = (block.max_files || 10) - uploaded;
+                if (left <= 0 && !required) wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
+                var replaceMode = false;
+                // Сколько фото должно быть выбрано: без заданного числа — любое.
+                function needCount() {
+                    if (replaceMode) return required;
+                    return required ? left : 0;
+                }
 
                 var fileId = 'lrn-upl-' + api.uid + '-' + block.id;
-                var label = el('label', 'field-label', 'Фото работы (до ' + left + ')');
+                var label = el('label', 'field-label', required
+                    ? 'Фото работы (ровно ' + needCount() + ')'
+                    : 'Фото работы (до ' + left + ')');
                 label.setAttribute('for', fileId);
                 // Системное поле говорило на языке телефона («Choose Files /
                 // No file chosen», аудит АОП 30.09.2026). Поле остаётся
@@ -946,7 +968,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 input.type = 'file';
                 input.id = fileId;
                 input.accept = 'image/*';
-                input.multiple = true;
+                input.multiple = needCount() !== 1;
                 var pickButton = el('label', 'btn-outline file-pick-btn', 'Выбрать фото');
                 pickButton.setAttribute('for', fileId);
                 var pickNames = el('p', 'file-pick-names', 'Фото не выбраны');
@@ -958,6 +980,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     });
                     pickNames.textContent = names.length ? 'Выбрано: ' + names.join(', ') : 'Фото не выбраны';
                     pickButton.textContent = names.length ? 'Выбрать другие' : 'Выбрать фото';
+                    syncSend();
                 });
                 pick.appendChild(input);
                 pick.appendChild(pickButton);
@@ -999,10 +1022,31 @@ scope)` и свойством `answered` (одна попытка: после о
                 var note = el('p', 'video-progress-status');
                 note.setAttribute('aria-live', 'polite');
 
+                // Кнопка ждёт ровно столько фото, сколько нужно; сервер
+                // проверяет то же самое и сам (старая вкладка правило не обойдёт).
+                function syncSend() {
+                    var need = needCount();
+                    var chosen = input.files ? input.files.length : 0;
+                    send.disabled = !!need && chosen !== need;
+                    if (need && chosen && chosen !== need) {
+                        note.textContent = 'Выбрано ' + chosen + ' фото, а нужно ровно ' + need + '.';
+                        note.classList.add('is-error');
+                    } else {
+                        note.textContent = '';
+                        note.classList.remove('is-error');
+                    }
+                }
+                syncSend();
+
                 send.addEventListener('click', function () {
                     if (!input.files || !input.files.length) {
                         note.textContent = 'Выбери хотя бы один файл.';
                         note.classList.add('is-error');
+                        return;
+                    }
+                    var need = needCount();
+                    if (need && input.files.length !== need) {
+                        syncSend();
                         return;
                     }
                     var data = new FormData();
@@ -1010,6 +1054,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         data.append('photos', input.files[i]);
                     }
                     data.append('comment', comment.value || '');
+                    if (replaceMode) data.append('replace', '1');
                     send.disabled = true;
                     note.classList.remove('is-error');
                     note.textContent = 'Загружаем…';
@@ -1053,15 +1098,34 @@ scope)` и свойством `answered` (одна попытка: после о
                     });
                 });
 
-                if (left > 0) {
+                function appendForm() {
                     wrap.appendChild(label);
                     wrap.appendChild(pick);
-                    if (!block.submitted_files || !block.submitted_files.length) {
+                    if (!uploaded) {
                         wrap.appendChild(commentLabel);
                         wrap.appendChild(comment);
                     }
                     wrap.appendChild(send);
                     wrap.appendChild(note);
+                }
+                if (left > 0) appendForm();
+                if (required && uploaded) {
+                    var replaceBtn = el('button', 'btn-outline', 'Заменить фото');
+                    replaceBtn.type = 'button';
+                    replaceBtn.addEventListener('click', function () {
+                        replaceMode = true;
+                        replaceBtn.remove();
+                        label.textContent = 'Новые фото вместо загруженных (ровно ' + required + ')';
+                        send.textContent = 'Заменить работу';
+                        input.multiple = required !== 1;
+                        input.value = '';
+                        pickNames.textContent = 'Фото не выбраны';
+                        pickButton.textContent = 'Выбрать фото';
+                        if (!label.parentNode) appendForm();
+                        syncSend();
+                        input.click();
+                    });
+                    wrap.appendChild(replaceBtn);
                 }
                 return wrap;
             }

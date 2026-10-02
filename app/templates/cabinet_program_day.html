@@ -21,7 +21,7 @@ FORM: Operate.
 {% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=42"></script>
+<script src="/static/js/task-blocks-render.js?v=43"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
@@ -58,6 +58,13 @@ FORM: Operate.
                data-sum="" data-sum-unit=" мин на работу"
                value="{{ mock_default_schedule.duration_minutes }}">
         <span class="prg-hint">Отсчёт идёт с того момента, как ученик нажал «Начать».</span>
+    </label>
+    {# «Ровно N этапных» (владелец 02.10.2026). Финальное фото всегда одно. #}
+    <label class="prg-field">Этапных фото
+        <input type="number" min="1" max="10" step="1" data-mock-stage-photos
+               data-sum="" data-sum-unit=" этапных фото"
+               placeholder="По желанию, до 10">
+        <span class="prg-hint">Ученик загрузит ровно столько этапных. Не успел – финальное всё равно примут, а на проверке будет видно, скольких не хватает.</span>
     </label>
 </div>
 {% endcall %}
@@ -746,6 +753,10 @@ FORM: Operate.
         if (opens) out.opens_at = opens;
         if (closes) out.closes_at = closes;
         if (duration) out.duration_minutes = Number(duration);
+        // Число этапных шлём всегда: пустое поле значит «по желанию», а не
+        // «не трогал», иначе снять число при правке было бы нечем.
+        var stage = box.querySelector('[data-mock-stage-photos]');
+        out.stage_photos = (stage && stage.value) ? Number(stage.value) : null;
         return out;
     }
 
@@ -757,6 +768,8 @@ FORM: Operate.
         if (schedule.duration_minutes) {
             box.querySelector('[data-mock-duration]').value = schedule.duration_minutes;
         }
+        var stage = box.querySelector('[data-mock-stage-photos]');
+        if (stage) stage.value = schedule.stage_photos || '';
     }
 
     function addTicketRow(block, ticket) {

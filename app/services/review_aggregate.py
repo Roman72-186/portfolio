@@ -86,6 +86,9 @@ class ReviewItem:
     # Балл 0–100 у пробника (`work`) и сдачи в задании (`block_work`). Ставит
     # только ГП (`rbac.can_score`), куратор видит его здесь, не открывая работу.
     score: int | None = None
+    # Пробник: ученик сдал меньше этапных, чем задано в настройках
+    # (`{"existing": 2, "required": 3}`, владелец 02.10.2026).
+    stage_shortfall: dict | None = None
 
 
 def _task_block_items(
@@ -186,8 +189,12 @@ def _work_items(
     if week_end is not None:
         q = q.filter(Work.created_at < week_end)
 
+    from app.services.exam_cycle import stage_photo_shortfalls
+
+    rows = q.order_by(Work.created_at.desc()).all()
+    shortfalls = stage_photo_shortfalls(db, [work.cycle_id for work, _ in rows])
     items = []
-    for work, student in q.order_by(Work.created_at.desc()).all():
+    for work, student in rows:
         items.append(ReviewItem(
             domain=DOMAIN_WORK,
             item_id=work.id,
@@ -198,6 +205,7 @@ def _work_items(
             is_reviewed=work.score is not None or work.viewed_at is not None,
             review_url=f"/cabinet/students?student={student.id}&tab=mock-exams",
             score=int(work.score) if work.score is not None else None,
+            stage_shortfall=shortfalls.get(work.cycle_id),
         ))
     return items
 

@@ -132,6 +132,9 @@
                                     {% if a.score is not none %}{{ a.score|int }} / 100{% else %}Не оценено{% endif %}
                                 </span>
                             </div>
+                            {% if a.stage_shortfall %}
+                                <div class="dlg-stages-label">Этапных фото {{ a.stage_shortfall.existing }} из {{ a.stage_shortfall.required }} – меньше, чем нужно.</div>
+                            {% endif %}
                             {% if a.intermediates %}
                                 <div class="dlg-stages-label">Этапы:</div>
                                 <div class="dlg-stages" style="margin-top:4px;">

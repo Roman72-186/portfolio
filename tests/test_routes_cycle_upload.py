@@ -1113,3 +1113,94 @@ def test_otrabotka_final_accepted_with_personal_assignment(auth_client, db):
     assert db.query(Work).filter(
         Work.user_id == user.id, Work.work_type == WORK_TYPE_RETAKE,
     ).count() == 1
+
+
+# ── «Ровно N этапных» (владелец 02.10.2026) ─────────────────────────────────
+
+def _ticket_with_stages(db, user, required):
+    _create_active_period(db, user, "mock_exam")
+    ticket = _create_active_ticket(db, user, "Рисунок")
+    ticket.required_stage_photos = required
+    db.commit()
+    return ticket
+
+
+def test_probnik_intermediate_caps_at_required_number(auth_client, db):
+    client, user = auth_client
+    _ticket_with_stages(db, user, 2)
+
+    too_many = _intermediate(client, "Рисунок", n=3)
+    assert too_many.status_code == 422
+    assert "ровно 2" in too_many.json()["error"]
+
+    ok = _intermediate(client, "Рисунок", n=2).json()
+    assert ok["created"] == 2
+    assert ok["limit"] == 2 and ok["required"] == 2 and ok["remaining"] == 0
+
+    full = _intermediate(client, "Рисунок", n=1)
+    assert full.status_code == 422
+    assert "финальное" in full.json()["error"]
+
+
+def test_probnik_final_is_accepted_with_fewer_stages_and_shortfall_is_visible(
+    auth_client, db
+):
+    """Финал не запирается нехваткой этапных — проверяющий видит «1 из 3»."""
+    from app.services.review_aggregate import DOMAIN_WORK, student_review_items
+
+    client, user = auth_client
+    _ticket_with_stages(db, user, 3)
+    _intermediate(client, "Рисунок", n=1)
+
+    resp = _final(client, "Рисунок")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["verified"] is True
+    items = [
+        i for i in student_review_items(db, student_id=user.id, role_rank=5)
+        if i.domain == DOMAIN_WORK
+    ]
+    assert items[0].stage_shortfall == {"existing": 1, "required": 3}
+
+
+def test_probnik_with_all_stages_has_no_shortfall(auth_client, db):
+    from app.services.review_aggregate import DOMAIN_WORK, student_review_items
+
+    client, user = auth_client
+    _ticket_with_stages(db, user, 2)
+    _intermediate(client, "Рисунок", n=2)
+    assert _final(client, "Рисунок").status_code == 200
+
+    items = [
+        i for i in student_review_items(db, student_id=user.id, role_rank=5)
+        if i.domain == DOMAIN_WORK
+    ]
+    assert items[0].stage_shortfall is None
+
+
+def test_probnik_without_number_keeps_ten_optional_stages(auth_client, db):
+    client, user = auth_client
+    _ticket_with_stages(db, user, None)
+
+    body = _intermediate(client, "Рисунок", n=1).json()
+
+    assert body["limit"] == 10 and body["required"] is None
+
+
+def test_mock_start_tells_the_form_the_stage_number(auth_client, db):
+    client, user = auth_client
+    _ticket_with_stages(db, user, 4)
+
+    assert _start(client, "Рисунок").json()["stage_required"] == 4
+
+
+def test_legacy_mock_exam_api_takes_one_final_photo(auth_client, db):
+    """Старый путь принимал до 20 «финальных» — финал пробника одно фото."""
+    client, user = auth_client
+    _ticket_with_stages(db, user, None)
+    _start(client, "Рисунок")
+    files = [("photos", (f"f{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(2)]
+
+    resp = client.post("/upload/mock-exam/api", data={"subject": "Рисунок"}, files=files)
+
+    assert resp.status_code == 422

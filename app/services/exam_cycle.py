@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.exam_assignment import (
@@ -298,13 +298,69 @@ def count_cycle_intermediates(
     )
 
 
-def intermediate_upload_state(existing: int) -> dict[str, int]:
-    """UI/API contract for the stage-photo quota."""
-    remaining = max(MAX_INTERMEDIATE_PER_FINAL - existing, 0)
+def intermediate_upload_state(existing: int, required: int | None = None) -> dict[str, int | None]:
+    """UI/API contract for the stage-photo quota.
+
+    `required` — «ровно N этапных» из настроек пробника (владелец 02.10.2026,
+    `ExamTicket.required_stage_photos`): потолок становится N. Финал этим не
+    запирается — не успел догрузить, финал всё равно примут, а проверяющий
+    увидит «этапных X из N» (`stage_photo_shortfalls`).
+    """
+    limit = required or MAX_INTERMEDIATE_PER_FINAL
     return {
         "existing": existing,
-        "remaining": remaining,
-        "limit": MAX_INTERMEDIATE_PER_FINAL,
+        "remaining": max(limit - existing, 0),
+        "limit": limit,
+        "required": required,
+    }
+
+
+def required_stage_photos_for_cycle(db: DBSession, cycle_id: int) -> int | None:
+    """Сколько этапных ждёт билет этого цикла (None — по желанию)."""
+    return (
+        db.query(ExamTicket.required_stage_photos)
+        .join(ExamCycle, ExamCycle.ticket_id == ExamTicket.id)
+        .filter(ExamCycle.id == cycle_id)
+        .scalar()
+    )
+
+
+def stage_photo_shortfalls(
+    db: DBSession, cycle_ids: list[int | None],
+) -> dict[int, dict[str, int]]:
+    """«Этапных 2 из 3» для проверяющего — по циклам, где ученик не догрузил.
+
+    Финал при нехватке этапных принимается (владелец 02.10.2026), поэтому
+    нехватку видно только здесь. Считается на лету и нигде не хранится; два
+    запроса на весь список, а не по два на работу.
+    """
+    ids = sorted({cid for cid in cycle_ids if cid is not None})
+    if not ids:
+        return {}
+    required_by_cycle = dict(
+        db.query(ExamCycle.id, ExamTicket.required_stage_photos)
+        .join(ExamTicket, ExamCycle.ticket_id == ExamTicket.id)
+        .filter(ExamCycle.id.in_(ids), ExamTicket.required_stage_photos.isnot(None))
+        .all()
+    )
+    if not required_by_cycle:
+        return {}
+    existing_by_cycle = dict(
+        db.query(Work.cycle_id, func.count(Work.id))
+        .filter(
+            Work.cycle_id.in_(list(required_by_cycle)),
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == False,  # noqa: E712
+            Work.status == "success",
+            _stored_work_file_filter(),
+        )
+        .group_by(Work.cycle_id)
+        .all()
+    )
+    return {
+        cycle_id: {"existing": existing_by_cycle.get(cycle_id, 0), "required": required}
+        for cycle_id, required in required_by_cycle.items()
+        if existing_by_cycle.get(cycle_id, 0) < required
     }
 
 
@@ -331,7 +387,7 @@ def cycle_submission_state(
     return {
         "verified": final is not None,
         "final_work_id": final.id if final else None,
-        **intermediate_upload_state(existing),
+        **intermediate_upload_state(existing, required_stage_photos_for_cycle(db, cycle_id)),
     }
 
 

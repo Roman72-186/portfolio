@@ -430,3 +430,79 @@ def test_day_page_prefills_the_saved_schedule_for_edit(
     assert schedule["opens_at"] == f"{day_iso}T08:15"
     assert schedule["closes_at"] == f"{day_iso}T22:45"
     assert schedule["duration_minutes"] == 300
+
+
+# ── «Ровно N этапных» (владелец 02.10.2026) ─────────────────────────────────
+
+def test_stage_photos_number_is_saved_on_create_and_edit(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    resp = client.post(f"{PROGRAM}/{day_iso}/mock", json={
+        "subjects": [{"subject": "Рисунок", "tickets": [_ticket("Первый"), _ticket("Второй")]}],
+        "audience": EVERYONE,
+        "schedule": {"stage_photos": 3},
+    })
+    assert resp.status_code == 200, resp.text
+    assert [t.required_stage_photos for t in db.query(ExamTicket).all()] == [3, 3]
+    tickets = db.query(ExamTicket).order_by(ExamTicket.ticket_number).all()
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+
+    resp = client.post(f"{PROGRAM}/items/{task.id}/mock", json={
+        "tickets": [
+            {"id": tickets[0].id, "title": "Первый", "description": ""},
+            {"id": tickets[1].id, "title": "Второй", "description": ""},
+            {"title": "Третий", "description": ""},
+        ],
+        "is_required": True,
+        "schedule": {"stage_photos": 2},
+    })
+
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    assert [t.required_stage_photos for t in db.query(ExamTicket).all()] == [2, 2, 2]
+    page = client.get(f"{PROGRAM}/{day_iso}").text
+    edit_data = json.loads(page.split("programEditData = ")[1].split(";\n")[0])
+    assert edit_data[str(task.id)]["schedule"]["stage_photos"] == 2
+
+
+def test_empty_stage_photos_clears_the_number_but_missing_field_keeps_it(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Пустое поле формы — «по желанию»; запрос без поля (старая вкладка) —
+    «не трогал», как и окно сдачи."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    client.post(f"{PROGRAM}/{day_iso}/mock", json={
+        "subjects": [{"subject": "Рисунок", "tickets": [_ticket()]}],
+        "audience": EVERYONE,
+        "schedule": {"stage_photos": 3},
+    })
+    ticket = db.query(ExamTicket).one()
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    base = {
+        "tickets": [{"id": ticket.id, "title": "Натюрморт", "description": ""}],
+        "is_required": True,
+    }
+
+    client.post(f"{PROGRAM}/items/{task.id}/mock", json=base)
+    db.expire_all()
+    assert db.get(ExamTicket, ticket.id).required_stage_photos == 3
+
+    client.post(f"{PROGRAM}/items/{task.id}/mock", json={**base, "schedule": {"stage_photos": None}})
+    db.expire_all()
+    assert db.get(ExamTicket, ticket.id).required_stage_photos is None
+
+
+def test_stage_photos_number_is_bounded(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    resp = client.post(f"{PROGRAM}/{_future_day_iso()}/mock", json={
+        "subjects": [{"subject": "Рисунок", "tickets": [_ticket()]}],
+        "audience": EVERYONE,
+        "schedule": {"stage_photos": 11},
+    })
+    assert resp.status_code == 422

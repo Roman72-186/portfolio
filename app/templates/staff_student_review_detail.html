@@ -117,6 +117,11 @@
                 {# Карточки «Портфолио «До» — точка А» здесь больше нет
                    (15.09.2026): входная оценка целиком уехала на свой экран
                    /cabinet/staff/point-a, см. app/services/point_a.py. #}
+                {# Пробник с заданным числом этапных: финал приняли и при нехватке
+                   (владелец 02.10.2026), проверяющий видит это здесь. #}
+                {% if item.stage_shortfall %}
+                <p class="prg-hint">Этапных фото {{ item.stage_shortfall.existing }} из {{ item.stage_shortfall.required }} – ученик сдал меньше, чем нужно.</p>
+                {% endif %}
                 {% if item.domain == 'block_work' %}
                 {% if item.text %}<p>{{ item.text }}</p>{% endif %}
                 {% if item.images %}

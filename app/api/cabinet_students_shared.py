@@ -814,6 +814,11 @@ def get_mock_exams(
     if mock_ids:
         fb_work_ids = {row[0] for row in db.query(_FB.work_id).filter(_FB.work_id.in_(mock_ids)).all()}
 
+    # Нехватка этапных (владелец 02.10.2026): финал приняли, а ГП должен
+    # видеть, что этапных меньше заданного.
+    from app.services.exam_cycle import stage_photo_shortfalls
+    shortfalls = stage_photo_shortfalls(db, [w.cycle_id for w in mock_works])
+
     def serialize_mock_work(w: Work) -> dict:
         created_at = w.created_at
         if created_at and created_at.tzinfo is None:
@@ -832,6 +837,7 @@ def get_mock_exams(
             "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
             "cycle_id": w.cycle_id,
             "has_feedback": w.id in fb_work_ids,
+            "stage_shortfall": shortfalls.get(w.cycle_id),
         }
 
     locks = {
