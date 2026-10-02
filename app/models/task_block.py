@@ -250,7 +250,9 @@ LATE_SUBMISSION_BLOCK_TYPES = (BLOCK_TIMED,)
 # VIDEO_BLOCK_TYPES читает и `video_catalog`: ролик в любом из этих блоков
 # открывается ученику по доступу к блоку, а не по правилу «без темы — всем».
 VIDEO_BLOCK_TYPES = (BLOCK_VIDEO, BLOCK_PORTFOLIO)
-IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_COMPARE)
+# BLOCK_TIMED — фото к условию контрольной (владелец 02.10.2026), ученику
+# отдаются только после «Начать работу», как и само условие.
+IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_COMPARE, BLOCK_TIMED)
 
 # Типы, которые преподаватель может добавить кнопкой в конструкторе. Уже, чем
 # BLOCK_TYPES: отдельный текст скрыт, потому что пояснение к заданию пишется

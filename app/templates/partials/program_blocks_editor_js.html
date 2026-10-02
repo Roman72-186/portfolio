@@ -302,6 +302,11 @@ function blockBodyHTML(type) {
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Контрольная работа»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Условие" placeholder="Условие работы"></textarea>' + BODY_FORMAT_HINT + '</label>'
+            // Фото к условию (владелец 02.10.2026) — тот же виджет галереи,
+            // что у «Фото + сдача». Ученик видит их только после «Начать».
+            + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото к условию, необязательно"></label>'
+            + '<p class="prg-hint" data-b-photo-status></p>'
+            + '<div class="prg-blk-gallery" data-b-images></div>'
             + '<label class="prg-field">Лимит, минут'
             + '  <input type="number" min="5" max="600" step="5" value="60" data-b-time-limit aria-label="Лимит в минутах">'
             + '</label>';
@@ -1279,7 +1284,8 @@ function collectFormBlocks(form) {
                 });
             });
         }
-        if (type === 'photo_upload') {
+        if (type === 'photo_upload' || type === 'timed') {
+            // У контрольной фото к условию тоже необязательны.
             // В отличие от чистого «Фото» блок самодостаточен и без картинок
             // (см. `_is_empty` в `app/services/task_blocks.py`) — куратор мог
             // написать пояснение и вернуться за фото-заданием позже, поэтому

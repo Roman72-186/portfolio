@@ -107,6 +107,23 @@ def test_limit_is_cleared_on_other_types(db, regular_user):
     assert blocks[0].time_limit_minutes is None
 
 
+def test_condition_photos_are_saved(db, regular_user):
+    """Фото к условию (владелец 02.10.2026) сохраняются тем же путём, что у
+    «Фото + сдача», и необязательны."""
+    from app.services.task_blocks import get_images
+
+    task = _task(db, regular_user)
+    blocks = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_TIMED, "title": "Контрольная работа",
+        "body": "Нарисуйте натюрморт с фото", "time_limit_minutes": 60,
+        "images": [{"url": "https://example.com/a.jpg", "path": "blocks/a.jpg"}],
+    }])
+    db.commit()
+
+    saved = get_images(db, [blocks[0].id])[blocks[0].id]
+    assert [i.image_s3_url for i in saved] == ["https://example.com/a.jpg"]
+
+
 def test_timed_block_survives_without_body(db, regular_user):
     """Кнопка «Начать» самодостаточна, как и «Загрузить портфолио»."""
     task = _task(db, regular_user)

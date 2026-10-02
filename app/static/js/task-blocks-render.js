@@ -1101,6 +1101,11 @@ scope)` и свойством `answered` (одна попытка: после о
             function renderTimed(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-timed'), block);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
+                // Фото к условию (02.10.2026): до старта сервер их не присылает.
+                var urls = (block.images || []).map(function (image) { return image.url; });
+                if (urls.length) {
+                    wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
+                }
                 var limit = block.time_limit_minutes;
                 if (limit) {
                     wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));

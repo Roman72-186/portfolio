@@ -315,3 +315,24 @@ def test_condition_is_hidden_until_the_start(auth_client, db):
     assert after["body"] == "Нарисуйте локацию с дверью"
     assert "локацию с дверью" in after["body_html"]
     assert "body_hidden" not in after
+
+
+def test_condition_photos_are_hidden_until_the_start(auth_client, db):
+    """Фото к условию контрольной (владелец 02.10.2026) — по тому же правилу,
+    что и текст: до «Начать работу» их адресов в ответе нет."""
+    from app.models.task_block import TaskBlockImage
+
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, minutes=75)
+    db.add(TaskBlockImage(
+        block_id=block.id, image_s3_url="https://example.com/still-life.jpg", sort_order=0,
+    ))
+    db.commit()
+
+    assert "images" not in _payload(client, task)
+    assert "still-life.jpg" not in client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").text
+
+    start_timed_block(db, block=block, user_id=user.id)
+    db.commit()
+    assert _payload(client, task)["images"] == [{"url": "https://example.com/still-life.jpg"}]
