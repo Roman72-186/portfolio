@@ -309,7 +309,8 @@ def test_shortened_tariff_deadline_closes_the_question(auth_client, db):
     resp = _answer(client, task, block)
 
     assert resp.status_code == 409
-    assert "Срок сдачи истёк" in resp.json()["detail"]
+    # Дату срока не называем (владелец 02.10.2026): её называет текст задания.
+    assert resp.json()["detail"] == "Срок сдачи прошёл. Изменить работу нельзя."
 
 
 def test_task_level_tariff_deadline_closes_the_question(auth_client, db):

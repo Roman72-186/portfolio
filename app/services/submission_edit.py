@@ -11,7 +11,6 @@ from app.models.task_block import (
 )
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
-from app.services.tz import msk_text
 
 
 def _utc(value: datetime) -> datetime:
@@ -36,8 +35,11 @@ def deadline_reason(
     `task_blocks.submit_deadline_for`, и второй копии этого правила здесь не
     появляется.
 
-    Текст называет момент по Москве: «срок истёк» без даты вызывал встречный
-    вопрос «а когда он был».
+    Текст срок не называет (владелец 02.10.2026). Раньше называл — «срок
+    истёк» без даты вызывал вопрос «а когда он был», — но `submit_until`
+    ставят с запасом, и дата сайта («04.10 в 19:23») расходилась с дедлайном
+    из текста задания («30 сентября»): ученики решили, что срок перенесли.
+    Дедлайн ученику называет только текст задания.
 
     **День задания — срок, только пока срока сдачи нет** (владелец 28.09.2026).
     Задание с экрана дня несёт `due_at` = 23:59 своего дня, и раньше он
@@ -59,7 +61,7 @@ def deadline_reason(
         late_allowed=late_allowed,
     )
     if deadline is not None and deadline <= moment:
-        return f"Срок сдачи истёк {msk_text(deadline)} по Москве. Изменить работу нельзя."
+        return "Срок сдачи прошёл. Изменить работу нельзя."
     return None
 
 

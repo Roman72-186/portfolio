@@ -340,7 +340,9 @@ def test_deadline_reminders_a_day_and_three_hours_before(db, user_factory):
     assert [n.text for n in notes] == [
         "Осталось меньше суток.", "Осталось меньше трёх часов.",
     ]
-    assert notes[0].title.startswith("Сдать «Портрет» до ")
+    # Дату срока напоминание не называет (владелец 02.10.2026): её
+    # называет только текст задания.
+    assert notes[0].title == "Скоро закроется приём работ: «Портрет»"
 
 
 def test_no_deadline_reminder_once_handed_in(db, user_factory):

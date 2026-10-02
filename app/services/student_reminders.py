@@ -459,19 +459,19 @@ def _content_message(items: list[_Item]) -> tuple[str, str]:
 
 
 def _deadline_message(items: list[_Item]) -> tuple[str, str]:
+    """Дату срока не называем (владелец 02.10.2026): `submit_until` ставят с
+    запасом, и «до 04.10 в 19:23» спорило бы с дедлайном из текста задания —
+    ученики приняли бы это за перенос. Дедлайн называет только задание."""
     if len(items) == 1:
         item = items[0]
         left = (
             "Осталось меньше трёх часов." if item.kind == KIND_DEADLINE_3H
             else "Осталось меньше суток."
         )
-        return f"Сдать «{item.title}» до {_short_msk(item.moment)}", left
+        return f"Скоро закроется приём работ: «{item.title}»", left
     word = _plural(len(items), "задание", "задания", "заданий")
-    lines = [
-        f"«{item.title}» – до {_short_msk(item.moment)}"
-        for item in sorted(items, key=lambda i: i.moment)[:SUMMARY_LIMIT]
-    ]
-    return f"Скоро срок сдачи: {len(items)} {word}", "\n".join(lines)
+    items = sorted(items, key=lambda i: i.moment)
+    return f"Скоро закроется приём работ: {len(items)} {word}", _titles(items)
 
 
 def _access_message(item: _Item) -> tuple[str, str]:

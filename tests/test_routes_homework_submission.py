@@ -125,7 +125,7 @@ def test_deadline_blocks_homework_upload_but_page_stays_visible(auth_client, db)
         upload = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
 
     assert page.status_code == 200
-    assert "Срок сдачи истёк" in page.text
+    assert "Срок сдачи прошёл" in page.text
     assert upload.status_code == 409
 
 
