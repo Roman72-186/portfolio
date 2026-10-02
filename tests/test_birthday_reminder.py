@@ -1,7 +1,8 @@
 """Напоминание о дне рождения ученика (12.09.2026, адресат — ГП с 29.09.2026).
 
-exam_scheduler._run_birthday_check — за 7 дней и ближе, один раз в год
-(birthday_reminder_sent_year), каждому активному Главному преподавателю.
+exam_scheduler._run_birthday_check — только в сам день рождения (владелец
+02.10.2026; до этого — за 7 дней), один раз (birthday_reminder_sent_year),
+каждому активному Главному преподавателю.
 Куратору, суперадмину и модератору не уходит (владелец 29.09.2026:
 «не куратор, а ГП»). Плюс сам экран /cabinet/staff/notifications.
 """
@@ -23,10 +24,10 @@ def _count_for(db, user_id: int) -> int:
     return db.query(Notification).filter(Notification.user_id == user_id).count()
 
 
-def test_flags_birthday_within_week(db, user_factory):
+def test_flags_birthday_today(db, user_factory):
     chief = user_factory(vk_id=700_001, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_002, name="Аня Иванова")
-    student.birth_date = _birth_date_in(5)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -36,10 +37,7 @@ def test_flags_birthday_within_week(db, user_factory):
     assert "Аня Иванова" in notif.title
 
     db.refresh(student)
-    # Год самого дня рождения, не обязательно today.year — см.
-    # test_does_not_double_notify_across_year_boundary ниже для случая,
-    # когда они расходятся (дата рождения в первую неделю января).
-    assert student.birthday_reminder_sent_year == (today_msk() + timedelta(days=5)).year
+    assert student.birthday_reminder_sent_year == today_msk().year
 
 
 def test_title_carries_telegram_nick(db, user_factory):
@@ -48,10 +46,10 @@ def test_title_carries_telegram_nick(db, user_factory):
     chief = user_factory(vk_id=700_050, name="ГП", role_name="админ")
     with_nick = user_factory(vk_id=700_051, name="Аня Иванова")
     with_nick.tg_username = "@anya_iv"
-    with_nick.birth_date = _birth_date_in(2)
+    with_nick.birth_date = _birth_date_in(0)
     without_nick = user_factory(vk_id=700_052, name="Боря Петров")
     without_nick.tg_username = None
-    without_nick.birth_date = _birth_date_in(2)
+    without_nick.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -67,7 +65,7 @@ def test_goes_to_chief_teacher_not_curator(db, user_factory):
     curator = user_factory(vk_id=700_021, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=700_022, name="Лена Орлова")
     student.curator_id = curator.id
-    student.birth_date = _birth_date_in(3)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -80,7 +78,7 @@ def test_every_chief_teacher_gets_one(db, user_factory):
     chief_a = user_factory(vk_id=700_023, name="ГП А", role_name="админ")
     chief_b = user_factory(vk_id=700_024, name="ГП Б", role_name="админ")
     student = user_factory(vk_id=700_025, name="Максим Лебедев")
-    student.birth_date = _birth_date_in(4)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -95,7 +93,7 @@ def test_superadmin_and_moderator_not_notified(db, user_factory):
     superadmin = user_factory(vk_id=700_027, name="Суперадмин", role_name="суперадмин")
     moderator = user_factory(vk_id=700_028, name="Модератор", role_name="модератор")
     student = user_factory(vk_id=700_029, name="Вера Морозова")
-    student.birth_date = _birth_date_in(1)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -108,7 +106,7 @@ def test_inactive_chief_teacher_not_notified(db, user_factory):
     active = user_factory(vk_id=700_030, name="ГП", role_name="админ")
     inactive = user_factory(vk_id=700_031, name="Бывший ГП", role_name="админ", is_active=False)
     student = user_factory(vk_id=700_032, name="Дима Волков")
-    student.birth_date = _birth_date_in(2)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -121,7 +119,7 @@ def test_no_chief_teacher_keeps_flag_unset(db, user_factory):
     """Без ГП слать некому — флаг не ставится, чтобы напоминание ушло
     первому назначенному ГП, а не потерялось."""
     student = user_factory(vk_id=700_033, name="Ждёт ГП")
-    student.birth_date = _birth_date_in(2)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -141,7 +139,7 @@ def test_student_without_curator_is_not_skipped(db, user_factory):
     Теперь адресат — ГП, и куратор не нужен."""
     chief = user_factory(vk_id=700_009, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_035, name="Без куратора")
-    student.birth_date = _birth_date_in(2)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
@@ -149,10 +147,12 @@ def test_student_without_curator_is_not_skipped(db, user_factory):
     assert _count_for(db, chief.id) == 1
 
 
-def test_ignores_birthday_far_away(db, user_factory):
+def test_no_reminder_before_the_day(db, user_factory):
+    """Владелец 02.10.2026: «только в сам день» — ни за неделю, ни накануне."""
     chief = user_factory(vk_id=700_003, name="ГП", role_name="админ")
-    student = user_factory(vk_id=700_004, name="Пётр Сидоров")
-    student.birth_date = _birth_date_in(20)
+    for vk_id, days in ((700_004, 1), (700_053, 7), (700_054, 20)):
+        student = user_factory(vk_id=vk_id, name=f"Через {days}")
+        student.birth_date = _birth_date_in(days)
     db.commit()
 
     _run_birthday_check()
@@ -170,13 +170,13 @@ def test_notifies_same_day(db, user_factory):
 
     notif = db.query(Notification).filter(Notification.user_id == chief.id).first()
     assert notif is not None
-    assert "сегодня" in notif.text
+    assert "Сегодня" in notif.text
 
 
 def test_does_not_repeat_within_same_year(db, user_factory):
     chief = user_factory(vk_id=700_007, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_008, name="Игорь Смирнов")
-    student.birth_date = _birth_date_in(3)
+    student.birth_date = _birth_date_in(0)
     student.birthday_reminder_sent_year = today_msk().year
     db.commit()
 
@@ -219,21 +219,22 @@ def test_upcoming_birthday_leap_day_in_non_leap_year():
     assert _upcoming_birthday(date(2012, 2, 29), date(2026, 2, 1)) == date(2026, 2, 28)
 
 
-def test_does_not_double_notify_across_year_boundary(db, user_factory, monkeypatch):
-    """Прецедент из ревью: день рождения 3 января, проверка идёт и 27
-    декабря (days_left=7, today.year=2026), и 1 января (days_left=2,
-    today.year=2027 уже сменился) — раньше это слало напоминание дважды."""
+def test_new_year_birthday_once_on_the_day(db, user_factory, monkeypatch):
+    """День рождения 1 января: 31 декабря молчим, 1 января — одно
+    напоминание, повторный прогон в тот же день дубля не даёт."""
     import app.services.exam_scheduler as scheduler_module
 
     chief = user_factory(vk_id=700_015, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_016, name="Январский Именинник")
-    student.birth_date = date(2010, 1, 3)
+    student.birth_date = date(2010, 1, 1)
     db.commit()
 
-    monkeypatch.setattr(scheduler_module, "today_msk", lambda: date(2026, 12, 27))
+    monkeypatch.setattr(scheduler_module, "today_msk", lambda: date(2026, 12, 31))
     _run_birthday_check()
+    assert _count_for(db, chief.id) == 0
 
     monkeypatch.setattr(scheduler_module, "today_msk", lambda: date(2027, 1, 1))
+    _run_birthday_check()
     _run_birthday_check()
 
     assert _count_for(db, chief.id) == 1
@@ -262,7 +263,7 @@ def test_chief_teacher_sees_birthday_on_staff_screen(db, client, session_factory
     меню у него нет, экран тот же, что у куратора."""
     chief = user_factory(vk_id=700_036, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_037, name="Соня Белова")
-    student.birth_date = _birth_date_in(6)
+    student.birth_date = _birth_date_in(0)
     db.commit()
     _run_birthday_check()
     client.cookies.set("session_id", session_factory(chief).id)
@@ -322,7 +323,7 @@ def test_extra_recipient_gets_birthday_too(db, user_factory, monkeypatch):
         scheduler_module, "BIRTHDAY_EXTRA_RECIPIENT_IDS", frozenset({care.id, gone.id}),
     )
     student = user_factory(vk_id=700_043, name="Юля Зайцева")
-    student.birth_date = _birth_date_in(4)
+    student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
