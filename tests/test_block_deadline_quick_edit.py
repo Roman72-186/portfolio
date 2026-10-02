@@ -309,13 +309,20 @@ def test_teacher_sets_deadline_student_submits_then_it_closes(
                 "title": "Пришлите эскиз",
                 "submit_until": "2026-09-27T09:30",
                 "submit_deadlines": [{"tariff": "Я САМ", "submit_until": "2026-09-29T21:00"}],
+            }, {
+                # Второй шаг держит задание открытым: выполненное задание
+                # запирает сданную работу (02.10.2026), а здесь проверяется срок.
+                "block_type": BLOCK_PHOTO_UPLOAD,
+                "title": "Пришлите второй эскиз",
             }],
         },
         headers={"X-CSRF-Token": "x"},
     )
     assert resp.status_code == 200, resp.text
     task = db.query(TrackerTask).filter(TrackerTask.title == "Эскиз третьего цикла").one()
-    block = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).one()
+    block = db.query(TaskBlock).filter(
+        TaskBlock.task_id == task.id, TaskBlock.title == "Пришлите эскиз"
+    ).one()
     assert (block.submit_until.hour, block.submit_until.minute) == (6, 30)
 
     block.submit_until = day_bounds(TODAY + timedelta(days=1))[0]

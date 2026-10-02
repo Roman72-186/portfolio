@@ -91,6 +91,16 @@ def _upload_block(db, task, *, order=1, block_type=BLOCK_UPLOAD):
     return block
 
 
+def _keep_task_open(db, task):
+    """Второй обязательный шаг, который ученик ещё не сделал.
+
+    Выполненное задание запирает сданную работу (владелец 02.10.2026), а
+    задание из одного блока сдачи закрывается само этой же сдачей. Тестам про
+    правку до срока и проверки нужно открытое задание.
+    """
+    return _upload_block(db, task, order=2)
+
+
 def _post(client, block_id, files=None, comment=""):
     files = files or [("photos", ("work.jpg", b"fake-bytes", "image/jpeg"))]
     with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
@@ -140,6 +150,7 @@ def test_second_upload_adds_a_file_and_keeps_one_submission(auth_client, db):
     client, user = auth_client
     task = _task(db, user)
     block = _upload_block(db, task)
+    _keep_task_open(db, task)
 
     _post(client, block.id)
     _post(client, block.id)
@@ -152,6 +163,7 @@ def test_student_can_edit_description_and_remove_photo(auth_client, db):
     client, user = auth_client
     task = _task(db, user)
     block = _upload_block(db, task)
+    _keep_task_open(db, task)
     _post(client, block.id, comment="Первый вариант")
     _post(client, block.id)
     submission = get_submission(db, block_id=block.id, user_id=user.id)
@@ -252,6 +264,7 @@ def test_tariff_deadline_overrides_the_common_one(auth_client, db):
     client, user = auth_client
     task = _task(db, user)
     block = _upload_block(db, task)
+    _keep_task_open(db, task)
     # Общий срок прошёл, а у тарифа ученика он ещё впереди.
     _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
     _deadline(

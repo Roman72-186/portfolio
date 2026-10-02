@@ -65,6 +65,19 @@ def _block(db, task, *, required=None, block_type=BLOCK_PHOTO_UPLOAD):
     return block
 
 
+def _keep_task_open(db, task):
+    """Второй обязательный шаг, который ученик ещё не сделал: выполненное
+    задание запирает сданную работу (владелец 02.10.2026), а задание из
+    одного блока закрывается самой сдачей."""
+    block = TaskBlock(
+        task_id=task.id, block_type=BLOCK_PHOTO_UPLOAD, title="Второй лист",
+        sort_order=2, is_required=True,
+    )
+    db.add(block)
+    db.commit()
+    return block
+
+
 def _files(n):
     return [("photos", (f"w{i}.jpg", b"fake-bytes", "image/jpeg")) for i in range(n)]
 
@@ -181,7 +194,9 @@ def test_partial_upload_is_not_a_submission_until_n_of_n(auth_client, db):
 
 def test_after_n_of_n_more_photos_are_refused(auth_client, db):
     client, user = auth_client
-    block = _block(db, _task(db, user), required=1)
+    task = _task(db, user)
+    block = _block(db, task, required=1)
+    _keep_task_open(db, task)
     _post(client, block.id, n=1)
 
     resp = _post(client, block.id, n=1)
@@ -193,7 +208,9 @@ def test_after_n_of_n_more_photos_are_refused(auth_client, db):
 def test_without_a_number_the_old_rule_stays(auth_client, db):
     """Пустое поле — до MAX_SUBMISSION_IMAGES и сдано с первого фото."""
     client, user = auth_client
-    block = _block(db, _task(db, user), required=None)
+    task = _task(db, user)
+    block = _block(db, task, required=None)
+    _keep_task_open(db, task)
 
     assert _post(client, block.id, n=2).status_code == 200
     submission = get_submission(db, block_id=block.id, user_id=user.id)
@@ -215,7 +232,9 @@ def test_timed_block_takes_the_number_too(auth_client, db):
 
 def test_replace_swaps_all_photos_at_once(auth_client, db):
     client, user = auth_client
-    block = _block(db, _task(db, user), required=1)
+    task = _task(db, user)
+    block = _block(db, task, required=1)
+    _keep_task_open(db, task)
     _post(client, block.id, n=1)
     submission = get_submission(db, block_id=block.id, user_id=user.id)
     new_url = "https://s3.example.com/zadaniya/new.jpg"
@@ -238,7 +257,9 @@ def test_replace_swaps_all_photos_at_once(auth_client, db):
 
 def test_replace_with_a_wrong_number_keeps_the_old_work(auth_client, db):
     client, user = auth_client
-    block = _block(db, _task(db, user), required=1)
+    task = _task(db, user)
+    block = _block(db, task, required=1)
+    _keep_task_open(db, task)
     _post(client, block.id, n=1)
     submission = get_submission(db, block_id=block.id, user_id=user.id)
 

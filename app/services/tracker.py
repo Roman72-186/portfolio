@@ -370,6 +370,20 @@ def accessible_task_ids(db: Session, user_id: int) -> set[int]:
     return {row[0] for row in rows}
 
 
+def task_done_for_user(db: Session, task_id: int, user_id: int) -> bool:
+    """Выполнено ли задание у ученика — кнопкой, автозакрытием или куратором.
+
+    Одно определение на ленту (`hidden_until_done`) и на запрет правки
+    сданной работы (`submission_edit.block_work_reason`, владелец 02.10.2026).
+    """
+    status = (
+        db.query(TrackerTaskState.status)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .scalar()
+    )
+    return status == STATUS_DONE
+
+
 def task_status(
     task: TrackerTask, state: TrackerTaskState | None, *, now: datetime
 ) -> Literal["done", "overdue", "upcoming"]:

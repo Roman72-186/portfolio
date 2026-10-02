@@ -140,6 +140,16 @@ def block_work_reason(
     )
     if reason or submission is None:
         return reason
+    # Выполненное задание запирает уже загруженную работу (владелец
+    # 02.10.2026: «если задание выполнено в статусе, не давать ученику что-то
+    # менять в загруженных работах»). Любое «выполнено» — кнопкой ученика или
+    # автозакрытием по последнему шагу; где сдача и есть последний шаг,
+    # «Заменить фото» пропадает сразу после сдачи — следствие принято
+    # владельцем. Возврат на доработку выше открывает правку и здесь. Первую
+    # сдачу в пустой блок (`submission is None`) это правило не трогает.
+    from app.services.tracker import task_done_for_user
+    if task_done_for_user(db, task.id, submission.user_id):
+        return "Задание выполнено. Изменить работу нельзя."
     if submission.reviewed_at is not None or submission.score is not None:
         return "Преподаватель уже проверил работу. Изменить её нельзя."
     replied_query = (

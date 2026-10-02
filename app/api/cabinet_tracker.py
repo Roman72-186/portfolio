@@ -118,6 +118,7 @@ from app.services.tracker import (
     format_event_dates,
     list_events,
     mark_task_started,
+    task_done_for_user,
     task_status,
 )
 from app.services.tz import today_msk, now_msk
@@ -318,12 +319,7 @@ def _writable_task_or_404(
 
 
 def _is_task_done(db: DBSession, task_id: int, user_id: int) -> bool:
-    state = (
-        db.query(TrackerTaskState)
-        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
-        .one_or_none()
-    )
-    return state is not None and state.status == STATUS_DONE
+    return task_done_for_user(db, task_id, user_id)
 
 
 # ── GET /cabinet/tracker/tasks/{id}/blocks ───────────────────────────────────
