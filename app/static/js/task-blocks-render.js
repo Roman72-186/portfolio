@@ -1120,6 +1120,10 @@ scope)` и свойством `answered` (одна попытка: после о
                     return wrap;
                 }
                 if (!block.started_at) {
+                    // Условие сервер до старта не присылает (02.10.2026).
+                    if (block.body_hidden) {
+                        wrap.appendChild(el('p', 'video-help', 'Задание откроется после нажатия «Начать работу». Таймер пойдёт сразу.'));
+                    }
                     var startBtn = el('button', 'btn-blue', 'Начать работу');
                     startBtn.type = 'button';
                     var note = el('p', 'video-progress-status');

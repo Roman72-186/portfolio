@@ -745,6 +745,14 @@ def cabinet_tracker_task_blocks(
                 state.started_at.isoformat() if state and state.started_at else None
             )
             item["done"] = bool(state and state.status == STATUS_DONE)
+            # Условие контрольной — до «Начать работу» не отдаём вовсе
+            # (владелец 02.10.2026): иначе ученик читает задание, обдумывает
+            # его и только потом запускает таймер. Прятать в браузере мало —
+            # текст остался бы в ответе сервера.
+            if not item["started_at"] and not item["done"]:
+                item["body"] = None
+                item["body_html"] = None
+                item["body_hidden"] = True
             item["overrun"] = task_block_timed_overrun(block, state)
             # Обратный отсчёт на экране и отметка «после срока» (владелец
             # 30.09.2026): остаток считает сервер, браузер только тикает.

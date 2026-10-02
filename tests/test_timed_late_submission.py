@@ -291,3 +291,27 @@ def test_stats_count_overrun_and_late(db, user_factory):
     assert flagged["Превысил"]["overrun"] and not flagged["Превысил"]["late"]
     assert flagged["Превысил"]["minutes"] == 90
     assert flagged["Опоздал"]["late"] and not flagged["Опоздал"]["overrun"]
+
+
+def test_condition_is_hidden_until_the_start(auth_client, db):
+    """Условие контрольной до «Начать работу» не уходит в браузер вовсе
+    (владелец 02.10.2026): иначе ученик успевает обдумать задание до
+    таймера. Прятать только на экране мало — текст был бы в ответе."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, minutes=75)
+    block.body = "Нарисуйте локацию с дверью"
+    db.commit()
+
+    before = _payload(client, task)
+    assert before["body"] is None
+    assert before["body_html"] is None
+    assert before["body_hidden"] is True
+    assert "локацию с дверью" not in client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").text
+
+    start_timed_block(db, block=block, user_id=user.id)
+    db.commit()
+    after = _payload(client, task)
+    assert after["body"] == "Нарисуйте локацию с дверью"
+    assert "локацию с дверью" in after["body_html"]
+    assert "body_hidden" not in after
