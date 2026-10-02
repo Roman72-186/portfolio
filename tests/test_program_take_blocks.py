@@ -14,11 +14,19 @@
 - копия несёт длительность окна и отметку «выбор преподавателя», а
   абсолютных сроков не несёт — копия старых дат закрыла бы новое задание сразу;
 - экран цикла отдаёт кнопку, поле поиска и функции переноса.
+
+С 02.10.2026 (владелец):
+- задания удалённого цикла или этапа не предлагаются — «если удалили, значит
+  они не нужны»;
+- поиск находит задание и по названию его цикла или этапа;
+- диагностика переносится одной строкой со своими результатами, а не
+  отдельными вопросами;
+- у карточки задания в конструкторе есть ID, который копируется нажатием.
 """
 
 from datetime import datetime, timedelta, timezone
 
-from app.models.learning_topic import TOPIC_KIND_STAGE, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
     BLOCK_COMPARE,
     BLOCK_PORTFOLIO,
@@ -180,3 +188,131 @@ def test_cycle_items_page_has_take_blocks_controls(client, db, user_factory, ses
     assert "function fillTakeSources(" in page
     assert "function takeBlocksFrom(" in page
     assert "searchTakeSources(event.target)" in page
+
+
+def _cycle_in(db, stage, title):
+    """Цикл этапа напрямую в базе: форма цикла здесь ни при чём."""
+    cycle = LearningTopic(
+        title=title, kind=TOPIC_KIND_WEEK, parent_id=stage.id,
+        opens_at=datetime.now(timezone.utc), is_published=True,
+    )
+    db.add(cycle)
+    db.commit()
+    return cycle
+
+
+def _text_blocks(body="Текст"):
+    return [{"block_type": BLOCK_TEXT, "title": None, "body": body}]
+
+
+def test_tasks_of_deleted_cycle_or_stage_are_not_offered(
+    client, db, user_factory, session_factory
+):
+    """На проде 02.10.2026 8 из 15 источников были из удалённых тестовых
+    циклов и ничем не отличались от нужных."""
+    _login_chief(client, user_factory, session_factory)
+    live = _stage(client, db, "Предобучение")
+    live_id = _create_item(client, live.id, "Портфолио", _text_blocks())
+    gone_stage = _stage(client, db, "Тестовый этап")
+    in_gone_stage = _create_item(client, gone_stage.id, "Портфолио старое", _text_blocks())
+    cycle_of_gone_stage = _cycle_in(db, gone_stage, "Цикл 1")
+    in_cycle_of_gone_stage = _create_item(
+        client, cycle_of_gone_stage.id, "Эскизы", _text_blocks()
+    )
+    gone_cycle = _cycle_in(db, live, "тест")
+    in_gone_cycle = _create_item(client, gone_cycle.id, "орьорьро", _text_blocks())
+    now = datetime.now(timezone.utc)
+    gone_stage.deleted_at = now
+    gone_cycle.deleted_at = now
+    db.commit()
+
+    ids = [i["id"] for i in client.get(f"{PROGRAM}/blocks-source").json()["items"]]
+
+    assert ids == [live_id]
+    for hidden in (in_gone_stage, in_cycle_of_gone_stage, in_gone_cycle):
+        assert hidden not in ids
+
+
+def test_search_finds_task_by_its_cycle_and_stage_title(
+    client, db, user_factory, session_factory
+):
+    """В подписи видно «Портфолио · Предобучение» — по «Предобучение» задание
+    должно находиться, хотя в его собственном названии этого слова нет."""
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Предобучение")
+    portfolio_id = _create_item(client, stage.id, "Портфолио", _text_blocks())
+    cycle = _cycle_in(db, stage, "Формообразование")
+    nodes_id = _create_item(client, cycle.id, "Узлы", _text_blocks())
+    other = _stage(client, db, "Годовой курс")
+    _create_item(client, other.id, "Чужое", _text_blocks())
+
+    # С заглавной: SQLite в тестах регистр кириллицы в ILIKE не сворачивает,
+    # боевой Postgres (en_US.utf8) сворачивает — там «предоб» тоже найдётся.
+    by_stage = client.get(f"{PROGRAM}/blocks-source", params={"q": "Предоб"}).json()["items"]
+    by_cycle = client.get(f"{PROGRAM}/blocks-source", params={"q": "Формообраз"}).json()["items"]
+
+    assert sorted(i["id"] for i in by_stage) == sorted([portfolio_id, nodes_id])
+    assert [i["id"] for i in by_cycle] == [nodes_id]
+
+
+DIAGNOSTIC = {
+    "title": "Архитектурный профиль", "intro": "Пара вопросов о тебе.",
+    "questions": [
+        {"text": "Что важнее?", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
+        {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
+    ],
+    "results": [
+        {"title": "Исследователь", "text": "Ты ищешь связи.", "architects": "",
+         "combinations": [["1", "A"], ["2", "B"]]},
+        {"title": "Создатель", "text": "Ты создаёшь формы.", "architects": "",
+         "combinations": [["1", "B"], ["2", "A"]]},
+    ],
+}
+
+
+def test_diagnostic_is_copied_whole_with_its_results(
+    client, db, user_factory, session_factory
+):
+    """До 02.10.2026 копия «Формообразования узлов» получала вопросы
+    диагностики обычными вопросами, а результаты терялись."""
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Предобучение")
+    source_id = _create_item(client, stage.id, "Узлы", _text_blocks("Вступление") + [{
+        "block_type": "diagnostic", "diagnostic": DIAGNOSTIC,
+        "title": DIAGNOSTIC["title"], "body": DIAGNOSTIC["intro"],
+        "is_required": True, "tariffs": [],
+    }])
+
+    blocks = client.get(f"{PROGRAM}/blocks-source/{source_id}").json()["blocks"]
+
+    assert [b["block_type"] for b in blocks] == [BLOCK_TEXT, "diagnostic"]
+    diagnostic = blocks[1]
+    assert diagnostic["title"] == "Архитектурный профиль"
+    assert diagnostic["body"] == "Пара вопросов о тебе."
+    assert diagnostic["is_required"] is True
+    assert diagnostic["diagnostic"]["results"] == DIAGNOSTIC["results"]
+    assert "id" not in diagnostic
+    for field in ("opens_at", "closes_at", "submit_until"):
+        assert field not in diagnostic
+
+    copy_id = _create_item(client, stage.id, "Узлы, копия", blocks)
+
+    source = db.get(TrackerTask, source_id)
+    copy = db.get(TrackerTask, copy_id)
+    db.refresh(copy)
+    assert copy.diagnostic_config["questions"] == source.diagnostic_config["questions"]
+    assert copy.diagnostic_config["results"] == source.diagnostic_config["results"]
+    copied = db.query(TaskBlock).filter(TaskBlock.task_id == copy_id).all()
+    assert sum(1 for b in copied if b.is_diagnostic) == len(DIAGNOSTIC["questions"])
+
+
+def test_cycle_items_card_shows_copyable_task_id(client, db, user_factory, session_factory):
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Годовой курс")
+    task_id = _create_item(client, stage.id, "Портфолио", _text_blocks())
+
+    page = client.get(f"{PROGRAM}/cycles/{stage.id}").text
+
+    assert f'data-copy-task-id="{task_id}"' in page
+    assert f">ID {task_id}</button>" in page
+    assert "function copyTaskId(" in page

@@ -57,7 +57,9 @@ function fillTakeSources(select, status, query) {
             // нет, подпись — название рамки («Цикл 2», «Предобучение»).
             var where = i.day || i.frame;
             where = where ? ' · ' + where : '';
-            return '<option value="' + i.id + '">' + escapeHTML(i.kind_label + ': ' + i.title + where) + '</option>';
+            // ID в конце подписи (владелец 02.10.2026) — тот же, что на
+            // карточке задания: по нему ГП и СА называют задание при разборе.
+            return '<option value="' + i.id + '">' + escapeHTML(i.kind_label + ': ' + i.title + where + ' · ID ' + i.id) + '</option>';
         }).join('');
         select.hidden = false;
         picker.hidden = false;
@@ -102,6 +104,21 @@ function takeBlocksFrom(form, taskId, status) {
         // Граница между тем, что уже было в форме, и тем, что приехало
         // пачкой: без неё вставленные блоки тут же становятся
         // неотличимы от остальных (ревью 03.09.2026).
+        // Диагностика в задании одна (`_blocks_with_diagnostic_expanded`
+        // отвечает 422 на вторую): если своя уже стоит, чужую не вставляем,
+        // а говорим об этом — иначе ошибка всплыла бы только на «Сохранить».
+        var skippedDiagnostic = false;
+        if (holder.querySelector('[data-block][data-block-type="diagnostic"]')) {
+            incoming = incoming.filter(function (block) {
+                if (block.block_type !== 'diagnostic') return true;
+                skippedDiagnostic = true;
+                return false;
+            });
+        }
+        if (!incoming.length) {
+            status.textContent = 'Диагностика в задании уже есть, вторую добавить нельзя.';
+            return;
+        }
         var hadBlocksBefore = !!holder.querySelector('[data-block]');
         if (hadBlocksBefore) {
             holder.insertAdjacentHTML(
@@ -128,7 +145,8 @@ function takeBlocksFrom(form, taskId, status) {
                 row.classList.remove('prg-blk--new');
             });
         }, 6000);
-        status.textContent = 'Добавлено блоков: ' + incoming.length + '.';
+        status.textContent = 'Добавлено блоков: ' + incoming.length + '.'
+            + (skippedDiagnostic ? ' Диагностику не взяли: в задании уже есть своя.' : '');
     }).catch(function () {
         status.textContent = 'Не удалось перенести содержимое.';
         status.classList.add('is-error');

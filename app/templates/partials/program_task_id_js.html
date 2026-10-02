@@ -1,0 +1,36 @@
+{#
+ID задания на карточке конструктора (владелец 02.10.2026: «добавь для ГП и СА
+id заданий, чтобы можно было скопировать для быстрой диагностики»). Нажатие на
+метку `[data-copy-task-id]` кладёт в буфер «ID <номер>» — его вставляют в
+разговор с разработчиком вместо описания «то задание в цикле 2».
+
+Отдельной проверки роли нет: экраны конструктора и так открыты только ГП и
+суперадмину (`require_admin_role`), модератору раздел закрыт белым списком
+`rbac.is_moderator_request_allowed`.
+
+Как и остальные `*_js.html`, подключается ВНУТРИ уже открытого `<script>`
+страницы — на экране дня и на экране заданий цикла/этапа.
+#}
+function copyTaskId(button) {
+    var text = 'ID ' + button.getAttribute('data-copy-task-id');
+    var label = button.textContent;
+    function done(message) {
+        button.textContent = message;
+        setTimeout(function () { button.textContent = label; }, 1500);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(
+            function () { done('Скопировано'); },
+            function () { done(text); }
+        );
+        return;
+    }
+    // Без буфера (http, старый браузер) метка остаётся выделяемой: у неё
+    // `user-select: all`, номер можно скопировать руками.
+    done(text);
+}
+
+document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-copy-task-id]');
+    if (button) copyTaskId(button);
+});

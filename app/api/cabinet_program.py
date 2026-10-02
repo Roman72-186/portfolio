@@ -17,7 +17,8 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy import or_
+from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT
 from app.db.database import get_db
@@ -1016,10 +1017,10 @@ def delete_program_cycle(
     остаются на месте, а ошибочное удаление отменяется правкой самой темы —
     `deleted_at` обратно в NULL **и** `is_published` в true: `delete_topic`
     снимает публикацию заодно, и цикл, которому вернули только `deleted_at`,
-    поднимется скрытым от учеников. Единственное место, где эти задания после удаления
-    ещё видны, — выбор «взять содержимое» (`blocks_source_list` смотрит только
-    на `TrackerTask.deleted_at`), и это скорее польза: набор блоков
-    переносится в новый цикл.
+    поднимется скрытым от учеников. В выборе «взять содержимое» задания
+    удалённого цикла тоже не показываются (владелец 02.10.2026: «если удалили,
+    значит они не нужны»; до этого `blocks_source_list` смотрел только на
+    `TrackerTask.deleted_at`, и тестовые циклы засоряли список).
     """
     topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
     if topic is None:
@@ -1969,18 +1970,42 @@ def blocks_source_list(
     раньше. Не общий порядок «свежее выше»: день задания бывает в будущем, и
     задание, заведённое на месяц вперёд, снова вытеснило бы бездатные.
     Подпись у бездатного — название рамки (`frame`), дня у него нет.
+
+    Задания удалённого цикла (и цикла удалённого этапа) не предлагаются
+    (владелец 02.10.2026: «если удалили, значит они не нужны»). Удаление цикла
+    задания каскадом не гасит (`delete_program_cycle`), и до этого дня они
+    висели в списке без пометки: на проде 8 из 15 источников были из удалённых
+    тестовых циклов, нужные терялись среди них.
+
+    Поиск идёт по названию задания, его цикла и этапа (02.10.2026): в подписи
+    видно «Портфолио · Предобучение 2026-2027», и запрос «Предобучение» не
+    должен возвращать пусто.
     """
     has_blocks = db.query(TaskBlock.id).filter(TaskBlock.task_id == TrackerTask.id).exists()
+    frame = aliased(LearningTopic)
+    stage = aliased(LearningTopic)
     rows = (
         db.query(
             TrackerTask.id, TrackerTask.title, TrackerTask.kind,
             TrackerTask.due_at, TrackerTask.topic_id,
         )
-        .filter(TrackerTask.deleted_at.is_(None), has_blocks)
+        .outerjoin(frame, frame.id == TrackerTask.topic_id)
+        .outerjoin(stage, stage.id == frame.parent_id)
+        .filter(
+            TrackerTask.deleted_at.is_(None),
+            has_blocks,
+            frame.deleted_at.is_(None),
+            stage.deleted_at.is_(None),
+        )
     )
     needle = (q or "").strip()
     if needle:
-        rows = rows.filter(TrackerTask.title.ilike(f"%{needle}%"))
+        pattern = f"%{needle}%"
+        rows = rows.filter(or_(
+            TrackerTask.title.ilike(pattern),
+            frame.title.ilike(pattern),
+            stage.title.ilike(pattern),
+        ))
     rows = (
         rows.order_by(
             TrackerTask.due_at.desc().nullsfirst(),
@@ -2005,6 +2030,48 @@ def blocks_source_list(
         }
         for r in rows
     ]})
+
+
+def _fold_diagnostic_for_copy(
+    db: DBSession, task_id: int, blocks: list[TaskBlock], copied: list[dict]
+) -> list[dict]:
+    """Вопросы диагностики → одна строка `block_type == "diagnostic"` на месте
+    первого из них, как в форме правки (`_edit_payloads`).
+
+    До 02.10.2026 перенос отдавал вопросы диагностики обычными вопросами:
+    копия «Формообразования узлов» получала три одиночных вопроса вместо
+    диагностики, а результаты (`diagnostic_config["results"]`) пропадали —
+    они живут в задании, не в блоках. Конфиг берём из задания-источника;
+    доступность — с первого вопроса (у всех вопросов она одинаковая, см.
+    `blocks_from_config`), без `opens_at`/`closes_at` — по той же причине,
+    что у остальных блоков копии.
+    """
+    if not any(b.is_diagnostic for b in blocks):
+        return copied
+    task = get_task(db, task_id)
+    config = (task.diagnostic_config if task is not None else None) or {}
+    result: list[dict] = []
+    emitted = False
+    for block, row in zip(blocks, copied):
+        if not block.is_diagnostic:
+            result.append(row)
+            continue
+        if emitted:
+            continue
+        emitted = True
+        result.append({
+            "block_type": DIAGNOSTIC_PSEUDO_BLOCK_TYPE,
+            "diagnostic": config or None,
+            "title": config.get("title"),
+            "body": config.get("intro"),
+            "is_required": row["is_required"],
+            "subject": row["subject"],
+            "tariffs": row["tariffs"],
+            "required_tariffs": row["required_tariffs"],
+            "locked_message": row["locked_message"],
+            "bypass_sequence": row["bypass_sequence"],
+        })
+    return result
 
 
 @router.get("/blocks-source/{task_id}", response_class=JSONResponse)
@@ -2084,6 +2151,7 @@ def blocks_source_content(
         }
         for b in blocks
     ]
+    copied = _fold_diagnostic_for_copy(db, task_id, blocks, copied)
     folded = _fold_polls(copied)
     for row in folded:
         if row.get("block_type") == POLL_PSEUDO_BLOCK_TYPE:

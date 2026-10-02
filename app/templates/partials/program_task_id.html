@@ -1,0 +1,4 @@
+{# Метка «ID <номер>» на карточке задания конструктора (владелец 02.10.2026) —
+   по ней ГП и СА называют задание при разборе. Копирует нажатием функция из
+   `program_task_id_js.html`. Ждёт в контексте `item`. #}
+<button type="button" class="prg-item-id" data-copy-task-id="{{ item.id }}" title="Скопировать ID задания">ID {{ item.id }}</button>

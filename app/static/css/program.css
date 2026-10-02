@@ -235,6 +235,17 @@
 }
 .prg-badge--done { color: var(--success); background: rgba(21, 128, 61, 0.10); }
 .prg-badge--error { color: var(--error); background: rgba(220, 38, 38, 0.10); }
+/* ID задания на карточке конструктора (02.10.2026) — служебная метка для
+   разбора с разработчиком, поэтому тише бейджа вида: без цвета, моноширинные
+   цифры. Нажатие копирует; `user-select: all` — запасной путь без буфера. */
+.prg-item-id {
+    display: inline-flex; align-items: center; min-height: 28px; margin-left: 6px; padding: 3px 9px;
+    border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface);
+    color: var(--muted); font: 600 11px/1 var(--font-body); font-variant-numeric: tabular-nums;
+    cursor: pointer; user-select: all;
+}
+.prg-item-id:first-child { margin-left: 0; }
+.prg-item-id:hover { color: var(--text); border-color: var(--muted); }
 
 /* Разобранная строка гаснет, но остаётся читаемой и кликабельной: Лиза
    14.09.2026 просила «чтобы они просто помечались серым, и я могла листать и
