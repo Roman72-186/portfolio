@@ -10,6 +10,7 @@
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
@@ -17,7 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT
@@ -1950,6 +1951,11 @@ def update_task_deadline(
     })
 
 
+# «103», «ID 103», «id103», «#103» в поле поиска «Взять содержимое» — номер
+# задания с метки на карточке конструктора.
+_TASK_ID_QUERY = re.compile(r"^(?:id\s*)?#?\s*(\d{1,9})$", re.IGNORECASE)
+
+
 @router.get("/blocks-source", response_class=JSONResponse)
 def blocks_source_list(
     user: Annotated[dict, Depends(require_admin_role)],
@@ -1980,6 +1986,11 @@ def blocks_source_list(
     Поиск идёт по названию задания, его цикла и этапа (02.10.2026): в подписи
     видно «Портфолио · Предобучение 2026-2027», и запрос «Предобучение» не
     должен возвращать пусто.
+
+    И по ID задания (владелец 02.10.2026): «103» или «ID 103» — тот номер, что
+    стоит меткой на карточке конструктора. Точное совпадение идёт первым,
+    задания с этими цифрами в названии — за ним. Задание удалённого цикла по
+    ID тоже не находится: правило «удалили — не нужны» сильнее номера.
     """
     has_blocks = db.query(TaskBlock.id).filter(TaskBlock.task_id == TrackerTask.id).exists()
     frame = aliased(LearningTopic)
@@ -1999,15 +2010,26 @@ def blocks_source_list(
         )
     )
     needle = (q or "").strip()
+    order = []
     if needle:
         pattern = f"%{needle}%"
-        rows = rows.filter(or_(
+        matches = [
             TrackerTask.title.ilike(pattern),
             frame.title.ilike(pattern),
             stage.title.ilike(pattern),
-        ))
+        ]
+        id_match = _TASK_ID_QUERY.match(needle)
+        if id_match:
+            task_id = int(id_match.group(1))
+            # «ID 103» в названии не ищется целиком: задание «Разбор 103»
+            # должно находиться и по метке, а не только по голому «103».
+            matches.append(TrackerTask.id == task_id)
+            matches.append(TrackerTask.title.ilike(f"%{id_match.group(1)}%"))
+            order.append(case((TrackerTask.id == task_id, 0), else_=1))
+        rows = rows.filter(or_(*matches))
     rows = (
         rows.order_by(
+            *order,
             TrackerTask.due_at.desc().nullsfirst(),
             TrackerTask.created_at.desc(),
             TrackerTask.id.desc(),

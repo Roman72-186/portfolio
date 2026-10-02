@@ -21,7 +21,10 @@
 - поиск находит задание и по названию его цикла или этапа;
 - диагностика переносится одной строкой со своими результатами, а не
   отдельными вопросами;
-- у карточки задания в конструкторе есть ID, который копируется нажатием.
+- у карточки задания в конструкторе есть ID, который копируется нажатием;
+- поиск понимает ID задания («103», «ID 103»), точное совпадение — первым;
+- выбор задания показывает его блоки с галочками, а вставку делает
+  «Добавить выбранные» (`insertTakenBlocks`).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -316,3 +319,50 @@ def test_cycle_items_card_shows_copyable_task_id(client, db, user_factory, sessi
     assert f'data-copy-task-id="{task_id}"' in page
     assert f">ID {task_id}</button>" in page
     assert "function copyTaskId(" in page
+
+
+def test_search_by_task_id_puts_exact_match_first(client, db, user_factory, session_factory):
+    """Номер — тот, что стоит меткой «ID N» на карточке конструктора. Задание,
+    у которого эти цифры есть в названии, тоже находится, но идёт вторым."""
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Предобучение")
+    target_id = _create_item(client, stage.id, "Портфолио", _text_blocks())
+    namesake_id = _create_item(client, stage.id, f"Разбор {target_id}", _text_blocks())
+    _create_item(client, stage.id, "Чужое", _text_blocks())
+
+    for query in (str(target_id), f"ID {target_id}", f"id{target_id}", f"#{target_id}"):
+        items = client.get(f"{PROGRAM}/blocks-source", params={"q": query}).json()["items"]
+        assert [i["id"] for i in items] == [target_id, namesake_id], query
+
+
+def test_search_by_id_does_not_reveal_task_of_deleted_cycle(
+    client, db, user_factory, session_factory
+):
+    """«Удалили — значит не нужны» сильнее номера."""
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Предобучение")
+    cycle = _cycle_in(db, stage, "тест")
+    hidden_id = _create_item(client, cycle.id, "Старое", _text_blocks())
+    cycle.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    items = client.get(f"{PROGRAM}/blocks-source", params={"q": f"ID {hidden_id}"}).json()["items"]
+
+    assert items == []
+
+
+def test_take_blocks_offers_checkboxes_before_inserting(
+    client, db, user_factory, session_factory
+):
+    """Выбор задания больше не вставляет всё сразу: блоки приезжают списком с
+    галочками, вставляет «Добавить выбранные»."""
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Годовой курс")
+
+    page = client.get(f"{PROGRAM}/cycles/{stage.id}").text
+
+    assert "<div data-take-list hidden></div>" in page
+    assert "function takeBlocksFrom(" in page
+    assert "function insertTakenBlocks(" in page
+    assert "Добавить выбранные (" in page
+    assert 'placeholder="Найти задание по названию или ID"' in page

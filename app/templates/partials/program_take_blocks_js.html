@@ -11,9 +11,16 @@
 он должен стоять в странице раньше, чем эти функции будут вызваны.
 
 Разметка, которую ищут функции, — один ряд внутри формы с `[data-blocks]`:
-кнопка `data-take-blocks`, обёртка `data-take-picker` (поле `data-take-search`
-и `select data-take-source`), рядом с ней `p data-take-status`. Обработчики
-клика, ввода и смены — на страницах: у каждой свой делегированный обработчик.
+кнопка `data-take-blocks`, обёртка `data-take-picker` (поле `data-take-search`,
+`select data-take-source` и список блоков `data-take-list`), рядом с ней
+`p data-take-status`. Обработчики клика, ввода и смены `select` — на
+страницах: у каждой свой делегированный обработчик. Галочки и кнопки списка
+блоков (с 02.10.2026) обслуживает сам `takeBlocksFrom`: страницы о них не
+знают.
+
+Путь: поиск (`fillTakeSources`, по названию задания, цикла, этапа или по ID)
+→ выбор задания (`takeBlocksFrom` рисует его блоки с галочками, все отмечены)
+→ «Добавить выбранные» (`insertTakenBlocks` вставляет отмеченные в конец).
 
 На экране дня include стоит на прежнем месте функций, сразу после
 предпросмотра: `test_preview_uses_the_student_renderer_not_its_own` режет
@@ -31,6 +38,8 @@ function fillTakeSources(select, status, query) {
     // задание прошлого года без поиска не достать. Поле и список живут в
     // одной обёртке `data-take-picker`.
     var picker = select.closest('[data-take-picker]');
+    // Новый поиск — новый выбор: список блоков прежнего задания убираем.
+    clearTakeList(picker.querySelector('[data-take-list]'));
     var needle = (query || '').trim();
     status.textContent = needle ? 'Ищем «' + needle + '»…' : 'Ищем задания с содержимым…';
     status.classList.remove('is-error');
@@ -86,69 +95,139 @@ function searchTakeSources(input) {
     }, 300);
 }
 
+// Подпись типа для строки списка. `BLOCK_LABELS` собран из типов сервера, а
+// диагностику экран дня туда не кладёт (её подпись живёт на экране цикла).
+var TAKE_EXTRA_LABELS = {diagnostic: 'Диагностика'};
+
+// «Тип: о чём блок» — по названию, иначе по началу текста без разметки,
+// иначе по фото или ссылке. Длинное режем: строка списка на телефоне узкая.
+function takeBlockLabel(block) {
+    var type = BLOCK_LABELS[block.block_type] || TAKE_EXTRA_LABELS[block.block_type] || block.block_type;
+    var about = (block.title || '').trim();
+    if (!about && block.body) {
+        about = String(block.body).replace(/<[^>]*>/g, ' ').replace(/[*_#>`\[\]]+/g, '')
+            .replace(/\s+/g, ' ').trim();
+    }
+    if (!about && block.images && block.images.length) about = 'фото: ' + block.images.length;
+    if (!about && block.url) about = block.url;
+    if (about.length > 80) about = about.slice(0, 79) + '…';
+    return about ? type + ': ' + about : type;
+}
+
+function clearTakeList(list) {
+    list.innerHTML = '';
+    list.hidden = true;
+}
+
+// Выбор задания (владелец 02.10.2026: «отдельные задания внутри задания»):
+// блоки источника приезжают списком с галочками, а не сразу в форму. Все
+// галочки стоят — одно нажатие «Добавить выбранные» даёт прежнее «взять всё».
+// Опрос и диагностика — одна строка: сервер сворачивает их сам.
 function takeBlocksFrom(form, taskId, status) {
+    var list = status.parentNode.querySelector('[data-take-list]');
+    clearTakeList(list);
     status.classList.remove('is-error');
-    status.textContent = 'Переносим…';
+    status.textContent = 'Загружаем блоки…';
     fetch('/cabinet/staff/program/blocks-source/' + taskId, {
         credentials: 'same-origin', headers: {'Accept': 'application/json'}
     }).then(function (r) {
         if (!r.ok) throw new Error();
         return r.json();
     }).then(function (data) {
-        var holder = form.querySelector('[data-blocks]');
-        var incoming = data.blocks || [];
-        if (!incoming.length) {
+        var blocks = data.blocks || [];
+        if (!blocks.length) {
             status.textContent = 'В этом задании пока нет блоков.';
             return;
         }
-        // Граница между тем, что уже было в форме, и тем, что приехало
-        // пачкой: без неё вставленные блоки тут же становятся
-        // неотличимы от остальных (ревью 03.09.2026).
-        // Диагностика в задании одна (`_blocks_with_diagnostic_expanded`
-        // отвечает 422 на вторую): если своя уже стоит, чужую не вставляем,
-        // а говорим об этом — иначе ошибка всплыла бы только на «Сохранить».
-        var skippedDiagnostic = false;
-        if (holder.querySelector('[data-block][data-block-type="diagnostic"]')) {
-            incoming = incoming.filter(function (block) {
-                if (block.block_type !== 'diagnostic') return true;
-                skippedDiagnostic = true;
-                return false;
+        list.innerHTML = blocks.map(function (block, index) {
+            return '<label class="prg-field prg-field--row">'
+                + '<input type="checkbox" data-take-pick="' + index + '" checked>'
+                + '<span>' + escapeHTML(takeBlockLabel(block)) + '</span></label>';
+        }).join('')
+            + '<div class="prg-actions">'
+            + '<button type="button" class="btn-blue" data-take-add></button>'
+            + '<button type="button" class="btn-outline" data-take-cancel>Отмена</button>'
+            + '</div>';
+        var addButton = list.querySelector('[data-take-add]');
+        function picked() {
+            return blocks.filter(function (block, index) {
+                return list.querySelector('[data-take-pick="' + index + '"]').checked;
             });
         }
-        if (!incoming.length) {
-            status.textContent = 'Диагностика в задании уже есть, вторую добавить нельзя.';
-            return;
+        function refreshCount() {
+            var count = picked().length;
+            addButton.textContent = 'Добавить выбранные (' + count + ')';
+            addButton.disabled = count === 0;
         }
-        var hadBlocksBefore = !!holder.querySelector('[data-block]');
-        if (hadBlocksBefore) {
-            holder.insertAdjacentHTML(
-                'beforeend',
-                '<div class="prg-blk-divider" data-take-divider>Добавлено из другого задания</div>'
-            );
-        }
-        var firstNew = null;
-        incoming.forEach(function (block) {
-            holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
-            var row = holder.lastElementChild;
-            fillBlockRow(row, block);
-            window.RichTextField.enhanceAll(row);
-            row.classList.add('prg-blk--new');
-            if (!firstNew) firstNew = row;
-        });
-        renumberBlocks(holder);
-        if (firstNew) firstNew.scrollIntoView({behavior: 'smooth', block: 'center'});
-        // Подсветка временная: снимаем через паузу, а не оставляем
-        // навсегда — иначе через десять минут редактирования старый
-        // «свежий» блок выглядит так же, как только что взятый.
-        setTimeout(function () {
-            holder.querySelectorAll('.prg-blk--new').forEach(function (row) {
-                row.classList.remove('prg-blk--new');
-            });
-        }, 6000);
-        status.textContent = 'Добавлено блоков: ' + incoming.length + '.'
-            + (skippedDiagnostic ? ' Диагностику не взяли: в задании уже есть своя.' : '');
+        // Обработчики — свойствами узлов, а не addEventListener: список
+        // перерисовывается на каждый выбор, и старые не копятся.
+        list.onchange = refreshCount;
+        addButton.onclick = function () {
+            var chosen = picked();
+            clearTakeList(list);
+            insertTakenBlocks(form, chosen, status);
+        };
+        list.querySelector('[data-take-cancel]').onclick = function () {
+            clearTakeList(list);
+            status.textContent = '';
+        };
+        refreshCount();
+        list.hidden = false;
+        status.textContent = 'Отметьте, что взять, и нажмите «Добавить выбранные».';
     }).catch(function () {
-        status.textContent = 'Не удалось перенести содержимое.';
+        status.textContent = 'Не удалось получить блоки задания.';
         status.classList.add('is-error');
     });
+}
+
+// Вставка отмеченных блоков в конец формы — копия, без связи с источником.
+function insertTakenBlocks(form, incoming, status) {
+    var holder = form.querySelector('[data-blocks]');
+    status.classList.remove('is-error');
+    // Диагностика в задании одна (`_blocks_with_diagnostic_expanded`
+    // отвечает 422 на вторую): если своя уже стоит, чужую не вставляем,
+    // а говорим об этом — иначе ошибка всплыла бы только на «Сохранить».
+    var skippedDiagnostic = false;
+    if (holder.querySelector('[data-block][data-block-type="diagnostic"]')) {
+        incoming = incoming.filter(function (block) {
+            if (block.block_type !== 'diagnostic') return true;
+            skippedDiagnostic = true;
+            return false;
+        });
+    }
+    if (!incoming.length) {
+        status.textContent = 'Диагностика в задании уже есть, вторую добавить нельзя.';
+        return;
+    }
+    // Граница между тем, что уже было в форме, и тем, что приехало
+    // пачкой: без неё вставленные блоки тут же становятся
+    // неотличимы от остальных (ревью 03.09.2026).
+    var hadBlocksBefore = !!holder.querySelector('[data-block]');
+    if (hadBlocksBefore) {
+        holder.insertAdjacentHTML(
+            'beforeend',
+            '<div class="prg-blk-divider" data-take-divider>Добавлено из другого задания</div>'
+        );
+    }
+    var firstNew = null;
+    incoming.forEach(function (block) {
+        holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
+        var row = holder.lastElementChild;
+        fillBlockRow(row, block);
+        window.RichTextField.enhanceAll(row);
+        row.classList.add('prg-blk--new');
+        if (!firstNew) firstNew = row;
+    });
+    renumberBlocks(holder);
+    if (firstNew) firstNew.scrollIntoView({behavior: 'smooth', block: 'center'});
+    // Подсветка временная: снимаем через паузу, а не оставляем
+    // навсегда — иначе через десять минут редактирования старый
+    // «свежий» блок выглядит так же, как только что взятый.
+    setTimeout(function () {
+        holder.querySelectorAll('.prg-blk--new').forEach(function (row) {
+            row.classList.remove('prg-blk--new');
+        });
+    }, 6000);
+    status.textContent = 'Добавлено блоков: ' + incoming.length + '.'
+        + (skippedDiagnostic ? ' Диагностику не взяли: в задании уже есть своя.' : '');
 }
