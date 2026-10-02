@@ -294,7 +294,9 @@ def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> Tracke
     return task
 
 
-def _writable_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerTask:
+def _writable_task_or_404(
+    db: DBSession, user_id: int, task_id: int, *, revision_block_id: int | None = None,
+) -> TrackerTask:
     """Как `_accessible_task_or_404`, плюс отказ, если задача лежит в
     архивном цикле ученика (владелец 24.09.2026, Этапы: пройденный цикл —
     только просмотр). Читающие эндпоинты эту обёртку не зовут и звать не
@@ -302,7 +304,13 @@ def _writable_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerT
     менять их.
     """
     task = _accessible_task_or_404(db, user_id, task_id)
-    if task_is_archived_for_user(db, user_id, task, today_msk()):
+    returned = (
+        get_task_block_submission(db, block_id=revision_block_id, user_id=user_id)
+        if revision_block_id is not None else None
+    )
+    if task_is_archived_for_user(db, user_id, task, today_msk()) and not (
+        returned is not None and returned.needs_revision
+    ):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
         )
@@ -453,6 +461,7 @@ def _submission_payload(
         # N», считает «загружено X из N» и вместо поштучного удаления даёт
         # «Заменить фото».
         "required_photos": block.required_photos,
+        "needs_revision": bool(submission and submission.needs_revision),
         "submitted_files": [{"id": i.id, "url": i.image_s3_url} for i in images],
         "edit_reason": block_work_reason(
             db, task, block, submission,
@@ -1114,7 +1123,9 @@ async def upload_task_block_work(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(
+        db, user["user_id"], block.task_id, revision_block_id=block.id,
+    )
 
     # Каждый отказ пишется в лог. До 26.09.2026 их не было видно вовсе: в
     # журнале стоял только код ответа, а причина уезжала ученику в JSON — на
@@ -1142,9 +1153,9 @@ async def upload_task_block_work(
     # «Заменить фото» (владелец 02.10.2026) — только при заданном числе: там
     # поштучное удаление закрыто, иначе при «ровно 1» не заменить ничего.
     # Новые фото встают вместо всех старых одним запросом, поэтому их ровно N.
-    replacing = bool(replace and required and existing)
+    replacing = bool(replace and existing and (required or submission.needs_revision))
     if replacing:
-        if len(photos or []) != required:
+        if required and len(photos or []) != required:
             _refused("замена не тем числом", f"нужно {required}")
             return JSONResponse(
                 {"ok": False, "error": _required_count_error(required, len(photos or []))},
@@ -1233,7 +1244,9 @@ def edit_task_block_comment(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(
+        db, user["user_id"], block.task_id, revision_block_id=block.id,
+    )
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None or submission.submitted_at is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -1262,7 +1275,9 @@ def delete_task_block_image(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(
+        db, user["user_id"], block.task_id, revision_block_id=block.id,
+    )
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")

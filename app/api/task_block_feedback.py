@@ -194,6 +194,8 @@ def score_submission(
     Куратор проверяет работу отметкой «проверено» и диалогом."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    if submission.needs_revision:
+        raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
     previous_score = int(submission.score) if submission.score is not None else None
     submission.score = payload.score
     submission.scored_at = datetime.now(timezone.utc)
@@ -213,6 +215,47 @@ def score_submission(
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "score": payload.score})
+
+
+@router.post("/staff/task-block-submissions/{submission_id}/revision", response_class=JSONResponse)
+def send_submission_to_revision(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    comment: str = Form(default=""),
+):
+    """Открыть повторную загрузку конкретной работы, сохранив её диалог."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    if submission.needs_revision:
+        raise HTTPException(status_code=409, detail="Работа уже на доработке")
+    comment_clean = comment.strip()
+    if len(comment_clean) > 2000:
+        raise HTTPException(status_code=422, detail="Комментарий слишком длинный")
+    submission.needs_revision = True
+    submission.needs_revision_at = datetime.now(timezone.utc)
+    submission.reviewed_at = None
+    submission.reviewed_by_id = None
+    submission.score = None
+    submission.scored_at = None
+    submission.scored_by_id = None
+    if comment_clean:
+        submission.review_comment = comment_clean
+    notification = Notification(
+        user_id=submission.user_id,
+        title="Работу нужно загрузить заново",
+        text=(f"{comment_clean}\n\nЗагрузи правильное фото в этом задании."
+              if comment_clean else "Загрузи правильное фото в этом задании."),
+        task_block_submission_id=submission.id,
+    )
+    db.add(notification)
+    db.flush()
+    invalidate_unread(submission.user_id)
+    db.commit()
+    background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
 
 
 async def _photo_payload(photo: UploadFile | None) -> tuple[str, bytes] | None:

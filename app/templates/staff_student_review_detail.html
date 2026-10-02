@@ -141,17 +141,26 @@
             <div class="prg-item-actions">
                 {% if item.domain in ('task_block', 'block_work') %}
                 {% if item.domain == 'block_work' %}
-                <a class="btn-blue" href="{{ item.review_url }}">{{ 'Оценить и ответить' if can_score else 'Ответить' }}</a>
+                <a class="btn-blue" href="{{ item.review_url }}">{{ 'Оценить и ответить' if can_score and not item.needs_revision else 'Ответить' }}</a>
                 {% endif %}
+                {% if not item.needs_revision %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
                     {{ 'Вернуть в очередь' if item.is_reviewed else 'Просмотрено' }}
                 </button>
+                {% endif %}
                 {% else %}
                 <a class="btn-outline" href="{{ item.review_url }}">Открыть</a>
-                {% if not item.is_reviewed and item.domain in ('work', 'exam_cycle') %}
+                {% if not item.is_reviewed and not item.needs_revision and item.domain in ('work', 'exam_cycle') %}
                 <button type="button" class="btn-outline" data-mark-viewed>Просмотрено</button>
                 {% endif %}
+                {% endif %}
+                {% if not item.needs_revision and (
+                    item.domain == 'block_work'
+                    or item.domain == 'homework'
+                    or (item.domain == 'work' and item.can_return_revision)
+                ) %}
+                <button type="button" class="btn-outline" data-return-revision>Вернуть на доработку</button>
                 {% endif %}
             </div>
         </article>
@@ -169,6 +178,32 @@
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-return-revision]');
+        if (!button) return;
+        var row = button.closest('[data-review-row]');
+        var domain = row.getAttribute('data-domain');
+        var id = row.getAttribute('data-id');
+        var url = domain === 'block_work'
+            ? '/cabinet/staff/task-block-submissions/' + id + '/revision'
+            : domain === 'homework'
+                ? '/cabinet/staff/homework/submissions/' + id + '/revision'
+                : '/cabinet/students/{{ student.id }}/mock-exams/' + id + '/revision';
+        var comment = domain === 'work' ? '' : window.prompt('Что нужно исправить? Сообщение получит ученик.', 'Загрузи правильное фото работы.');
+        if (comment === null) return;
+        if (domain === 'work' && !window.confirm('Вернуть пробник на доработку? Ученик сможет загрузить новые фото.')) return;
+        var data = new FormData();
+        data.append('csrf_token', csrfToken);
+        if (domain !== 'work') data.append('comment', comment);
+        button.disabled = true;
+        fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Accept': 'application/json'}, body: data})
+            .then(function (resp) { return resp.json().then(function (body) {
+                if (!resp.ok) throw new Error(body.detail || body.error || 'Не удалось вернуть работу.');
+                window.location.reload();
+            }); })
+            .catch(function (error) { button.disabled = false; window.alert(error.message); });
+    });
 
     document.addEventListener('click', function (event) {
         var button = event.target.closest('[data-mark-viewed]');

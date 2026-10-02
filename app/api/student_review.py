@@ -191,6 +191,8 @@ def mark_work_viewed(
     work = db.get(Work, work_id)
     if work is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    if work.needs_revision:
+        raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
     _check_student_access(
         db, user, work.user_id,
         not_found_detail="Работа не найдена",
@@ -281,6 +283,8 @@ def mark_block_work_reviewed(
     submission = db.get(TaskBlockSubmission, submission_id)
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    if submission.needs_revision:
+        raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
     _check_student_access(
         db, user, submission.user_id,
         not_found_detail="Работа не найдена",

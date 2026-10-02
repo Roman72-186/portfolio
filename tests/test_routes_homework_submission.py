@@ -623,9 +623,8 @@ def test_homework_message_queues_outside_delivery(auth_client, db, user_factory,
 
 
 @pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
-def test_nobody_can_send_homework_to_revision(auth_client, db, user_factory, session_factory, role_name):
-    """«Вернуть на доработку» убрано у всех (созвон 30.09.2026, владелец
-    01.10.2026). Куратор принимает работу или пишет обратную связь."""
+def test_staff_can_return_wrong_homework_to_revision(auth_client, db, user_factory, session_factory, role_name):
+    """Ошибочную домашку ученик может загрузить снова после возврата."""
     client, user = auth_client
     task, _ = _homework_task(db, user.id)
     with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
@@ -637,15 +636,62 @@ def test_nobody_can_send_homework_to_revision(auth_client, db, user_factory, ses
     db.commit()
     client.cookies.set("session_id", session_factory(staff).id)
 
-    resp = client.post(
-        f"/cabinet/staff/homework/submissions/{submission.id}/revision",
-        data={"comment": "Добавь тени"},
-    )
-    page = client.get(f"/cabinet/staff/homework/submissions/{submission.id}")
+    with patch("app.api.homework_submission.notify"):
+        resp = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/revision",
+            data={"comment": "Загрузи нужный лист"},
+        )
 
-    assert resp.status_code in (404, 405)
+    assert resp.status_code == 200
+    db.refresh(submission)
+    assert submission.status == "needs_revision"
+    assert submission.needs_revision_at is not None
+    assert db.query(Notification).filter_by(
+        user_id=user.id, homework_submission_id=submission.id
+    ).count() >= 1
+
+    task.submit_until = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    client.cookies.set("session_id", session_factory(user).id)
+    with patch("app.api.homework_submission.task_is_archived_for_user", return_value=True), \
+         patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        retry = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("right.jpg", b"2", "image/jpeg")})
+    assert retry.status_code == 200
     db.refresh(submission)
     assert submission.status == "submitted"
-    assert page.status_code == 200
-    assert "Принять работу" in page.text
-    assert "Вернуть на доработку" not in page.text
+
+
+def test_accepted_homework_can_be_returned_and_uploaded_again(
+    auth_client, db, user_factory, session_factory,
+):
+    client, student = auth_client
+    task, _ = _homework_task(db, student.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        uploaded = client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("wrong.jpg", b"1", "image/jpeg")},
+        )
+    assert uploaded.status_code == 200
+    submission = db.query(HomeworkSubmission).one()
+    curator = user_factory(vk_id=888_002, name="Куратор", role_name="куратор")
+    student.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+    assert client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept").status_code == 200
+
+    with patch("app.api.homework_submission.notify"):
+        returned = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+    assert returned.status_code == 200
+    db.refresh(submission)
+    assert submission.status == "needs_revision"
+    assert client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept").status_code == 409
+
+    client.cookies.set("session_id", session_factory(student).id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        retry = client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("right.jpg", b"2", "image/jpeg")},
+        )
+    assert retry.status_code == 200
+    db.refresh(submission)
+    assert submission.status == "submitted"

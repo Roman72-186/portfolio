@@ -71,6 +71,7 @@ class ReviewItem:
     # пометка в списке, отдельная от is_reviewed: сдача на доработке не
     # считается проверенной, но и не должна выглядеть как обычное «на проверку».
     needs_revision: bool = False
+    can_return_revision: bool = True
     question: str | None = None
     chosen: list[str] | None = None
     correct: list[str] | None = None
@@ -165,6 +166,7 @@ def _work_items(
     которой давно нет, — сервер молча открывал «Портфолио». Восемь старых
     непроверенных отработок на проде принадлежат архивным ученикам, в очередь
     они и так не попадали."""
+    from app.models.exam_cycle import ExamCycle
     from app.models.user import User
     from app.models.work import WORK_TYPE_MOCK_EXAM, Work
 
@@ -193,6 +195,11 @@ def _work_items(
 
     rows = q.order_by(Work.created_at.desc()).all()
     shortfalls = stage_photo_shortfalls(db, [work.cycle_id for work, _ in rows])
+    cycle_ids = {work.cycle_id for work, _ in rows if work.cycle_id is not None}
+    closed_cycles = {
+        cycle.id for cycle in db.query(ExamCycle).filter(ExamCycle.id.in_(cycle_ids)).all()
+        if cycle.closed_at is not None
+    } if cycle_ids else set()
     items = []
     for work, student in rows:
         items.append(ReviewItem(
@@ -202,8 +209,10 @@ def _work_items(
             title="Пробник",
             subject=work.subject,
             submitted_at=work.created_at,
-            is_reviewed=work.score is not None or work.viewed_at is not None,
+            is_reviewed=(work.score is not None or work.viewed_at is not None) and not work.needs_revision,
             review_url=f"/cabinet/students?student={student.id}&tab=mock-exams",
+            needs_revision=work.needs_revision,
+            can_return_revision=work.cycle_id not in closed_cycles,
             score=int(work.score) if work.score is not None else None,
             stage_shortfall=shortfalls.get(work.cycle_id),
         ))

@@ -117,6 +117,10 @@ def block_work_reason(
     task_tariff_deadlines: dict[str, datetime | None] | None = None,
     now: datetime | None = None,
 ) -> str | None:
+    # Явный возврат сотрудника открывает замену даже после срока. Иначе
+    # «Вернуть на доработку» показывалось бы, но ученик всё равно получил 409.
+    if submission is not None and submission.needs_revision:
+        return None
     # Сроки по тарифам читаем сами, если их не передали: мутирующие роуты
     # сдачи зовут эту функцию по одному блоку, и заставлять каждый помнить про
     # предзагрузку обоих этажей — способ однажды забыть и молча пустить работу
@@ -136,11 +140,6 @@ def block_work_reason(
     )
     if reason or submission is None:
         return reason
-    # Куратор явно вернул работу на доработку — правка разрешена, даже если
-    # до этого уже была оценка/комментарий (иначе кнопка «Вернуть на
-    # доработку» ничего не открывала бы ученику).
-    if submission.needs_revision:
-        return None
     if submission.reviewed_at is not None or submission.score is not None:
         return "Преподаватель уже проверил работу. Изменить её нельзя."
     replied_query = (
@@ -167,6 +166,8 @@ def homework_reason(
     task_tariff_deadlines: dict[str, datetime | None] | None = None,
     now: datetime | None = None,
 ) -> str | None:
+    if submission is not None and submission.status == STATUS_NEEDS_REVISION:
+        return None
     # Срок — по тем же правилам, что у блоков сдачи (владелец 28.09.2026):
     # срок задания и его строка тарифа, день задания — только если срока нет.
     # До этого домашка сверялась с одним днём задания.
@@ -181,9 +182,6 @@ def homework_reason(
         return reason
     if submission.status == STATUS_ACCEPTED:
         return "Работа уже принята. Изменить её нельзя."
-    # Куратор явно вернул работу на доработку — правка разрешена.
-    if submission.status == STATUS_NEEDS_REVISION:
-        return None
     replied_query = (
         db.query(HomeworkFeedbackMessage.id)
         .join(HomeworkFeedback, HomeworkFeedback.id == HomeworkFeedbackMessage.feedback_id)

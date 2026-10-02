@@ -412,12 +412,10 @@ def test_student_can_reply_after_teacher_started_dialog(
 
 
 @pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
-def test_nobody_can_send_submission_to_revision(
+def test_staff_can_return_wrong_block_work_to_revision(
     db, user_factory, session_factory, client, role_name,
 ):
-    """«Вернуть на доработку» убрано у всех (созвон 30.09.2026: «мы не
-    используем вернуть на доработку… убираем возврат»; владелец 01.10.2026 —
-    у всех ролей). Куратор проверяет работу сразу и пишет обратную связь."""
+    """Возврат конкретной сдачи открывает замену ошибочного фото."""
     staff = user_factory(vk_id=970_020, name="Сотрудник", role_name=role_name)
     student = user_factory(vk_id=970_021, name="Ученик")
     student.curator_id = staff.id
@@ -425,18 +423,54 @@ def test_nobody_can_send_submission_to_revision(
     submission = _submission(db, student)
     _login(client, session_factory, staff)
 
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            data={"comment": "Загрузи правильную работу"},
+        )
+
+    assert response.status_code == 200
+    db.refresh(submission)
+    assert submission.needs_revision is True
+    assert submission.needs_revision_at is not None
+    assert submission.review_comment == "Загрузи правильную работу"
+    assert db.query(Notification).filter_by(
+        user_id=student.id, task_block_submission_id=submission.id
+    ).count() == 1
+    assert client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+        data={"comment": "Ещё раз"},
+    ).status_code == 409
+    assert client.post(
+        f"/cabinet/staff/students-review/block-work/{submission.id}/reviewed",
+        json={"reviewed": True},
+    ).status_code == 409
+    if role_name != "куратор":
+        assert client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/score",
+            json={"score": 80},
+        ).status_code == 409
+
+
+def test_other_curator_cannot_return_block_work(
+    db, user_factory, session_factory, client,
+):
+    owner = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
+    other = user_factory(vk_id=970_025, name="Другой куратор", role_name="куратор")
+    student = user_factory(vk_id=970_027, name="Ученик")
+    student.curator_id = owner.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, other)
+
     response = client.post(
         f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
-        json={"comment": "Добавь фон"},
+        data={"comment": "Загрузи другое фото"},
     )
-    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
 
-    assert response.status_code in (404, 405)
+    assert response.status_code == 403
     db.refresh(submission)
     assert submission.needs_revision is False
-    assert page.status_code == 200
-    assert "Вернуть на доработку" not in page.text
-    assert "data-revision-form" not in page.text
 
 
 def test_old_revision_flag_still_shows_chip_to_staff(

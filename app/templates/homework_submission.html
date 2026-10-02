@@ -110,7 +110,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
             {% else %}Сообщений пока нет – напиши первым.{% endif %}
         </p>
         {% endif %}
-        {% if viewer_role != 'student' and final_image and submission.status != 'accepted' %}
+        {% if viewer_role != 'student' and final_image and submission.status == 'submitted' %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/accept">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit" class="btn-blue">Принять работу</button>

@@ -27,6 +27,7 @@ from app.models.homework import HomeworkAssignment
 from app.models.homework_feedback import HomeworkFeedback
 from app.models.homework_submission import (
     STATUS_ACCEPTED,
+    STATUS_NEEDS_REVISION,
     HomeworkSubmission,
     HomeworkSubmissionImage,
 )
@@ -109,6 +110,11 @@ def _guard_student_write_access(db: DBSession, task: TrackerTask, user_id: int) 
     ленты обратной связи (GET) эту проверку не зовут — архив открыт на чтение.
     """
     _guard_student_access(db, task, user_id)
+    submission = get_submission(db, tracker_task_id=task.id, user_id=user_id)
+    if submission is not None and submission.status == STATUS_NEEDS_REVISION:
+        # Сотрудник вернул конкретную сдачу: ученик должен иметь возможность
+        # заменить фото и после перехода цикла в архив.
+        return
     if task_is_archived_for_user(db, user_id, task, today_msk()):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
@@ -620,12 +626,56 @@ async def accept_homework_submission(
     images = list_images(db, submission.id)
     if not any(i.is_final for i in images):
         raise HTTPException(status_code=409, detail="Финальное фото ещё не загружено")
+    if submission.status == STATUS_NEEDS_REVISION:
+        raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
     if submission.status != STATUS_ACCEPTED:
         submission.status = STATUS_ACCEPTED
         task = db.get(TrackerTask, submission.tracker_task_id)
         if task is not None:
             close_task_for_user(db, task, submission.user_id, source="staff")
     db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/staff/homework/submissions/{submission_id}/revision", response_class=JSONResponse)
+async def send_homework_to_revision(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    comment: str = Form(default=""),
+):
+    """Вернуть ошибочную сдачу, чтобы ученик заменил финальное фото."""
+    submission = db.get(HomeworkSubmission, submission_id)
+    if submission is None or submission.submitted_at is None:
+        raise HTTPException(status_code=404, detail="Сдача не найдена")
+    get_student_for_staff_access(
+        db, user, submission.user_id,
+        not_found_detail="Сдача не найдена", forbidden_detail="Это не ваш студент",
+    )
+    if submission.status == STATUS_NEEDS_REVISION:
+        raise HTTPException(status_code=409, detail="Работа уже на доработке")
+    comment_clean = comment.strip()
+    if len(comment_clean) > 500:
+        raise HTTPException(status_code=422, detail="Комментарий слишком длинный")
+    submission.status = STATUS_NEEDS_REVISION
+    submission.needs_revision_at = datetime.now(timezone.utc)
+    if comment_clean:
+        fb, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=user["user_id"])
+        await send_feedback_message(
+            db, feedback=fb, sender_id=user["user_id"], sender_role=_viewer_role(user),
+            text=comment_clean, photo=None, video=None, audio=None, video_link=None,
+        )
+    notification = notify_counterpart(
+        db, submission=submission, recipient_id=submission.user_id,
+        sender_role=_viewer_role(user),
+        title_override="Работу нужно загрузить заново",
+        text_override=(f"{comment_clean}\n\nЗагрузи правильное фото в этом задании."
+                       if comment_clean else "Загрузи правильное фото в этом задании."),
+    )
+    db.commit()
+    background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True})
 
 

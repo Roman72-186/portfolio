@@ -1109,14 +1109,16 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(send);
                     wrap.appendChild(note);
                 }
-                if (left > 0) appendForm();
-                if (required && uploaded) {
+                if (left > 0 && !(block.needs_revision && uploaded)) appendForm();
+                if ((required || block.needs_revision) && uploaded) {
                     var replaceBtn = el('button', 'btn-outline', 'Заменить фото');
                     replaceBtn.type = 'button';
                     replaceBtn.addEventListener('click', function () {
                         replaceMode = true;
                         replaceBtn.remove();
-                        label.textContent = 'Новые фото вместо загруженных (ровно ' + required + ')';
+                        label.textContent = required
+                            ? 'Новые фото вместо загруженных (ровно ' + required + ')'
+                            : 'Новые фото вместо загруженных';
                         send.textContent = 'Заменить работу';
                         input.multiple = required !== 1;
                         input.value = '';
@@ -1135,7 +1137,9 @@ scope)` и свойством `answered` (одна попытка: после о
             function renderUpload(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-upload-block'), block);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
-                if (block.done) {
+                if (block.needs_revision) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Работа на доработке. Замени фото.'));
+                } else if (block.done) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
                 }
                 wrap.appendChild(uploadForm(block));
@@ -1153,7 +1157,9 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
                 }
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
-                if (block.done) {
+                if (block.needs_revision) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Работа на доработке. Замени фото.'));
+                } else if (block.done) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
                 }
                 wrap.appendChild(uploadForm(block));
@@ -1175,13 +1181,14 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (limit) {
                     wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));
                 }
-                if (block.done) {
+                if (block.done || block.needs_revision) {
                     wrap.appendChild(el(
                         'p',
-                        block.overrun ? 'lrn-blk-verdict is-wrong' : 'lrn-blk-verdict is-ok',
-                        block.overrun ? 'Работа сдана, время превышено' : 'Работа сдана вовремя'
+                        block.needs_revision || block.overrun ? 'lrn-blk-verdict is-wrong' : 'lrn-blk-verdict is-ok',
+                        block.needs_revision ? 'Работа на доработке. Замени фото.'
+                            : block.overrun ? 'Работа сдана, время превышено' : 'Работа сдана вовремя'
                     ));
-                    if (block.late) {
+                    if (block.late && !block.needs_revision) {
                         wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Сдана после срока сдачи'));
                     }
                     // Форму оставляем: до проверки куратором ученик может

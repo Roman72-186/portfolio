@@ -101,6 +101,85 @@ def test_student_detail_shows_items_across_domains(db, user_factory, session_fac
     assert resp.status_code == 200
     assert "Пробник" in resp.text
     assert "Композиция" in resp.text
+    assert 'data-return-revision>Вернуть' in resp.text
+
+
+def test_chief_teacher_sees_probnik_revision_on_student_review(
+    db, user_factory, session_factory, client,
+):
+    chief = user_factory(vk_id=860_116, name="Главный", role_name="админ")
+    student = user_factory(vk_id=860_117, name="Ученик")
+    work = _work(db, student.id)
+    client.cookies.set("session_id", session_factory(chief).id)
+
+    page = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert page.status_code == 200
+    assert 'data-return-revision>Вернуть' in page.text
+    assert f"/cabinet/students/{student.id}/mock-exams/" in page.text
+    work.needs_revision = True
+    db.commit()
+    page = client.get(f"/cabinet/staff/students-review/{student.id}")
+    assert 'data-return-revision>Вернуть' not in page.text
+    assert "На доработке" in page.text
+
+
+def test_curator_returns_own_mock_and_cannot_review_until_resubmission(
+    db, user_factory, session_factory, client,
+):
+    curator = user_factory(vk_id=860_140, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_141, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    work = _work(db, student.id, score=None)
+    work.viewed_at = datetime.now(timezone.utc)
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    returned = client.post(f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision")
+
+    assert returned.status_code == 200
+    db.refresh(work)
+    assert work.needs_revision is True
+    assert work.viewed_at is None
+    assert client.post(f"/cabinet/staff/students-review/work/{work.id}/viewed").status_code == 409
+
+
+def test_curator_cannot_return_foreign_mock(db, user_factory, session_factory, client):
+    owner = user_factory(vk_id=860_142, name="Свой куратор", role_name="куратор")
+    other = user_factory(vk_id=860_143, name="Чужой куратор", role_name="куратор")
+    student = user_factory(vk_id=860_144, name="Ученик")
+    student.curator_id = owner.id
+    db.commit()
+    work = _work(db, student.id)
+    client.cookies.set("session_id", session_factory(other).id)
+
+    response = client.post(f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision")
+
+    assert response.status_code == 403
+    db.refresh(work)
+    assert work.needs_revision is False
+
+
+def test_closed_mock_cycle_has_no_return_button(db, user_factory, session_factory, client):
+    chief = user_factory(vk_id=860_145, name="Главный", role_name="админ")
+    student = user_factory(vk_id=860_146, name="Ученик")
+    cycle = ExamCycle(
+        user_id=student.id, subject="Рисунок", started_at=date.today(),
+        closed_at=datetime.now(timezone.utc),
+    )
+    db.add(cycle)
+    db.commit()
+    work = _work(db, student.id, score=80)
+    work.cycle_id = cycle.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(chief).id)
+
+    page = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert page.status_code == 200
+    work_row = page.text.split(f'data-domain="work" data-id="{work.id}"', 1)[1].split("</article>", 1)[0]
+    assert "data-return-revision" not in work_row
 
 
 def test_curator_cannot_open_foreign_student_review(db, user_factory, session_factory, client):

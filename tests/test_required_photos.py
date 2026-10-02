@@ -92,6 +92,40 @@ def _is_closed(db, block, user):
     return bool(state and state.completed_at)
 
 
+def test_returned_work_replaces_wrong_photo_after_deadline(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task)
+    assert _post(client, block.id).status_code == 200
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    old_image = db.query(TaskBlockSubmissionImage).filter_by(submission_id=submission.id).one()
+    task.submit_until = day_bounds(TODAY - timedelta(days=1))[0]
+    submission.needs_revision = True
+    submission.review_comment = "Загрузи нужный лист"
+    db.commit()
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+    assert payload["needs_revision"] is True
+    assert payload["edit_reason"] is None
+    old_path = old_image.image_s3_path
+    db.expunge(old_image)  # SQLite может переиспользовать id удалённой строки.
+    with patch("app.api.cabinet_tracker.task_is_archived_for_user", return_value=True), \
+         patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        retry = client.post(
+            f"/cabinet/tracker/blocks/{block.id}/upload",
+            files=[("photos", ("new.jpg", b"new-bytes", "image/jpeg"))],
+            data={"replace": "1"},
+        )
+    assert retry.status_code == 200
+
+    db.refresh(submission)
+    assert submission.needs_revision is False
+    assert submission.review_comment is None
+    images = db.query(TaskBlockSubmissionImage).filter_by(submission_id=submission.id).all()
+    assert len(images) == 1
+    assert images[0].image_s3_path != old_path
+
+
 # ── приём ───────────────────────────────────────────────────────────────────
 
 def test_more_than_required_is_refused_and_nothing_is_stored(auth_client, db):

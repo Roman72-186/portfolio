@@ -945,6 +945,8 @@ def score_work(
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    if work.needs_revision:
+        raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
     if tab not in ("portfolio", "mock-exams"):
         tab = "mock-exams"
 
@@ -982,13 +984,11 @@ def score_work(
 def send_mock_exam_to_revision(
     student_id: int,
     work_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     background_tasks: BackgroundTasks,
 ):
-    if user["role_rank"] < 4:
-        raise HTTPException(status_code=403, detail="Доступно только админу и суперадмину")
     _check_access(student_id, user, db)
 
     work = db.query(Work).filter(
@@ -999,6 +999,8 @@ def send_mock_exam_to_revision(
     ).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    if work.needs_revision:
+        raise HTTPException(status_code=409, detail="Работа уже на доработке")
 
     if work.cycle_id is not None:
         cycle = db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
@@ -1013,6 +1015,11 @@ def send_mock_exam_to_revision(
     # _overwrite_final и перезапишет это же фото (см. exam_cycle.has_submitted_for_ticket).
     work.needs_revision = True
     work.needs_revision_at = datetime.now(timezone.utc)
+    work.score = None
+    work.scored_at = None
+    work.scored_by_id = None
+    work.viewed_at = None
+    work.viewed_by_id = None
 
     subject = work.subject
     # Возвращаем именно попытку исходного билета. Без этого при нескольких
