@@ -1446,6 +1446,18 @@ button.desk-nav-item {
 .notif-gear-switch input:checked + .notif-gear-track::before { transform: translateX(16px); }
 .notif-gear-switch input:disabled + .notif-gear-track { opacity: 0.5; cursor: not-allowed; }
 
+/* Ник Telegram с копированием по нажатию (макрос tg_copy в components/,
+   поведение — copy.js в static/js/). Экраны «Статистика активности» и
+   статистика цикла (должники). До 02.10.2026 жил как .ios-ss .ss-copy. */
+.tg-copy {
+    display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0;
+    border: none; background: none; font: inherit; color: var(--blue-text); cursor: pointer;
+}
+.tg-copy::after { content: '⧉'; font-size: .95em; opacity: .6; }
+.tg-copy.is-copied::after { content: '✓ скопировано'; color: var(--success-text); opacity: 1; }
+.tg-copy:hover { opacity: .75; }
+.tg-copy:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+
 /* Подсказки-«всплывашки» по тапу — общий компонент кабинета ученика.
    position:fixed, координаты через JS, та же причина, что у .notif-gear-pop:
    карточки вроде .profile-hero держат overflow:hidden ради декоративных

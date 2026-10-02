@@ -304,3 +304,47 @@ def test_stats_page_has_no_button_for_moderator(client, session_factory, user_fa
     assert resp.status_code == 200
     assert "Не закрыли цикл: 1" in resp.text
     assert "Напомнить всем" not in resp.text
+
+
+# ── ник Telegram и «Скопировать список» (владелец 02.10.2026) ───────────────
+
+def test_stats_page_debtor_nick_is_copyable_and_list_can_be_copied(
+        client, session_factory, user_factory, db, regular_user):
+    """Список должников передают преподавателю: у каждого ник кнопкой
+    копирования и общая кнопка «Скопировать список». Без ника — прочерк в
+    таблице и «ника нет» в скопированном списке."""
+    topic = _cycle(db, regular_user)
+    _task(db, regular_user)
+    regular_user.last_name, regular_user.first_name = "Армеева", "Дарья"
+    regular_user.tg_username = "@darya_a"
+    no_nick = _student(user_factory, 771_090, "Без Ника")
+    no_nick.tg_username = None
+    db.commit()
+    gp = user_factory(vk_id=880_005, name="ГП", role_name="админ")
+    _login(client, session_factory, gp)
+
+    html = client.get(f"/cabinet/staff/program/cycles/{topic.id}/stats").text
+
+    assert 'class="tg-copy" data-copy="@darya_a"' in html
+    assert 'data-debtor-name="Армеева Дарья" data-debtor-username="@darya_a"' in html
+    assert f'data-debtor-name="{no_nick.name}" data-debtor-username=""' in html
+    assert "Скопировать список" in html
+    assert "ника нет" in html
+    assert "/static/js/copy.js?v=" in html
+
+
+def test_moderator_can_copy_debtors(client, session_factory, user_factory, db, regular_user):
+    """Копирование только читает страницу — модератору оно открыто, хоть
+    «Напомнить всем» ему и не показывается."""
+    topic = _cycle(db, regular_user)
+    _task(db, regular_user)
+    regular_user.tg_username = "darya_a"
+    db.commit()
+    moderator = user_factory(vk_id=880_006, name="Модератор", role_name="модератор")
+    _login(client, session_factory, moderator)
+
+    html = client.get(f"/cabinet/staff/program/cycles/{topic.id}/stats").text
+
+    assert "Скопировать список" in html
+    assert 'data-copy="@darya_a"' in html
+    assert "Напомнить всем" not in html

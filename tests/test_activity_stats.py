@@ -677,7 +677,7 @@ def test_student_username_is_a_copy_button(superadmin_client, db, user_factory):
     db.commit()
 
     page = client.get("/cabinet/superadmin/activity").text
-    assert 'class="ss-copy" data-copy="@nick_student"' in page
+    assert 'class="tg-copy" data-copy="@nick_student"' in page
     summary = page.split("Ученики поимённо", 1)[1].split("Лента действий", 1)[0]
     assert 'data-copy="@nick_student"' in summary
     assert "Не указан" not in summary.split("<tbody>", 1)[1]

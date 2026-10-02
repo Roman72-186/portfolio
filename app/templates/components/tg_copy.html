@@ -1,0 +1,5 @@
+{# Ник Telegram кнопкой: нажал — скопировал (поведение — `static/js/copy.js`,
+   вид — `.tg-copy` в base.css). Принимает ник уже с «@»; всё прочее — пустая
+   строка, «Не указан» — рисуется прочерком. Вынесено 02.10.2026 из экрана
+   «Статистика активности», чтобы должники цикла копировались тем же кодом. #}
+{% macro tg_copy(username) %}{% if username and username.startswith('@') %}<button type="button" class="tg-copy" data-copy="{{ username }}" title="Скопировать {{ username }}">{{ username }}</button>{% else %}—{% endif %}{% endmacro %}

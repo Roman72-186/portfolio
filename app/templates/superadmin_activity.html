@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=12">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -33,7 +33,7 @@
 {% endmacro %}
 
 {# Username ученика кнопкой: нажал — скопировал. Без ника — прочерк. #}
-{% macro tg_copy(username) %}{% if username and username.startswith('@') %}<button type="button" class="ss-copy" data-copy="{{ username }}" title="Скопировать {{ username }}">{{ username }}</button>{% else %}—{% endif %}{% endmacro %}
+{% from "components/tg_copy.html" import tg_copy %}
 
 {% macro review_speed_table(rows) %}
     {% if rows %}
@@ -826,38 +826,8 @@
     show(location.hash.slice(1) || 'students');
 })();
 </script>
+<script src="/static/js/copy.js?v=1"></script>
 <script>
-// Копирование в буфер: Clipboard API, а без HTTPS — через скрытую textarea.
-async function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        return;
-    }
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    const copied = document.execCommand('copy');
-    textarea.remove();
-    if (!copied) throw new Error('copy failed');
-}
-
-// Username ученика: кнопка из макроса tg_copy, одна делегация на страницу.
-document.addEventListener('click', async function (event) {
-    const button = event.target.closest('[data-copy]');
-    if (!button) return;
-    try {
-        await copyText(button.dataset.copy);
-        button.classList.add('is-copied');
-        setTimeout(function () { button.classList.remove('is-copied'); }, 1500);
-    } catch (error) {
-        button.title = 'Не удалось скопировать';
-    }
-});
-
 // Поимённая сводка: фильтры по портфолио и заданию, копирование списка.
 (function () {
     const root = document.querySelector('[data-activity-portfolio]');

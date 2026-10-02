@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="/static/css/program.css?v=53">
 {% endblock %}
 {% block content %}
+{% from "components/tg_copy.html" import tg_copy %}
 {#
 Статистика цикла (владелец 03.09.2026): «сколько людей там посмотрело,
 сколько людей в итоге загрузили задание… будем смотреть с разных тарифов,
@@ -75,6 +76,12 @@
     лента ученика (`cycle_stats.cycle_debtors` → `tracker.missing_required_tasks`),
     и кнопка «Напомнить всем» — ГП и СА. Ученик с истёкшим доступом сюда не
     попадает: писать заблокированному «закрой цикл» незачем.
+
+    Ник Telegram и «Скопировать список» (владелец 02.10.2026: «с возможностью
+    копирования имени и username») — список передают преподавателю в чат, до
+    этого его собирали скриптом на проде. Копирование только читает страницу,
+    поэтому открыто и модератору. Строка: «Фамилия Имя – @ник», без ника —
+    «ника нет» (правило списков в `AGENTS.md`).
     #}
     {% if stats.steps %}
     <section class="prg-items" id="cycle-debtors">
@@ -99,16 +106,23 @@
         </div>
         <p class="prg-hint" data-role="remind-result" aria-live="polite" hidden></p>
         {% endif %}
+        <div class="prg-actions">
+            <button type="button" class="btn-outline" data-role="debtors-copy">Скопировать список</button>
+            <span class="prg-hint" data-role="debtors-copy-status" role="status" aria-live="polite"></span>
+        </div>
         <div class="table-scroll">
             <table class="prg-table">
                 <thead>
-                    <tr><th>Ученик</th><th>Тариф</th><th>Не закрыто</th><th>Напомнили</th></tr>
+                    <tr><th>Ученик</th><th>Telegram</th><th>Тариф</th><th>Не закрыто</th><th>Напомнили</th></tr>
                 </thead>
                 <tbody>
                     {% for debtor in debtors %}
                     {% set s = debtor.user %}
-                    <tr>
-                        <td><a href="/cabinet/students/{{ s.id }}">{{ ([s.last_name, s.first_name]|select|join(' ')) or s.name }}</a></td>
+                    {% set full_name = ([s.last_name, s.first_name]|select|join(' ')) or s.name %}
+                    {% set nick = ('@' ~ s.tg_username.strip().lstrip('@')) if s.tg_username and s.tg_username.strip().lstrip('@') else '' %}
+                    <tr data-debtor-name="{{ full_name }}" data-debtor-username="{{ nick }}">
+                        <td><a href="/cabinet/students/{{ s.id }}">{{ full_name }}</a></td>
+                        <td>{{ tg_copy(nick) }}</td>
                         <td>{{ s.tariff or '—' }}</td>
                         <td>{% for task in debtor.tasks %}«{{ task.title }}»{{ ', ' if not loop.last }}{% endfor %}</td>
                         <td>{{ 'сегодня' if debtor.reminded_today else '' }}</td>
@@ -124,6 +138,26 @@
     {% endif %}
 </div>
 
+{% if debtors %}
+<script src="/static/js/copy.js?v=1"></script>
+<script>
+(function () {
+    var root = document.getElementById('cycle-debtors');
+    var button = root.querySelector('[data-role="debtors-copy"]');
+    var status = root.querySelector('[data-role="debtors-copy-status"]');
+    button.addEventListener('click', function () {
+        var text = Array.prototype.map.call(root.querySelectorAll('[data-debtor-name]'), function (row) {
+            return row.dataset.debtorName + ' – ' + (row.dataset.debtorUsername || 'ника нет');
+        }).join('\n');
+        copyText(text).then(function () {
+            status.textContent = 'Скопировано';
+        }, function () {
+            status.textContent = 'Не удалось скопировать';
+        });
+    });
+})();
+</script>
+{% endif %}
 {% if debtors and can_remind and to_remind %}
 <script>
 (function () {
