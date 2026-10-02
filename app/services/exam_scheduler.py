@@ -584,10 +584,15 @@ def _run_birthday_check() -> None:
             else:
                 when_text = f"через {days_left} дн."
 
+            # Ник рядом с именем (служба заботы 02.10.2026): по одному имени
+            # не понять, кто именно из тёзок именинник и кому писать.
+            tg = normalize_tg_username(student.tg_username or "")
+            who = f"{student.name} (@{tg})" if tg else student.name
+
             for recipient_id in recipient_ids:
                 notif = Notification(
                     user_id=recipient_id,
-                    title=f"День рождения — {student.name}",
+                    title=f"День рождения — {who}",
                     text=f"{when_text}, {upcoming.strftime('%d.%m')}. Успейте подготовить подарок.",
                 )
                 db.add(notif)

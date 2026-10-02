@@ -42,6 +42,24 @@ def test_flags_birthday_within_week(db, user_factory):
     assert student.birthday_reminder_sent_year == (today_msk() + timedelta(days=5)).year
 
 
+def test_title_carries_telegram_nick(db, user_factory):
+    """Служба заботы 02.10.2026: по одному имени не понять, кто именинник —
+    в заголовке рядом с именем ник Telegram."""
+    chief = user_factory(vk_id=700_050, name="ГП", role_name="админ")
+    with_nick = user_factory(vk_id=700_051, name="Аня Иванова")
+    with_nick.tg_username = "@anya_iv"
+    with_nick.birth_date = _birth_date_in(2)
+    without_nick = user_factory(vk_id=700_052, name="Боря Петров")
+    without_nick.tg_username = None
+    without_nick.birth_date = _birth_date_in(2)
+    db.commit()
+
+    _run_birthday_check()
+
+    titles = {n.title for n in db.query(Notification).filter(Notification.user_id == chief.id)}
+    assert titles == {"День рождения — Аня Иванова (@anya_iv)", "День рождения — Боря Петров"}
+
+
 def test_goes_to_chief_teacher_not_curator(db, user_factory):
     """Главный сценарий правки 29.09.2026: куратор ученика напоминание
     больше не получает, его получает ГП."""
