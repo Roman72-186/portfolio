@@ -824,6 +824,48 @@ def feed_for_student(
     }
 
 
+# Отказ перехода по кнопке-ссылке: `main.py::forbidden_handler` рисует его
+# заглушкой со своим заголовком, а не «Аккаунт заблокирован».
+LINK_LOCKED_DETAIL = (
+    "Ссылка откроется, когда будут сделаны все задания перед ней. "
+    "Вернись в «Обучение» и посмотри, что осталось."
+)
+
+
+def block_step_is_open(
+    db: Session, *, user_id: int, user_tariff: str | None, task: TrackerTask,
+    block_id: int, today: date,
+) -> bool:
+    """Открыт ли ученику шаг-блок `block_id`: в ленте он «можно делать» или «сделано».
+
+    Нужна переходу по кнопке блока «Ссылка» (`api/cabinet_tracker.py::go_link_block`,
+    владелец 03.10.2026): адрес занятия уходит ученику только через сервер, и
+    сервер повторяет очередь ленты. Иначе ученик, переславший кнопку, пустил бы
+    на занятие однокурсника, который ещё не сдал домашку.
+
+    Очередь сквозная по всему окну ленты, поэтому считает её та же
+    `feed_for_student`, что рисует экран, — своей копии условия здесь нет.
+    Окна два: лента цикла задания и текущая — датное задание закончившегося
+    цикла ученик видит и в идущем (`task_is_archived_for_user`). Открыт хоть в
+    одном — открыт: экран в нём тоже рисует кнопку живой. Побочные эффекты те
+    же, что у показа ленты (окна портфолио), а ученик её только что видел.
+    """
+    cycle_ids = [task.topic_id, None] if task.topic_id is not None else [None]
+    for cycle_id in cycle_ids:
+        feed = feed_for_student(
+            db, user_id=user_id, user_tariff=user_tariff, today=today, cycle_id=cycle_id,
+        )
+        for step in feed["steps"]:
+            block = step["block"]
+            if (
+                block is not None
+                and block.id == block_id
+                and step["status"] in (STATUS_CURRENT, STATUS_DONE)
+            ):
+                return True
+    return False
+
+
 # Порядок вкладок и подписи — созвон 30.09.2026 («общая, композиция или
 # рисунок, то есть три вкладки»). Значение — то, что лежит в `subject` шага.
 SUBJECT_TAB_GENERAL = ("", "Общее")

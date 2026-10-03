@@ -385,8 +385,16 @@ scope)` и свойством `answered` (одна попытка: после о
                 // с тем же текстом была бы третьей копией одной строки.
                 var a = el('a', 'btn-outline',
                     (!titlesOutside && block.title) || 'Открыть ссылку');
-                a.href = block.url;
-                a.target = '_blank';
+                // Ученику приходит `go_url` — переход через сервер, сам адрес
+                // ссылки в кнопку не кладём (владелец 03.10.2026, см.
+                // `cabinet_tracker.go_link_block`). `url` — превью сотрудника.
+                a.href = block.go_url || block.url;
+                // Установленное на телефон приложение открывает новую вкладку
+                // в браузере, а там ученик в кабинет не вошёл — переход через
+                // сервер упёрся бы в страницу входа. Там идём в том же окне.
+                var standalone = window.navigator.standalone === true
+                    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+                if (!(block.go_url && standalone)) a.target = '_blank';
                 a.rel = 'noopener noreferrer';
                 wrap.appendChild(a);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));

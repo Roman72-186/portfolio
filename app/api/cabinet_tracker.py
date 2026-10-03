@@ -36,7 +36,7 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
-    BLOCK_COMPARE, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
+    BLOCK_COMPARE, BLOCK_LINK, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
     BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
     QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
@@ -57,7 +57,13 @@ from app.services.program import (
     msk_date,
     week_start,
 )
-from app.services.cycle_feed import current_feed_task_ids, task_is_archived_for_user, task_is_locked_for_user
+from app.services.cycle_feed import (
+    LINK_LOCKED_DETAIL,
+    block_step_is_open,
+    current_feed_task_ids,
+    task_is_archived_for_user,
+    task_is_locked_for_user,
+)
 from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
@@ -681,8 +687,10 @@ def cabinet_tracker_task_blocks(
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/done"
-        elif block.block_type == "link":
-            item["url"] = block.url
+        elif block.block_type == BLOCK_LINK:
+            # Адрес ссылки ученику не уходит: кнопка ведёт на сервер, и тот
+            # пускает дальше только того, кому шаг открыт (`go_link_block`).
+            item["go_url"] = f"/cabinet/tracker/blocks/{block.id}/go"
         elif block.block_type == BLOCK_COMPARE:
             # Сравнение работ (Лиза 27.09.2026). Выбор преподавателя уходит
             # только вместе с ответом ученика — до этого `is_pick` наружу не
@@ -957,6 +965,48 @@ class TrackerBlockAnswerItem(BaseModel):
 class TrackerTaskBlocksSubmit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answers: list[TrackerBlockAnswerItem] = Field(min_length=1, max_length=MAX_BLOCKS)
+
+
+@router.get("/tracker/blocks/{block_id}/go")
+def go_link_block(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Кнопка блока «Ссылка»: переход по ней через сервер.
+
+    Владелец 17.08 и 03.10.2026: ссылка на занятие зашита в кнопку, чтобы
+    ребёнок не скопировал её и не переслал. До 03.10.2026 в кнопке лежал сам
+    адрес Zoom — долгое нажатие «Скопировать ссылку» уносило его в общий чат, и
+    он открывал занятие тем, кто ничего не сдал. Теперь в кнопке адрес этого
+    роута: пересланный, он не откроется без своего кабинета ученика и
+    открытого в его ленте шага (`cycle_feed.block_step_is_open`).
+
+    Это не замок: после перехода адрес встречи виден в браузере и в Zoom.
+    Намеренную пересылку закрывает зал ожидания на стороне Zoom.
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_LINK or not block.url:
+        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+    # Запертый долгом цикл — тот же отказ, что у закрытого шага: заглушка
+    # с текстом `_accessible_task_or_404` вышла бы с заголовком «Аккаунт
+    # заблокирован».
+    try:
+        task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    except HTTPException as exc:
+        if exc.status_code != 403:
+            raise
+        raise HTTPException(status_code=403, detail=LINK_LOCKED_DETAIL) from exc
+    if not block_step_is_open(
+        db, user_id=user["user_id"], user_tariff=user.get("tariff"),
+        task=task, block_id=block.id, today=today_msk(),
+    ):
+        raise HTTPException(status_code=403, detail=LINK_LOCKED_DETAIL)
+    return RedirectResponse(
+        block.url,
+        status_code=302,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 @router.post("/tracker/blocks/{block_id}/start", response_class=JSONResponse)
