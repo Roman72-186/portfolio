@@ -1031,6 +1031,42 @@ def task_audience_user_ids(db: Session, task_id: int) -> set[int]:
     return reached
 
 
+def program_students(db: Session, now: datetime) -> dict[int, User]:
+    """Ученики, с которых спрашивают программу: активные, не в архиве, с
+    открытым доступом. Членство в группе здесь не проверяется — оно нужно
+    только учебным событиям (`program_learners`), напоминанию о конце
+    доступа оно не мешает.
+
+    Общий отбор напоминаний по расписанию (`student_reminders.py`) и фильтра
+    «сдали / не сдали» в статистике (`staff_dashboard._assignment_activity`):
+    кому бот напомнит о сроке, тот и числится в должниках, и наоборот.
+    """
+    rows = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+            User.archived_at.is_(None),
+            or_(User.access_until.is_(None), User.access_until > now),
+            # Служебные аккаунты (владелец 29.09.2026) — к «службе заботы»
+            # привязан рабочий Telegram Лизы, и «Новое задание» от каждого
+            # цикла шло бы ей как ученице. Ответы преподавателя и оценки —
+            # не отсюда, они приходят им как раньше.
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
+        .all()
+    )
+    return {user.id: user for user in rows}
+
+
+def program_learners(students: dict[int, User]) -> dict[int, User]:
+    """Ученики с доступом к урокам (`require_learning_content_access`): без
+    членства в группе ленту не открыть, и звать туда незачем."""
+    return {uid: user for uid, user in students.items() if user.is_group_member}
+
+
 def count_completed(db: Session, task_id: int) -> int:
     """Сколько учеников уже закрыли задачу. Строка состояния заводится лениво,
     поэтому «нет строки» — это открытая задача, а не отсутствие адресата."""

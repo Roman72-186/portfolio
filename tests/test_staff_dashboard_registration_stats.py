@@ -7,7 +7,7 @@ from app.constants import (
 )
 from app.models.role import Role
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockTariff
+from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockState, TaskBlockSubmission, TaskBlockTariff
 from app.models.tracker import TrackerTask
 from app.models.session import Session
 from app.models.user import User
@@ -185,6 +185,8 @@ def test_student_activity_assignment_counts_submitted_work_and_eligible_students
     db.add(TaskBlockTariff(block_id=block.id, tariff=TARIFF_SELF))
     db.add(TaskBlockSubmission(block_id=block.id, user_id=submitted.id,
                                submitted_at=datetime(2026, 9, 20, tzinfo=timezone.utc), needs_revision=True))
+    db.add(TaskBlockState(block_id=block.id, user_id=submitted.id, status="done",
+                          completed_at=datetime(2026, 9, 20, tzinfo=timezone.utc)))
     db.commit()
 
     assignments = get_student_activity_overview(db, include_assignments=True)["assignments"]
@@ -194,3 +196,81 @@ def test_student_activity_assignment_counts_submitted_work_and_eligible_students
     assert set(assignments[0]["eligible"]) == {submitted.id, missing.id}
     assert assignments[0]["submitted"] == [submitted.id]
     assert other_tariff.id not in assignments[0]["eligible"]
+
+
+# ── «Сдали / не сдали» по правилу напоминаний (владелец 03.10.2026) ─────────
+
+def _control(db, *, submit_until=None, subject="Рисунок"):
+    topic = LearningTopic(title="Цикл", kind="week", opens_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                          is_published=True, assign_to_all=True)
+    db.add(topic)
+    db.flush()
+    task = TrackerTask(title="Контрольная по рисунку", topic_id=topic.id, kind="material",
+                       is_published=True, submit_until=submit_until, subject=subject)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_TIMED, title="Локация с дверью",
+                      time_limit_minutes=75)
+    db.add(block)
+    db.commit()
+    return block
+
+
+def test_student_with_expired_access_is_not_counted_as_debtor(db, user_factory):
+    """Пробник, у которого доступ кончился, не должник: бот ему о сроке не
+    напоминает (`tracker.program_students`), и статистика не числит. На проде
+    03.10.2026 таких было шестеро в каждой контрольной."""
+    active = user_factory(vk_id=810_300, name="Active")
+    expired = user_factory(vk_id=810_301, name="Expired")
+    expired.access_until = datetime.now(timezone.utc) - timedelta(days=6)
+    not_member = user_factory(vk_id=810_302, name="No group", is_group_member=False)
+    block = _control(db)
+
+    assignment = get_student_activity_overview(db, include_assignments=True)["assignments"][0]
+
+    assert assignment["id"] == block.id
+    assert assignment["eligible"] == [active.id]
+    assert expired.id not in assignment["eligible"]
+    assert not_member.id not in assignment["eligible"]
+
+
+def test_missing_students_are_split_by_deadline(db, user_factory):
+    """«Отдельно показывать „срок прошёл“ и „срок ещё не наступил“» — срок
+    у каждого свой (`upload_deadline`), строка тарифа главнее задания."""
+    done = user_factory(vk_id=810_310, name="Done", tariff=TARIFF_SELF)
+    overdue = user_factory(vk_id=810_311, name="Overdue", tariff=TARIFF_SELF)
+    pending = user_factory(vk_id=810_312, name="Pending", tariff=TARIFF_WITH_YOU)
+    past = datetime.now(timezone.utc) - timedelta(days=1)
+    block = _control(db, submit_until=past)
+    from app.models.tracker import TrackerTaskTariffDeadline
+    db.add(TrackerTaskTariffDeadline(task_id=block.task_id, tariff=TARIFF_WITH_YOU,
+                                     submit_until=datetime.now(timezone.utc) + timedelta(days=3)))
+    db.add(TaskBlockState(block_id=block.id, user_id=done.id, status="done",
+                          started_at=past - timedelta(hours=2), completed_at=past - timedelta(hours=1)))
+    db.commit()
+
+    assignment = get_student_activity_overview(db, include_assignments=True)["assignments"][0]
+
+    assert assignment["label"] == "Рисунок: Контрольная по рисунку · Локация с дверью"
+    assert assignment["submitted"] == [done.id]
+    assert assignment["overdue"] == [overdue.id]
+    assert assignment["pending"] == [pending.id]
+    assert assignment["notes"][done.id] == "Сдал"
+    assert assignment["notes"][overdue.id].startswith("Не сдал · срок прошёл ")
+    assert assignment["notes"][pending.id].startswith("Не сдал · срок до ")
+
+
+def test_open_started_timed_block_is_not_submitted(db, user_factory):
+    """Начал контрольную, но работы нет — не сдал: «сдал» решает статус
+    «сделано», а не строка состояния."""
+    started = user_factory(vk_id=810_320, name="Started")
+    block = _control(db)
+    db.add(TaskBlockState(block_id=block.id, user_id=started.id, status="open",
+                          started_at=datetime.now(timezone.utc) - timedelta(hours=3)))
+    db.commit()
+
+    assignment = get_student_activity_overview(db, include_assignments=True)["assignments"][0]
+
+    assert assignment["submitted"] == []
+    assert assignment["pending"] == [started.id]
+    assert assignment["notes"][started.id] == "Не сдал · срок не задан"

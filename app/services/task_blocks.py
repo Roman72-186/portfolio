@@ -239,6 +239,25 @@ def is_block_open_for_tariff(
     return user_tariff in block_tariffs
 
 
+def feed_visible_blocks(
+    blocks: list[TaskBlock], tariffs_by_block: dict[int, set[str]], user_tariff: str | None
+) -> list[TaskBlock]:
+    """Блоки, которые ученик видит в ленте, по заранее собранным тарифам
+    (`get_tariffs`): чужой тариф и скрытые до закрытия задания вопросы
+    выпадают — ровно как в `cycle_feed.build_cycle_feed`.
+
+    Для массовых проходов «много учеников × много блоков» — напоминания
+    (`student_reminders.py`) и фильтр «сдали / не сдали» в статистике
+    (`staff_dashboard._assignment_activity`); одному ученику —
+    `visible_blocks_for_student` ниже.
+    """
+    return [
+        block for block in blocks
+        if not block.hidden_until_done
+        and is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+    ]
+
+
 def visible_blocks_for_student(
     db: DBSession, blocks: list[TaskBlock], *, user_tariff: str | None
 ) -> list[TaskBlock]:

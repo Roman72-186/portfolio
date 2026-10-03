@@ -45,11 +45,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
-from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.homework_submission import HomeworkSubmission
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
-from app.models.role import Role
 from app.models.student_reminder import (
     KIND_ACCESS_1D,
     KIND_ACCESS_3D,
@@ -82,10 +80,14 @@ from app.services.task_blocks import (
     get_blocks_for_tasks,
     get_submit_deadlines,
     get_tariffs,
+    feed_visible_blocks,
     get_task_submit_deadlines,
-    is_block_open_for_tariff,
 )
-from app.services.tracker import STUDENT_ROLE_RANK, task_audience_user_ids
+from app.services.tracker import (
+    program_learners,
+    program_students,
+    task_audience_user_ids,
+)
 from app.services.tz import MSK_TZ
 
 logger = logging.getLogger(__name__)
@@ -139,47 +141,9 @@ class _Item:
     has_video: bool = False
 
 
-# ── Кто вообще получает ─────────────────────────────────────────────────────
-
-def _students(db: Session, now: datetime) -> dict[int, User]:
-    """Ученики, которым есть смысл писать: активные, не в архиве, с открытым
-    доступом. Членство в группе не проверяем здесь — оно нужно только
-    учебным событиям (`_learners`), напоминанию о доступе оно не мешает."""
-    rows = (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(
-            Role.rank == STUDENT_ROLE_RANK,
-            User.is_active.is_(True),
-            User.deleted_at.is_(None),
-            User.archived_at.is_(None),
-            or_(User.access_until.is_(None), User.access_until > now),
-            # Служебные аккаунты (владелец 29.09.2026) — к «службе заботы»
-            # привязан рабочий Telegram Лизы, и «Новое задание» от каждого
-            # цикла шло бы ей как ученице. Ответы преподавателя и оценки —
-            # не отсюда, они приходят им как раньше.
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-        )
-        .all()
-    )
-    return {user.id: user for user in rows}
-
-
-def _learners(students: dict[int, User]) -> dict[int, User]:
-    """Ученики с доступом к урокам (`require_learning_content_access`): без
-    членства в группе ленту не открыть, и звать туда незачем."""
-    return {uid: user for uid, user in students.items() if user.is_group_member}
-
-
-def _visible_blocks(blocks, tariffs_by_block, tariff):
-    """Блоки, которые ученик видит в ленте: чужой тариф и скрытые до закрытия
-    задания вопросы выпадают — ровно как в `cycle_feed.build_cycle_feed`."""
-    return [
-        block for block in blocks
-        if not block.hidden_until_done
-        and is_block_open_for_tariff(tariffs_by_block.get(block.id), tariff)
-    ]
-
+# Кто вообще получает — `tracker.program_students` / `program_learners`,
+# какие блоки ученик видит — `task_blocks.feed_visible_blocks`. Вынесены
+# 03.10.2026: по тем же правилам статистика считает, кто не сдал задание.
 
 def _has_video(block: TaskBlock) -> bool:
     return block.block_type in VIDEO_BLOCK_TYPES and block.video_id is not None
@@ -268,7 +232,7 @@ def _collect_new_content(
         audience = task_audience_user_ids(db, task_id) & learners.keys()
         for uid in audience:
             user = learners[uid]
-            visible = _visible_blocks(blocks_by_task.get(task_id, []), tariffs, user.tariff)
+            visible = feed_visible_blocks(blocks_by_task.get(task_id, []), tariffs, user.tariff)
             if blocks_by_task.get(task_id) and not visible:
                 continue  # всё задание — чужого тарифа
             told = told_at.get((uid, task_id))
@@ -388,7 +352,7 @@ def _collect_deadlines(
                 continue
             user = learners[uid]
             pending: list[datetime] = []
-            for block in _visible_blocks(blocks, tariffs, user.tariff):
+            for block in feed_visible_blocks(blocks, tariffs, user.tariff):
                 if (uid, block.id) in done_blocks:
                     continue
                 if _utc(block.opens_at) and _utc(block.opens_at) > now:
@@ -497,8 +461,8 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
 
 def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     """Что каждому ученику пора сообщить — без уже отправленного."""
-    students = _students(db, now)
-    learners = _learners(students)
+    students = program_students(db, now)
+    learners = program_learners(students)
     raw: dict[int, list[_Item]] = defaultdict(list)
     _collect_new_content(db, learners, now, raw)
     _collect_deadlines(db, learners, now, raw)

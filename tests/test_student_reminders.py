@@ -308,14 +308,15 @@ def test_archived_student_is_silent(db, user_factory):
 
 def test_service_accounts_get_no_scheduled_reminders(db, user_factory, monkeypatch):
     """Служебные аккаунты (владелец 29.09.2026): к «службе заботы» привязан
-    рабочий Telegram Лизы — ни новых заданий, ни конца доступа ей."""
-    import app.services.student_reminders as reminders_module
+    рабочий Telegram Лизы — ни новых заданий, ни конца доступа ей. Отбор
+    живёт в `tracker.program_students` (вынесен 03.10.2026)."""
+    import app.services.tracker as tracker_module
 
     owner = _owner(user_factory)
     care = user_factory(vk_id=800_017, name="служба заботы")
     care.access_until = _naive(NOW + timedelta(days=2))
     db.commit()
-    monkeypatch.setattr(reminders_module, "REPORT_EXCLUDED_USER_IDS", frozenset({care.id}))
+    monkeypatch.setattr(tracker_module, "REPORT_EXCLUDED_USER_IDS", frozenset({care.id}))
     topic = _topic(db, owner, opens_at=NOW - timedelta(days=1))
     _task(db, owner, topic)
 

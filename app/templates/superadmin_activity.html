@@ -253,9 +253,11 @@
                         <option value="all">Все</option>
                         <option value="submitted">Сдали</option>
                         <option value="missing">Не сдали</option>
+                        <option value="overdue">Не сдали, срок прошёл</option>
+                        <option value="pending">Не сдали, срок не наступил</option>
                     </select>
                 </label>
-                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать имена, username и тариф</button>
+                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать список</button>
                 <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
             </div>
             <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
@@ -854,6 +856,7 @@
         if (!assignment) submissionFilter.value = 'all';
         const eligible = assignment ? new Set(assignment.eligible) : null;
         const submitted = assignment ? new Set(assignment.submitted) : null;
+        const overdue = assignment ? new Set(assignment.overdue) : null;
         if (assignment) {
             const byTariff = new Map();
             rows.forEach(function (row) {
@@ -866,7 +869,9 @@
             });
             const submittedCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.submitted; }, 0);
             const missingCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.missing; }, 0);
-            stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount + '. По тарифам (сдали / не сдали): '
+            stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount
+                + ' (срок прошёл: ' + assignment.overdue.length + ', срок не наступил: ' + assignment.pending.length + ')'
+                + '. По тарифам (сдали / не сдали): '
                 + Array.from(byTariff, function (entry) {
                     return entry[0] + ': ' + entry[1].submitted + ' / ' + entry[1].missing;
                 }).join('; ');
@@ -879,12 +884,16 @@
             const uploaded = row.dataset.portfolioUploaded === '1';
             const userId = Number(row.dataset.studentId);
             const hasSubmitted = submitted && submitted.has(userId);
+            const isOverdue = overdue && overdue.has(userId);
+            const mode = submissionFilter.value;
             row.querySelector('[data-assignment-state]').textContent = assignment
-                ? (hasSubmitted ? 'Сдал' : 'Не сдал') : 'Выберите задание';
+                ? (assignment.notes[userId] || '') : 'Выберите задание';
             row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded)
                 || (eligible && !eligible.has(userId))
-                || (assignment && submissionFilter.value === 'submitted' && !hasSubmitted)
-                || (assignment && submissionFilter.value === 'missing' && hasSubmitted);
+                || (assignment && mode === 'submitted' && !hasSubmitted)
+                || (assignment && mode !== 'submitted' && mode !== 'all' && hasSubmitted)
+                || (assignment && mode === 'overdue' && !isOverdue)
+                || (assignment && mode === 'pending' && isOverdue);
         });
         const visible = visibleRows().length;
         count.textContent = visible;
@@ -893,12 +902,15 @@
         status.textContent = '';
     }
 
+    // Строка копии: «Имя @ник – тариф», при выбранном задании ещё и статус
+    // сдачи со сроком. Ника нет — так и пишем (владелец 30.09.2026: «список
+    // всегда должен быть с username»).
     copyButton.addEventListener('click', async function () {
+        const assignment = assignments.get(assignmentFilter.value);
         const text = visibleRows().map(function (row) {
-            const username = row.dataset.studentUsername;
-            const parts = [row.dataset.studentName];
-            if (username) parts.push(username);
-            parts.push(row.dataset.studentTariff);
+            const username = row.dataset.studentUsername || '(нет username)';
+            const parts = [row.dataset.studentName + ' ' + username, row.dataset.studentTariff];
+            if (assignment) parts.push(row.querySelector('[data-assignment-state]').textContent);
             return parts.join(' – ');
         }).join('\n');
         if (!text) return;

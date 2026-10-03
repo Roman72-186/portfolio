@@ -9,16 +9,21 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.models.activity_event import StudentActivityEvent
-from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag, LearningTopicTariff
-from app.models.tag import UserTag
-from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockTariff, SUBMISSION_BLOCK_TYPES
-from app.models.tracker import TrackerTask, TrackerTaskAssignee, TrackerTaskTag
+from app.models.learning_topic import LearningTopic
+from app.models.task_block import TaskBlock, TaskBlockState, SUBMISSION_BLOCK_TYPES
+from app.models.tracker import STATUS_DONE, TrackerTask
 from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_CURRENT, TARIFF_DISPLAY
 from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
-from app.services.tz import msk_midnight
+from app.services.submission_edit import upload_deadline
+from app.services.task_blocks import (
+    completed_after_deadline, feed_visible_blocks, get_submit_deadlines,
+    get_task_submit_deadlines, get_tariffs,
+)
+from app.services.tracker import program_learners, program_students, task_audience_user_ids
+from app.services.tz import msk_midnight, msk_text
 
 
 REGISTRATION_STATS_SINCE = date(2026, 9, 19)
@@ -168,10 +173,26 @@ _ACTIVITY_LABELS = {
 
 
 def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
-    """Published upload blocks with their intended audience and actual submissions."""
+    """Открытые блоки сдачи работы (домашка и контрольная на время): кому
+    положено сдавать, кто сдал, а у несдавших — прошёл ли срок.
+
+    Фильтр «Задание → Сдали / Не сдали» в «Учениках поимённо» и копирование
+    списка (владелец 03.10.2026: «выбрал задание, фильтр сдал или не сдал, и
+    показался список, который можно скопировать»).
+
+    Правила не свои — те же, что у напоминаний о сроке
+    (`student_reminders._collect_deadlines`): кому видно задание —
+    `tracker.task_audience_user_ids`, с кого спрашивают —
+    `program_students`/`program_learners`, блок по тарифу —
+    `feed_visible_blocks`, сдал — `TaskBlockState` в статусе «сделано», срок —
+    `submission_edit.upload_deadline`. До 03.10.2026 здесь жила своя копия
+    адресации, и в «не сдали» по каждой контрольной попадали шестеро
+    пробников, у которых доступ кончился 27.09: бот им уже не напоминал,
+    а статистика числила должниками.
+    """
     now = datetime.now(timezone.utc)
     candidates = (
-        db.query(TaskBlock, TrackerTask, LearningTopic)
+        db.query(TaskBlock, TrackerTask)
         .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
         .outerjoin(LearningTopic, TrackerTask.topic_id == LearningTopic.id)
         .filter(
@@ -191,60 +212,72 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
     if not candidates:
         return []
 
-    block_ids = [block.id for block, _, _ in candidates]
-    task_ids = {task.id for _, task, _ in candidates}
-    topic_ids = {topic.id for _, _, topic in candidates if topic}
-    student_ids = [student.id for student in students]
-    tags_by_user: dict[int, set[int]] = {}
-    for user_id, tag_id in db.query(UserTag.user_id, UserTag.tag_id).filter(UserTag.user_id.in_(student_ids)):
-        tags_by_user.setdefault(user_id, set()).add(tag_id)
-
-    def pairs(owner_column, value_column, owner_ids):
-        result: dict[int, set] = {}
-        for owner, value in db.query(owner_column, value_column).filter(owner_column.in_(owner_ids)):
-            result.setdefault(owner, set()).add(value)
-        return result
-
-    task_tags = pairs(TrackerTaskTag.task_id, TrackerTaskTag.tag_id, task_ids)
-    task_assignees = pairs(TrackerTaskAssignee.task_id, TrackerTaskAssignee.user_id, task_ids)
-    topic_tags = pairs(LearningTopicTag.topic_id, LearningTopicTag.tag_id, topic_ids)
-    topic_assignees = pairs(LearningTopicAssignee.topic_id, LearningTopicAssignee.user_id, topic_ids)
-    topic_tariffs = pairs(LearningTopicTariff.topic_id, LearningTopicTariff.tariff, topic_ids)
-    block_tariffs = pairs(TaskBlockTariff.block_id, TaskBlockTariff.tariff, block_ids)
-    submitted_by_block: dict[int, set[int]] = {}
-    for block_id, user_id in (
-        db.query(TaskBlockSubmission.block_id, TaskBlockSubmission.user_id)
-        .filter(TaskBlockSubmission.block_id.in_(block_ids),
-                TaskBlockSubmission.user_id.in_(student_ids),
-                TaskBlockSubmission.submitted_at.isnot(None))
-    ):
-        submitted_by_block.setdefault(block_id, set()).add(user_id)
+    learners = program_learners(program_students(db, now))
+    # Строки таблицы — свои у сводки; адресат без строки в списке не нужен.
+    reachable = learners.keys() & {student.id for student in students}
+    block_ids = [block.id for block, _ in candidates]
+    task_ids = list({task.id for _, task in candidates})
+    tariffs = get_tariffs(db, block_ids)
+    block_deadlines = get_submit_deadlines(db, block_ids)
+    task_deadlines = get_task_submit_deadlines(db, task_ids)
+    audience = {task_id: task_audience_user_ids(db, task_id) & reachable for task_id in task_ids}
+    done = {
+        (state.block_id, state.user_id): state
+        for state in db.query(TaskBlockState).filter(
+            TaskBlockState.block_id.in_(block_ids),
+            TaskBlockState.status == STATUS_DONE,
+        )
+    }
 
     assignments = []
-    for block, task, topic in candidates:
-        eligible = []
-        for student in students:
-            tags = tags_by_user.get(student.id, set())
-            if topic:
-                addressed = (topic.assign_to_all or student.id in topic_assignees.get(topic.id, set())
-                             or bool(tags & topic_tags.get(topic.id, set())))
-                tariff_allowed = (not topic.tariff_restricted or
-                                  (student.tariff or "").strip().upper() in topic_tariffs.get(topic.id, set()))
+    for block, task in candidates:
+        eligible = sorted(
+            uid for uid in audience[task.id]
+            if feed_visible_blocks([block], tariffs, learners[uid].tariff)
+        )
+        submitted, overdue, pending, notes = [], [], [], {}
+        for uid in eligible:
+            tariff = learners[uid].tariff
+            state = done.get((block.id, uid))
+            if state is not None:
+                submitted.append(uid)
+                late = completed_after_deadline(
+                    block, task, state, user_tariff=tariff,
+                    block_overrides=block_deadlines.get(block.id),
+                    task_overrides=task_deadlines.get(task.id),
+                )
+                notes[uid] = "Сдал после срока" if late else "Сдал"
+                continue
+            deadline = upload_deadline(
+                task, block, user_tariff=tariff,
+                tariff_deadlines=block_deadlines.get(block.id),
+                task_tariff_deadlines=task_deadlines.get(task.id),
+            )
+            if deadline is not None and deadline <= now:
+                overdue.append(uid)
+                notes[uid] = f"Не сдал · срок прошёл {msk_text(deadline)}"
             else:
-                addressed = (task.assign_to_all or student.id in task_assignees.get(task.id, set())
-                             or bool(tags & task_tags.get(task.id, set())))
-                tariff_allowed = True
-            if addressed and tariff_allowed and (not block_tariffs.get(block.id) or
-                                                  student.tariff in block_tariffs[block.id]):
-                eligible.append(student.id)
+                pending.append(uid)
+                notes[uid] = (
+                    f"Не сдал · срок до {msk_text(deadline)}" if deadline is not None
+                    else "Не сдал · срок не задан"
+                )
         label = task.title
         if block.title and block.title.strip() and block.title.strip().casefold() != task.title.casefold():
             label += f" · {block.title.strip()}"
+        # Предмет — подпись в выпадающем списке, на подсчёт не влияет. Стоит
+        # первым: на телефоне длинное название обрезается справа.
+        subject = block.subject or task.subject
+        if subject:
+            label = f"{subject}: {label}"
         assignments.append({
             "id": block.id,
             "label": label,
             "eligible": eligible,
-            "submitted": sorted(submitted_by_block.get(block.id, set())),
+            "submitted": submitted,
+            "overdue": overdue,
+            "pending": pending,
+            "notes": notes,
         })
     return assignments
 
