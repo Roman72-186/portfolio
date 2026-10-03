@@ -53,8 +53,11 @@
 .ios-ss .ss-filters input {
     font-family: var(--ios-font); font-size: 14px; padding: 8px 12px;
     border: none; border-radius: 10px; background: var(--ios-grouped-bg); color: var(--ios-label);
-    min-width: 220px; outline: none;
+    min-width: 220px; max-width: 100%; outline: none;
 }
+/* Длинное название задания («Рисунок: Контрольная по рисунку · Локация с дверью»)
+   растягивало список шире экрана телефона: подпись и список не шире строки фильтров. */
+.ios-ss .ss-filters label { max-width: 100%; min-width: 0; }
 .ios-ss .ss-filters select:focus,
 .ios-ss .ss-filters input:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-ss .ss-filters .btn-blue.btn-save {

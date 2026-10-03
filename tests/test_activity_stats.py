@@ -353,6 +353,18 @@ def test_diagnostic_goes_right_after_login_tiles(superadmin_client):
         assert diag < text.index(later), later
 
 
+def test_score_card_goes_right_after_named_students(superadmin_client):
+    """«Баллы за задания» — сразу под «Учениками поимённо», перед диагностикой,
+    свёрнута, как все карточки страницы (владелец 03.10.2026)."""
+    client, _ = superadmin_client
+    text = client.get("/cabinet/superadmin/activity").text
+    named = text.index("Ученики поимённо")
+    scores = text.index("Баллы за задания")
+    assert named < scores < text.index("Диагностика АРХИ-ПРОФИЛЯ")
+    assert '<details class="ss-acc" data-score-card>' in text
+    assert "Оценённых сдач в заданиях пока нет" in text
+
+
 def test_page_switches_roles_with_the_shared_nav_pill(superadmin_client):
     client, _ = superadmin_client
     text = client.get("/cabinet/superadmin/activity").text

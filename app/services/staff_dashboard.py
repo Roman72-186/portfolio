@@ -3,6 +3,7 @@
 import csv
 import io
 from datetime import date, datetime, timedelta, timezone
+from statistics import median
 from typing import TypedDict
 
 from sqlalchemy import func, or_
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import TaskBlock, TaskBlockState, SUBMISSION_BLOCK_TYPES
+from app.models.task_block import TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
 from app.models.tracker import STATUS_DONE, TrackerTask
 from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_CURRENT, TARIFF_DISPLAY
 from app.models.role import Role
@@ -299,7 +300,7 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, incl
     )
     student_ids = [student.id for student in students]
     if not student_ids:
-        return {"students": [], "events": [], "assignments": []}
+        return {"students": [], "events": [], "assignments": [], "scores": []}
 
     login_rows = (
         db.query(
@@ -387,8 +388,72 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, incl
         }
         for event, user in events
     ]
-    return {"students": overview, "events": journal,
-            "assignments": _assignment_activity(db, students) if include_assignments else []}
+    assignments = _assignment_activity(db, students) if include_assignments else []
+    return {"students": overview, "events": journal, "assignments": assignments,
+            "scores": _assignment_scores(db, student_ids, assignments) if include_assignments else []}
+
+
+def _score_value(score) -> int | float:
+    """`55.00` → 55, `57.50` → 57.5: в списке, сводке и копии без хвоста нулей."""
+    value = float(score)
+    return int(value) if value.is_integer() else value
+
+
+def _assignment_scores(db: DBSession, student_ids: list[int], assignments: list[dict]) -> list[dict]:
+    """Баллы за сдачи по заданию — карточка «Баллы за задания» на «Статистике
+    активности» (владелец 03.10.2026: «сколько людей на 55, сколько на 65» по
+    контрольной).
+
+    Задания и подписи — из `_assignment_activity`, своей выборки «какие
+    задания открыты» здесь нет. Считаются все сдавшие из строк сводки, без
+    фильтра `eligible`: у пробника с кончившимся доступом работа сдана и
+    оценена, и в распределении балл быть должен. Само распределение по
+    баллам строит страница из `scored` — так же, как разбивку по тарифам
+    в «Учениках поимённо». Задание без единого балла не отдаётся.
+    """
+    if not assignments or not student_ids:
+        return []
+    scorer_user = aliased(User)
+    rows = (
+        db.query(TaskBlockSubmission, scorer_user)
+        .outerjoin(scorer_user, TaskBlockSubmission.scored_by_id == scorer_user.id)
+        .filter(
+            TaskBlockSubmission.block_id.in_([item["id"] for item in assignments]),
+            TaskBlockSubmission.user_id.in_(student_ids),
+            TaskBlockSubmission.submitted_at.isnot(None),
+        )
+        .all()
+    )
+    by_block: dict[int, list[tuple[TaskBlockSubmission, User | None]]] = {}
+    for submission, scorer in rows:
+        by_block.setdefault(submission.block_id, []).append((submission, scorer))
+
+    result = []
+    for item in assignments:
+        scored, scorers, unscored = {}, {}, []
+        for submission, scorer in by_block.get(item["id"], []):
+            if submission.score is None:
+                unscored.append(submission.user_id)
+                continue
+            scored[submission.user_id] = _score_value(submission.score)
+            if scorer is not None:
+                scorers[submission.user_id] = (
+                    f"{scorer.last_name or ''} {scorer.first_name or scorer.name or ''}".strip()
+                )
+        if not scored:
+            continue
+        values = list(scored.values())
+        result.append({
+            "id": item["id"],
+            "label": item["label"],
+            "submitted": len(scored) + len(unscored),
+            "scored": scored,
+            "unscored": sorted(unscored),
+            "scorers": scorers,
+            "avg": round(sum(values) / len(values), 1),
+            "median": _score_value(median(values)),
+        })
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

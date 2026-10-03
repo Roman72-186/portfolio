@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=12">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=13">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -204,6 +204,52 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </details>
+
+    {# Баллы за задание (владелец 03.10.2026, вопрос Лизы «сколько людей на 55,
+       сколько на 65»): распределение по баллам и поимённо. Данные —
+       staff_dashboard._assignment_scores, задания те же, что в «Учениках
+       поимённо». Распределение страница строит сама из `scored`. #}
+    <details class="ss-acc" data-score-card>
+        <summary><h2 class="ss-acc-title">Баллы за задания</h2><span class="ss-acc-badge">{{ student_activity.scores | length }} с баллами</span></summary>
+        <div class="ss-acc-body">
+            {% if student_activity.scores %}
+            <div class="ss-filters">
+                <label for="score-assignment-filter">Задание
+                    <select id="score-assignment-filter" data-score-assignment>
+                        <option value="">Выберите задание</option>
+                        {% for item in student_activity.scores %}<option value="{{ item.id }}">{{ item.label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label for="score-value-filter">Балл
+                    <select id="score-value-filter" data-score-value disabled>
+                        <option value="all">Все сдавшие</option>
+                    </select>
+                </label>
+                <button type="button" class="btn-blue btn-save" data-score-copy-summary disabled>Скопировать сводку</button>
+                <button type="button" class="btn-blue btn-save" data-score-copy-list disabled>Скопировать список</button>
+                <span class="ss-dim-sm" data-score-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="ss-dim-sm" data-score-stats role="status" aria-live="polite">Выберите задание.</p>
+            {# Распределение — плитками, а не таблицей: на телефоне таблица страницы
+               становится стопкой карточек, и восемь баллов занимали несколько экранов. #}
+            <div class="ss-stats-strip" data-score-dist hidden></div>
+            <div class="ss-table-wrap" data-score-list-wrap hidden>
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th class="ss-ta-r">Балл</th><th>Поставил</th></tr></thead>
+                    <tbody>
+                    {% for student in student_activity.students %}
+                    <tr data-score-student data-student-id="{{ student.id }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}" hidden>
+                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}</span></td>
+                        <td data-label="Балл" class="ss-ta-r ss-bold" data-score-cell></td>
+                        <td data-label="Поставил" class="ss-dim" data-scorer-cell></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Оценённых сдач в заданиях пока нет</div>{% endif %}
         </div>
     </details>
 
@@ -928,6 +974,130 @@
     assignmentFilter.addEventListener('change', applyFilter);
     submissionFilter.addEventListener('change', applyFilter);
     applyFilter();
+})();
+</script>
+<script>
+// «Баллы за задания»: распределение по баллам, поимённый список, копирование.
+(function () {
+    const root = document.querySelector('[data-score-card]');
+    if (!root) return;
+    const assignmentSelect = root.querySelector('[data-score-assignment]');
+    if (!assignmentSelect) return;
+    const valueSelect = root.querySelector('[data-score-value]');
+    const stats = root.querySelector('[data-score-stats]');
+    const dist = root.querySelector('[data-score-dist]');
+    const listWrap = root.querySelector('[data-score-list-wrap]');
+    const copySummary = root.querySelector('[data-score-copy-summary]');
+    const copyList = root.querySelector('[data-score-copy-list]');
+    const status = root.querySelector('[data-score-copy-status]');
+    const rows = Array.from(root.querySelectorAll('[data-score-student]'));
+    const items = new Map({{ student_activity.scores | tojson }}.map(function (item) { return [String(item.id), item]; }));
+    const UNSCORED = 'none';
+
+    function num(value) { return String(value).replace('.', ','); }
+
+    // [[балл, сколько учеников], ...] по убыванию балла.
+    function distribution(item) {
+        const counts = new Map();
+        Object.values(item.scored).forEach(function (score) { counts.set(score, (counts.get(score) || 0) + 1); });
+        return Array.from(counts).sort(function (a, b) { return b[0] - a[0]; });
+    }
+
+    function scoredCount(item) { return Object.keys(item.scored).length; }
+
+    // Плитка распределения: крупно балл, под ним сколько учеников и доля.
+    function addTile(value, label) {
+        const tile = document.createElement('div');
+        tile.className = 'ss-stat';
+        tile.innerHTML = '<div class="ss-stat-val"></div><div class="ss-stat-lbl"></div>';
+        tile.firstChild.textContent = value;
+        tile.lastChild.textContent = label;
+        dist.appendChild(tile);
+    }
+
+    function selectAssignment() {
+        const item = items.get(assignmentSelect.value);
+        valueSelect.innerHTML = '<option value="all">Все сдавшие</option>';
+        valueSelect.disabled = !item;
+        copySummary.disabled = !item;
+        dist.innerHTML = '';
+        dist.hidden = !item;
+        if (item) {
+            const total = scoredCount(item);
+            distribution(item).forEach(function (entry) {
+                valueSelect.add(new Option(num(entry[0]) + ' (' + entry[1] + ' чел.)', String(entry[0])));
+                addTile(num(entry[0]), entry[1] + ' чел. · ' + Math.round(entry[1] * 100 / total) + '% оценённых');
+            });
+            if (item.unscored.length) {
+                valueSelect.add(new Option('Без балла (' + item.unscored.length + ' чел.)', UNSCORED));
+                addTile('—', 'без балла: ' + item.unscored.length + ' чел.');
+            }
+            stats.textContent = 'Сдали: ' + item.submitted + ' · оценено: ' + total
+                + ' · без балла: ' + item.unscored.length
+                + ' · средний балл: ' + num(item.avg) + ' · медиана: ' + num(item.median);
+        } else {
+            stats.textContent = 'Выберите задание.';
+        }
+        applyValue();
+    }
+
+    function applyValue() {
+        const item = items.get(assignmentSelect.value);
+        const value = valueSelect.value;
+        const unscored = item ? new Set(item.unscored) : null;
+        let visible = 0;
+        rows.forEach(function (row) {
+            const userId = row.dataset.studentId;
+            const score = item ? item.scored[userId] : undefined;
+            const isUnscored = item ? unscored.has(Number(userId)) : false;
+            const show = !!item && (
+                value === 'all' ? (score !== undefined || isUnscored)
+                    : value === UNSCORED ? isUnscored
+                        : score !== undefined && String(score) === value
+            );
+            row.hidden = !show;
+            row.querySelector('[data-score-cell]').textContent = score !== undefined ? num(score) : 'Без балла';
+            row.querySelector('[data-scorer-cell]').textContent = (item && item.scorers[userId]) || '—';
+            if (show) visible += 1;
+        });
+        listWrap.hidden = visible === 0;
+        copyList.disabled = visible === 0;
+        status.textContent = '';
+    }
+
+    // Сводка для чата: «75 – 3 чел.» по строкам, как в ответе Лизе 03.10.2026.
+    copySummary.addEventListener('click', async function () {
+        const item = items.get(assignmentSelect.value);
+        if (!item) return;
+        const lines = [item.label, 'Сдали ' + item.submitted + ', оценено ' + scoredCount(item) + ':'];
+        distribution(item).forEach(function (entry) { lines.push(num(entry[0]) + ' – ' + entry[1] + ' чел.'); });
+        if (item.unscored.length) lines.push('Без балла – ' + item.unscored.length + ' чел.');
+        lines.push('Средний балл ' + num(item.avg) + ', медиана ' + num(item.median) + '.');
+        await copy(lines.join('\n'));
+    });
+
+    // Список: «Имя @ник – тариф – балл», без ника — «(нет username)».
+    copyList.addEventListener('click', async function () {
+        const text = rows.filter(function (row) { return !row.hidden; }).map(function (row) {
+            const username = row.dataset.studentUsername || '(нет username)';
+            return [row.dataset.studentName + ' ' + username, row.dataset.studentTariff,
+                row.querySelector('[data-score-cell]').textContent].join(' – ');
+        }).join('\n');
+        if (text) await copy(text);
+    });
+
+    async function copy(text) {
+        try {
+            await copyText(text);
+            status.textContent = 'Скопировано';
+        } catch (error) {
+            status.textContent = 'Не удалось скопировать';
+        }
+    }
+
+    assignmentSelect.addEventListener('change', selectAssignment);
+    valueSelect.addEventListener('change', applyValue);
+    selectAssignment();
 })();
 </script>
 {% endblock %}

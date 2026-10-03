@@ -274,3 +274,71 @@ def test_open_started_timed_block_is_not_submitted(db, user_factory):
     assert assignment["submitted"] == []
     assert assignment["pending"] == [started.id]
     assert assignment["notes"][started.id] == "Не сдал · срок не задан"
+
+
+# ── «Баллы за задания» (владелец 03.10.2026: «сколько людей на 55, на 65») ──
+
+def _scored(db, block, user, score=None, scorer=None):
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=user.id,
+                               submitted_at=datetime.now(timezone.utc) - timedelta(hours=2),
+                               score=score, scored_by_id=scorer.id if scorer else None))
+
+
+def test_scores_give_distribution_inputs_avg_and_median(db, user_factory):
+    teacher = user_factory(vk_id=810_400, name="Teacher", role_name="админ")
+    teacher.last_name, teacher.first_name = "Иванова", "Анна"
+    first = user_factory(vk_id=810_401, name="First")
+    second = user_factory(vk_id=810_402, name="Second")
+    third = user_factory(vk_id=810_403, name="Third")
+    waiting = user_factory(vk_id=810_404, name="Waiting")
+    block = _control(db)
+    _scored(db, block, first, 55, teacher)
+    _scored(db, block, second, 55)
+    _scored(db, block, third, 67.5)
+    _scored(db, block, waiting)
+    db.commit()
+
+    item = get_student_activity_overview(db, include_assignments=True)["scores"][0]
+
+    assert item["id"] == block.id
+    assert item["label"] == "Рисунок: Контрольная по рисунку · Локация с дверью"
+    assert item["scored"] == {first.id: 55, second.id: 55, third.id: 67.5}
+    # 55.00 из Numeric уходит на страницу целым — без «55.0» в списке баллов.
+    assert type(item["scored"][first.id]) is int
+    assert item["unscored"] == [waiting.id]
+    assert item["submitted"] == 4
+    assert item["avg"] == 59.2
+    assert item["median"] == 55
+    assert item["scorers"] == {first.id: "Иванова Анна"}
+
+
+def test_scores_count_student_with_expired_access(db, user_factory):
+    """Доступ кончился, а работа сдана и оценена — балл в распределении есть:
+    `eligible` («кому положено сдавать») к баллам не применяется."""
+    expired = user_factory(vk_id=810_410, name="Expired")
+    expired.access_until = datetime.now(timezone.utc) - timedelta(days=6)
+    block = _control(db)
+    _scored(db, block, expired, 70)
+    db.commit()
+
+    overview = get_student_activity_overview(db, include_assignments=True)
+
+    assert expired.id not in overview["assignments"][0]["eligible"]
+    assert overview["scores"][0]["scored"] == {expired.id: 70}
+
+
+def test_scores_skip_archived_students_and_blocks_without_scores(db, user_factory):
+    active = user_factory(vk_id=810_420, name="Active")
+    archived = user_factory(vk_id=810_421, name="Archived")
+    archived.archived_at = datetime.now(timezone.utc)
+    scored_block = _control(db)
+    empty_block = _control(db, subject="Композиция")
+    _scored(db, scored_block, active, 60)
+    _scored(db, scored_block, archived, 75)
+    _scored(db, empty_block, active)
+    db.commit()
+
+    scores = get_student_activity_overview(db, include_assignments=True)["scores"]
+
+    assert [item["id"] for item in scores] == [scored_block.id]
+    assert scores[0]["scored"] == {active.id: 60}
