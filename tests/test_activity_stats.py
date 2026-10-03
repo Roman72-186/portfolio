@@ -890,3 +890,16 @@ def test_explicit_no_deadline_for_tariff_is_not_replaced_by_cycle_end(db, user_f
     stats = get_deadline_stats(db)
 
     assert stats["with_deadline"] == 0
+
+
+def test_every_card_is_collapsed_by_default(superadmin_client):
+    """Все карточки статистики свёрнуты, пока их не открыли (владелец
+    03.10.2026: «все кнопки статистики должны быть в свёрнутом состоянии,
+    в точности Диагностика АРХИ-ПРОФИЛЯ»). Исключение — регистрации после
+    «Применить», см. `test_registration_card_follows_date_filter`."""
+    client, _ = superadmin_client
+    text = client.get("/cabinet/superadmin/activity").text
+    import re
+    cards = re.findall(r"<details[^>]*>", text)
+    assert cards
+    assert [card for card in cards if re.search(r"open", card)] == []

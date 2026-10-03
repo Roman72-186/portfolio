@@ -207,8 +207,10 @@
         </div>
     </details>
 
-    {# Диагностика — под «Учениками поимённо» (владелец 03.10.2026; до этого первая под плитками, 25.09.2026). #}
-    <details class="ss-acc" open>
+    {# Диагностика — под «Учениками поимённо» (владелец 03.10.2026; до этого первая под плитками, 25.09.2026).
+       Все карточки страницы свёрнуты по умолчанию (владелец 03.10.2026); раскрывается сама
+       только карточка регистраций — после «Применить» в её фильтре. #}
+    <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
         <div class="ss-acc-body">
             {% if diagnostics %}
@@ -654,7 +656,7 @@
     {# ═══════════════ Кураторы ═══════════════ #}
     <div id="actPanelCurators" hidden>
 
-    <details class="ss-acc" open>
+    <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Действия кураторов</h2><span class="ss-acc-badge">{{ staff_curators | length }} кураторов</span></summary>
         <div class="ss-acc-body">
             {{ staff_table(staff_curators, "Активных кураторов нет", curators=true) }}
@@ -713,7 +715,7 @@
     {# ═══════════════ Главные преподаватели и модераторы ═══════════════ #}
     <div id="actPanelHead" hidden>
 
-    <details class="ss-acc" open>
+    <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Действия Главных преподавателей и модераторов</h2><span class="ss-acc-badge">{{ staff_head | length }} чел.</span></summary>
         <div class="ss-acc-body">{{ staff_table(staff_head, "Активных Главных преподавателей и модераторов нет") }}</div>
     </details>
@@ -738,7 +740,7 @@
     {# ═══════════════ Суперадмин ═══════════════ #}
     <div id="actPanelSuperadmin" hidden>
 
-    <details class="ss-acc" open>
+    <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Действия суперадминов</h2><span class="ss-acc-badge">{{ staff_super | length }} чел.</span></summary>
         <div class="ss-acc-body">{{ staff_table(staff_super, "Активных суперадминов нет") }}</div>
     </details>
