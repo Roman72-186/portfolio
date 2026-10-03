@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.section_access import closed_nav_keys
+from app.services.section_access import closed_nav_keys, granted_nav_keys
 
 # Единое название раздела программ у всех ролей (владелец 16.09.2026, созвон:
 # «раздел с программами назвать одинаково у всех ролей — «Актуальное
@@ -309,10 +309,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 
 
 # Пункты, которые куратор видит, только если суперадмин открыл ему раздел
-# лично сверх роли (`Section.grantable`, владелец 30.09.2026). Встают перед
-# «Уведомлениями».
+# сверх роли (`section_access.py`, владелец 30.09 и 03.10.2026). Ключ — пункт
+# меню из `Section.nav_keys`; встают перед «Уведомлениями» в порядке `SECTIONS`.
 CURATOR_GRANTED_NAV_ITEMS: dict[str, NavItem] = {
+    "mock_check": NavItem(key="mock_check", href="/cabinet/admin/mock-check", label="Пробники", icon="⭐"),
+    "point_a": NavItem(key="point_a", href="/cabinet/staff/point-a", label="Точка А", icon="🎯"),
+    "program": NavItem(key="program", href="/cabinet/staff/program/cycles", label="Программы", icon="📅"),
     "archive": NavItem(key="archive", href="/cabinet/archive", label="Архив", icon="🗄️"),
+    "guest_exam": NavItem(key="guest_exam", href="/cabinet/staff/guest-exam", label="Гостевой пробник", icon="🎟️"),
+    "exams": NavItem(key="exams", href="/cabinet/exam-assignments", label="Билеты и периоды", icon="📝"),
+    "people": NavItem(key="people", href="/cabinet/superadmin/users", label="Пользователи", icon="👤"),
 }
 
 
@@ -322,8 +328,9 @@ def curator_nav_items(
 ) -> tuple[NavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
     extra = [
-        item for key, item in CURATOR_GRANTED_NAV_ITEMS.items()
-        if key in (granted_sections or ())
+        CURATOR_GRANTED_NAV_ITEMS[key]
+        for key in granted_nav_keys(granted_sections)
+        if key in CURATOR_GRANTED_NAV_ITEMS
     ]
     items: list[NavItem] = []
     for item in CURATOR_NAV_ITEMS:
@@ -350,7 +357,8 @@ def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...
 
 
 # Меню модератора-наблюдателя (решение владельца 28.09.2026): только то, что
-# ему открывает белый список `rbac.py::is_moderator_request_allowed`. Ранг у
+# ему открывает белый список `rbac.py::is_moderator_request_allowed`, плюс
+# разделы, открытые ему сверх роли (`section_access.py`, 03.10.2026). Ранг у
 # него как у ГП, поэтому по `min_rank` меню собралось бы целиком — из
 # ссылок, отвечающих «Нет доступа».
 MODERATOR_NAV_KEYS = ("students", "archive", "activity")
@@ -369,16 +377,58 @@ MODERATOR_ONLY_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     ),
 )
 
+# Пункты разделов, у которых в меню ГП своего пункта нет: ГП заходит в них с
+# дашборда или по ссылкам. Модератору их показывают, когда раздел открыт ему
+# сверх роли — дашборда у него нет.
+GRANTED_ONLY_STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
+    StaffNavItem(
+        key="guest_exam",
+        href="/cabinet/staff/guest-exam",
+        sidebar_label="Гостевой пробник",
+        pill_label="Гости",
+        aria_label="Гостевой пробник",
+        tooltip="Ссылка, билеты и работы гостей",
+        icon="mock",
+    ),
+    StaffNavItem(
+        key="exams",
+        href="/cabinet/exam-assignments",
+        sidebar_label="Билеты и периоды",
+        pill_label="Билеты",
+        aria_label="Билеты и периоды",
+        tooltip="Задания пробников и периоды сдачи",
+        icon="program",
+    ),
+    StaffNavItem(
+        key="people",
+        href="/cabinet/superadmin/users",
+        sidebar_label="Пользователи",
+        pill_label="Люди",
+        aria_label="Пользователи",
+        tooltip="Аккаунты, роли и тарифы",
+        icon="profile",
+    ),
+)
+
 
 def staff_nav_items(
     role_rank: int,
     role_name: str | None = None,
     closed_sections: frozenset[str] | None = None,
+    granted_sections: frozenset[str] | None = None,
 ) -> tuple[StaffNavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
     if role_name == "модератор":
-        by_key = {item.key: item for item in STAFF_NAV_ITEMS + MODERATOR_ONLY_NAV_ITEMS}
-        return tuple(by_key[key] for key in MODERATOR_NAV_KEYS if key not in hidden)
+        by_key = {
+            item.key: item
+            for item in STAFF_NAV_ITEMS + MODERATOR_ONLY_NAV_ITEMS + GRANTED_ONLY_STAFF_NAV_ITEMS
+        }
+        keys = [key for key in MODERATOR_NAV_KEYS if key not in hidden]
+        keys += [
+            key for key in granted_nav_keys(granted_sections)
+            if key in by_key and key not in keys
+        ]
+        return tuple(by_key[key] for key in keys)
     return tuple(
         item for item in STAFF_NAV_ITEMS
         if item.is_visible_for(role_rank) and item.key not in hidden

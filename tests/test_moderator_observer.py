@@ -212,3 +212,65 @@ def test_chief_teacher_keeps_full_access(client, user_factory, session_factory):
 
     assert client.get("/cabinet/admin-panel").status_code == 200
     assert client.get("/cabinet/staff/students-review").status_code == 200
+
+
+def test_moderator_with_every_section_open_browses_without_writes(
+    client, db, user_factory, session_factory,
+):
+    """Суперадмин может открыть модератору любой раздел сверх роли — на чтение
+    (`section_access.moderator_may_read`, владелец 03.10.2026). Значит, ни
+    один GET этих разделов не должен ничего писать, тот же довод, что выше."""
+    from fastapi.routing import APIRoute
+    from sqlalchemy import event
+
+    from app.main import app
+    from app.models.section_access import SectionAccessRule
+    from app.services import section_access
+
+    moderator = user_factory(vk_id=990_320, name="Модератор с разделами", role_name="модератор")
+    student = user_factory(vk_id=990_321, name="Ученик", role_name="ученик")
+    student.profile_completed = True
+    db.commit()
+    extra = [s.key for s in section_access.SECTIONS if "модератор" not in s.roles]
+    db.add_all([
+        SectionAccessRule(section_key=key, user_id=moderator.id, is_open=True) for key in extra
+    ])
+    db.commit()
+    _login_as(client, session_factory, moderator)
+
+    paths = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute) or "GET" not in route.methods:
+            continue
+        # Вход в 3D-лабораторию выдаёт одноразовый SSO-код — это вход, а не
+        # просмотр, и проверять его здесь не к чему.
+        if route.path == "/cabinet/3dlab/enter" or "{" in route.path.replace("{student_id}", ""):
+            continue
+        path = route.path.replace("{student_id}", str(student.id))
+        if set(section_access.section_owners("GET", path, {})) & set(extra):
+            paths.append(path)
+    assert "/cabinet/staff/program/cycles" in paths
+
+    writes = []
+
+    def _on_execute(conn, cursor, statement, *args):
+        head = statement.lstrip().split(None, 2)
+        if head and head[0].upper() in ("INSERT", "UPDATE", "DELETE"):
+            if not statement.lstrip().upper().startswith("UPDATE SESSIONS"):
+                writes.append((current, statement.strip().splitlines()[0]))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", _on_execute)
+    try:
+        for current in paths:
+            resp = client.get(current, follow_redirects=False)
+            assert resp.status_code < 500, current
+            assert resp.status_code != 403 or "Модератору" not in resp.text, current
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_execute)
+
+    # Экран тегов дозаполняет теги из анкеты (`tags.ensure_profile_tags`):
+    # запись идемпотентна, ту же сделал бы первый заход ГП, и отметок
+    # «просмотрено» она не снимает — для наблюдателя безвредна.
+    writes = [w for w in writes if w[0] != "/cabinet/superadmin/tags"]
+    assert writes == []

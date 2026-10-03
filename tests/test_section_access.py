@@ -1,7 +1,7 @@
-"""Переключатели доступа к разделам (владелец 30.09.2026).
+"""Переключатели доступа к разделам (владелец 30.09 и 03.10.2026).
 
-Суперадмин закрывает сотрудникам разделы — роли целиком или одному человеку.
-Только сужение: потолок задаёт ранг. Каталог и проверка —
+Суперадмин закрывает и открывает сотрудникам разделы — роли целиком или одному
+человеку, в том числе сверх роли. Каталог и проверка —
 `app/services/section_access.py`, проверка на входе — `get_current_user`.
 """
 import re
@@ -16,10 +16,23 @@ from app.services.navigation import curator_nav_items, staff_nav_items
 from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
     blocked_section,
-    closed_sections,
+    resolve_sections,
     save_role_matrix,
     section_owners,
 )
+
+
+def closed_sections(db, *, user_id, role_id):
+    from app.models.role import Role
+
+    role = db.get(Role, role_id)
+    return resolve_sections(db, user_id=user_id, role_id=role_id, role_name=role.name)[0]
+
+
+def granted_sections(db, user):
+    return resolve_sections(
+        db, user_id=user.id, role_id=user.role_id, role_name=user.role.name,
+    )[1]
 
 
 def _login(client, session_factory, user):
@@ -28,6 +41,10 @@ def _login(client, session_factory, user):
 
 def _close_for_role(db, actor, role_name, *keys):
     save_role_matrix(db, actor_id=actor.id, desired={role_name: {k: False for k in keys}})
+
+
+def _open_for_role(db, actor, role_name, *keys):
+    save_role_matrix(db, actor_id=actor.id, desired={role_name: {k: True for k in keys}})
 
 
 def _personal(db, user, key, is_open):
@@ -171,9 +188,22 @@ def test_role_matrix_skips_cells_the_form_did_not_send(db, superadmin, curator):
     assert section_access.role_matrix(db)["куратор"]["reports"] is False
 
 
-def test_role_matrix_ignores_sections_the_role_does_not_have(db, superadmin, curator):
+def test_role_matrix_stores_only_differences_from_rank(db, superadmin, curator):
+    """Закрыть то, чего у роли и так нет, — ничего не записать. Открыть сверх
+    роли и вернуть обратно — строка появляется и исчезает."""
     save_role_matrix(db, actor_id=superadmin.id, desired={"куратор": {"program": False}})
     assert db.query(SectionAccessRule).count() == 0
+    _open_for_role(db, superadmin, "куратор", "program")
+    assert section_access.role_matrix(db)["куратор"]["program"] is True
+    assert db.query(SectionAccessRule).count() == 1
+    save_role_matrix(db, actor_id=superadmin.id, desired={"куратор": {"program": False}})
+    assert db.query(SectionAccessRule).count() == 0
+
+
+def test_every_role_has_every_section_in_matrix(db):
+    matrix = section_access.role_matrix(db)
+    for role in section_access.CONFIGURABLE_ROLES:
+        assert set(matrix[role]) == set(section_access.SECTIONS_BY_KEY)
 
 
 # ── Живые запросы ─────────────────────────────────────────────────────────────
@@ -200,8 +230,7 @@ def test_personal_open_reopens_for_one_curator(client, db, session_factory, supe
     assert client.get("/cabinet/curator/reports", follow_redirects=False).status_code == 403
 
 
-def test_personal_open_does_not_lift_rank_ceiling(client, db, session_factory, curator):
-    _personal(db, curator, "program", True)
+def test_curator_without_program_stays_at_rank_ceiling(client, session_factory, curator):
     _login(client, session_factory, curator)
     resp = client.get("/cabinet/staff/program/cycles", follow_redirects=False)
     assert resp.status_code == 403
@@ -280,8 +309,9 @@ def test_access_page_is_superadmin_only(client, session_factory, superadmin, hea
     resp = client.get("/cabinet/superadmin/access", follow_redirects=False)
     assert resp.status_code == 200
     assert 'name="cell__curator__statistics"' in resp.text
-    # У куратора нет программ по рангу — ячейки нет.
-    assert 'name="cell__curator__program"' not in resp.text
+    # С 03.10.2026 ячейка есть у каждой роли, в том числе сверх ранга.
+    assert 'name="cell__curator__program"' in resp.text
+    assert 'name="cell__moderator__people"' in resp.text
 
 
 def test_access_page_saves_matrix_and_audits(client, db, session_factory, superadmin, curator, head):
@@ -431,27 +461,110 @@ def test_curator_menu_shows_archive_when_granted(client, db, session_factory, cu
     assert 'href="/cabinet/archive"' in resp.text
 
 
-def test_grant_only_section_in_card_and_not_in_role_matrix(db, superadmin, curator):
+def test_card_shows_every_section_and_marks_above_role(db, superadmin, curator):
     rules = {r["key"]: r for r in section_access.user_rules(db, curator)}
-    assert rules["archive"]["grant_only"] is True
+    assert set(rules) == set(section_access.SECTIONS_BY_KEY)
+    assert rules["archive"]["native"] is False
     assert rules["archive"]["state"] == "role"
-    assert "archive" not in section_access.role_matrix(db)["куратор"]
-
-    section_access.save_user_rules(
-        db, actor_id=superadmin.id, target=curator, desired={"archive": "closed"},
-    )
-    assert db.query(SectionAccessRule).count() == 0
+    assert rules["archive"]["role_open"] is False
+    assert rules["students"]["native"] is True
 
     section_access.save_user_rules(
         db, actor_id=superadmin.id, target=curator, desired={"archive": "open"},
     )
-    assert section_access.granted_sections(
-        db, user_id=curator.id, role_name="куратор",
-    ) == frozenset({"archive"})
+    assert granted_sections(db, curator) == frozenset({"archive"})
+    section_access.save_user_rules(
+        db, actor_id=superadmin.id, target=curator, desired={"archive": "role"},
+    )
+    assert db.query(SectionAccessRule).count() == 0
 
 
-def test_grant_is_ignored_for_roles_outside_grantable(db, moderator):
-    _personal(db, moderator, "program", True)
-    assert section_access.granted_sections(
-        db, user_id=moderator.id, role_name="модератор",
-    ) == frozenset()
+def test_personal_close_beats_role_opened_above_rank(db, superadmin, curator, user_factory):
+    other = user_factory(vk_id=990_560, name="Другой куратор", role_name="куратор")
+    _open_for_role(db, superadmin, "куратор", "program")
+    _personal(db, curator, "program", False)
+    assert "program" not in granted_sections(db, curator)
+    assert "program" in granted_sections(db, other)
+
+
+# ── Открыть сверх роли (владелец 03.10.2026) ──────────────────────────────────
+
+def test_curator_with_program_works_in_it_as_head(client, db, session_factory, superadmin, curator):
+    _personal(db, curator, "program", True)
+    _login(client, session_factory, curator)
+    page = client.get("/cabinet/staff/program/cycles", follow_redirects=False)
+    assert page.status_code == 200
+    # Меню — своё, кураторское, с пунктом открытого раздела, без меню ГП.
+    assert 'aria-label="Меню куратора"' in page.text
+    assert 'href="/cabinet/staff/program/cycles"' in page.text
+    assert 'href="/cabinet/staff/point-a"' not in page.text
+    # Соседние разделы ГП остаются закрыты рангом.
+    assert client.get("/cabinet/staff/point-a", follow_redirects=False).status_code == 403
+    assert client.get("/cabinet/superadmin/users", follow_redirects=False).status_code == 403
+
+
+def test_role_wide_open_reaches_every_curator(client, db, session_factory, superadmin, curator, user_factory):
+    other = user_factory(vk_id=990_561, name="Второй куратор", role_name="куратор")
+    _open_for_role(db, superadmin, "куратор", "point_a")
+    for who in (curator, other):
+        _login(client, session_factory, who)
+        assert client.get("/cabinet/staff/point-a", follow_redirects=False).status_code == 200
+
+
+def test_open_section_does_not_lift_rank_for_score(client, db, session_factory, curator, user_factory):
+    """Балл ставит только ГП (30.09.2026) — и в разделе, открытом сверх роли."""
+    student = user_factory(vk_id=990_562, name="Ученик точки А")
+    _personal(db, curator, "point_a", True)
+    _login(client, session_factory, curator)
+    assert client.get(f"/cabinet/staff/point-a/{student.id}", follow_redirects=False).status_code != 403
+    resp = client.post(
+        f"/cabinet/staff/point-a/{student.id}/portfolio-after/score",
+        json={"score": 50}, follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+
+def test_open_mock_check_shows_any_students_mock_exams(
+    client, db, session_factory, user_factory, curator,
+):
+    """«Проверка пробников» грузит пробники любого ученика школы — у куратора
+    с открытым разделом этот адрес работает и для чужих учеников."""
+    other = user_factory(vk_id=990_563, name="Чужой куратор 4", role_name="куратор")
+    foreign = user_factory(vk_id=990_564, name="Чужой ученик")
+    foreign.curator_id = other.id
+    db.commit()
+    _login(client, session_factory, curator)
+    assert client.get(f"/cabinet/students/{foreign.id}/mock-exams").status_code in (403, 404)
+    _personal(db, curator, "mock_check", True)
+    assert client.get("/cabinet/admin/mock-check", follow_redirects=False).status_code == 200
+    assert client.get(f"/cabinet/students/{foreign.id}/mock-exams").status_code == 200
+    # Остальные вкладки чужой карточки по-прежнему закрыты.
+    assert client.get(f"/cabinet/students/{foreign.id}/profile").status_code in (403, 404)
+
+
+def test_moderator_open_section_is_read_only(client, db, session_factory, superadmin, moderator):
+    _login(client, session_factory, moderator)
+    assert client.get("/cabinet/staff/program/cycles", follow_redirects=False).status_code == 403
+    _open_for_role(db, superadmin, "модератор", "program")
+    assert client.get("/cabinet/staff/program/cycles", follow_redirects=False).status_code == 200
+    resp = client.post(
+        "/cabinet/staff/program/stages", data={"title": "Новый этап"}, follow_redirects=False,
+    )
+    assert resp.status_code == 403
+    assert "Модератору открыты" in resp.text
+    keys = [i.key for i in staff_nav_items(4, "модератор", None, frozenset({"program", "people"}))]
+    assert keys == ["students", "archive", "activity", "program", "people"]
+
+
+def test_moderator_home_falls_back_to_granted_section(client, db, session_factory, superadmin, moderator):
+    _close_for_role(db, superadmin, "модератор", "students", "archive", "statistics")
+    _open_for_role(db, superadmin, "модератор", "program")
+    _login(client, session_factory, moderator)
+    resp = client.get("/cabinet", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/staff/program/cycles"
+
+
+def test_curator_menu_lists_granted_sections_in_catalog_order():
+    keys = [i.key for i in curator_nav_items(granted_sections=frozenset({"people", "program"}))]
+    assert keys.index("program") < keys.index("people") < keys.index("notifications")

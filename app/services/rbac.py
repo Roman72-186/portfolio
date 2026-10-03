@@ -61,6 +61,14 @@ def can_score(role_rank: int) -> bool:
     return role_rank >= SCORE_MIN_RANK
 
 
+def is_score_request(method: str, path: str) -> bool:
+    """Ставит ли запрос балл: POST на адрес, последний сегмент которого
+    кончается на `score` (`.../score`, `.../trainer-score`). Такой запрос
+    проверяется по родному рангу, раздел, открытый сверх роли
+    (`section_access.elevated_rank`), ранг для него не поднимает."""
+    return method == "POST" and path.rstrip("/").rsplit("/", 1)[-1].endswith("score")
+
+
 # Разделы целиком: сама страница и всё под ней (`/cabinet/students/5/profile`,
 # `/cabinet/students/5/legacy-portfolio`). Граница — по сегменту, чтобы
 # `/cabinet/students-x` не проходил за `/cabinet/students`.

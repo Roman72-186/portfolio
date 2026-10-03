@@ -23,9 +23,10 @@ from app.services.rbac import (
 from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
     blocked_section,
-    closed_sections,
-    granted_sections,
+    elevated_rank,
     is_configurable_role,
+    moderator_may_read,
+    resolve_sections,
 )
 
 
@@ -187,32 +188,40 @@ def get_current_user(
     role = user.role
     role_name = role.name if role else None
     role_rank = effective_role_rank(role_name, role.rank) if role else 0
-    is_admin = role_rank >= 4 if role else user.is_admin
 
-    # Модератор — наблюдатель: уровень ГП, но открыт только белый список
-    # адресов из rbac.py. Проверка здесь, а не в роутах, по той же причине,
-    # что и срок доступа ниже: сюда приходит каждый запрос кабинета.
-    if role_name == MODERATOR_ROLE_NAME and not is_moderator_request_allowed(
-        request.method, request.url.path,
-    ):
-        raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
-
-    # Разделы, закрытые суперадмином (services/section_access.py, владелец
-    # 30.09.2026) — сужение поверх ранга и белого списка модератора. Только
-    # сотрудники: ученика держат срок доступа и гейты ниже, суперадмина не
-    # закрывает ничто. В режиме «глазами» сессия принадлежит сотруднику —
-    # суперадмин видит ровно его ограничения.
-    # `granted` — разделы, открытые лично сверх ранга (`Section.grantable`):
-    # их спрашивают проверки самого раздела через `section_access.has_grant`.
+    # Разделы суперадмина (services/section_access.py, владелец 30.09 и
+    # 03.10.2026): `closed` — положенные роли, но закрытые; `granted` —
+    # открытые сверх роли. Только сотрудники: ученика держат срок доступа и
+    # гейты ниже, суперадмина не закрывает ничто. В режиме «глазами» сессия
+    # принадлежит сотруднику — суперадмин видит ровно его ограничения.
     closed = frozenset()
     granted = frozenset()
     if is_configurable_role(role_name):
-        closed = closed_sections(db, user_id=user.id, role_id=user.role_id)
-        granted = granted_sections(db, user_id=user.id, role_name=role_name)
-        if blocked_section(
-            request.method, request.url.path, request.query_params, closed,
-        ):
-            raise HTTPException(status_code=403, detail=SECTION_CLOSED_DETAIL)
+        closed, granted = resolve_sections(
+            db, user_id=user.id, role_id=user.role_id, role_name=role_name,
+        )
+
+    # Модератор — наблюдатель: уровень ГП, но открыт только белый список
+    # адресов из rbac.py и разделы, открытые ему сверх роли, — на чтение.
+    # Проверка здесь, а не в роутах, по той же причине, что и срок доступа
+    # ниже: сюда приходит каждый запрос кабинета.
+    if role_name == MODERATOR_ROLE_NAME and not (
+        is_moderator_request_allowed(request.method, request.url.path)
+        or moderator_may_read(request.method, request.url.path, request.query_params, granted)
+    ):
+        raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
+
+    if blocked_section(request.method, request.url.path, request.query_params, closed):
+        raise HTTPException(status_code=403, detail=SECTION_CLOSED_DETAIL)
+
+    # Внутри раздела, открытого сверх роли, сотрудник работает с рангом
+    # раздела — прежние `require_*` пропускают сами. Только на этот запрос и
+    # только на адреса раздела; меню и плашки строятся по `nav_rank`.
+    nav_rank = role_rank
+    role_rank = elevated_rank(
+        role_rank, request.method, request.url.path, request.query_params, granted,
+    )
+    is_admin = role_rank >= 4 if role else user.is_admin
 
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
         raise HTTPException(status_code=403, detail="Доступ возможен только участникам группы")
@@ -309,6 +318,9 @@ def get_current_user(
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,
+        # Родной уровень роли без подъёма в открытом разделе — по нему
+        # строится меню (`base.html`, `_curator_nav.html`).
+        "nav_rank": nav_rank,
         "closed_sections": closed,
         "granted_sections": granted,
     }

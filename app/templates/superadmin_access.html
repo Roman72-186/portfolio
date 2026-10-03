@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=12">
 {% endblock %}
 {% block content %}
-{# Переключатели разделов для сотрудников (владелец 30.09.2026). Логика —
+{# Переключатели разделов для сотрудников (владелец 30.09 и 03.10.2026). Логика —
    services/section_access.py, роуты — api/cabinet_access_admin.py. Вёрстка
    целиком на .ss-* из superadmin_stats_ios.css: та же таблица, что на
    «Статистике активности», на телефоне строка складывается в карточку. #}
@@ -13,7 +13,7 @@
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="ss-title">Доступы</h1>
-        <span class="ss-since">Снятая галочка закрывает раздел всей роли: пропадает пункт меню, страница не открывается. Открыть больше, чем даёт роль, нельзя.</span>
+        <span class="ss-since">Галочка открывает раздел всей роли, снятая – закрывает: пропадает пункт меню, страница не открывается. «Сверх роли» – раздела у роли нет, пока его не открыли.</span>
     </div>
 
     {% if saved is not none %}
@@ -41,7 +41,6 @@
                         </td>
                         {% for col in columns %}
                         <td data-label="{{ col.label }}" class="ss-ta-c">
-                            {% if section.key in matrix[col.name] %}
                             {% set _field = "cell__" ~ col.slug ~ "__" ~ section.key %}
                             <input type="hidden" name="{{ _field }}" value="0">
                             <label>
@@ -50,8 +49,8 @@
                                        aria-label="{{ section.label }} – {{ col.label }}">
                                 открыт
                             </label>
-                            {% else %}
-                            <span class="ss-dim" title="У роли нет этого раздела">–</span>
+                            {% if col.name not in section.roles %}
+                            <div class="ss-dim-sm">сверх роли</div>
                             {% endif %}
                         </td>
                         {% endfor %}
@@ -60,6 +59,15 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+        <div class="ss-sub">
+            <h2 class="ss-sub-head">Как работает «сверх роли»</h2>
+            <ul class="ss-dim-sm">
+                <li>Куратор в открытом разделе работает как Главный преподаватель: видит всю школу и пользуется кнопками раздела.</li>
+                <li>Модератору открытый раздел доступен только на просмотр: он наблюдатель и ничего не меняет.</li>
+                <li>Балл за работу ученика ставит только Главный преподаватель, открытый раздел этого не меняет.</li>
+                <li>Архив куратору открывается целиком, но чужие действующие ученики ему по-прежнему не видны.</li>
+            </ul>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn-blue">Сохранить</button>

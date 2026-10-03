@@ -287,8 +287,15 @@
     <script src="/static/js/notif-bell.js?v=1" data-csrf-token="{{ csrf_token(request) }}"></script>
     {% endif %}
 
+    {# Меню — по родной роли (`nav_rank`): в разделе, открытом сверх роли,
+       ранг куратора поднят до ГП только ради проверок (services/section_access.py),
+       и меню ГП из ссылок «Недостаточно прав» ему ни к чему. #}
     {% if user is defined and user and user.role_rank >= 4 %}
+    {% if (user.nav_rank or user.role_rank) >= 4 %}
     {% include "partials/staff_nav.html" %}
+    {% else %}
+    {% with force_curator_nav = true %}{% include "_curator_nav.html" %}{% endwith %}
+    {% endif %}
     {% endif %}
 
     <main class="main" id="main-content">
