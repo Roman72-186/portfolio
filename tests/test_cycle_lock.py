@@ -195,3 +195,57 @@ def test_learning_page_renders_debt_banner(auth_client, db):
     assert "Сначала закрой «Цикл 2»" in html
     assert "«Формообразование узлов»" in html
     assert 'class="lrn-cycle-chip is-locked"' in html
+
+
+# Галочка «не пускать дальше» в настройке цикла (владелец 03.10.2026).
+
+def test_cycle_without_lock_lets_the_student_through(db, regular_user):
+    _, (c2, c3, c4), (_, t3, _) = _program(db, regular_user)
+    c2.locks_next = False
+    close_task_for_user(db, t3, regular_user.id, source="manual")
+    db.commit()
+
+    assert cycle_debt(db, regular_user.id, TODAY) is None
+    assert locked_cycle_ids(db, regular_user.id, TODAY) == set()
+    assert effective_cycle(db, regular_user.id, TODAY).id == c4.id
+
+
+def test_locking_debt_after_open_cycle_still_locks(db, regular_user):
+    """Незапирающий цикл пропускается, а не обрывает поиск: долг цикла 3
+    по-прежнему держит цикл 4. Ученик стоит на цикле 3, а не на цикле 2 —
+    иначе цикл 3 стал бы архивом, и закрыть долг было бы нечем."""
+    _, (c2, c3, c4), _ = _program(db, regular_user)
+    c2.locks_next = False
+    db.commit()
+
+    debt = cycle_debt(db, regular_user.id, TODAY)
+
+    assert debt["cycle"].id == c3.id
+    assert [c.id for c in debt["locked"]] == [c4.id]
+    assert effective_cycle(db, regular_user.id, TODAY).id == c3.id
+
+
+def test_cycle_form_saves_locks_next(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=887_301, name="ГП", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    body = {
+        "title": "Цикл", "description": None,
+        "starts_on": TODAY.isoformat(),
+        "ends_on": (TODAY + timedelta(days=5)).isoformat(),
+        "is_published": True,
+    }
+    headers = {"X-CSRF-Token": "x"}
+
+    created = client.post("/cabinet/staff/program/cycles", json=body, headers=headers)
+    cycle_id = created.json()["cycle_id"]
+    assert db.get(LearningTopic, cycle_id).locks_next is True
+
+    edited = client.post(f"/cabinet/staff/program/cycles/{cycle_id}",
+                         json={**body, "locks_next": False}, headers=headers)
+    assert edited.status_code == 200, edited.text
+    db.expire_all()
+    assert db.get(LearningTopic, cycle_id).locks_next is False
+
+    page = client.get("/cabinet/staff/program/cycles").text
+    assert "data-c-locks-next" in page
+    assert "Дальше пускает без сдачи" in page

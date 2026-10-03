@@ -836,13 +836,19 @@ def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | N
     ответ идёт из него же, последней строкой. Именно это видит ученик в ленте,
     поэтому всё, что показывает подпись цикла рядом с его заданиями или
     перепиской, должно звать эту функцию, а не `cycle_for_day` (13.09.2026).
+
+    Цикл со снятой галочкой «не пускать дальше» (`locks_next=False`, владелец
+    03.10.2026) ученика не держит и здесь пропускается — правило то же, что у
+    `cycle_debt`. Иначе ученик стоял бы на нём, а запирающий долг дальше по
+    списку стал бы архивом без кнопки «Завершить задание» и запер бы
+    программу навсегда.
     """
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for topic in started:
-        if not is_cycle_complete(db, user_id, topic):
+        if topic.locks_next and not is_cycle_complete(db, user_id, topic):
             return topic
     return cycle_for_day(db, user_id, today)
 
@@ -864,6 +870,10 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
 
     Только для ученика: сотрудник, открывший ленту посмотреть (превью), не
     сдаёт заданий, и «долги» заперли бы ему всю программу.
+
+    Запирает только цикл с `locks_next=True` (галочка в настройке цикла,
+    владелец 03.10.2026). Незакрытый цикл без неё долгом не считается: поиск
+    идёт дальше, к первому запирающему.
     """
     rank = (
         db.query(Role.rank)
@@ -878,6 +888,8 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
         if cycle_bounds(topic)[0] <= today
     ]
     for position, topic in enumerate(started):
+        if not topic.locks_next:
+            continue
         missing = missing_required_tasks(db, user_id, topic)
         if missing:
             locked = started[position + 1:]

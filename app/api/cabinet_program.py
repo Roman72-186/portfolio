@@ -643,6 +643,9 @@ class CyclePayload(BaseModel):
     starts_on: str = Field(min_length=1, max_length=32)
     ends_on: str = Field(min_length=1, max_length=32)
     is_published: bool = True
+    # Незакрытый цикл запирает следующие (владелец 03.10.2026). Правило —
+    # `tracker.cycle_debt`; по умолчанию запирает, как все циклы с 30.09.2026.
+    locks_next: bool = True
     # Этап-родитель (владелец 24.09.2026). `None` — легаси-цикл без этапа,
     # как было до этой возможности.
     stage_id: int | None = Field(default=None, ge=1)
@@ -778,6 +781,7 @@ def program_cycles(
             "starts_on": msk_date(topic.opens_at).isoformat(),
             "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
             "is_published": topic.is_published,
+            "locks_next": topic.locks_next,
             # Сколько заданий и роликов внутри — только для предупреждения
             # перед удалением: человек должен понимать, что уносит с собой рамка.
             "items_count": count_week_items(db, topic.id),
@@ -899,6 +903,7 @@ def create_program_cycle(
         user_id=user["user_id"],
         parent_id=stage.id if stage is not None else None,
     )
+    topic.locks_next = payload.locks_next
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     db.commit()
@@ -993,6 +998,7 @@ def update_program_cycle(
         parent_id=stage.id if stage is not None else None,
         set_parent=True,
     )
+    topic.locks_next = payload.locks_next
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     else:

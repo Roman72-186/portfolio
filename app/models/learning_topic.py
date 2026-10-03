@@ -31,7 +31,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -88,6 +88,14 @@ class LearningTopic(Base):
     tariff_restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Незакрытый цикл запирает следующие (владелец 03.10.2026: настройка рядом
+    # с «Показывать ученикам»). Смысл — только у цикла (`kind='week'`): False —
+    # долг этого цикла не держит ученика, дальше он идёт свободно. Правило
+    # целиком — `tracker.cycle_debt` и `tracker.effective_cycle`. По умолчанию
+    # True: так жили все циклы с 30.09.2026.
+    locks_next: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
