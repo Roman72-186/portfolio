@@ -71,7 +71,31 @@ def test_chief_teacher_can_score_submission_without_marking_it_reviewed(
     notification = db.query(Notification).filter_by(
         user_id=student.id, task_block_submission_id=submission.id
     ).one()
-    assert "87 / 100" in notification.text
+    assert notification.text == "«Домашняя работа» – 87 / 100."
+
+
+def test_score_notification_names_subject(db, user_factory, session_factory, client):
+    """Ученик видит, по какому предмету балл (владелец 03.10.2026). Предмет
+    блока главнее предмета задания — как во всей ленте."""
+    chief = user_factory(vk_id=970_011, name="Главный", role_name="админ")
+    student = user_factory(vk_id=970_012, name="Ученик")
+    submission = _submission(db, student)
+    block = db.get(TaskBlock, submission.block_id)
+    db.get(TrackerTask, block.task_id).subject = "Композиция"
+    block.subject = "Рисунок"
+    db.commit()
+    _login(client, session_factory, chief)
+
+    with patch("app.api.task_block_feedback.notify"):
+        client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/score",
+            json={"score": 72},
+        )
+
+    notification = db.query(Notification).filter_by(
+        user_id=student.id, task_block_submission_id=submission.id
+    ).one()
+    assert notification.text == "Рисунок, «Домашняя работа» – 72 / 100."
 
 
 @pytest.mark.parametrize("block_type", [BLOCK_UPLOAD, BLOCK_TIMED, BLOCK_PHOTO_UPLOAD])

@@ -202,10 +202,15 @@ def score_submission(
     submission.scored_by_id = user["user_id"]
     notification = None
     if previous_score != payload.score:
+        block, task = _context(db, submission)
+        # Ученик сдаёт работы сразу по нескольким заданиям и предметам — без
+        # предмета и названия балл в уведомлении не к чему привязать.
+        subject = block.subject or task.subject
+        where = f"{subject}, «{task.title}»" if subject else f"«{task.title}»"
         notification = Notification(
             user_id=submission.user_id,
             title="Преподаватель оценил работу",
-            text=f"Оценка за сданную работу: {payload.score} / 100.",
+            text=f"{where} – {payload.score} / 100.",
             task_block_submission_id=submission.id,
         )
         db.add(notification)
