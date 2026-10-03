@@ -154,7 +154,60 @@
         </div>
     </div>
 
-    {# Диагностика — сразу под плитками входов (владелец 25.09.2026). #}
+    <!-- Поимённая сводка: входы, портфолио, сдача конкретного задания. Первая под плитками (владелец 03.10.2026) -->
+    <details class="ss-acc" data-activity-portfolio>
+        <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-filters">
+                <label for="activity-portfolio-filter">Портфолио
+                    <select id="activity-portfolio-filter" data-activity-filter>
+                        <option value="all">Все</option>
+                        <option value="missing">Не загрузили</option>
+                        <option value="uploaded">Загрузили</option>
+                    </select>
+                </label>
+                <label for="activity-assignment-filter">Задание
+                    <select id="activity-assignment-filter" data-assignment-filter>
+                        <option value="">Все ученики</option>
+                        {% for assignment in student_activity.assignments %}<option value="{{ assignment.id }}">{{ assignment.label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label for="activity-submission-filter">Сдача
+                    <select id="activity-submission-filter" data-submission-filter disabled>
+                        <option value="all">Все</option>
+                        <option value="submitted">Сдали</option>
+                        <option value="missing">Не сдали</option>
+                        <option value="overdue">Не сдали, срок прошёл</option>
+                        <option value="pending">Не сдали, срок не наступил</option>
+                    </select>
+                </label>
+                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать список</button>
+                <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th><th>Задание</th></tr></thead>
+                    <tbody>
+                    {% for student in student_activity.students %}
+                    <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}">
+                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}</span></td>
+                        <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
+                        <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
+                        <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
+                        <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
+                        <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
+                        <td data-label="Задание" data-assignment-state>Выберите задание</td>
+                    </tr>
+                    {% endfor %}
+                    <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
+    {# Диагностика — под «Учениками поимённо» (владелец 03.10.2026; до этого первая под плитками, 25.09.2026). #}
     <details class="ss-acc" open>
         <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
         <div class="ss-acc-body">
@@ -226,59 +279,6 @@
                     </tbody>
                 </table>
                 {% else %}<div class="ss-empty">За выбранный период регистраций нет</div>{% endif %}
-            </div>
-        </div>
-    </details>
-
-    <!-- Поимённая сводка: входы, портфолио, сдача конкретного задания -->
-    <details class="ss-acc" data-activity-portfolio>
-        <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-filters">
-                <label for="activity-portfolio-filter">Портфолио
-                    <select id="activity-portfolio-filter" data-activity-filter>
-                        <option value="all">Все</option>
-                        <option value="missing">Не загрузили</option>
-                        <option value="uploaded">Загрузили</option>
-                    </select>
-                </label>
-                <label for="activity-assignment-filter">Задание
-                    <select id="activity-assignment-filter" data-assignment-filter>
-                        <option value="">Все ученики</option>
-                        {% for assignment in student_activity.assignments %}<option value="{{ assignment.id }}">{{ assignment.label }}</option>{% endfor %}
-                    </select>
-                </label>
-                <label for="activity-submission-filter">Сдача
-                    <select id="activity-submission-filter" data-submission-filter disabled>
-                        <option value="all">Все</option>
-                        <option value="submitted">Сдали</option>
-                        <option value="missing">Не сдали</option>
-                        <option value="overdue">Не сдали, срок прошёл</option>
-                        <option value="pending">Не сдали, срок не наступил</option>
-                    </select>
-                </label>
-                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать список</button>
-                <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
-            </div>
-            <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th><th>Задание</th></tr></thead>
-                    <tbody>
-                    {% for student in student_activity.students %}
-                    <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}">
-                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}</span></td>
-                        <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
-                        <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
-                        <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
-                        <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
-                        <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
-                        <td data-label="Задание" data-assignment-state>Выберите задание</td>
-                    </tr>
-                    {% endfor %}
-                    <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
     </details>

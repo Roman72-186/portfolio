@@ -343,8 +343,11 @@ def test_diagnostic_goes_right_after_login_tiles(superadmin_client):
     client, _ = superadmin_client
     text = client.get("/cabinet/superadmin/activity").text
     diag = text.index("Диагностика АРХИ-ПРОФИЛЯ")
-    # Плитки входов — первая строка, диагностика — вторая (владелец 25.09.2026).
-    assert text.index("Заходили за 7 дней") < diag
+    named = text.index("Ученики поимённо")
+    # Плитки входов — первая строка, за ними «Ученики поимённо» (владелец
+    # 03.10.2026: «на месте Диагностики АРХИ-ПРОФИЛЯ»), диагностика — следом
+    # (до 03.10.2026 она шла сразу под плитками, 25.09.2026).
+    assert text.index("Заходили за 7 дней") < named < diag
     for later in ("Действия учеников", "Просмотр видео",
                   "Поведение на пробнике", "Скорость проверки работ", "Журнал изменений"):
         assert diag < text.index(later), later
@@ -622,7 +625,7 @@ def test_named_student_summary_moved_from_users_page(
     assert 'data-assignment-filter' in page
     assert 'data-submission-filter' in page
     assert f'<option value="{block.id}">Практическое задание · Эскизы</option>' in page
-    assert "Скопировать имена, username и тариф" in page
+    assert "Скопировать список" in page
     missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
     uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
     assert 'data-portfolio-uploaded="0"' in missing_row
@@ -644,7 +647,7 @@ def test_registration_card_follows_date_filter(superadmin_client, db, user_facto
     page = client.get(
         "/cabinet/superadmin/activity?registration_from=2026-09-20&registration_to=2026-09-21"
     ).text
-    card = page.split("Регистрации по тарифам", 1)[1].split("Ученики поимённо", 1)[0]
+    card = page.split("Регистрации по тарифам", 1)[1].split("Действия учеников за", 1)[0]
     assert "Регистрация Внутри" in card
     assert "Регистрация Снаружи" not in card
     opener = page.split("Регистрации по тарифам", 1)[0].rsplit("<details", 1)[1]
