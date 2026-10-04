@@ -40,7 +40,8 @@
     z-index: -1;
 }
 .ios-digest.trk-page, .ios-goals.trk-page { max-width: 860px; margin: 0 auto; }
-.ios-digest-events.trk-page { max-width: 780px; margin: 0 auto; }
+/* Шире списков: календарь и панель дня стоят рядом (04.10.2026). */
+.ios-digest-events.trk-page { max-width: 1000px; margin: 0 auto; }
 
 /* ── Вкладки раздела (partials/program_tabs.html — не подключает
    digest-events, это подэкран) ── */
@@ -136,9 +137,6 @@
    переносится строкой, выбор держит та же заливка, что у тегов. */
 .ios-digest-events .trk-tag-picker { display: flex; flex-wrap: wrap; }
 .ios-digest-events .trk-tag-picker label { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
-.ios-digest-events .de-kind-row { align-items: center; }
-.ios-digest-events .de-preview-title { margin: 28px 0 4px; color: var(--ios-label); font: 700 17px/1.3 var(--ios-font); }
-.ios-digest-events .dgst { margin-top: 12px; }
 
 .ios-digest .trk-message, .ios-digest-events .trk-message, .ios-goals .trk-message {
     color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font);
@@ -171,7 +169,6 @@
 }
 .ios-digest .trk-badge--live, .ios-goals .trk-badge--live { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-digest .trk-badge--draft, .ios-goals .trk-badge--draft { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
-.ios-digest-events .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 
 .ios-digest .trk-row-actions, .ios-digest-events .trk-row-actions, .ios-goals .trk-row-actions {
     gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 0.5px solid var(--ios-sep);
@@ -186,7 +183,6 @@
 /* ── Точечные замены инлайновых style="" из шаблонов ── */
 .ios-digest .dg-year-month { grid-column: span 1; }
 .ios-digest .dg-assignees-field, .ios-goals .gl-assignees-field { margin-top: 10px; }
-.ios-digest-events .de-kind-row { margin-bottom: 6px; }
 
 /* Кнопки строки на касание — 44px, как во всём разделе программы (аудит
    29.09.2026): общий `.trk-row-actions button` из tracker.css даёт 36px, а
@@ -202,3 +198,80 @@
     .ios-digest .trk-head, .ios-digest-events .trk-head, .ios-goals .trk-head { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .ios-digest .trk-row, .ios-digest-events .trk-row, .ios-goals .trk-row { grid-template-columns: 1fr; }
 }
+
+/* ── Редактор месяца: календарь + панель дня (владелец 04.10.2026) ──
+   Как месяц в календаре айфона. Панель дня вставлена в карточку дайджеста
+   сразу после сетки (partials/digest_day_panel.html): на телефоне она под
+   календарём, а не под длинным списком событий; на компьютере — правой
+   колонкой на всю высоту карточки, липкая. Без модального окна: календарь
+   остаётся перед глазами, по нему же дотапывается конец периода. */
+.dgst--edit {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    column-gap: 28px; align-items: start;
+}
+.dgst--edit > * { grid-column: 1; }
+/* В редакторе сетка на всю левую колонку: клетки крупнее, тапать точнее. */
+.dgst--edit .dgst-cal { max-width: none; }
+.dgst--edit > .dge-panel { grid-column: 2; grid-row: 1 / span 6; }
+.dge-preview-hint { margin-top: 12px; }
+.dge-panel {
+    position: sticky; top: 16px; display: grid; gap: 12px;
+    padding-left: 24px; border-left: 1px solid var(--line);
+}
+.dge-panel-title { margin: 0; color: var(--ios-label); font: 700 17px/1.3 var(--ios-font); }
+.dge-panel-title::first-letter { text-transform: uppercase; }
+.dge-day-events { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dge-day-events:empty { display: none; }
+.dge-day-event {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: center;
+    width: 100%; min-height: 48px; padding: 8px 12px; text-align: left; cursor: pointer;
+    color: var(--text); background: var(--surface-2); border: 0; border-radius: 12px; font: inherit;
+}
+.dge-day-event:hover { background: var(--blue-soft); }
+.dge-day-event:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.dge-day-event-title { font-weight: 600; }
+.dge-day-event-meta { grid-column: 2; color: var(--muted); font-size: 12px; }
+.dge-add { justify-self: stretch; min-height: 44px; }
+.dge-form.trk-form { margin: 0; padding: 0; background: none; box-shadow: none; }
+.dge-types label { min-height: 40px; }
+.dge-multi { color: var(--text); font-size: 14px; font-weight: 600; min-height: 40px; }
+.dge-more summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: var(--blue-text); font-size: 14px; font-weight: 600; }
+.dge-more[open] { display: grid; gap: 10px; }
+
+@media (max-width: 900px) {
+    .dgst--edit { grid-template-columns: minmax(0, 1fr); }
+    .dgst--edit > .dge-panel { grid-column: 1; grid-row: auto; }
+    .dge-panel {
+        position: static; scroll-margin-top: 72px; margin-top: 16px;
+        padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line);
+    }
+}
+
+/* ── Экран типов событий (cabinet_digest_types.html, 04.10.2026) ── */
+.dgt-page.trk-page { max-width: 780px; }
+.dgt-list { display: grid; gap: 10px; margin: 0 0 24px; padding: 0; list-style: none; }
+.dgt-row { padding: 14px 16px; border-radius: 16px; background: var(--ios-card-bg); box-shadow: 0 0 0 1px var(--line); }
+.dgt-row.is-archived .dgt-row-name { color: var(--muted); }
+.dgt-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.dgt-row-head .dgst-chip { min-width: 72px; }
+.dgt-row-name { color: var(--ios-label); font: 700 15px/1.3 var(--ios-font); }
+.dgt-row-meta { color: var(--muted); font-size: 12px; }
+.dgt-move { display: inline-flex; gap: 6px; margin-left: auto; }
+.dgt-move .btn-outline { min-width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+.dgt-edit summary {
+    display: inline-flex; align-items: center; min-height: 40px; margin-top: 4px;
+    cursor: pointer; color: var(--blue-text); font-size: 14px; font-weight: 600;
+}
+.dgt-form.trk-form { margin: 8px 0 0; padding: 0; background: none; box-shadow: none; }
+.dgt-new.trk-form { padding: 18px; background: var(--ios-card-bg); box-shadow: 0 0 0 1px var(--line); }
+.dgt-new-title { margin: 0; color: var(--ios-label); font: 700 17px/1.3 var(--ios-font); }
+.dgt-palette label { min-height: 40px; }
+/* Флажок «Несколько дней» стоит внутри .trk-field, и общий стиль полей скина
+   давал ему серую подложку с отступами — галочка читалась выключенной.
+   Здесь возвращаются размеры и рамка флажка из base.css (блок «Флажок и
+   переключатель»), которые общий стиль полей перебил. */
+.ios-digest-events .dge-multi input {
+    width: 20px; height: 20px; padding: 0; border-radius: 6px;
+    border: 1.5px solid var(--ios-label-3); background: var(--ios-card-bg);
+}
+.ios-digest-events .dge-multi input:checked { background: var(--ios-blue); border-color: var(--ios-blue); }

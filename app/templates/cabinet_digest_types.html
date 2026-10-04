@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{#
+THESIS: тип события и его цвет задаются один раз, дальше событие красится само.
+OWN-WORLD: те же trk-* формы и плашка дат .dgst-chip, что в календаре ученика.
+STORY: Главный преподаватель с Лизой подобрали оттенки, открыли «Типы событий»,
+       поменяли цвет «Пробника» — весь календарь месяца перекрасился сразу.
+FIRST VIEWPORT: список типов с образцом метки, внизу — «Новый тип».
+FORM: Operate. Владелец 04.10.2026: «выбираю тип этого события, которому назначен
+       определённый цвет… цвета для типов мы с Лизой обсудим и предложим».
+#}
+{% block title %}Типы событий{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=54">
+<link rel="stylesheet" href="/static/css/tracker.css?v=82">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=11">
+{% endblock %}
+{% macro type_fields(prefix, name, color, style) %}
+<label class="trk-field">Название
+    <input data-type-name type="text" maxlength="60" value="{{ name }}" autocomplete="off" placeholder="Например: Пробник">
+</label>
+<div class="trk-hint" id="{{ prefix }}ColorHint">Цвет</div>
+<div class="trk-tag-picker dgt-palette" role="radiogroup" aria-labelledby="{{ prefix }}ColorHint">
+    {% for key, label in palette.items() %}
+    <label><input type="radio" name="{{ prefix }}-color" value="{{ key }}" data-type-color{% if key == color %} checked{% endif %}><span class="dgst-swatch dgst-color--{{ key }}" aria-hidden="true"></span>{{ label }}</label>
+    {% endfor %}
+</div>
+<div class="trk-hint" id="{{ prefix }}StyleHint">Как рисовать в календаре</div>
+<div class="trk-tag-picker" role="radiogroup" aria-labelledby="{{ prefix }}StyleHint">
+    {% for key, label in styles.items() %}
+    <label><input type="radio" name="{{ prefix }}-style" value="{{ key }}" data-type-style{% if key == style %} checked{% endif %}>{{ label }}</label>
+    {% endfor %}
+</div>
+{% endmacro %}
+{% block content %}
+<div class="trk-page ios-digest-events dgt-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>Типы событий</h1>
+            <p>У каждого типа свой цвет в календаре ученика. Заливка подходит для отдельных дней и коротких периодов, контур — для длинных окон: кружок занятия внутри них остаётся виден.
+            {% if back_digest_id %}<a href="/cabinet/staff/digest/{{ back_digest_id }}/events">← к календарю месяца</a>{% else %}<a href="/cabinet/staff/digest">← ко всем дайджестам</a>{% endif %}</p>
+        </div>
+    </div>
+
+    {% if event_types %}
+    <ul class="dgt-list">
+        {% for event_type in event_types %}
+        {% set used = type_usage.get(event_type.id, 0) %}
+        <li class="dgt-row{% if event_type.archived_at %} is-archived{% endif %}" data-type-row data-id="{{ event_type.id }}">
+            <div class="dgt-row-head">
+                <span class="dgst-chip is-{{ event_type.style }} dgst-color--{{ event_type.color }}" data-type-sample>3 – 10</span>
+                <span class="dgt-row-name">{{ event_type.name }}</span>
+                <span class="dgt-row-meta">{% if event_type.archived_at %}Скрыт · {% endif %}{% if used %}событий: {{ used }}{% else %}не используется{% endif %}</span>
+                {% if not event_type.archived_at %}
+                <span class="dgt-move">
+                    <button type="button" class="btn-outline" data-type-move="-1" aria-label="Выше: {{ event_type.name }}"{% if loop.first %} disabled{% endif %}>↑</button>
+                    <button type="button" class="btn-outline" data-type-move="1" aria-label="Ниже: {{ event_type.name }}">↓</button>
+                </span>
+                {% endif %}
+            </div>
+            <details class="dgt-edit">
+                <summary>Изменить</summary>
+                <div class="trk-form dgt-form">
+                    {{ type_fields('type' ~ event_type.id, event_type.name, event_type.color, event_type.style) }}
+                    <div class="trk-actions">
+                        <button type="button" class="btn-blue" data-type-save>Сохранить</button>
+                        {% if event_type.archived_at %}
+                        <button type="button" class="btn-outline" data-type-action="restore">Вернуть в список</button>
+                        {% else %}
+                        <button type="button" class="btn-outline" data-type-action="archive">Скрыть</button>
+                        {% endif %}
+                        {% if not used %}
+                        <button type="button" class="btn-danger" data-type-action="delete">Удалить</button>
+                        {% endif %}
+                    </div>
+                    {% if used %}<p class="trk-hint">Тип стоит у событий, поэтому его можно только скрыть: старые события останутся в его цвете, в новые его не выбрать.</p>{% endif %}
+                    <p class="trk-message" data-type-message></p>
+                </div>
+            </details>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="trk-empty">Типов пока нет. Заведите первый — без типа событие в календарь не добавить.</div>
+    {% endif %}
+
+    <section class="trk-form dgt-form dgt-new" data-type-new>
+        <h2 class="dgt-new-title">Новый тип</h2>
+        <div class="dgt-row-head">
+            <span class="dgst-chip is-fill dgst-color--violet" data-type-sample>3 – 10</span>
+            <span class="dgt-row-meta">Так метка выглядит в календаре</span>
+        </div>
+        {{ type_fields('new', '', 'violet', 'fill') }}
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-type-save>Добавить тип</button>
+        </div>
+        <p class="trk-message" data-type-message></p>
+    </section>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var base = '/cabinet/staff/digest/types';
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var error = new Error(data.error || (typeof data.detail === 'string' ? data.detail : '') || 'request_failed');
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function scopeOf(node) {
+        return node.closest('[data-type-row]') || node.closest('[data-type-new]');
+    }
+
+    function setMessage(scope, text) {
+        var message = scope.querySelector('[data-type-message]');
+        if (!message) return;
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!text);
+    }
+
+    function values(scope) {
+        var color = scope.querySelector('[data-type-color]:checked');
+        var style = scope.querySelector('[data-type-style]:checked');
+        return {
+            name: scope.querySelector('[data-type-name]').value.trim(),
+            color: color ? color.value : 'violet',
+            style: style ? style.value : 'fill'
+        };
+    }
+
+    // Образец метки меняется сразу, до сохранения: цвет выбирают глазами.
+    function paintSample(scope) {
+        var sample = scope.querySelector('[data-type-sample]');
+        if (!sample) return;
+        var current = values(scope);
+        sample.className = 'dgst-chip is-' + current.style + ' dgst-color--' + current.color;
+    }
+
+    function explain(error, fallback) {
+        if (error.message === 'type_in_use') return 'Тип стоит у событий — его можно только скрыть.';
+        return error.status === 422 && error.message !== 'request_failed' ? error.message : fallback;
+    }
+
+    document.addEventListener('change', function (event) {
+        if (event.target.matches('[data-type-color], [data-type-style]')) paintSample(scopeOf(event.target));
+    });
+
+    document.addEventListener('click', function (event) {
+        var saveButton = event.target.closest('[data-type-save]');
+        if (saveButton) {
+            var scope = scopeOf(saveButton);
+            var body = values(scope);
+            if (!body.name) { setMessage(scope, 'Укажите название типа.'); return; }
+            var row = scope.matches('[data-type-row]') ? scope : null;
+            saveButton.disabled = true;
+            api(row ? base + '/' + row.dataset.id : base, body).then(function () {
+                window.location.reload();
+            }).catch(function (error) {
+                saveButton.disabled = false;
+                setMessage(scope, explain(error, 'Не удалось сохранить тип. Попробуйте ещё раз.'));
+            });
+            return;
+        }
+
+        var moveButton = event.target.closest('[data-type-move]');
+        if (moveButton) {
+            moveButton.disabled = true;
+            api(base + '/' + scopeOf(moveButton).dataset.id + '/move', {
+                direction: Number(moveButton.dataset.typeMove)
+            }).then(function () { window.location.reload(); })
+              .catch(function () { moveButton.disabled = false; });
+            return;
+        }
+
+        var actionButton = event.target.closest('[data-type-action]');
+        if (!actionButton) return;
+        var actionScope = scopeOf(actionButton);
+        var action = actionButton.dataset.typeAction;
+        if (action === 'delete' && !window.confirm('Удалить тип насовсем?')) return;
+        actionButton.disabled = true;
+        api(base + '/' + actionScope.dataset.id + '/' + action).then(function () {
+            window.location.reload();
+        }).catch(function (error) {
+            actionButton.disabled = false;
+            setMessage(actionScope, explain(error, 'Действие не выполнено. Попробуйте ещё раз.'));
+        });
+    });
+})();
+</script>
+{% endblock %}

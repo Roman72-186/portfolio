@@ -1,137 +1,64 @@
 {% extends "base.html" %}
 {#
-THESIS: события месяца видны одним списком по датам, форма добавления не требует ухода со страницы.
-OWN-WORLD: тот же Spark UI и trk-* классы, что у списка дайджестов и задач трекера.
-STORY: преподаватель открыл дайджест, добавил дедлайн/занятие/окно пробника/эфир,
-       вернулся к списку дайджестов и опубликовал, когда месяц собран целиком.
-FIRST VIEWPORT: заголовок дайджеста, кнопка «Новое событие», список по датам.
-FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+THESIS: месяц виден целиком, событие заводится там, где его дата — тапом по числу.
+OWN-WORLD: тот же календарь, что видит ученик (partials/digest_list.html), плюс панель дня.
+STORY: Главный преподаватель открыл месяц, нажал 9-е, выбрал тип «Занятие» —
+       цвет пришёл с типом; для пробника включил «Несколько дней» и дотапнул
+       последний день окна в том же календаре.
+FIRST VIEWPORT: календарь месяца и панель выбранного дня (на телефоне — под календарём,
+       как месяц в календаре айфона).
+FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную дату и внутри неё создаю событие…
+       сейчас сложновато, так как визуально не видишь календарь».
 #}
 {% block title %}События — {{ digest.title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=53">
-<link rel="stylesheet" href="/static/css/tracker.css?v=81">
-<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=10">
+<link rel="stylesheet" href="/static/css/program.css?v=54">
+<link rel="stylesheet" href="/static/css/tracker.css?v=82">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=11">
 {% endblock %}
 {% block content %}
 <div class="trk-page ios-digest-events">
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>{{ digest.title }}</h1>
-            <p>{{ month_names[digest.month] }} {{ digest.year }} — события внутри дайджеста. <a href="/cabinet/staff/digest">← ко всем дайджестам</a></p>
+            <p>{{ month_names[digest.month]|capitalize }} {{ digest.year }}. Нажмите на число, чтобы добавить событие. <a href="/cabinet/staff/digest">← ко всем дайджестам</a></p>
         </div>
-        <button type="button" class="btn-blue" data-event-toggle>Новое событие</button>
+        <a class="btn-outline" href="/cabinet/staff/digest/types?digest={{ digest.id }}">Типы событий</a>
     </div>
 
-    <form class="trk-form" data-event-form hidden>
-        <input type="hidden" data-event-id value="">
-        <div class="trk-grid trk-grid--two">
-            <label class="trk-field">Название
-                <input data-event-title type="text" maxlength="200" placeholder="Например: сдать финал по композиции" autocomplete="off">
-            </label>
-            <label class="trk-field">Тип
-                <select data-event-kind>
-                    {% for kind in event_kinds %}
-                    <option value="{{ kind }}">{{ event_kind_labels.get(kind, kind) }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-        </div>
-        <div class="trk-grid trk-grid--two">
-            <label class="trk-field">Начало
-                <input data-event-starts type="date">
-            </label>
-            <label class="trk-field">Окончание
-                <input data-event-ends type="date">
-            </label>
-        </div>
-        <label class="trk-field">Заметка, необязательно
-            <input data-event-note type="text" maxlength="300" placeholder="Короткая подпись под событием">
-        </label>
-        <label class="trk-field">Ссылка на созвон, необязательно
-            <input data-event-url type="url" maxlength="500" placeholder="https://...">
-        </label>
-        {# Цвет метки в календаре ученика и тарифы (созвон 30.09.2026). Чипы —
-           тот же `.trk-tag-picker`, что у тегов в форме дайджеста. #}
-        <div class="trk-hint" id="eventColorHint">Цвет в календаре:</div>
-        <div class="trk-tag-picker" role="radiogroup" aria-labelledby="eventColorHint">
-            {% for color in event_colors %}
-            <label><input type="radio" name="event-color" data-event-color value="{{ color }}"{% if loop.last %} checked{% endif %}><span class="dgst-dot dgst-color--{{ color }}" aria-hidden="true"></span>{{ event_color_labels[color] }}</label>
-            {% endfor %}
-        </div>
-        <div class="trk-hint" id="eventTariffHint">Кому показывать — ничего не отмечено: всем тарифам.</div>
-        <div class="trk-tag-picker" role="group" aria-labelledby="eventTariffHint">
-            {% for tariff in tariff_choices %}
-            <label><input type="checkbox" data-event-tariff value="{{ tariff }}">{{ tariff_display.get(tariff, tariff) }}</label>
-            {% endfor %}
-        </div>
-        <div class="trk-actions">
-            <button type="button" class="btn-blue" data-event-save>Сохранить событие</button>
-            <button type="button" class="btn-outline" data-event-cancel>Отмена</button>
-        </div>
-        <p class="trk-message" data-event-message></p>
-    </form>
-
-    {% if events %}
-    <div>
-        {% for event in events %}
-        <article class="trk-row" data-event-row data-id="{{ event.id }}"
-                 data-title="{{ event.title }}"
-                 data-kind="{{ event.kind }}"
-                 data-starts="{{ event.starts_on.isoformat() }}"
-                 data-ends="{{ event.ends_on.isoformat() }}"
-                 data-note="{{ event.note or '' }}"
-                 data-url="{{ event.meeting_url or '' }}"
-                 data-color="{{ event.color }}"
-                 data-tariffs="{{ event_tariffs.get(event.id, []) | join('|') }}">
-            <div>
-                <div class="trk-meta de-kind-row">
-                    <span class="dgst-dot dgst-color--{{ event.color }}" title="{{ event_color_labels.get(event.color, '') }}"></span>
-                    <span class="trk-badge trk-badge--kind">{{ event_kind_labels.get(event.kind, event.kind) }}</span>
-                    {% set tariffs = event_tariffs.get(event.id) %}
-                    <span>{% if tariffs %}{% for t in tariffs %}{{ tariff_display.get(t, t) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}Все тарифы{% endif %}</span>
-                </div>
-                <h3>{{ event.title }}</h3>
-                {% if event.note %}<p>{{ event.note }}</p>{% endif %}
-                <div class="trk-meta">
-                    {% if event.starts_on == event.ends_on %}
-                    <span>{{ event.starts_on.strftime('%d.%m.%Y') }}</span>
-                    {% else %}
-                    <span>{{ event.starts_on.strftime('%d.%m') }} — {{ event.ends_on.strftime('%d.%m.%Y') }}</span>
-                    {% endif %}
-                    {% if event.meeting_url %}<span><a href="{{ event.meeting_url }}" target="_blank" rel="noopener">Ссылка на созвон</a></span>{% endif %}
-                </div>
-            </div>
-            <div class="trk-row-actions">
-                <button type="button" class="btn-outline" data-event-edit>Изменить</button>
-                <button type="button" class="btn-danger" data-event-action="delete">Удалить</button>
-            </div>
-        </article>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="trk-empty">Событий пока нет.</div>
-    {% endif %}
-
-    {# Так месяц увидит ученик — все события, без отбора по тарифу. #}
-    <h2 class="de-preview-title">Календарь глазами ученика</h2>
-    <p class="trk-hint">Здесь все события месяца. Ученик видит только общие и события своего тарифа.</p>
     {% include "partials/digest_list.html" %}
+    <p class="trk-hint dge-preview-hint">Так месяц увидит ученик, только без событий чужих тарифов и без панели дня.</p>
 </div>
 
+<script type="application/json" id="digestEventsData">{{ events_payload|tojson }}</script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
-    var digestId = {{ digest.id }};
-    var base = '/cabinet/staff/digest/' + digestId + '/events';
+    var base = '/cabinet/staff/digest/{{ digest.id }}/events';
+    var events = JSON.parse(document.getElementById('digestEventsData').textContent || '[]');
+    var calendar = document.querySelector('[data-digest-cal]');
+    var panel = document.querySelector('[data-day-panel]');
     var form = document.querySelector('[data-event-form]');
-    if (!form) return;
-    var message = form.querySelector('[data-event-message]');
+    if (!calendar || !panel || !form) return;
+
+    var selectedDay = null;
+    var editingId = null;
+    var weekdayFormat = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', weekday: 'long'});
+    var dateFormat = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long'});
 
     function field(name) { return form.querySelector('[data-event-' + name + ']'); }
 
+    function parseIso(iso) {
+        var parts = iso.split('-');
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    }
+
+    function dayLabel(iso) {
+        return weekdayFormat.format(parseIso(iso));
+    }
+
     function setMessage(text, isError) {
-        if (!message) return;
+        var message = field('message');
         message.textContent = text || '';
         message.classList.toggle('is-error', !!isError);
     }
@@ -139,14 +66,12 @@ FORM: Operate, расширение существующего кабинета 
     function api(path, body) {
         return fetch(path, {
             method: 'POST', credentials: 'same-origin',
-            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
             body: JSON.stringify(body || {})
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 if (!response.ok) {
-                    var reason = data.error
-                        || (typeof data.detail === 'string' ? data.detail : '')
-                        || 'request_failed';
+                    var reason = data.error || (typeof data.detail === 'string' ? data.detail : '') || 'request_failed';
                     var error = new Error(reason);
                     error.status = response.status;
                     throw error;
@@ -156,83 +81,246 @@ FORM: Operate, расширение существующего кабинета 
         });
     }
 
-    function openForm(row) {
+    function eventsOnDay(iso) {
+        return events.filter(function (item) { return item.starts_on <= iso && iso <= item.ends_on; });
+    }
+
+    // Пунктир периода, который набирается в форме. Строку недели открывает
+    // понедельник и закрывает воскресенье — как у сохранённых таблеток.
+    function paintPreview() {
+        calendar.querySelectorAll('.is-preview').forEach(function (cell) {
+            cell.classList.remove('is-preview', 'is-preview-start', 'is-preview-end');
+        });
+        if (form.hidden) return;
+        var start = field('starts').value;
+        var end = field('multi').checked ? (field('ends').value || start) : start;
+        if (!start || end < start) return;
+        calendar.querySelectorAll('[data-day]').forEach(function (cell) {
+            var iso = cell.dataset.day;
+            if (iso < start || iso > end) return;
+            cell.classList.add('is-preview');
+            if (iso === start || cell.dataset.dow === '1') cell.classList.add('is-preview-start');
+            if (iso === end || cell.dataset.dow === '7') cell.classList.add('is-preview-end');
+        });
+    }
+
+    function renderDay() {
+        var title = panel.querySelector('[data-day-title]');
+        var list = panel.querySelector('[data-day-events]');
+        var addButton = panel.querySelector('[data-event-add]');
+        calendar.querySelectorAll('.is-selected').forEach(function (cell) { cell.classList.remove('is-selected'); });
+        list.textContent = '';
+        if (!selectedDay) return;
+        var cell = calendar.querySelector('[data-day="' + selectedDay + '"]');
+        if (cell) cell.classList.add('is-selected');
+        title.textContent = dayLabel(selectedDay);
+        eventsOnDay(selectedDay).forEach(function (item) {
+            var li = document.createElement('li');
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dge-day-event';
+            button.dataset.eventEdit = String(item.id);
+            var swatch = document.createElement('span');
+            swatch.className = 'dgst-swatch dgst-color--' + item.type_color + (item.type_style === 'ring' ? ' is-ring' : '');
+            swatch.setAttribute('aria-hidden', 'true');
+            var name = document.createElement('span');
+            name.className = 'dge-day-event-title';
+            name.textContent = item.title;
+            var meta = document.createElement('span');
+            meta.className = 'dge-day-event-meta';
+            meta.textContent = item.type_name + ' · ' + item.dates;
+            button.appendChild(swatch);
+            button.appendChild(name);
+            button.appendChild(meta);
+            li.appendChild(button);
+            list.appendChild(li);
+        });
+        if (addButton) {
+            addButton.hidden = false;
+            addButton.textContent = 'Добавить событие на ' + dateFormat.format(parseIso(selectedDay));
+        }
+    }
+
+    function selectDay(iso, scroll) {
+        selectedDay = iso;
+        renderDay();
+        // На телефоне панель под календарём: без прокрутки тап выглядел бы
+        // так, будто ничего не произошло.
+        if (scroll && window.matchMedia('(max-width: 900px)').matches) {
+            panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+    }
+
+    function setMulti(on) {
+        field('multi').checked = on;
+        form.querySelector('[data-event-ends-wrap]').hidden = !on;
+        form.querySelector('[data-event-multi-hint]').hidden = !on;
+    }
+
+    // Скрытый тип у старого события: в форме его нет среди чипов, но
+    // событие на нём стоит — показываем его временным чипом, чтобы правка
+    // названия не перекрашивала событие.
+    function ensureTypeChip(item) {
+        form.querySelectorAll('[data-archived-type]').forEach(function (node) { node.remove(); });
+        if (!item || !item.type_archived) return;
+        var label = document.createElement('label');
+        label.dataset.archivedType = '1';
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'event-type';
+        input.value = String(item.type_id);
+        input.setAttribute('data-event-type', '');
+        var swatch = document.createElement('span');
+        swatch.className = 'dgst-swatch dgst-color--' + item.type_color + (item.type_style === 'ring' ? ' is-ring' : '');
+        swatch.setAttribute('aria-hidden', 'true');
+        label.appendChild(input);
+        label.appendChild(swatch);
+        label.appendChild(document.createTextNode(item.type_name + ' (скрыт)'));
+        form.querySelector('[data-event-types]').appendChild(label);
+    }
+
+    function openForm(item) {
+        editingId = item ? item.id : null;
+        ensureTypeChip(item);
         form.hidden = false;
         setMessage('');
-        var today = new Date().toISOString().slice(0, 10);
-        field('id').value = row ? row.dataset.id : '';
-        field('title').value = row ? row.dataset.title : '';
-        field('kind').value = row ? row.dataset.kind : field('kind').options[0].value;
-        field('starts').value = row ? row.dataset.starts : today;
-        field('ends').value = row ? row.dataset.ends : today;
-        field('note').value = row ? row.dataset.note : '';
-        field('url').value = row ? row.dataset.url : '';
-        var color = row ? row.dataset.color : 'purple';
-        form.querySelectorAll('[data-event-color]').forEach(function (input) {
-            input.checked = input.value === color;
+        field('title').value = item ? item.title : '';
+        var typeInputs = form.querySelectorAll('[data-event-type]');
+        typeInputs.forEach(function (input, index) {
+            input.checked = item ? input.value === String(item.type_id) : index === 0;
         });
-        var tariffs = row && row.dataset.tariffs ? row.dataset.tariffs.split('|') : [];
+        field('starts').value = item ? item.starts_on : selectedDay;
+        field('ends').value = item ? item.ends_on : selectedDay;
+        setMulti(!!item && item.starts_on !== item.ends_on);
+        var tariffs = item ? item.tariffs : [];
         form.querySelectorAll('[data-event-tariff]').forEach(function (input) {
             input.checked = tariffs.indexOf(input.value) !== -1;
         });
+        field('note').value = item ? item.note : '';
+        field('url').value = item ? item.meeting_url : '';
+        field('more').open = !!item && !!(item.note || item.meeting_url);
+        field('delete').hidden = !item;
+        var addButton = panel.querySelector('[data-event-add]');
+        if (addButton) addButton.hidden = true;
+        paintPreview();
         field('title').focus();
     }
 
+    function closeForm() {
+        form.hidden = true;
+        editingId = null;
+        paintPreview();
+        renderDay();
+    }
+
+    // Тап по числу при открытой форме ставит дату события: в режиме
+    // «Несколько дней» — конец периода (или новое начало, если тапнули
+    // раньше), иначе переносит однодневное событие на этот день.
+    function pickDate(iso) {
+        var start = field('starts').value;
+        if (field('multi').checked) {
+            if (!start || iso < start) {
+                field('starts').value = iso;
+                if (field('ends').value < iso) field('ends').value = iso;
+            } else {
+                field('ends').value = iso;
+            }
+        } else {
+            field('starts').value = iso;
+            field('ends').value = iso;
+        }
+        paintPreview();
+    }
+
+    function save(button) {
+        var title = field('title').value.trim();
+        if (!title) { setMessage('Укажите название события.', true); field('title').focus(); return; }
+        var typeInput = form.querySelector('[data-event-type]:checked');
+        if (!typeInput) { setMessage('Выберите тип события.', true); return; }
+        var startsOn = field('starts').value;
+        var endsOn = field('multi').checked ? (field('ends').value || startsOn) : startsOn;
+        if (!startsOn) { setMessage('Укажите дату.', true); return; }
+        if (endsOn < startsOn) { setMessage('Последний день раньше первого.', true); return; }
+        button.disabled = true;
+        api(base + (editingId ? '/' + editingId : ''), {
+            title: title,
+            type_id: Number(typeInput.value),
+            starts_on: startsOn,
+            ends_on: endsOn,
+            note: field('note').value,
+            meeting_url: field('url').value,
+            tariffs: Array.prototype.map.call(
+                form.querySelectorAll('[data-event-tariff]:checked'),
+                function (input) { return input.value; }
+            )
+        }).then(function () {
+            reloadOnDay(startsOn);
+        }).catch(function (error) {
+            button.disabled = false;
+            var explained = error.status === 422 && error.message !== 'request_failed';
+            setMessage(explained ? error.message : 'Не удалось сохранить событие. Попробуйте ещё раз.', true);
+        });
+    }
+
+    function removeEvent(button) {
+        var item = events.find(function (candidate) { return candidate.id === editingId; });
+        if (!item || !window.confirm('Удалить событие «' + item.title + '»?')) return;
+        button.disabled = true;
+        api(base + '/' + item.id + '/delete').then(function () {
+            reloadOnDay(selectedDay);
+        }).catch(function () {
+            button.disabled = false;
+            setMessage('Не удалось удалить событие. Попробуйте ещё раз.', true);
+        });
+    }
+
+    // Перезагрузка с выбранным днём в адресе: после сохранения панель
+    // открывается на том же числе, а не на пустом «выберите число».
+    function reloadOnDay(iso) {
+        var url = new URL(window.location.href);
+        if (iso) url.searchParams.set('day', iso);
+        window.location.replace(url.toString());
+    }
+
     document.addEventListener('click', function (event) {
-        if (event.target.closest('[data-event-toggle]')) { openForm(null); return; }
-        if (event.target.closest('[data-event-cancel]')) { form.hidden = true; return; }
-
-        var editButton = event.target.closest('[data-event-edit]');
-        if (editButton) { openForm(editButton.closest('[data-event-row]')); return; }
-
-        var saveButton = event.target.closest('[data-event-save]');
-        if (saveButton) {
-            var title = field('title').value.trim();
-            if (!title) { setMessage('Укажите название события.', true); return; }
-            var startsOn = field('starts').value;
-            var endsOn = field('ends').value || startsOn;
-            if (!startsOn) { setMessage('Укажите дату начала.', true); return; }
-            if (endsOn < startsOn) { setMessage('Окончание раньше начала.', true); return; }
-
-            var eventId = field('id').value;
-            saveButton.disabled = true;
-            api(base + (eventId ? '/' + eventId : ''), {
-                title: title,
-                kind: field('kind').value,
-                note: field('note').value,
-                starts_on: startsOn,
-                ends_on: endsOn,
-                meeting_url: field('url').value,
-                color: (form.querySelector('[data-event-color]:checked') || {}).value || 'purple',
-                tariffs: Array.prototype.map.call(
-                    form.querySelectorAll('[data-event-tariff]:checked'),
-                    function (input) { return input.value; }
-                )
-            }).then(function () {
-                window.location.reload();
-            }).catch(function (error) {
-                saveButton.disabled = false;
-                var explained = error.status === 422 && error.message !== 'request_failed';
-                setMessage(explained
-                    ? error.message
-                    : 'Не удалось сохранить событие. Попробуйте ещё раз.', true);
-            });
+        var dayCell = event.target.closest('[data-digest-cal] [data-day]');
+        if (dayCell) {
+            if (!form.hidden) { pickDate(dayCell.dataset.day); return; }
+            selectDay(dayCell.dataset.day, true);
             return;
         }
-
-        var actionButton = event.target.closest('[data-event-action]');
-        if (!actionButton) return;
-        var row = actionButton.closest('[data-event-row]');
-        if (!window.confirm('Удалить событие «' + row.dataset.title + '»?')) return;
-
-        actionButton.disabled = true;
-        api(base + '/' + row.dataset.id + '/delete').then(function () {
-            window.location.reload();
-        }).catch(function () {
-            actionButton.disabled = false;
-            window.alert('Действие не выполнено. Попробуйте ещё раз.');
-        });
+        var editButton = event.target.closest('[data-event-edit]');
+        if (editButton) {
+            var id = Number(editButton.dataset.eventEdit);
+            var item = events.find(function (candidate) { return candidate.id === id; });
+            if (!item) return;
+            if (!selectedDay || !(item.starts_on <= selectedDay && selectedDay <= item.ends_on)) {
+                selectDay(item.starts_on, false);
+            }
+            openForm(item);
+            panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+            return;
+        }
+        if (event.target.closest('[data-event-add]')) { openForm(null); return; }
+        if (event.target.closest('[data-event-cancel]')) { closeForm(); return; }
+        var saveButton = event.target.closest('[data-event-save]');
+        if (saveButton) { save(saveButton); return; }
+        var deleteButton = event.target.closest('[data-event-delete]');
+        if (deleteButton) { removeEvent(deleteButton); }
     });
+
+    field('multi').addEventListener('change', function () {
+        setMulti(field('multi').checked);
+        if (field('ends').value < field('starts').value) field('ends').value = field('starts').value;
+        paintPreview();
+    });
+    field('starts').addEventListener('change', paintPreview);
+    field('ends').addEventListener('change', paintPreview);
+
+    var startDay = new URL(window.location.href).searchParams.get('day');
+    if (startDay && calendar.querySelector('[data-day="' + startDay + '"]')) {
+        selectDay(startDay, false);
+    }
 })();
 </script>
 {% endblock %}

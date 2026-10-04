@@ -111,6 +111,24 @@
        Светлее янтарного портфолио и заметно желтее оранжевого голосового. */
     --blk-compare:      #CA8A04;
 
+    /* ── Палитра типов событий дайджеста (EVENT_PALETTE в models/tracker.py) ──
+       Владелец 04.10.2026: тип события = цвет, цвет выбирает Главный
+       преподаватель из этой палитры. Тройка на ключ: сам цвет (контур периода,
+       кружок-контур), мягкая заливка (таблетка периода, кружок дня) и чернила
+       поверх заливки — тёмные, AA на заливке. Стартовые оттенки — пастель из
+       макета «Путь к сотке»; когда Лиза пришлёт свои, меняются только значения
+       здесь, ключи и данные в базе остаются. */
+    --evt-sky: #3A9FDD; --evt-sky-soft: #BEE3FA; --evt-sky-ink: #0B4A6F;
+    --evt-lavender: #8B7CF0; --evt-lavender-soft: #DDD5FC; --evt-lavender-ink: #35268A;
+    --evt-pink: #E274AB; --evt-pink-soft: #FAD3E7; --evt-pink-ink: #7A1F4E;
+    --evt-violet: #8A5CE6; --evt-violet-soft: #CBB8F8; --evt-violet-ink: #2F1670;
+    --evt-orange: #EE8434; --evt-orange-soft: #FFDABA; --evt-orange-ink: #7A3407;
+    --evt-yellow: #D4A30C; --evt-yellow-soft: #FBE8A6; --evt-yellow-ink: #634800;
+    --evt-mint: #34A872; --evt-mint-soft: #C2ECD5; --evt-mint-ink: #0E5333;
+    --evt-teal: #1B9A9A; --evt-teal-soft: #B8E7E7; --evt-teal-ink: #0A4D4D;
+    --evt-coral: #E8634E; --evt-coral-soft: #FCCDC4; --evt-coral-ink: #7A2112;
+    --evt-gray: #858E9E; --evt-gray-soft: #DEE1E7; --evt-gray-ink: #2E3440;
+
     /* ── iOS re-skin palette (Apple HIG) — 28.08.2026: раньше повторялась
        одинаковым значением в каждом из 24 *_ios.css/login.html вместо
        общего токена, теперь единственный источник — здесь, локально
@@ -294,6 +312,19 @@
     --blue-on-soft: #D8B4FE;
     /* На тёмных фонах --blue 3.96–4.84; этот — от 4.64 (на --blue-tint) до 7.25. */
     --blue-text:    var(--blue-mid);
+
+    /* Палитра типов событий на тёмном холсте: пастельная заливка светилась бы
+       пятном, поэтому она — цвет, утопленный в поверхность, а чернила светлые. */
+    --evt-sky-soft: color-mix(in srgb, var(--evt-sky) 38%, var(--surface)); --evt-sky-ink: color-mix(in srgb, var(--evt-sky) 22%, white);
+    --evt-lavender-soft: color-mix(in srgb, var(--evt-lavender) 38%, var(--surface)); --evt-lavender-ink: color-mix(in srgb, var(--evt-lavender) 22%, white);
+    --evt-pink-soft: color-mix(in srgb, var(--evt-pink) 38%, var(--surface)); --evt-pink-ink: color-mix(in srgb, var(--evt-pink) 22%, white);
+    --evt-violet-soft: color-mix(in srgb, var(--evt-violet) 38%, var(--surface)); --evt-violet-ink: color-mix(in srgb, var(--evt-violet) 22%, white);
+    --evt-orange-soft: color-mix(in srgb, var(--evt-orange) 38%, var(--surface)); --evt-orange-ink: color-mix(in srgb, var(--evt-orange) 22%, white);
+    --evt-yellow-soft: color-mix(in srgb, var(--evt-yellow) 38%, var(--surface)); --evt-yellow-ink: color-mix(in srgb, var(--evt-yellow) 22%, white);
+    --evt-mint-soft: color-mix(in srgb, var(--evt-mint) 38%, var(--surface)); --evt-mint-ink: color-mix(in srgb, var(--evt-mint) 22%, white);
+    --evt-teal-soft: color-mix(in srgb, var(--evt-teal) 38%, var(--surface)); --evt-teal-ink: color-mix(in srgb, var(--evt-teal) 22%, white);
+    --evt-coral-soft: color-mix(in srgb, var(--evt-coral) 38%, var(--surface)); --evt-coral-ink: color-mix(in srgb, var(--evt-coral) 22%, white);
+    --evt-gray-soft: color-mix(in srgb, var(--evt-gray) 38%, var(--surface)); --evt-gray-ink: color-mix(in srgb, var(--evt-gray) 22%, white);
 
     /* iOS re-skin — Apple HIG dynamic colors (dark), тот же источник
        принципа, что и у светлых значений выше. */

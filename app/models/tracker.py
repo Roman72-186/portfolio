@@ -22,7 +22,7 @@ from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
@@ -377,35 +377,73 @@ class ScheduleDigestAssignee(Base):
     )
 
 
-# Типы событий в расписании — из макета созвона 17.08.
-EVENT_DEADLINE = "deadline"      # дедлайн сдачи
-EVENT_LESSON = "lesson"          # занятие
-EVENT_MOCK_EXAM = "mock_exam"    # окно пробника («с 25 по 30»)
-EVENT_BROADCAST = "broadcast"    # общий эфир
-
-EVENT_KINDS = (EVENT_DEADLINE, EVENT_LESSON, EVENT_MOCK_EXAM, EVENT_BROADCAST)
-
-EVENT_KIND_LABELS = {
-    EVENT_DEADLINE: "Дедлайн",
-    EVENT_LESSON: "Занятие",
-    EVENT_MOCK_EXAM: "Пробник",
-    EVENT_BROADCAST: "Общий эфир",
-}
-
-# Цвет метки события в календаре ученика (созвон 30.09.2026: «означать им
-# цвет… рыжим, жёлтым, либо голубое, розовое, фиолетовое — в нашей
-# стилистике»). Цвет выбирает команда у каждого события, от типа он не
-# зависит. Хранится ключом, а не числом: сам цвет — токен в program.css
-# (`.dgst-color--<ключ>`), и палитра меняется в одном месте.
-EVENT_COLOR_DEFAULT = "purple"
-EVENT_COLORS = ("orange", "yellow", "sky", "pink", "purple")
-EVENT_COLOR_LABELS = {
+# Палитра меток календаря дайджеста. Ключи хранятся в типе события, сам цвет —
+# токены `--evt-<ключ>` в base.css (классы `.dgst-color--<ключ>` в program.css).
+# Палитра закрытая: Главный преподаватель выбирает из неё, а не вводит hex —
+# цвет числом в шаблонах запрещает храповик переиспользования. Владелец
+# 04.10.2026: оттенки подберут с Лизой; тогда меняются только значения токенов,
+# ключи и данные в базе остаются.
+EVENT_PALETTE = {
+    "sky": "Голубой",
+    "lavender": "Лавандовый",
+    "pink": "Розовый",
+    "violet": "Фиолетовый",
     "orange": "Рыжий",
     "yellow": "Жёлтый",
-    "sky": "Голубой",
-    "pink": "Розовый",
-    "purple": "Фиолетовый",
+    "mint": "Мятный",
+    "teal": "Бирюзовый",
+    "coral": "Коралловый",
+    "gray": "Серый",
 }
+EVENT_COLOR_DEFAULT = "violet"
+
+# Как метка рисуется в календаре: заливка или контур. Контур нужен длинным
+# окнам: кружок однодневного события внутри периода остаётся виден (9-е число
+# внутри «загрузки работ» в макете «Путь к сотке»).
+EVENT_STYLE_FILL = "fill"
+EVENT_STYLE_RING = "ring"
+EVENT_STYLES = {EVENT_STYLE_FILL: "Заливка", EVENT_STYLE_RING: "Контур"}
+
+# Типы, с которых начинается база: их же сеет миграция 0c4e9d2b7a61 (у неё своя
+# замороженная копия), отсюда их берёт стенд `scripts/phone_smoke.py`.
+DEFAULT_EVENT_TYPES = (
+    ("Публикация уроков и заданий", "sky", EVENT_STYLE_FILL),
+    ("Дедлайн", "pink", EVENT_STYLE_FILL),
+    ("Обратная связь", "mint", EVENT_STYLE_FILL),
+    ("Пробник", "teal", EVENT_STYLE_RING),
+    ("Занятие", "violet", EVENT_STYLE_FILL),
+    ("Период сдачи контрольных", "coral", EVENT_STYLE_RING),
+    ("Общий эфир", "orange", EVENT_STYLE_FILL),
+)
+
+
+class ScheduleEventType(Base):
+    """Тип события дайджеста: название + цвет метки + заливка или контур.
+
+    Владелец 04.10.2026: «выбираю тип этого события, которому назначен
+    определённый цвет, чтобы сделать сразу связку тип мероприятия + цвет»;
+    типы и цвета настраивает Главный преподаватель на своём экране. До этого
+    тип был фиксированной строкой в коде, а цвет выбирался у каждого события
+    отдельно (01.10.2026) — теперь цвет у события только от типа.
+
+    Тип, на который ссылаются события, не удаляется, а скрывается
+    (`archived_at`): старые события рисуются как были, в форму нового события
+    он не попадает.
+    """
+
+    __tablename__ = "schedule_event_types"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    # Ключ из EVENT_PALETTE, стиль из EVENT_STYLES. Проверка — в схеме роута
+    # и сервисе, не в БД.
+    color: Mapped[str] = mapped_column(String(16), nullable=False, default=EVENT_COLOR_DEFAULT)
+    style: Mapped[str] = mapped_column(String(8), nullable=False, default=EVENT_STYLE_FILL)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class ScheduleEvent(Base):
@@ -418,7 +456,14 @@ class ScheduleEvent(Base):
     digest_id: Mapped[int] = mapped_column(
         ForeignKey("schedule_digests.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Тип задаёт и подпись, и цвет метки. RESTRICT: тип с событиями удалить
+    # нельзя, только скрыть — иначе событие у ученика осталось бы без цвета.
+    type_id: Mapped[int] = mapped_column(
+        ForeignKey("schedule_event_types.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    # joined: календарь и список читают тип у каждого события, отдельный
+    # запрос на событие поймал бы tests/test_performance.py.
+    type: Mapped[ScheduleEventType] = relationship(ScheduleEventType, lazy="joined")
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
@@ -428,10 +473,6 @@ class ScheduleEvent(Base):
     # Ссылка на созвон — по требованию созвона 17.08 зашивается в кнопку, а не
     # показывается текстом, который надо копировать.
     meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # Ключ из EVENT_COLORS. Проверка — в схеме роута, не в БД.
-    color: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=EVENT_COLOR_DEFAULT, server_default=EVENT_COLOR_DEFAULT
-    )
 
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(

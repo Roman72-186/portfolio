@@ -11,9 +11,15 @@ from app.services.tracker import (
     publish_digest,
     set_digest_tags,
 )
+from app.services.schedule_event_types import create_type
 from app.services.tz import today_msk
 
 PAGE = "/cabinet/tracker"
+
+
+def _type(db, name="Пробник", color="teal", style="ring"):
+    """Тип события: от него у события и подпись, и цвет (04.10.2026)."""
+    return create_type(db, name=name, color=color, style=style)
 
 
 def _tag(db, name: str) -> Tag:
@@ -39,7 +45,7 @@ def test_student_sees_published_digest_addressed_to_them(client, db, user_factor
     )
     set_digest_tags(db, digest, [tag.id])
     create_event(
-        db, digest.id, kind="mock_exam", title="Окно пробника", note=None,
+        db, digest.id, type_id=_type(db).id, title="Окно пробника", note=None,
         starts_on=today, ends_on=today, meeting_url=None,
     )
     publish_digest(digest, user_id=student.id)
@@ -132,7 +138,7 @@ def test_digest_lives_on_its_own_tab(client, db, user_factory, session_factory):
         assign_to_all=True, user_id=student.id, theme="Композиция",
     )
     create_event(
-        db, digest.id, kind="broadcast", title="Общий эфир", note=None,
+        db, digest.id, type_id=_type(db, "Общий эфир", "orange", "fill").id, title="Общий эфир", note=None,
         starts_on=today, ends_on=today, meeting_url=None,
     )
     publish_digest(digest, user_id=student.id)
@@ -198,7 +204,7 @@ def test_event_list_shows_dates_and_kind(client, db, user_factory, session_facto
     )
     start = date(today.year, today.month, 1)
     create_event(
-        db, digest.id, kind="mock_exam", title="Окно пробника", note=None,
+        db, digest.id, type_id=_type(db).id, title="Окно пробника", note=None,
         starts_on=start, ends_on=start + timedelta(days=5), meeting_url=None,
     )
     publish_digest(digest, user_id=student.id)
@@ -225,8 +231,8 @@ def _digest_with_events(db, author_id, events):
     )
     for title, color, tariffs in events:
         event = create_event(
-            db, digest.id, kind="lesson", title=title, note=None,
-            starts_on=today, ends_on=today, meeting_url=None, color=color,
+            db, digest.id, type_id=_type(db, f"Тип {color}", color, "fill").id, title=title,
+            note=None, starts_on=today, ends_on=today, meeting_url=None,
         )
         set_event_tariffs(db, event, tariffs)
     publish_digest(digest, user_id=author_id)
@@ -234,9 +240,10 @@ def _digest_with_events(db, author_id, events):
     return digest
 
 
-def test_calendar_grid_marks_event_day_with_event_color(client, db, user_factory, session_factory):
-    """Сетка месяца над списком: день события помечен кружком цвета события,
-    тот же кружок стоит в списке рядом с датой — по нему читается цвет."""
+def test_calendar_grid_marks_event_day_with_type_color(client, db, user_factory, session_factory):
+    """Компактная сетка месяца над списком (макет «Путь к сотке», 04.10.2026):
+    однодневное событие — кружок вокруг числа цвета его типа, в списке под
+    сеткой — плашка дат того же цвета и имя типа словом."""
     student = user_factory(vk_id=430_020, name="Ученик", role_name="ученик")
     client.cookies.set("session_id", session_factory(student).id)
     _digest_with_events(db, student.id, [("Эфир с преподавателем", "orange", [])])
@@ -244,9 +251,14 @@ def test_calendar_grid_marks_event_day_with_event_color(client, db, user_factory
     response = client.get(PAGE)
 
     assert response.status_code == 200
-    assert 'class="prg-grid dgst-grid"' in response.text
+    assert 'class="dgst-cal"' in response.text
     assert 'aria-label="Календарь месяца"' in response.text
-    assert response.text.count("dgst-dot dgst-color--orange") == 2  # клетка и строка списка
+    assert "dgst-cal-num has-dot is-fill dgst-color--orange" in response.text
+    assert "dgst-chip is-fill dgst-color--orange" in response.text
+    assert "Тип orange" in response.text
+    # У ученика клетка — не кнопка: проваливаться ему некуда.
+    assert 'class="dgst-cal-day' in response.text
+    assert "dgst-cal--edit" not in response.text
     assert f'{today_msk().day} число: Эфир с преподавателем' in response.text
     assert "/static/css/program.css?v=" in response.text
 
@@ -257,7 +269,7 @@ def test_student_sees_only_common_events_and_events_of_own_tariff(
     student = user_factory(vk_id=430_021, name="Ученик", role_name="ученик", tariff="Я САМ")
     client.cookies.set("session_id", session_factory(student).id)
     _digest_with_events(db, student.id, [
-        ("Общий созвон", "purple", []),
+        ("Общий созвон", "violet", []),
         ("Разбор для Я сам", "sky", ["Я САМ"]),
         ("Разбор для Я с вами", "pink", ["Я С ВАМИ"]),
     ])
@@ -275,7 +287,7 @@ def test_student_without_tariff_sees_only_common_events(client, db, user_factory
     student = user_factory(vk_id=430_022, name="Ученик", role_name="ученик", tariff=None)
     client.cookies.set("session_id", session_factory(student).id)
     _digest_with_events(db, student.id, [
-        ("Общий созвон", "purple", []),
+        ("Общий созвон", "violet", []),
         ("Только максимум", "yellow", ["УВЕРЕННЫЙ МАКСИМУМ"]),
     ])
 

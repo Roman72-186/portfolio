@@ -145,8 +145,17 @@ def test_publish_unpublish_and_delete_lifecycle(client, db, user_factory, sessio
 
 # ── События ──────────────────────────────────────────────────────────────
 
+def _type(db, name="Пробник", color="teal", style="ring"):
+    from app.services.schedule_event_types import create_type
+
+    event_type = create_type(db, name=name, color=color, style=style)
+    db.commit()
+    return event_type
+
+
 def test_events_crud_inside_digest(client, db, user_factory, session_factory):
     _staff_client(client, user_factory, session_factory)
+    mock_type = _type(db)
     create_resp = client.post(
         PAGE,
         json={"title": "Ноябрь", "year": 2026, "month": 11, "assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
@@ -159,7 +168,7 @@ def test_events_crud_inside_digest(client, db, user_factory, session_factory):
     create_event_resp = client.post(
         f"{PAGE}/{digest_id}/events",
         json={
-            "kind": "mock_exam", "title": "Окно пробника",
+            "type_id": mock_type.id, "title": "Окно пробника",
             "note": None, "starts_on": "2026-11-25", "ends_on": "2026-11-30",
             "meeting_url": None, "sort_order": 0,
         },
@@ -168,12 +177,13 @@ def test_events_crud_inside_digest(client, db, user_factory, session_factory):
     event_id = create_event_resp.json()["event_id"]
     event = db.get(ScheduleEvent, event_id)
     assert event.digest_id == digest_id
+    assert event.type_id == mock_type.id
     assert event.starts_on.isoformat() == "2026-11-25"
 
     update_resp = client.post(
         f"{PAGE}/{digest_id}/events/{event_id}",
         json={
-            "kind": "mock_exam", "title": "Окно пробника (сдвинуто)",
+            "type_id": mock_type.id, "title": "Окно пробника (сдвинуто)",
             "note": "Финал", "starts_on": "2026-11-26", "ends_on": "2026-11-30",
             "meeting_url": "https://example.com/call", "sort_order": 0,
         },
@@ -188,8 +198,9 @@ def test_events_crud_inside_digest(client, db, user_factory, session_factory):
     assert db.get(ScheduleEvent, event_id) is None
 
 
-def test_event_ends_before_starts_is_rejected(client, user_factory, session_factory):
+def test_event_ends_before_starts_is_rejected(client, db, user_factory, session_factory):
     _staff_client(client, user_factory, session_factory)
+    deadline = _type(db, "Дедлайн", "pink", "fill")
     create_resp = client.post(
         PAGE,
         json={"title": "Декабрь", "year": 2026, "month": 12, "assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
@@ -199,7 +210,7 @@ def test_event_ends_before_starts_is_rejected(client, user_factory, session_fact
     response = client.post(
         f"{PAGE}/{digest_id}/events",
         json={
-            "kind": "deadline", "title": "Дедлайн",
+            "type_id": deadline.id, "title": "Дедлайн",
             "note": None, "starts_on": "2026-12-10", "ends_on": "2026-12-05",
             "meeting_url": None, "sort_order": 0,
         },
@@ -212,6 +223,7 @@ def test_event_meeting_url_must_be_http_or_https(client, db, user_factory, sessi
     ученика из адресатов дайджеста. Схема `javascript:` выполнила бы код у
     того, кто нажмёт; CSP с `'unsafe-inline'` её не останавливает."""
     _staff_client(client, user_factory, session_factory)
+    deadline = _type(db, "Дедлайн", "pink", "fill")
     create_resp = client.post(
         PAGE,
         json={"title": "Октябрь", "year": 2026, "month": 10, "assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
@@ -221,7 +233,7 @@ def test_event_meeting_url_must_be_http_or_https(client, db, user_factory, sessi
     response = client.post(
         f"{PAGE}/{digest_id}/events",
         json={
-            "kind": "deadline", "title": "Созвон",
+            "type_id": deadline.id, "title": "Созвон",
             "note": None, "starts_on": "2026-10-10", "ends_on": "2026-10-10",
             "meeting_url": "javascript:alert(document.cookie)", "sort_order": 0,
         },
@@ -231,7 +243,7 @@ def test_event_meeting_url_must_be_http_or_https(client, db, user_factory, sessi
     assert db.query(ScheduleEvent).filter_by(digest_id=digest_id).count() == 0
 
 
-# ── Цвет и тарифы события (созвон 30.09.2026, владелец 01.10.2026) ──────────
+# ── Тип события задаёт цвет; тарифы события (04.10.2026, 01.10.2026) ────────
 
 def _digest_id(client):
     resp = client.post(
@@ -241,62 +253,214 @@ def _digest_id(client):
     return resp.json()["digest_id"]
 
 
-def _event_body(**extra):
+def _event_body(type_id, **extra):
     body = {
-        "kind": "lesson", "title": "Разбор работ", "note": "Подготовьте финал",
+        "type_id": type_id, "title": "Разбор работ", "note": "Подготовьте финал",
         "starts_on": "2026-10-07", "ends_on": "2026-10-07", "meeting_url": None, "sort_order": 0,
     }
     body.update(extra)
     return body
 
 
-def test_event_keeps_color_and_tariffs_and_page_shows_the_calendar(client, db, user_factory, session_factory):
+def test_event_color_comes_from_its_type_and_tariffs_are_kept(client, db, user_factory, session_factory):
     from app.services.tracker import event_tariffs_map
 
     _staff_client(client, user_factory, session_factory)
+    lesson = _type(db, "Занятие", "sky", "fill")
+    broadcast = _type(db, "Общий эфир", "orange", "fill")
     digest_id = _digest_id(client)
 
     created = client.post(
         f"{PAGE}/{digest_id}/events",
-        json=_event_body(color="sky", tariffs=["Я С ВАМИ", "УВЕРЕННЫЙ МАКСИМУМ"]),
+        json=_event_body(lesson.id, tariffs=["Я С ВАМИ", "УВЕРЕННЫЙ МАКСИМУМ"]),
     )
     assert created.status_code == 200
     event_id = created.json()["event_id"]
-    event = db.get(ScheduleEvent, event_id)
-    assert event.color == "sky"
     assert sorted(event_tariffs_map(db, [event_id])[event_id]) == ["УВЕРЕННЫЙ МАКСИМУМ", "Я С ВАМИ"]
 
     page = client.get(f"{PAGE}/{digest_id}/events")
     assert page.status_code == 200
-    assert 'data-color="sky"' in page.text
-    assert "Календарь глазами ученика" in page.text
-    assert 'class="prg-grid dgst-grid"' in page.text
+    assert "dgst-cal dgst-cal--edit" in page.text
+    assert 'data-day="2026-10-07"' in page.text
     assert "dgst-color--sky" in page.text
 
-    # Снятые галочки — событие снова «всем тарифам».
-    updated = client.post(f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(color="orange", tariffs=[]))
+    # Сменили тип — сменился цвет; снятые галочки — снова «всем тарифам».
+    updated = client.post(f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(broadcast.id, tariffs=[]))
     assert updated.status_code == 200
-    db.refresh(event)
-    assert event.color == "orange"
+    page = client.get(f"{PAGE}/{digest_id}/events")
+    assert "dgst-color--orange" in page.text
     assert event_tariffs_map(db, [event_id]) == {}
 
 
-def test_event_without_color_gets_brand_purple(client, db, user_factory, session_factory):
+def test_recolouring_a_type_recolours_its_events(client, db, user_factory, session_factory):
+    """Связка «тип + цвет» (владелец 04.10.2026): цвет у события не свой."""
     _staff_client(client, user_factory, session_factory)
+    lesson = _type(db, "Занятие", "sky", "fill")
+    digest_id = _digest_id(client)
+    client.post(f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id))
+
+    response = client.post(f"{PAGE}/types/{lesson.id}", json={"name": "Занятие", "color": "pink", "style": "fill"})
+
+    assert response.status_code == 200
+    page = client.get(f"{PAGE}/{digest_id}/events")
+    assert "dgst-color--pink" in page.text
+    assert "dgst-color--sky" not in page.text
+
+
+def test_event_rejects_unknown_type_and_unknown_tariff(client, db, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+    lesson = _type(db, "Занятие", "sky", "fill")
     digest_id = _digest_id(client)
 
-    created = client.post(f"{PAGE}/{digest_id}/events", json=_event_body())
+    bad_type = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(9999))
+    bad_tariff = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id, tariffs=["ПРЕМИУМ"]))
+    old_color_field = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id, color="sky"))
 
-    assert created.status_code == 200
-    assert db.get(ScheduleEvent, created.json()["event_id"]).color == "purple"
-
-
-def test_event_rejects_unknown_color_and_unknown_tariff(client, user_factory, session_factory):
-    _staff_client(client, user_factory, session_factory)
-    digest_id = _digest_id(client)
-
-    bad_color = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(color="#ff0000"))
-    bad_tariff = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(tariffs=["ПРЕМИУМ"]))
-
-    assert bad_color.status_code == 422
+    assert bad_type.status_code == 422
     assert bad_tariff.status_code == 422
+    assert old_color_field.status_code == 422
+
+
+def test_hidden_type_is_not_offered_but_old_event_keeps_it(client, db, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+    old = _type(db, "Старый тип", "gray", "fill")
+    digest_id = _digest_id(client)
+    event_id = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(old.id)).json()["event_id"]
+
+    assert client.post(f"{PAGE}/types/{old.id}/archive").status_code == 200
+
+    # Новое событие на скрытый тип не заводится…
+    assert client.post(f"{PAGE}/{digest_id}/events", json=_event_body(old.id)).status_code == 422
+    # …а старое правится, не меняя тип.
+    edited = client.post(
+        f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(old.id, title="Переименовано")
+    )
+    assert edited.status_code == 200
+    page = client.get(f"{PAGE}/{digest_id}/events")
+    assert f'name="event-type" value="{old.id}"' not in page.text
+    assert "dgst-color--gray" in page.text
+
+
+# ── Экран типов событий ────────────────────────────────────────────────────
+
+def test_types_page_lists_types_with_usage(client, db, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+    used = _type(db, "Пробник", "teal", "ring")
+    _type(db, "Обратная связь", "mint", "fill")
+    digest_id = _digest_id(client)
+    client.post(f"{PAGE}/{digest_id}/events", json=_event_body(used.id))
+
+    page = client.get(f"{PAGE}/types")
+
+    assert page.status_code == 200
+    assert "Пробник" in page.text and "Обратная связь" in page.text
+    assert "событий: 1" in page.text
+    assert "не используется" in page.text
+    assert "dgst-chip is-ring dgst-color--teal" in page.text
+
+
+def test_type_create_update_validation(client, db, user_factory, session_factory):
+    from app.models.tracker import ScheduleEventType
+
+    _staff_client(client, user_factory, session_factory)
+    created = client.post(f"{PAGE}/types", json={"name": "  Публикация  ", "color": "sky", "style": "fill"})
+    assert created.status_code == 200
+    event_type = db.get(ScheduleEventType, created.json()["type_id"])
+    assert event_type.name == "Публикация"
+
+    assert client.post(f"{PAGE}/types", json={"name": "Х", "color": "#ff0000", "style": "fill"}).status_code == 422
+    assert client.post(f"{PAGE}/types", json={"name": "Х", "color": "sky", "style": "dashed"}).status_code == 422
+    assert client.post(f"{PAGE}/types", json={"name": "   ", "color": "sky", "style": "fill"}).status_code == 422
+
+    updated = client.post(f"{PAGE}/types/{event_type.id}", json={"name": "Публикация уроков", "color": "violet", "style": "ring"})
+    assert updated.status_code == 200
+    db.refresh(event_type)
+    assert (event_type.name, event_type.color, event_type.style) == ("Публикация уроков", "violet", "ring")
+
+
+def test_used_type_cannot_be_deleted_only_hidden(client, db, user_factory, session_factory):
+    from app.models.tracker import ScheduleEventType
+
+    _staff_client(client, user_factory, session_factory)
+    used = _type(db, "Пробник", "teal", "ring")
+    unused = _type(db, "Лишний", "gray", "fill")
+    digest_id = _digest_id(client)
+    client.post(f"{PAGE}/{digest_id}/events", json=_event_body(used.id))
+
+    refused = client.post(f"{PAGE}/types/{used.id}/delete")
+    assert refused.status_code == 409
+    assert refused.json()["error"] == "type_in_use"
+    assert db.get(ScheduleEventType, used.id) is not None
+
+    assert client.post(f"{PAGE}/types/{unused.id}/delete").status_code == 200
+    db.expire_all()
+    assert db.get(ScheduleEventType, unused.id) is None
+
+    assert client.post(f"{PAGE}/types/{used.id}/archive").status_code == 200
+    db.refresh(used)
+    assert used.archived_at is not None
+    assert client.post(f"{PAGE}/types/{used.id}/restore").status_code == 200
+    db.refresh(used)
+    assert used.archived_at is None
+
+
+def test_type_move_changes_order(client, db, user_factory, session_factory):
+    from app.services.schedule_event_types import list_types
+
+    _staff_client(client, user_factory, session_factory)
+    first = _type(db, "Первый", "sky", "fill")
+    second = _type(db, "Второй", "pink", "fill")
+
+    assert client.post(f"{PAGE}/types/{second.id}/move", json={"direction": -1}).status_code == 200
+
+    db.expire_all()
+    assert [t.name for t in list_types(db)] == ["Второй", "Первый"]
+    assert first.id != second.id
+
+
+def test_moderator_and_curator_cannot_touch_types(client, db, user_factory, session_factory):
+    event_type = _type(db)
+    _staff_client(client, user_factory, session_factory, role_name="модератор", vk_id=420_013)
+    assert client.get(f"{PAGE}/types").status_code == 403
+    assert client.post(f"{PAGE}/types/{event_type.id}/archive").status_code == 403
+
+    _staff_client(client, user_factory, session_factory, role_name="куратор", vk_id=420_014)
+    assert client.post(f"{PAGE}/types", json={"name": "Х", "color": "sky", "style": "fill"}).status_code == 403
+
+
+def test_digest_scripts_call_only_defined_functions_and_parse(client, db, user_factory, session_factory):
+    """Правило 11: зелёный сервер не значит рабочие кнопки. Каждая функция,
+    которую зовут скрипты редактора месяца и экрана типов, объявлена, а сам
+    код разбирается `node --check` (тот же сторож, что у страницы дня)."""
+    import pathlib
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+
+    from test_program_day_script import KNOWN_GLOBALS, _strip_noise
+
+    _staff_client(client, user_factory, session_factory)
+    _type(db, "Занятие", "violet", "fill")
+    digest_id = _digest_id(client)
+    pages = [client.get(f"{PAGE}/{digest_id}/events").text, client.get(f"{PAGE}/types").text]
+    node = shutil.which("node")
+
+    for html in pages:
+        scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+        assert scripts
+        for raw in scripts:
+            js = _strip_noise(raw)
+            declared = set(re.findall(r"function\s+(\w+)", js))
+            declared |= set(re.findall(r"\bvar\s+(\w+)", js))
+            for params in re.findall(r"function[^(]*\(([^)]*)\)", js):
+                declared |= {p.strip() for p in params.split(",") if p.strip()}
+            called = set(re.findall(r"(?<![.\w$])([A-Za-z_$]\w*)\s*\(", js))
+            missing = sorted(called - declared - KNOWN_GLOBALS)
+            assert not missing, f"вызовы без определения: {missing}"
+            if node:
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = pathlib.Path(tmp) / "digest.js"
+                    path.write_text(raw, encoding="utf-8")
+                    check = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
+                    assert check.returncode == 0, check.stderr

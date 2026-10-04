@@ -31,7 +31,7 @@ from app.models.tracker import (
     SOURCE_LEARNING_TOPIC,
     STATUS_DONE,
     STATUS_OPEN,
-    EVENT_COLOR_DEFAULT,
+    EVENT_STYLE_RING,
     ScheduleDigest,
     ScheduleDigestAssignee,
     ScheduleDigestTag,
@@ -1539,25 +1539,23 @@ def create_event(
     db: Session,
     digest_id: int,
     *,
-    kind: str,
+    type_id: int,
     title: str,
     note: str | None,
     starts_on: date,
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
-    color: str = EVENT_COLOR_DEFAULT,
 ) -> ScheduleEvent:
     event = ScheduleEvent(
         digest_id=digest_id,
-        kind=kind,
+        type_id=type_id,
         title=title,
         note=note,
         starts_on=starts_on,
         ends_on=ends_on,
         meeting_url=meeting_url,
         sort_order=sort_order,
-        color=color,
     )
     db.add(event)
     db.flush()
@@ -1567,23 +1565,21 @@ def create_event(
 def update_event(
     event: ScheduleEvent,
     *,
-    kind: str,
+    type_id: int,
     title: str,
     note: str | None,
     starts_on: date,
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
-    color: str = EVENT_COLOR_DEFAULT,
 ) -> None:
-    event.kind = kind
+    event.type_id = type_id
     event.title = title
     event.note = note
     event.starts_on = starts_on
     event.ends_on = ends_on
     event.meeting_url = meeting_url
     event.sort_order = sort_order
-    event.color = color
 
 
 def set_event_tariffs(db: Session, event: ScheduleEvent, tariffs: list[str]) -> None:
@@ -1677,18 +1673,35 @@ def format_event_dates(event: ScheduleEvent) -> str:
     )
 
 
+def _layer_winner(events: list[ScheduleEvent]) -> ScheduleEvent:
+    """Кто рисуется, если в одном слое дня встретились два события.
+
+    Короче — конкретнее: недельное окно внутри месячного видно, а месячное
+    продолжается по краям. Остальные события дня читаются в списке под
+    календарём, у клетки для них флаг `more`.
+    """
+    return min(
+        events,
+        key=lambda e: ((e.ends_on - e.starts_on).days, e.sort_order, e.id),
+    )
+
+
 def digest_calendar(
     digest: ScheduleDigest, events: list[ScheduleEvent], *, today: date | None = None
 ) -> list[dict]:
-    """Сетка месяца дайджеста с событиями, разложенными по дням.
+    """Компактная сетка месяца дайджеста с метками, разложенными по дням.
 
-    Вернулась 01.10.2026 (созвон 30.09: «кружочки, отмечены даты… пояснения за
-    событием», владелец 01.10 — сетка, цвета и тарифы у события; отменяет
-    «календарь не нужен» от 17.09). Событие-диапазон («пробник с 25 по 30»)
-    закрашивает каждый свой день: ученик смотрит на число и должен видеть,
-    идёт ли окно сегодня. Дни чужих месяцев в сетке есть (иначе недели не
-    выстроятся в строки), но событий в них нет — у соседнего месяца свой
-    дайджест.
+    Вид — макет «Путь к сотке» (владелец 04.10.2026): однодневное событие —
+    кружок вокруг числа, период — «таблетка» через дни. У дня три слоя:
+    `fill` — заливка периода, `ring` — контур периода, `dot` — однодневное
+    событие поверх (кружок занятия внутри окна загрузки работ). Слой периода
+    несёт позицию `start` / `mid` / `end` / `solo`: строку недели открывает
+    понедельник, закрывает воскресенье, так период, переходящий на следующую
+    неделю, рисуется двумя таблетками без абсолютного позиционирования.
+
+    Дни соседних месяцев в сетке есть (недели строятся целиком) и события
+    этого дайджеста на них рисуются: «отработка с 30 марта по 1 апреля» в
+    апрельском дайджесте видна целиком, как в макете.
     """
     days = month_days(digest.year, digest.month, today)
     by_day: dict[str, list[ScheduleEvent]] = {}
@@ -1699,12 +1712,32 @@ def digest_calendar(
         while cursor <= event.ends_on:
             by_day.setdefault(cursor.isoformat(), []).append(event)
             cursor += timedelta(days=1)
+
     for day in days:
-        day["events"] = by_day.get(day["iso"], []) if day["in_month"] else []
-        # Один цвет — одна метка в клетке, даже если событий этого цвета в дне
-        # несколько: на телефоне в клетку больше не помещается, названия
-        # ученик читает в списке под календарём.
-        day["colors"] = list(dict.fromkeys(event.color for event in day["events"]))
+        day_events = by_day.get(day["iso"], [])
+        day["events"] = day_events
+        singles = [e for e in day_events if e.starts_on == e.ends_on]
+        rings = [e for e in day_events if e.starts_on != e.ends_on and e.type.style == EVENT_STYLE_RING]
+        fills = [e for e in day_events if e.starts_on != e.ends_on and e.type.style != EVENT_STYLE_RING]
+        shown = 0
+        for layer, candidates in (("fill", fills), ("ring", rings)):
+            day[layer] = None
+            if not candidates:
+                continue
+            event = _layer_winner(candidates)
+            opens = event.starts_on == day["date"] or day["dow"] == 1
+            closes = event.ends_on == day["date"] or day["dow"] == 7
+            day[layer] = {
+                "color": event.type.color,
+                "pos": "solo" if opens and closes else "start" if opens else "end" if closes else "mid",
+            }
+            shown += 1
+        day["dot"] = None
+        if singles:
+            event = _layer_winner(singles)
+            day["dot"] = {"color": event.type.color, "style": event.type.style}
+            shown += 1
+        day["more"] = len(day_events) > shown
     return days
 
 

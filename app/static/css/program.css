@@ -77,43 +77,112 @@
     margin: 14px 0 0; color: var(--muted); font-size: 12px;
 }
 
-/* ── Календарь дайджеста (ученик и предпросмотр у преподавателя) ───────── */
-/* Вернулся 01.10.2026 (созвон 30.09, владелец 01.10: сетка + цвет + тарифы у
-   события). Та же сетка, что у преподавателя, клетка не ссылка. Метка — кружок
-   цвета события; цвет выбирает команда у каждого события, палитра — токены
-   base.css, своих цветов числом здесь нет. */
+/* ── Календарь дайджеста (ученик и редактор у преподавателя) ─────────── */
+/* Макет «Путь к сотке» (владелец 04.10.2026): «видят месяц целиком просто с
+   датами, не нужно больших ячеек». Своя компактная сетка, а не .prg-grid:
+   у той ячейки 48–84px и тёмные выходные — это рабочий календарь
+   преподавателя, а здесь расписание, которое ученик охватывает одним
+   взглядом. Отменяет «второй сетки не заводить» от 16.09.2026.
 
-.dgst-color--orange { --dgst-color: var(--blk-media); }
-.dgst-color--yellow { --dgst-color: var(--blk-compare); }
-.dgst-color--sky    { --dgst-color: var(--blk-link); }
-.dgst-color--pink   { --dgst-color: var(--blk-question); }
-.dgst-color--purple { --dgst-color: var(--blue); }
+   Клетка — число в кружке. Под ним два слоя периода: заливка (.dgst-band--fill)
+   и контур (.dgst-band--ring), поверх — кружок однодневного события
+   (.dgst-cal-num.has-dot). Сегмент периода тянется на всю ширину клетки, зазора
+   между колонками нет — иначе таблетка рвётся; скругляются только `start`/
+   `end`/`solo` (позицию считает services/tracker.py::digest_calendar). Цвет —
+   из типа события через .dgst-color--<ключ>, числом здесь не пишется. */
 
-.dgst-grid { margin-bottom: 4px; }
-/* Клетка без ссылки: подсветку под курсором убираем, она обещала бы переход. */
-.prg-day--static:hover { border-color: var(--line); box-shadow: none; }
-.prg-day--static[data-dow="6"]:hover,
-.prg-day--static[data-dow="7"]:hover { border-color: var(--blue-mid); }
-/* Прошедшие дни гасим слабее, чем в календаре преподавателя: по этому
-   календарю ученик вспоминает, что уже было, метка должна читаться. */
-.dgst .prg-day.is-past { opacity: .78; }
+.dgst-color--sky { --dgst-color: var(--evt-sky); --dgst-soft: var(--evt-sky-soft); --dgst-ink: var(--evt-sky-ink); }
+.dgst-color--lavender { --dgst-color: var(--evt-lavender); --dgst-soft: var(--evt-lavender-soft); --dgst-ink: var(--evt-lavender-ink); }
+.dgst-color--pink { --dgst-color: var(--evt-pink); --dgst-soft: var(--evt-pink-soft); --dgst-ink: var(--evt-pink-ink); }
+.dgst-color--violet { --dgst-color: var(--evt-violet); --dgst-soft: var(--evt-violet-soft); --dgst-ink: var(--evt-violet-ink); }
+.dgst-color--orange { --dgst-color: var(--evt-orange); --dgst-soft: var(--evt-orange-soft); --dgst-ink: var(--evt-orange-ink); }
+.dgst-color--yellow { --dgst-color: var(--evt-yellow); --dgst-soft: var(--evt-yellow-soft); --dgst-ink: var(--evt-yellow-ink); }
+.dgst-color--mint { --dgst-color: var(--evt-mint); --dgst-soft: var(--evt-mint-soft); --dgst-ink: var(--evt-mint-ink); }
+.dgst-color--teal { --dgst-color: var(--evt-teal); --dgst-soft: var(--evt-teal-soft); --dgst-ink: var(--evt-teal-ink); }
+.dgst-color--coral { --dgst-color: var(--evt-coral); --dgst-soft: var(--evt-coral-soft); --dgst-ink: var(--evt-coral-ink); }
+.dgst-color--gray { --dgst-color: var(--evt-gray); --dgst-soft: var(--evt-gray-soft); --dgst-ink: var(--evt-gray-ink); }
 
-.dgst-marks { display: flex; flex-wrap: wrap; gap: 4px; }
-.dgst-dot {
-    display: inline-block; flex: none; width: 12px; height: 12px;
-    border-radius: 50%; background: var(--dgst-color, var(--blue));
+.dgst-cal {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+    column-gap: 0; row-gap: 4px; max-width: 420px;
 }
-/* На тёмных клетках выходных кружок без обводки сливается с фоном. */
-.prg-day[data-dow="6"] .dgst-dot,
-.prg-day[data-dow="7"] .dgst-dot { box-shadow: 0 0 0 1.5px white; }
-.dgst-event-date .dgst-dot { margin-right: 6px; vertical-align: 0; }
+.dgst-cal-dow {
+    padding: 4px 0 6px; text-align: center; color: var(--muted);
+    font: 700 11px/1 var(--font-body); letter-spacing: .06em;
+}
+.dgst-cal-day {
+    position: relative; display: grid; place-items: center;
+    height: 40px; padding: 0; color: var(--text);
+    background: none; border: 0; font: inherit;
+}
+.dgst-band { position: absolute; inset: 5px 0; pointer-events: none; }
+.dgst-band--fill { background: var(--dgst-soft); }
+/* Контур чуть шире заливки: если в день попали оба периода, контур обнимает
+   заливку, а не прячется под ней. */
+.dgst-band--ring { inset: 3px 0; border: 1.5px solid var(--dgst-color); border-left: 0; border-right: 0; }
+.dgst-band--start { left: 3px; border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.dgst-band--end   { right: 3px; border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.dgst-band--solo  { left: 3px; right: 3px; border-radius: var(--r-pill); }
+.dgst-band--ring.dgst-band--start,
+.dgst-band--ring.dgst-band--solo { border-left: 1.5px solid var(--dgst-color); }
+.dgst-band--ring.dgst-band--end,
+.dgst-band--ring.dgst-band--solo { border-right: 1.5px solid var(--dgst-color); }
+
+.dgst-cal-num {
+    position: relative; display: grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    font: 600 14px/1 var(--font-body); font-variant-numeric: tabular-nums;
+}
+/* Цвет заливки висит классом на самой клетке: число поверх таблетки берёт её
+   чернила, а кружок дня и контур несут свои классы цвета и перекрывают их. */
+.dgst-cal-day.has-fill .dgst-cal-num { color: var(--dgst-ink); }
+.dgst-cal-num.has-dot.is-fill { color: var(--dgst-ink); background: var(--dgst-soft); box-shadow: inset 0 0 0 1.5px var(--dgst-color); }
+.dgst-cal-num.has-dot.is-ring { box-shadow: inset 0 0 0 2px var(--dgst-color); background: var(--surface); }
+.dgst-cal-more {
+    position: absolute; top: 4px; right: 18%; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--muted);
+}
+.dgst-cal-day.is-outside .dgst-cal-num { color: var(--muted); }
+.dgst-cal-day.is-outside .dgst-band { opacity: .55; }
+.dgst-cal-day.is-past:not(.is-outside):not(.has-fill) .dgst-cal-num:not(.has-dot) { color: var(--muted); }
+.dgst-cal-day.is-today .dgst-cal-num { font-weight: 800; color: var(--blue-text); }
+.dgst-cal-day.is-today .dgst-cal-num::after {
+    content: ""; position: absolute; bottom: 2px; left: 50%; width: 12px; height: 2px;
+    margin-left: -6px; border-radius: 1px; background: currentColor;
+}
+
+/* Редактор у преподавателя: клетка — кнопка, тап по дате открывает день. */
+.dgst-cal--edit .dgst-cal-day { height: 44px; cursor: pointer; }
+.dgst-cal--edit .dgst-cal-day:hover .dgst-cal-num:not(.has-dot) { background: var(--surface-2); }
+.dgst-cal--edit .dgst-cal-day:focus-visible { outline: none; }
+.dgst-cal--edit .dgst-cal-day:focus-visible .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+.dgst-cal--edit .dgst-cal-day.is-selected .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* Период, который сейчас набирается в форме: пунктир, пока не сохранён. */
+.dgst-cal-day.is-preview::before {
+    content: ""; position: absolute; inset: 2px 0; pointer-events: none;
+    border-top: 1.5px dashed var(--blue); border-bottom: 1.5px dashed var(--blue);
+}
+.dgst-cal-day.is-preview-start::before { left: 2px; border-left: 1.5px dashed var(--blue); border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.dgst-cal-day.is-preview-end::before { right: 2px; border-right: 1.5px dashed var(--blue); border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.dgst-cal-day.is-preview-start.is-preview-end::before { border-radius: var(--r-pill); }
+
+/* Плашка дат в списке «События месяца» — того же стиля, что метка в сетке. */
+.dgst-chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 28px; padding: 3px 12px; border-radius: var(--r-pill);
+    font: 700 13px/1.2 var(--font-body); white-space: nowrap;
+}
+.dgst-chip.is-fill { color: var(--dgst-ink); background: var(--dgst-soft); }
+.dgst-chip.is-ring { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--dgst-color); }
+/* Образец цвета — в форме события и на экране типов. */
+.dgst-swatch {
+    display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--dgst-soft); box-shadow: inset 0 0 0 1.5px var(--dgst-color);
+}
+.dgst-swatch.is-ring { background: transparent; box-shadow: inset 0 0 0 2px var(--dgst-color); }
 
 @media (max-width: 760px) {
-    /* Семь колонок на телефоне узкие: число читается, метки сжимаются. */
-    .dgst .prg-day { min-height: 48px; padding: 5px 4px; gap: 3px; }
-    .dgst .prg-daynum { font-size: 13px; }
-    .dgst-marks { gap: 3px; }
-    .dgst-marks .dgst-dot { width: 8px; height: 8px; }
+    .dgst-cal { max-width: none; }
 }
 
 /* ── Экран дня ──────────────────────────────────────────────────────── */

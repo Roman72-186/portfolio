@@ -1,0 +1,69 @@
+{#
+  Панель выбранного дня в редакторе месяца (cabinet_digest_events.html):
+  события дня, «Добавить событие» и форма события. Вставляется из
+  partials/digest_list.html сразу под сеткой, только при `digest_editable`:
+  на телефоне день открывается под календарём, как в календаре айфона, а не
+  под длинным списком «События месяца»; на компьютере .dgst--edit ставит
+  панель правой колонкой (digest_goal_ios.css). Скрипт формы живёт в странице.
+
+  Ждёт в контексте: digest, event_types, tariff_choices, tariff_display.
+#}
+    <section class="dge-panel" data-day-panel aria-label="Выбранный день">
+        <h3 class="dge-panel-title" data-day-title aria-live="polite">Выберите число в календаре</h3>
+        <ul class="dge-day-events" data-day-events></ul>
+        {% if event_types %}
+        <button type="button" class="btn-blue dge-add" data-event-add hidden>Добавить событие</button>
+        {% else %}
+        <p class="trk-hint">Типов событий пока нет. <a href="/cabinet/staff/digest/types?digest={{ digest.id }}">Заведите типы</a> — у каждого свой цвет в календаре.</p>
+        {% endif %}
+
+        <form class="trk-form dge-form" data-event-form hidden novalidate>
+            <label class="trk-field">Название
+                <input data-event-title type="text" maxlength="200" placeholder="Например: групповой урок" autocomplete="off">
+            </label>
+
+            <div class="trk-hint" id="eventTypeHint">Тип — от него цвет в календаре</div>
+            <div class="trk-tag-picker dge-types" role="radiogroup" aria-labelledby="eventTypeHint" data-event-types>
+                {% for event_type in event_types %}
+                <label><input type="radio" name="event-type" value="{{ event_type.id }}" data-event-type{% if loop.first %} checked{% endif %}><span class="dgst-swatch dgst-color--{{ event_type.color }}{% if event_type.style == 'ring' %} is-ring{% endif %}" aria-hidden="true"></span>{{ event_type.name }}</label>
+                {% endfor %}
+            </div>
+
+            <label class="trk-field trk-field--row dge-multi">
+                <input type="checkbox" data-event-multi> Несколько дней
+            </label>
+            <div class="trk-grid trk-grid--two">
+                <label class="trk-field">С
+                    <input data-event-starts type="date">
+                </label>
+                <label class="trk-field" data-event-ends-wrap hidden>По
+                    <input data-event-ends type="date">
+                </label>
+            </div>
+            <p class="trk-hint" data-event-multi-hint hidden>Нажмите в календаре на последний день периода.</p>
+
+            <div class="trk-hint" id="eventTariffHint">Кому показывать — ничего не отмечено: всем тарифам.</div>
+            <div class="trk-tag-picker" role="group" aria-labelledby="eventTariffHint">
+                {% for tariff in tariff_choices %}
+                <label><input type="checkbox" data-event-tariff value="{{ tariff }}">{{ tariff_display.get(tariff, tariff) }}</label>
+                {% endfor %}
+            </div>
+
+            <details class="dge-more" data-event-more>
+                <summary>Заметка и ссылка на созвон</summary>
+                <label class="trk-field">Заметка
+                    <input data-event-note type="text" maxlength="300" placeholder="Короткая подпись под событием">
+                </label>
+                <label class="trk-field">Ссылка на созвон
+                    <input data-event-url type="url" maxlength="500" placeholder="https://...">
+                </label>
+            </details>
+
+            <div class="trk-actions">
+                <button type="button" class="btn-blue" data-event-save>Сохранить</button>
+                <button type="button" class="btn-outline" data-event-cancel>Отмена</button>
+                <button type="button" class="btn-danger" data-event-delete hidden>Удалить</button>
+            </div>
+            <p class="trk-message" data-event-message></p>
+        </form>
+    </section>

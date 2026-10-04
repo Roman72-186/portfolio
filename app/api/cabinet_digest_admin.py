@@ -24,12 +24,18 @@ from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.constants import TARIFF_DISPLAY, TARIFFS, TARIFFS_CURRENT
-from app.models.tracker import (
-    EVENT_COLOR_DEFAULT,
-    EVENT_COLOR_LABELS,
-    EVENT_COLORS,
-    EVENT_KIND_LABELS,
-    EVENT_KINDS,
+from app.models.tracker import EVENT_COLOR_DEFAULT, EVENT_PALETTE, EVENT_STYLE_FILL, EVENT_STYLES
+from app.services.schedule_event_types import (
+    EventTypeInUse,
+    archive_type,
+    create_type,
+    delete_type,
+    get_type,
+    list_types,
+    move_type,
+    restore_type,
+    type_usage,
+    update_type,
 )
 from app.services.tags import get_all_tags
 from app.services.tracker import (
@@ -102,25 +108,17 @@ class DigestPayload(BaseModel):
 class EventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(max_length=20)
+    # Тип задаёт и подпись, и цвет метки (владелец 04.10.2026). Существует ли
+    # тип и не скрыт ли он — проверяет роут, схеме база недоступна.
+    type_id: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=200)
     note: str | None = Field(default=None, max_length=300)
     starts_on: date
     ends_on: date
     meeting_url: str | None = Field(default=None, max_length=500)
     sort_order: int = Field(default=0, ge=0, le=1000)
-    # Цвет метки в календаре ученика и тарифы, которым событие показывается
-    # (созвон 30.09.2026). Пустые тарифы — всем.
-    color: str = Field(default=EVENT_COLOR_DEFAULT, max_length=16)
+    # Тарифы, которым событие показывается (созвон 30.09.2026). Пусто — всем.
     tariffs: list[str] = Field(default_factory=list, max_length=10)
-
-    @field_validator("color")
-    @classmethod
-    def validate_color(cls, value: str) -> str:
-        value = (value or "").strip() or EVENT_COLOR_DEFAULT
-        if value not in EVENT_COLORS:
-            raise ValueError("Неизвестный цвет события")
-        return value
 
     @field_validator("tariffs")
     @classmethod
@@ -130,14 +128,6 @@ class EventPayload(BaseModel):
         if unknown:
             raise ValueError("Неизвестный тариф: " + ", ".join(unknown))
         return list(dict.fromkeys(cleaned))
-
-    @field_validator("kind")
-    @classmethod
-    def validate_kind(cls, value: str) -> str:
-        value = (value or "").strip()
-        if value not in EVENT_KINDS:
-            raise ValueError("Unknown event kind")
-        return value
 
     @field_validator("title")
     @classmethod
@@ -249,6 +239,175 @@ def digest_admin_page(
             },
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Типы событий: название + цвет + заливка/контур (владелец 04.10.2026).
+# Объявлены до `/{digest_id}`: иначе «types» поймал бы путь с номером
+# дайджеста и ответил 422.
+# ---------------------------------------------------------------------------
+
+class EventTypePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=60)
+    color: str = Field(default=EVENT_COLOR_DEFAULT, max_length=16)
+    style: str = Field(default=EVENT_STYLE_FILL, max_length=8)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Укажите название типа")
+        return value
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: str) -> str:
+        if value not in EVENT_PALETTE:
+            raise ValueError("Неизвестный цвет")
+        return value
+
+    @field_validator("style")
+    @classmethod
+    def validate_style(cls, value: str) -> str:
+        if value not in EVENT_STYLES:
+            raise ValueError("Неизвестный стиль метки")
+        return value
+
+
+class MovePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    direction: int = Field(ge=-1, le=1)
+
+
+def _type_or_404(db: DBSession, type_id: int):
+    event_type = get_type(db, type_id)
+    if event_type is None:
+        raise HTTPException(status_code=404, detail="Тип не найден")
+    return event_type
+
+
+def _audit_type(db: DBSession, *, action: str, user_id: int, event_type) -> None:
+    db.add(
+        AuditLog(
+            action=action,
+            performed_by_id=user_id,
+            details=json.dumps(
+                {"event_type_id": event_type.id, "name": event_type.name}, ensure_ascii=False
+            ),
+        )
+    )
+
+
+@router.get("/types", response_class=HTMLResponse)
+def event_types_page(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    back = request.query_params.get("digest", "")
+    return templates.TemplateResponse(request, "cabinet_digest_types.html",
+        {
+            "request": request,
+            "user": user,
+            "event_types": list_types(db, include_archived=True),
+            "type_usage": type_usage(db),
+            "palette": EVENT_PALETTE,
+            "styles": EVENT_STYLES,
+            # Откуда пришли: со страницы событий дайджеста — туда и «назад».
+            "back_digest_id": int(back) if back.isdigit() else None,
+        },
+    )
+
+
+@router.post("/types", response_class=JSONResponse)
+def create_event_type_route(
+    payload: EventTypePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = create_type(db, name=payload.name, color=payload.color, style=payload.style)
+    _audit_type(db, action="event_type_create", user_id=user["user_id"], event_type=event_type)
+    db.commit()
+    return JSONResponse({"ok": True, "type_id": event_type.id})
+
+
+@router.post("/types/{type_id}", response_class=JSONResponse)
+def update_event_type_route(
+    type_id: int,
+    payload: EventTypePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = _type_or_404(db, type_id)
+    update_type(event_type, name=payload.name, color=payload.color, style=payload.style)
+    _audit_type(db, action="event_type_update", user_id=user["user_id"], event_type=event_type)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/types/{type_id}/archive", response_class=JSONResponse)
+def archive_event_type_route(
+    type_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = _type_or_404(db, type_id)
+    archive_type(event_type)
+    _audit_type(db, action="event_type_archive", user_id=user["user_id"], event_type=event_type)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/types/{type_id}/restore", response_class=JSONResponse)
+def restore_event_type_route(
+    type_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = _type_or_404(db, type_id)
+    restore_type(event_type)
+    _audit_type(db, action="event_type_restore", user_id=user["user_id"], event_type=event_type)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/types/{type_id}/delete", response_class=JSONResponse)
+def delete_event_type_route(
+    type_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = _type_or_404(db, type_id)
+    try:
+        delete_type(db, event_type)
+    except EventTypeInUse:
+        return JSONResponse({"ok": False, "error": "type_in_use"}, status_code=409)
+    _audit_type(db, action="event_type_delete", user_id=user["user_id"], event_type=event_type)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/types/{type_id}/move", response_class=JSONResponse)
+def move_event_type_route(
+    type_id: int,
+    payload: MovePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    event_type = _type_or_404(db, type_id)
+    move_type(db, event_type, payload.direction)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("", response_class=JSONResponse)
@@ -370,29 +529,49 @@ def digest_events_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    """Редактор месяца: календарь первым экраном, тап по дате открывает день
+    (владелец 04.10.2026: «нажимаю на нужную дату и внутри неё создаю
+    событие»). Календарь — тот же партиал, что у ученика, поэтому редактор и
+    есть предпросмотр; ученик видит из него только общие события и события
+    своего тарифа."""
     digest = _get_digest_or_404(db, digest_id)
     events = list_events(db, digest_id)
+    tariffs = event_tariffs_map(db, [event.id for event in events])
     return templates.TemplateResponse(request, "cabinet_digest_events.html",
         {
             "request": request,
             "user": user,
             "digest": digest,
-            "events": events,
-            "event_kinds": EVENT_KINDS,
-            "event_kind_labels": EVENT_KIND_LABELS,
-            "event_colors": EVENT_COLORS,
-            "event_color_labels": EVENT_COLOR_LABELS,
-            "event_tariffs": event_tariffs_map(db, [event.id for event in events]),
+            "event_types": list_types(db),
             "tariff_choices": TARIFFS_CURRENT,
             "tariff_display": TARIFF_DISPLAY,
             "month_names": MONTH_NAMES,
-            # Календарь со всеми событиями — так команда видит сетку, пока
-            # заводит месяц, ещё до публикации (тот же партиал, что у ученика).
+            # Данные событий для формы — одним JSON, а не data-атрибутами:
+            # строка списка общая с учеником, служебному в ней не место.
+            "events_payload": [
+                {
+                    "id": event.id,
+                    "title": event.title,
+                    "type_id": event.type_id,
+                    "type_name": event.type.name,
+                    "type_color": event.type.color,
+                    "type_style": event.type.style,
+                    "type_archived": event.type.archived_at is not None,
+                    "starts_on": event.starts_on.isoformat(),
+                    "ends_on": event.ends_on.isoformat(),
+                    "dates": format_event_dates(event),
+                    "note": event.note or "",
+                    "meeting_url": event.meeting_url or "",
+                    "tariffs": tariffs.get(event.id, []),
+                }
+                for event in events
+            ],
             "digest_heading": digest_heading(digest),
             "digest_events": events,
             "digest_days": digest_calendar(digest, events, today=today_msk()),
             "digest_weekday_labels": WEEKDAY_LABELS,
             "format_event_dates": format_event_dates,
+            "digest_editable": True,
         },
     )
 
@@ -404,6 +583,17 @@ def _event_of_digest_or_404(db: DBSession, digest_id: int, event_id: int):
     return event
 
 
+def _check_event_type(db: DBSession, type_id: int, *, keep_type_id: int | None = None) -> None:
+    """Тип должен существовать и не быть скрытым. Скрытый пропускается только
+    у события, которое уже на нём стоит и тип не меняет: правка названия
+    старого события не должна заставлять его перекрашивать."""
+    event_type = get_type(db, type_id)
+    if event_type is None:
+        raise HTTPException(status_code=422, detail="Такого типа события нет")
+    if event_type.archived_at is not None and type_id != keep_type_id:
+        raise HTTPException(status_code=422, detail="Этот тип скрыт — выберите другой")
+
+
 @router.post("/{digest_id}/events", response_class=JSONResponse)
 def create_digest_event(
     digest_id: int,
@@ -413,17 +603,17 @@ def create_digest_event(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     _get_digest_or_404(db, digest_id)
+    _check_event_type(db, payload.type_id)
     event = create_event(
         db,
         digest_id,
-        kind=payload.kind,
+        type_id=payload.type_id,
         title=payload.title,
         note=payload.note,
         starts_on=payload.starts_on,
         ends_on=payload.ends_on,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
-        color=payload.color,
     )
     set_event_tariffs(db, event, payload.tariffs)
     db.commit()
@@ -441,16 +631,16 @@ def update_digest_event(
 ):
     _get_digest_or_404(db, digest_id)
     event = _event_of_digest_or_404(db, digest_id, event_id)
+    _check_event_type(db, payload.type_id, keep_type_id=event.type_id)
     update_event(
         event,
-        kind=payload.kind,
+        type_id=payload.type_id,
         title=payload.title,
         note=payload.note,
         starts_on=payload.starts_on,
         ends_on=payload.ends_on,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
-        color=payload.color,
     )
     set_event_tariffs(db, event, payload.tariffs)
     db.commit()

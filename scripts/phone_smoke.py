@@ -145,6 +145,10 @@ def main() -> None:
     base.metadata.create_all(engine)
     db = session_local()
     seed_roles_and_permissions(db)
+    # Типы событий дайджеста на проде сеет миграция, а стенд строит схему
+    # через create_all — без этого календарь месяца не дал бы добавить событие.
+    from app.services.schedule_event_types import seed_default_types
+    seed_default_types(db)
     roles = {role.name: role for role in db.query(Role).all()}
 
     staff = {

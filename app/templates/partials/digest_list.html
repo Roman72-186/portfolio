@@ -1,73 +1,71 @@
 {#
-  Дайджест месяца: заголовок «месяц · тема», календарь месяца с цветными
-  метками и список событий с пояснениями под ним.
+  Дайджест месяца: заголовок «месяц · тема», компактный календарь месяца и
+  список «События месяца» под ним.
 
-  Календарная сетка вернулась 01.10.2026 (созвон 30.09: «кружочки, отмечены
-  даты… пояснения за событием… цвет — рыжим, жёлтым… в нашей стилистике»;
-  владелец 01.10 — сетка, цвет и тарифы у события). Отменяет «календарь не
-  нужен, просто список» от 17.09; вкладка «Дайджест» в трекере осталась.
+  Вид — макет «Путь к сотке» (владелец 04.10.2026): «видят месяц целиком
+  просто с датами, не нужно больших ячеек… и внизу у них всё помечено и
+  расписано». Однодневное событие — кружок вокруг числа, период — таблетка
+  через дни; заливка или контур и цвет берутся от типа события
+  (`ScheduleEventType`), их настраивает Главный преподаватель. Слои клетки
+  (`fill`, `ring`, `dot`, `more`) раскладывает
+  services/tracker.py::digest_calendar, сетка — .dgst-cal в program.css.
 
-  Цвет метки выбирает команда у каждого события, легенды под сеткой нет:
-  тот же кружок стоит в списке рядом с датой и названием — по нему и читается,
-  что значит цвет. Сетка — общие .prg-grid/.prg-day из program.css (те же, что
-  у календаря программы преподавателя), клетка не ссылка: ученику некуда
-  проваливаться.
-
-  Подписи типов свои, не EVENT_KIND_LABELS: там служебное «Дедлайн», а ученику
-  нужна «сдача работ».
+  Цвет не единственный носитель смысла: в списке рядом с плашкой дат стоит
+  имя типа, у клетки — aria-label со всеми событиями дня.
 
   Партиал общий для ученика (вкладка в cabinet_tracker.html, события уже
   отфильтрованы по его тарифу) и для преподавателя (cabinet_digest_events.html,
-  все события — предпросмотр до публикации).
+  все события; там `digest_editable` — клетки становятся кнопками и открывают
+  день, у строк списка кнопка «Изменить»).
 
   Ждёт в контексте: digest_heading, digest_events, digest_days,
-  digest_weekday_labels, format_event_dates.
+  digest_weekday_labels, format_event_dates; необязательно digest_editable.
 #}
-{% set kind_labels = {
-    'deadline': 'Сдача работ',
-    'lesson': 'Занятие',
-    'mock_exam': 'Пробник',
-    'broadcast': 'Эфир',
-} %}
-<section class="dgst" aria-label="Дайджест месяца">
+{% set editable = digest_editable|default(false) %}
+<section class="dgst{% if editable %} dgst--edit{% endif %}" aria-label="Дайджест месяца">
     <header class="dgst-head">
         <span class="dgst-kicker">Дайджест месяца</span>
         <h2 class="dgst-title">{{ digest_heading }}</h2>
     </header>
 
     {% if digest_days %}
-    <div class="prg-grid dgst-grid" aria-label="Календарь месяца">
+    <div class="dgst-cal{% if editable %} dgst-cal--edit{% endif %}" aria-label="Календарь месяца"{% if editable %} data-digest-cal{% endif %}>
         {% for label in digest_weekday_labels %}
-        <div class="prg-dowhead" aria-hidden="true">{{ label }}</div>
+        <div class="dgst-cal-dow" aria-hidden="true">{{ label }}</div>
         {% endfor %}
         {% for day in digest_days %}
-        <div class="prg-day prg-day--static{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if day.events %} has-events{% endif %}"
-             data-dow="{{ day.dow }}"
-             {% if day.events %}aria-label="{{ day.number }} число: {{ day.events | map(attribute='title') | join(', ') }}"{% endif %}>
-            <span class="prg-daynum">{{ day.number }}</span>
-            {% if day.colors %}
-            <span class="dgst-marks" aria-hidden="true">
-                {% for color in day.colors %}<span class="dgst-dot dgst-color--{{ color }}"></span>{% endfor %}
-            </span>
-            {% endif %}
-        </div>
+        {% set day_label = day.number ~ ' число' ~ (': ' ~ (day.events | map(attribute='title') | join(', ')) if day.events else '') %}
+        {% if editable %}<button type="button"{% else %}<div{% endif %}
+            class="dgst-cal-day{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if day.fill %} has-fill dgst-color--{{ day.fill.color }}{% endif %}"
+            data-dow="{{ day.dow }}" data-day="{{ day.iso }}"
+            {% if editable or day.events %}aria-label="{{ day_label }}"{% endif %}>
+            {% if day.fill %}<span class="dgst-band dgst-band--fill dgst-band--{{ day.fill.pos }}" aria-hidden="true"></span>{% endif %}
+            {% if day.ring %}<span class="dgst-band dgst-band--ring dgst-band--{{ day.ring.pos }} dgst-color--{{ day.ring.color }}" aria-hidden="true"></span>{% endif %}
+            <span class="dgst-cal-num{% if day.dot %} has-dot is-{{ day.dot.style }} dgst-color--{{ day.dot.color }}{% endif %}" aria-hidden="true">{{ day.number }}</span>
+            {% if day.more %}<span class="dgst-cal-more" aria-hidden="true"></span>{% endif %}
+        {% if editable %}</button>{% else %}</div>{% endif %}
         {% endfor %}
     </div>
     {% endif %}
+    {% if editable %}{% include "partials/digest_day_panel.html" %}{% endif %}
 
+    <h3 class="dgst-list-title">События месяца</h3>
     {% if digest_events %}
     <ul class="dgst-list">
         {% for event in digest_events %}
-        <li class="dgst-event">
-            <span class="dgst-event-date"><span class="dgst-dot dgst-color--{{ event.color }}" aria-hidden="true"></span>{{ format_event_dates(event) }}</span>
+        <li class="dgst-event"{% if editable %} data-event-id="{{ event.id }}"{% endif %}>
+            <span class="dgst-chip is-{{ event.type.style }} dgst-color--{{ event.type.color }}">{{ format_event_dates(event) }}</span>
             <span class="dgst-event-title">
                 {{ event.title }}
-                <span class="trk-badge trk-badge--kind dgst-event-kind">{{ kind_labels.get(event.kind, 'Событие') }}</span>
+                <span class="dgst-event-kind">{{ event.type.name }}</span>
             </span>
             {% if event.note %}<p class="dgst-event-note">{{ event.note }}</p>{% endif %}
             {% if event.meeting_url %}
             <a class="btn-outline dgst-event-link" href="{{ event.meeting_url }}"
                target="_blank" rel="noopener">Подключиться</a>
+            {% endif %}
+            {% if editable %}
+            <button type="button" class="btn-outline dgst-event-edit" data-event-edit="{{ event.id }}">Изменить</button>
             {% endif %}
         </li>
         {% endfor %}
