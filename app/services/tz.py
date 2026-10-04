@@ -47,6 +47,13 @@ def msk_text(value: datetime | None) -> str:
     return _as_utc(value).astimezone(MSK_TZ).strftime("%d.%m.%Y в %H:%M")
 
 
+def msk_date_text(value: datetime | None) -> str:
+    """Дата момента по Москве для человека: «27.09.2026»."""
+    if value is None:
+        return ""
+    return _as_utc(value).astimezone(MSK_TZ).strftime("%d.%m.%Y")
+
+
 def parse_msk_local(raw: str | None) -> datetime | None:
     """Строка `datetime-local` (без таймзоны, с точностью до минут) — время
     трактуется как московское, результат — в UTC.

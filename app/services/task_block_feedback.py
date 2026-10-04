@@ -6,6 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.exc import IntegrityError
 
@@ -14,8 +15,10 @@ from app.models.notification import Notification
 from app.models.task_block import DIALOG_BLOCK_TYPES, TaskBlock, TaskBlockSubmission
 from app.models.user import User
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+from app.models.tracker import TrackerTask
 from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import ROLE_STUDENT, dialog_sender, role_from_rank
+from app.services.tz import msk_date_text
 from app.services.utils import compress_image
 
 logger = logging.getLogger(__name__)
@@ -323,7 +326,68 @@ def serialize_messages(
     return result
 
 
+def list_student_feedback_cards(
+    db: DBSession, user_id: int,
+) -> tuple[list[dict], list[dict]]:
+    """ОС преподавателей по работам ученика для вкладки «Обратная связь»
+    (`/cabinet/cycle`): открытые и завершённые («Завершить ОС»), свежие сверху.
+
+    Владелец 04.10.2026: «во вкладке обратная связь должна быть обратная
+    связь, которую оставляют преподаватели». До этого вкладка показывала
+    только пробники, а диалог по сдаче в задании ученик находил лишь через
+    карточку задания или колокольчик. Попадает диалог, где сотрудник уже
+    написал: пустой диалог ученик открыть может, но ОС в нём ещё нет."""
+    staff_last = (
+        db.query(
+            TaskBlockFeedbackMessage.feedback_id,
+            func.max(TaskBlockFeedbackMessage.created_at).label("last_at"),
+        )
+        .filter(TaskBlockFeedbackMessage.sender_role != ROLE_STUDENT)
+        .group_by(TaskBlockFeedbackMessage.feedback_id)
+        .subquery()
+    )
+    rows = (
+        db.query(TaskBlockFeedback, TaskBlockSubmission, TaskBlock, TrackerTask, staff_last.c.last_at)
+        .join(staff_last, staff_last.c.feedback_id == TaskBlockFeedback.id)
+        .join(TaskBlockSubmission, TaskBlockSubmission.id == TaskBlockFeedback.submission_id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .filter(TaskBlockSubmission.user_id == user_id)
+        .order_by(staff_last.c.last_at.desc(), TaskBlockFeedback.id.desc())
+        .all()
+    )
+    open_cards: list[dict] = []
+    closed_cards: list[dict] = []
+    if not rows:
+        return open_cards, closed_cards
+
+    submission_ids = [submission.id for _f, submission, _b, _t, _at in rows]
+    unread = dict(
+        db.query(Notification.task_block_submission_id, func.count(Notification.id))
+        .filter(
+            Notification.user_id == user_id,
+            Notification.task_block_submission_id.in_(submission_ids),
+            Notification.is_read.is_(False),
+        )
+        .group_by(Notification.task_block_submission_id)
+        .all()
+    )
+    for feedback, submission, block, task, last_at in rows:
+        card = {
+            "href": f"/cabinet/task-block-submissions/{submission.id}/feedback",
+            "task_title": task.title,
+            "block_title": block.title,
+            "last_at": msk_date_text(last_at),
+            "closed_at": msk_date_text(feedback.feedback_closed_at) or None,
+            "unread_count": unread.get(submission.id, 0),
+            "score": float(submission.score) if submission.score is not None else None,
+        }
+        (closed_cards if card["closed_at"] else open_cards).append(card)
+    return open_cards, closed_cards
+
+
 __all__ = [
-    "ReplyState", "get_or_create_feedback", "notify_counterpart", "role_from_rank",
-    "send_message", "serialize_messages", "student_can_reply",
+    "ReplyState", "get_or_create_feedback", "list_student_feedback_cards",
+    "notify_counterpart", "role_from_rank", "send_message", "serialize_messages",
+    "student_can_reply",
 ]

@@ -44,6 +44,39 @@ def _login(client, session_factory, user):
     client.cookies.set("session_id", session_factory(user).id)
 
 
+def test_feedback_tab_lists_teacher_feedback_on_works(
+    db, user_factory, session_factory, client,
+):
+    """Владелец 04.10.2026: во вкладке «Обратная связь» — ОС, которую оставляют
+    преподаватели. Работа с ответом сотрудника видна со ссылкой на диалог и
+    пометкой «новое»; чужая работа и работа без ответа — нет."""
+    curator = user_factory(vk_id=970_041, name="Куратор Вкладки", role_name="куратор")
+    student = user_factory(vk_id=970_042, name="Ученик Вкладки")
+    other = user_factory(vk_id=970_043, name="Чужой Ученик")
+    student.curator_id = curator.id
+    other.curator_id = curator.id
+    db.commit()
+    answered = _submission(db, student)
+    silent = _submission(db, student)
+    foreign = _submission(db, other)
+    _login(client, session_factory, curator)
+    with patch("app.api.task_block_feedback.notify"):
+        for submission in (answered, foreign):
+            assert client.post(
+                f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+                data={"text": "Разбор работы"},
+            ).status_code == 200
+
+    _login(client, session_factory, student)
+    page = client.get("/cabinet/cycle")
+    assert page.status_code == 200
+    assert f"/cabinet/task-block-submissions/{answered.id}/feedback" in page.text
+    assert "Домашняя работа · Сдать листы" in page.text
+    assert "НОВОЕ · 1" in page.text
+    assert f"/cabinet/task-block-submissions/{silent.id}/feedback" not in page.text
+    assert f"/cabinet/task-block-submissions/{foreign.id}/feedback" not in page.text
+
+
 def test_staff_messages_are_anonymous_for_student_and_staff(
     db, user_factory, session_factory, client,
 ):

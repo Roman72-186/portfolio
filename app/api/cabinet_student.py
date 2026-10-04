@@ -34,6 +34,7 @@ from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services import feedback as fb_service
+from app.services.task_block_feedback import list_student_feedback_cards
 from app.services.feature_periods import is_feature_available
 from app.services import s3 as s3_service
 from app.services.upload_validation import read_image_uploads
@@ -750,9 +751,11 @@ def cabinet_cycle_hub(
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = Query(default="feedback"),
 ):
-    """Экран ученика: только вкладка «Обратная связь» (диалог по циклам)."""
+    """Экран ученика «Обратная связь»: ОС преподавателей по работам в
+    заданиях (владелец 04.10.2026) и диалоги пробников по циклам."""
     open_cycles, closed_cycles = fb_service.list_student_cycle_cards(db, user["user_id"])
     cycles_count = len(open_cycles) + len(closed_cycles)
+    open_works, closed_works = list_student_feedback_cards(db, user["user_id"])
     unread = _get_unread_count(user["user_id"], db)
 
     return templates.TemplateResponse(request, "cabinet_cycle.html", {
@@ -761,6 +764,8 @@ def cabinet_cycle_hub(
         "open_cycles": open_cycles,
         "closed_cycles": closed_cycles,
         "cycles_count": cycles_count,
+        "open_works": open_works,
+        "closed_works": closed_works,
         "unread_count": unread,
         # Ключ пункта меню «Обратная связь» (`services/navigation.py`), не
         # «cycle»: экран давно сведён к одному диалогу, пункта «Цикл

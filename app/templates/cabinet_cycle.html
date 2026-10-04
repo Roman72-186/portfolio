@@ -8,20 +8,59 @@
 <div class="cyc-page ios-cycle">
     <section class="cyc-hero">
         <h1>Обратная связь</h1>
-        <p>Здесь хранится обратная связь и статус проверки работ.</p>
-        <span class="badge">Циклов всего: {{ cycles_count }}</span>
-        {{ hint("Цикл – это один пробник: билет, твоя работа и результат проверки.") }}
-        {% set total_unread = open_cycles|sum(attribute='unread_count') %}
+        <p>Здесь ответы преподавателей по твоим работам и пробникам.</p>
+        {% set works_count = open_works|length + closed_works|length %}
+        {% if works_count %}<span class="badge">Работ с ответом: {{ works_count }}</span>{% endif %}
+        {% if cycles_count or not works_count %}
+            <span class="badge">Циклов всего: {{ cycles_count }}</span>
+            {{ hint("Цикл – это один пробник: билет, твоя работа и результат проверки.") }}
+        {% endif %}
+        {% set total_unread = open_cycles|sum(attribute='unread_count') + open_works|sum(attribute='unread_count') + closed_works|sum(attribute='unread_count') %}
         {% if total_unread and total_unread > 0 %}<span class="badge">Новых сообщений: {{ total_unread }}</span>{% endif %}
     </section>
 
     {# ── Обратная связь ── #}
+    {% macro score_badge(score) -%}
+        {% set score_value = score|round|int %}
+        {% set score_class = "score-red" if score_value < 50 else "score-orange" if score_value < 70 else "score-lime" if score_value < 85 else "score-green" %}
+        <span class="fb-score-badge {{ score_class }}">{{ score_value }} / 100</span>
+    {%- endmacro %}
+    {% macro work_card(w) -%}
+        <li>
+            <a href="{{ w.href }}" class="{% if w.unread_count %}has-unread{% elif w.closed_at %}is-closed{% endif %}">
+                <div class="fb-item-info">
+                    <div class="fb-sub">{{ w.task_title }}{% if w.block_title %} · {{ w.block_title }}{% endif %}</div>
+                    <div class="fb-meta">{% if w.closed_at %}Завершена {{ w.closed_at }}{% else %}Ответ преподавателя {{ w.last_at }}{% endif %}</div>
+                </div>
+                <div class="fb-cycle-actions">
+                    {% if w.score is not none %}{{ score_badge(w.score) }}{% endif %}
+                    {% if w.unread_count %}<span class="fb-unread">НОВОЕ · {{ w.unread_count }}</span>{% elif w.closed_at %}<span class="fb-closed-badge">ЗАВЕРШЕНА</span>{% endif %}
+                </div>
+            </a>
+        </li>
+    {%- endmacro %}
     <div class="cyc-panel active" data-panel="feedback">
+        {# ОС преподавателей по работам в заданиях (владелец 04.10.2026):
+           сервис — `task_block_feedback.list_student_feedback_cards`. #}
+        {% if open_works %}
+            <div class="fb-group-title">Работы · {{ open_works|length }}</div>
+            <ul class="fb-list">
+                {% for w in open_works %}{{ work_card(w) }}{% endfor %}
+            </ul>
+        {% endif %}
+        {% if closed_works %}
+            <div class="fb-group-title">Работы · завершённые · {{ closed_works|length }}</div>
+            <ul class="fb-list">
+                {% for w in closed_works %}{{ work_card(w) }}{% endfor %}
+            </ul>
+        {% endif %}
         {% if not open_cycles and not closed_cycles %}
-            <div class="fb-empty">Циклов пока нет.</div>
+            {% if not open_works and not closed_works %}
+                <div class="fb-empty">Пока пусто. Когда преподаватель ответит на твою работу, ответ появится здесь.</div>
+            {% endif %}
         {% else %}
             {% if open_cycles %}
-                <div class="fb-group-title">Открытые · {{ open_cycles|length }}</div>
+                <div class="fb-group-title">Пробники · открытые · {{ open_cycles|length }}</div>
                 <ul class="fb-list">
                     {% for c in open_cycles %}
                         <li>
@@ -39,7 +78,7 @@
                 </ul>
             {% endif %}
             {% if closed_cycles %}
-                <div class="fb-group-title">Закрытые · {{ closed_cycles|length }}</div>
+                <div class="fb-group-title">Пробники · закрытые · {{ closed_cycles|length }}</div>
                 <ul class="fb-list">
                     {% for c in closed_cycles %}
                         <li>
@@ -49,11 +88,7 @@
                                     <div class="fb-meta">Начат: {{ c.started_at[:10] }} · Закрыт: {{ c.closed_at[:10] }}</div>
                                 </div>
                                 <div class="fb-cycle-actions">
-                                    {% if c.close_score is not none %}
-                                        {% set score_value = c.close_score|round|int %}
-                                        {% set score_class = "score-red" if score_value < 50 else "score-orange" if score_value < 70 else "score-lime" if score_value < 85 else "score-green" %}
-                                        <span class="fb-score-badge {{ score_class }}">{{ score_value }} / 100</span>
-                                    {% endif %}
+                                    {% if c.close_score is not none %}{{ score_badge(c.close_score) }}{% endif %}
                                     <span class="fb-closed-badge">ЗАКРЫТО</span>
                                 </div>
                             </a>
