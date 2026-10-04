@@ -14,6 +14,10 @@
 отдельной задачей, когда понадобится. Стили — общие `program.css`, своего
 <style> здесь нет: за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
 #}
+{# «Смотреть» в АОП (`section_access`, шаг 2 плана тонких доступов) — без
+   кнопок записи: сервер ответил бы на них 403. Скрипт выходит сам, если
+   формы нет. #}
+{% set prg_edit = can(user, "program") %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
 
@@ -26,12 +30,15 @@
                 и привязывает их к этапу выпадающим списком.
             </p>
         </div>
+        {% if prg_edit %}
         <button type="button" class="btn-blue" data-stage-new>Новый этап</button>
+        {% endif %}
     </div>
 
     {# Форма свёрнута до кнопки «Новый этап» или «Название и даты» — тот же
        приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
        не должен прятаться под раскрытой формой. Пока этапов нет, форма открыта. #}
+    {% if prg_edit %}
     <form class="prg-form" data-stage-form{% if stages %} hidden{% endif %}>
         <h2 data-stage-form-title>Новый этап</h2>
         <input type="hidden" data-s-id value="">
@@ -64,6 +71,7 @@
         </div>
         <p class="prg-message" data-stage-message></p>
     </form>
+    {% endif %}
 
     <section class="prg-items">
         <h2>Уже заведены</h2>
@@ -87,8 +95,10 @@
                 {# Задания прямо на этапе («Портфолио») — с 29.09.2026, до этого
                    у персонала на них не было входа. #}
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ stage.id }}">Задания этапа ({{ stage.items_count }})</a>
+                {% if prg_edit %}
                 <button type="button" class="btn-outline" data-stage-edit
                         data-payload='{{ stage|tojson }}'>Название и даты</button>
+                {% endif %}
             </div>
         </article>
         {% endfor %}

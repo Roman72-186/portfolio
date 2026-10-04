@@ -136,6 +136,10 @@ FORM: Operate.
     <div class="prg-preview" data-preview hidden></div>
 </div>
 {% endmacro %}
+{# Менять день можно, пока он не прошёл и АОП открыт на «Менять»
+   (`section_access`, шаг 2 плана тонких доступов). Иначе — тот же режим
+   просмотра, что у прошедшего дня: формы и кнопки записи не рисуются. #}
+{% set prg_edit = not is_past and can(user, "program") %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
     <div class="prg-head">
         <div class="prg-head-copy">
@@ -143,6 +147,8 @@ FORM: Operate.
             <p>
                 {% if is_past %}
                 День уже прошёл: программу можно посмотреть, но не менять.
+                {% elif not prg_edit %}
+                Раздел открыт вам только на просмотр.
                 {% else %}
                 Выберите, что поставить в этот день. Ученик увидит его вместе со всей неделей.
                 {% endif %}
@@ -151,7 +157,7 @@ FORM: Operate.
         <a class="btn-outline" href="{{ month_href }}">К календарю</a>
     </div>
 
-    {% if not is_past %}
+    {% if prg_edit %}
     <div class="prg-tiles">
         {% for preset in item_presets %}
         <button type="button" class="prg-tile" data-open-form="{{ preset.kind }}">
@@ -165,7 +171,7 @@ FORM: Operate.
     </div>
     {% endif %}
 
-    {% if not is_past %}
+    {% if prg_edit %}
     <form class="prg-form" data-form="mock" hidden>
         <h2>Задание (Пробник) на {{ day.day }} число</h2>
         <div class="prg-grid2">
@@ -237,7 +243,7 @@ FORM: Operate.
     </form>
     {% endif %}
 
-    {% if not is_past %}
+    {% if prg_edit %}
     {% macro simple_form(kind, title, hint, mock_capable=False) %}
     <form class="prg-form" data-form="{{ kind }}" data-simple-kind="{{ kind }}" hidden>
         <h2>{{ title }} на {{ day.day }} число</h2>
@@ -496,7 +502,7 @@ FORM: Operate.
                    Сроки настраиваются там же, где остальная доступность, —
                    внутри задания, в «Доступности блока». #}
             </div>
-            {% if not is_past %}
+            {% if prg_edit %}
             <div class="prg-item-actions">
                 {% if can_edit_items and item.kind in editable_kinds and item.id in edit_payloads %}
                 <button type="button" class="btn-outline" data-item-edit data-item-kind="{{ item.kind }}">Изменить</button>

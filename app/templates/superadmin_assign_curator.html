@@ -4,6 +4,9 @@
 <link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
 {% endblock %}
 {% block content %}
+{# Экран только пишет: при «Смотреть» в «Людях» формы нет
+   (шаг 2 плана тонких доступов). #}
+{% set people_edit = can(user, "people") %}
 <div class="su-wrap ios-sa-assign-curator">
 
     <div class="su-header">
@@ -30,6 +33,7 @@
     </div>
     {% endif %}
 
+    {% if people_edit %}
     <form method="post" action="/cabinet/superadmin/users/assign-curator-bulk" class="bulk-panel">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <div class="bulk-title">Массовая привязка учеников к куратору</div>
@@ -86,6 +90,9 @@
         });
     })();
     </script>
+    {% else %}
+    <p class="bulk-sub">Раздел открыт вам только на просмотр: привязывать учеников к куратору нельзя.</p>
+    {% endif %}
 
 </div>
 {% endblock %}

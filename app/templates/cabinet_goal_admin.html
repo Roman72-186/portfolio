@@ -13,6 +13,9 @@ FORM: Operate, расширение существующего кабинета 
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
+{# «Смотреть» в АОП — без кнопок записи (шаг 2 плана тонких доступов);
+   скрипт выходит сам, если формы нет. #}
+{% set prg_edit = can(user, "program") %}
 <div class="trk-page ios-goals">
     {% include "partials/program_tabs.html" %}
     <div class="trk-head">
@@ -20,9 +23,12 @@ FORM: Operate, расширение существующего кабинета 
             <h1>Ближайшая цель</h1>
             <p>Ученик видит на «Личном трекере» одну ближайшую из адресованных ему опубликованных целей — по дате начала.</p>
         </div>
+        {% if prg_edit %}
         <button type="button" class="btn-blue" data-goal-toggle>Новая цель</button>
+        {% endif %}
     </div>
 
+    {% if prg_edit %}
     <form class="trk-form" data-goal-form hidden>
         <input type="hidden" data-goal-id value="">
         <div class="trk-grid">
@@ -68,6 +74,7 @@ FORM: Operate, расширение существующего кабинета 
         </div>
         <p class="trk-message" data-goal-message></p>
     </form>
+    {% endif %}
 
     <div class="trk-list-head">
         <h2>Все цели</h2>
@@ -115,13 +122,17 @@ FORM: Operate, расширение существующего кабинета 
             <div class="trk-row-actions">
                 {% if goal.is_published %}
                 <span class="trk-badge trk-badge--live">Опубликована</span>
-                <button type="button" class="btn-outline" data-goal-action="unpublish">Скрыть</button>
+                {% if prg_edit %}
+                <button type="button" class="btn-outline" data-goal-action="unpublish">Скрыть</button>{% endif %}
                 {% else %}
                 <span class="trk-badge trk-badge--draft">Черновик</span>
-                <button type="button" class="btn-blue" data-goal-action="publish">Опубликовать</button>
+                {% if prg_edit %}
+                <button type="button" class="btn-blue" data-goal-action="publish">Опубликовать</button>{% endif %}
                 {% endif %}
+                {% if prg_edit %}
                 <button type="button" class="btn-outline" data-goal-edit>Изменить</button>
                 <button type="button" class="btn-danger" data-goal-action="delete">Удалить</button>
+                {% endif %}
             </div>
         </article>
         {% endfor %}

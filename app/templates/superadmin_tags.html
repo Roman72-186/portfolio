@@ -11,6 +11,9 @@
 {%- endif -%}
 {%- endmacro %}
 {% block content %}
+{# «Смотреть» в «Людях» — теги без правки и без массовой проставки
+   (шаг 2 плана тонких доступов). #}
+{% set people_edit = can(user, "people") %}
 <div class="su-wrap ios-sa-tags">
 
     <div class="su-header">
@@ -32,6 +35,7 @@
         <button type="submit" class="btn-blue btn-save">Найти</button>
     </form>
 
+    {% if people_edit %}
     <div class="bulk-wrap">
         <h2 class="bulk-title">Массовая проставка тегов Р / К</h2>
         <div class="bulk-input-row">
@@ -40,6 +44,7 @@
         </div>
         <div class="bulk-result" id="bulkResult"></div>
     </div>
+    {% endif %}
 
     <div class="tags-table-wrap">
         {% if students %}
@@ -70,9 +75,10 @@
                         {% set _cls = tag_color_cls(tag.name, curator_names) %}
                         <span class="tag-chip{% if _cls %} {{ _cls }}{% endif %}" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">
                             {{ tag.name }}
-                            <button type="button" class="tag-chip__remove" aria-label="Удалить тег" onclick="removeTag(this)">×</button>
+                            {% if people_edit %}<button type="button" class="tag-chip__remove" aria-label="Удалить тег" onclick="removeTag(this)">×</button>{% endif %}
                         </span>
                         {% endfor %}
+                        {% if people_edit %}
                         <button type="button" class="tag-add-btn" aria-label="Добавить тег" onclick="toggleTagPopover(this)">+</button>
                         <div class="tag-add-popover">
                             <div class="tag-suggestions">
@@ -86,6 +92,7 @@
                                 <button type="button" onclick="addCustomTag(this)">Добавить</button>
                             </div>
                         </div>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

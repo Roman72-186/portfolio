@@ -15,6 +15,9 @@
 `opens_at … ends_at`. Стили — общие `program.css`, своего <style> здесь нет:
 за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
 #}
+{# «Смотреть» в АОП — без кнопок записи (шаг 2 плана тонких доступов),
+   скрипт выходит сам, если формы нет. #}
+{% set prg_edit = can(user, "program") %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
 
@@ -26,7 +29,9 @@
                 В предобучении это два-три дня, в основном обучении — неделя или месяц.
             </p>
         </div>
+        {% if prg_edit %}
         <button type="button" class="btn-blue" data-cycle-new>Новый цикл</button>
+        {% endif %}
     </div>
 
     {% if stage_filter %}
@@ -43,6 +48,7 @@
        до «Заданий» нужно было листать её каждый раз. Тот же приём, что у
        «Нового дайджеста». Пока циклов нет, форма открыта — первый цикл за
        лишним нажатием не прячем. #}
+    {% if prg_edit %}
     <form class="prg-form" data-cycle-form{% if cycles %} hidden{% endif %}>
         <h2 data-cycle-form-title>Новый цикл</h2>
         <input type="hidden" data-c-id value="">
@@ -94,6 +100,7 @@
         </div>
         <p class="prg-message" data-cycle-message></p>
     </form>
+    {% endif %}
 
     <section class="prg-items">
         <h2>Уже заведены</h2>
@@ -126,6 +133,7 @@
             <div class="prg-item-actions prg-item-actions--compact">
                 <a class="btn-blue" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Статистика</a>
+                {% if prg_edit %}
                 <button type="button" class="btn-outline" data-cycle-edit
                         data-payload='{{ cycle|tojson }}'>Название и даты</button>
                 {# Удаление мягкое: цикл пропадает у учеников и из этого списка,
@@ -139,6 +147,7 @@
                         data-label="{{ cycle.label }}"
                         data-items="{{ cycle.items_count }}"
                         data-videos="{{ cycle.videos_count }}"><span aria-hidden="true">🗑</span></button>
+                {% endif %}
             </div>
         </article>
         {% endfor %}

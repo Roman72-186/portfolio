@@ -4,6 +4,8 @@
 <link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
 {% endblock %}
 {% block content %}
+{# Вход «глазами» — только при «Менять» в «Людях» (шаг 2 плана тонких доступов). #}
+{% set people_edit = can(user, "people") %}
 <div class="sc-wrap ios-sa-curators">
     <div class="sc-head">
         <a href="/cabinet" class="back-link">← Дашборд</a>
@@ -31,6 +33,7 @@
                 </div>
                 <div class="sc-row-actions">
                     <div class="sc-count">{{ c.student_count }} учеников</div>
+                    {% if people_edit %}
                     <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sc-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         {% if c.is_active %}
@@ -39,6 +42,7 @@
                         <button type="button" class="btn-blue btn-save sc-btn-disabled" disabled>Заблокирован</button>
                         {% endif %}
                     </form>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}

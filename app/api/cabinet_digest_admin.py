@@ -25,6 +25,7 @@ from app.dependencies import require_admin_role, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.constants import TARIFF_DISPLAY, TARIFFS, TARIFFS_CURRENT
 from app.models.tracker import EVENT_COLOR_DEFAULT, EVENT_PALETTE, EVENT_STYLE_FILL, EVENT_STYLES
+from app.services.section_access import can
 from app.services.schedule_event_types import (
     EventTypeInUse,
     archive_type,
@@ -571,7 +572,9 @@ def digest_events_page(
             "digest_days": digest_calendar(digest, events, today=today_msk()),
             "digest_weekday_labels": WEEKDAY_LABELS,
             "format_event_dates": format_event_dates,
-            "digest_editable": True,
+            # «Смотреть» в АОП — календарь как у ученика, без правки
+            # (шаг 2 плана тонких доступов).
+            "digest_editable": can(user, "program"),
         },
     )
 

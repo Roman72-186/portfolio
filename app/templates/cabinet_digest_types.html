@@ -32,6 +32,8 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
 </div>
 {% endmacro %}
 {% block content %}
+{# «Смотреть» в АОП — список типов без правки (шаг 2 плана тонких доступов). #}
+{% set prg_edit = can(user, "program") %}
 <div class="trk-page ios-digest-events dgt-page">
     <div class="trk-head">
         <div class="trk-head-copy">
@@ -50,13 +52,14 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
                 <span class="dgst-chip is-{{ event_type.style }} dgst-color--{{ event_type.color }}" data-type-sample>3 – 10</span>
                 <span class="dgt-row-name">{{ event_type.name }}</span>
                 <span class="dgt-row-meta">{% if event_type.archived_at %}Скрыт · {% endif %}{% if used %}событий: {{ used }}{% else %}не используется{% endif %}</span>
-                {% if not event_type.archived_at %}
+                {% if prg_edit and not event_type.archived_at %}
                 <span class="dgt-move">
                     <button type="button" class="btn-outline" data-type-move="-1" aria-label="Выше: {{ event_type.name }}"{% if loop.first %} disabled{% endif %}>↑</button>
                     <button type="button" class="btn-outline" data-type-move="1" aria-label="Ниже: {{ event_type.name }}">↓</button>
                 </span>
                 {% endif %}
             </div>
+            {% if prg_edit %}
             <details class="dgt-edit">
                 <summary>Изменить</summary>
                 <div class="trk-form dgt-form">
@@ -76,6 +79,7 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
                     <p class="trk-message" data-type-message></p>
                 </div>
             </details>
+            {% endif %}
         </li>
         {% endfor %}
     </ul>
@@ -83,6 +87,7 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
     <div class="trk-empty">Типов пока нет. Заведите первый — без типа событие в календарь не добавить.</div>
     {% endif %}
 
+    {% if prg_edit %}
     <section class="trk-form dgt-form dgt-new" data-type-new>
         <h2 class="dgt-new-title">Новый тип</h2>
         <div class="dgt-row-head">
@@ -95,6 +100,7 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
         </div>
         <p class="trk-message" data-type-message></p>
     </section>
+    {% endif %}
 </div>
 
 <script>

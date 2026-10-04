@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Управление пользователями{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=13">
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=14">
 <link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=13">
 {% endblock %}
 {% block content %}
+{# «Смотреть» в «Людях» — список без правки: тариф текстом, роль меткой, без
+   кнопок действий (шаг 2 плана тонких доступов, «кнопка = сервер»). #}
+{% set people_edit = can(user, "people") %}
 <div class="su-wrap ios-su-users ios-staff-dashboard">
 
     <div class="su-header">
@@ -196,7 +199,7 @@
                         {% endif %}
                     </div>
                     <div class="u-meta">id={{ u.id }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
-                    {% if u_rank == 1 and not u.deleted_at %}
+                    {% if people_edit and u_rank == 1 and not u.deleted_at %}
                     <form class="tariff-quick-form" data-tariff-form="{{ u.id }}"
                           action="/cabinet/superadmin/users/{{ u.id }}/tariff" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -218,6 +221,8 @@
                         </select>
                         <span class="tariff-save-status" role="status" aria-live="polite"></span>
                     </form>
+                    {% elif u_rank == 1 and u.tariff %}
+                    <div class="u-meta">Тариф: {{ u.tariff|tariff_label }}</div>
                     {% endif %}
                     {% set s_has_case = has_case_by_user.get(u.id, False) if has_case_by_user else False %}
                     {% set s = {
@@ -235,7 +240,7 @@
                     </div>
                 </td>
                 <td data-label="Роль">
-                    {% if u.id != current_user_id and u_rank < current_user_rank %}
+                    {% if people_edit and u.id != current_user_id and u_rank < current_user_rank %}
                     <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/role" class="role-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <select name="role_id"
@@ -268,7 +273,7 @@
                     {% endif %}
                 </td>
                 <td data-label="Действия">
-                    {% if u.id != current_user_id and not u.deleted_at %}
+                    {% if people_edit and u.id != current_user_id and not u.deleted_at %}
                     <div class="actions-cell"
                          data-user-actions="{{ u.id }}"
                          data-can-access="{% if user.role_rank >= 4 and u_rank < user.role_rank %}1{% else %}0{% endif %}"

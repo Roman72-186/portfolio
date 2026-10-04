@@ -12,6 +12,10 @@ FORM: Operate, расширение существующего кабинета 
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
+{# «Смотреть» в АОП — список роликов без загрузки, публикации и правки
+   (шаг 2 плана тонких доступов). Скрипт страницы только пишет, при
+   просмотре он не подключается. #}
+{% set prg_edit = can(user, "program") %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
 <div class="vam-page ios-videos-admin">
     {% include "partials/program_tabs.html" %}
@@ -31,6 +35,7 @@ FORM: Operate, расширение существующего кабинета 
         </div>
     </div>
 
+    {% if prg_edit %}
     {% if not upload_available %}
     <div class="vam-config-warning" role="status">
         Загрузка пока не настроена: добавьте Stream API Key в окружение сервера. Уже опубликованные видео продолжают работать.
@@ -67,6 +72,7 @@ FORM: Operate, расширение существующего кабинета 
             <p>Окно можно оставить открытым или перейти на другую вкладку кабинета – загрузка идёт в этой вкладке браузера независимо от неё. При временном разрыве соединения загрузчик попробует продолжить автоматически.</p>
         </div>
     </section>
+    {% endif %}
 
     <section class="vam-queue" aria-labelledby="vam-queue-title">
         <h2 id="vam-queue-title">Уже загруженные видео</h2>
@@ -100,12 +106,13 @@ FORM: Operate, расширение существующего кабинета 
                     {% endif %}
                 </div>
                 <div class="vam-row-actions">
-                    {% if video.status in ('uploading', 'processing', 'failed', 'delete_failed') %}
+                    {% if prg_edit and video.status in ('uploading', 'processing', 'failed', 'delete_failed') %}
                     <button type="button" class="btn-outline" data-video-action="refresh">Обновить статус</button>
                     {% endif %}
                     {% if video.status == 'ready' %}
                     <a class="btn-outline" href="/cabinet/videos/{{ video.id }}">Предпросмотр</a>
-                    {% if video.is_published %}
+                    {% if not prg_edit %}
+                    {% elif video.is_published %}
                     <button type="button" class="btn-outline" data-video-action="unpublish">Скрыть</button>
                     {% else %}
                     <button type="button" class="btn-blue" data-video-action="publish">Опубликовать</button>
@@ -115,6 +122,7 @@ FORM: Operate, расширение существующего кабинета 
                     <button type="button" class="btn-danger" data-video-action="delete" data-video-title="{{ video.title }}">Удалить</button>
                     {% endif %}
                 </div>
+                {% if prg_edit %}
                 <details class="vam-edit">
                     <summary>Изменить название, описание и тему</summary>
                     <div class="vam-edit-fields">
@@ -127,6 +135,7 @@ FORM: Operate, расширение существующего кабинета 
                         <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
                     </div>
                 </details>
+                {% endif %}
             </article>
             {% endfor %}
         </div>
@@ -136,6 +145,7 @@ FORM: Operate, расширение существующего кабинета 
     </section>
 </div>
 
+{% if prg_edit %}
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js" integrity="sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1" crossorigin="anonymous"></script>
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script>
@@ -577,4 +587,5 @@ FORM: Operate, расширение существующего кабинета 
     });
 })();
 </script>
+{% endif %}
 {% endblock %}

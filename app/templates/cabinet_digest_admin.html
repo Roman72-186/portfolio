@@ -13,6 +13,9 @@ FORM: Operate, расширение существующего кабинета 
 <link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=11">
 {% endblock %}
 {% block content %}
+{# «Смотреть» в АОП — без кнопок записи (шаг 2 плана тонких доступов);
+   скрипт выходит сам, если формы нет. #}
+{% set prg_edit = can(user, "program") %}
 <div class="trk-page ios-digest">
     {% include "partials/program_tabs.html" %}
     <div class="trk-head">
@@ -22,10 +25,13 @@ FORM: Operate, расширение существующего кабинета 
         </div>
         <div class="trk-actions">
             <a class="btn-outline" href="/cabinet/staff/digest/types">Типы событий</a>
+            {% if prg_edit %}
             <button type="button" class="btn-blue" data-digest-toggle>Новый дайджест</button>
+            {% endif %}
         </div>
     </div>
 
+    {% if prg_edit %}
     <form class="trk-form" data-digest-form hidden>
         <input type="hidden" data-digest-id value="">
         <div class="trk-grid trk-grid--two">
@@ -74,6 +80,7 @@ FORM: Operate, расширение существующего кабинета 
         </div>
         <p class="trk-message" data-digest-message></p>
     </form>
+    {% endif %}
 
     <div class="trk-list-head">
         <h2>Все дайджесты</h2>
@@ -114,14 +121,18 @@ FORM: Operate, расширение существующего кабинета 
             <div class="trk-row-actions">
                 {% if digest.is_published %}
                 <span class="trk-badge trk-badge--live">Опубликован</span>
-                <button type="button" class="btn-outline" data-digest-action="unpublish">Скрыть</button>
+                {% if prg_edit %}
+                <button type="button" class="btn-outline" data-digest-action="unpublish">Скрыть</button>{% endif %}
                 {% else %}
                 <span class="trk-badge trk-badge--draft">Черновик</span>
-                <button type="button" class="btn-blue" data-digest-action="publish">Опубликовать</button>
+                {% if prg_edit %}
+                <button type="button" class="btn-blue" data-digest-action="publish">Опубликовать</button>{% endif %}
                 {% endif %}
                 <a class="btn-outline" href="/cabinet/staff/digest/{{ digest.id }}/events">События</a>
+                {% if prg_edit %}
                 <button type="button" class="btn-outline" data-digest-edit>Изменить</button>
                 <button type="button" class="btn-danger" data-digest-action="delete">Удалить</button>
+                {% endif %}
             </div>
         </article>
         {% endfor %}

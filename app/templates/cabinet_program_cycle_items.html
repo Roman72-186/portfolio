@@ -35,6 +35,11 @@
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
+{# «Смотреть» в АОП (шаг 2 плана тонких доступов): нет входов в правку —
+   плитки «Задание», стрелок, «Изменить», «Удалить». Скрытая форма остаётся в
+   разметке: на ней держится скрипт страницы, в том числе «Весь цикл глазами
+   ученика», а открыть её без этих кнопок нечем. #}
+{% set prg_edit = can(user, "program") %}
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -77,6 +82,7 @@
     </div>
     {% endif %}
 
+    {% if prg_edit %}
     <div class="prg-tiles">
         <button type="button" class="prg-tile" data-open-form>
             <span class="prg-tile-icon" aria-hidden="true">📄</span>
@@ -86,6 +92,7 @@
             </span>
         </button>
     </div>
+    {% endif %}
 
     <form class="prg-form" data-item-form hidden>
         <h2 data-item-form-title>Новое задание</h2>
@@ -211,6 +218,7 @@
                 {% if item.description %}<p>{{ item.description | rich_text | safe }}</p>{% endif %}
                 {% if item.subject %}<span class="prg-badge">{{ item.subject }}</span>{% endif %}
             </div>
+            {% if prg_edit %}
             <div class="prg-item-actions">
                 <span class="prg-blk-move">
                     <button type="button" class="btn-outline" data-item-move="-1" aria-label="Выше" {% if loop.first %}disabled{% endif %}>↑</button>
@@ -222,10 +230,11 @@
                    неё ничем, кроме слова (аудит 29.09.2026). #}
                 <button type="button" class="btn-danger" data-item-delete>Удалить</button>
             </div>
+            {% endif %}
         </article>
         {% endfor %}
         {% else %}
-        <p class="prg-hint">Пока ни одного задания. Нажмите «Задание» выше, чтобы добавить первое.</p>
+        <p class="prg-hint">Пока ни одного задания.{% if prg_edit %} Нажмите «Задание» выше, чтобы добавить первое.{% endif %}</p>
         {% endif %}
     </section>
 </div>
@@ -601,7 +610,8 @@ function uploadImage(file, url) {
     // «Отмена» раньше оставляла человека там же, без пути назад к списку.
     var returnTo = null;
 
-    tile.addEventListener('click', function () {
+    // Плитки нет при «Смотреть» в АОП.
+    if (tile) tile.addEventListener('click', function () {
         returnTo = null;
         resetForm();
         openForm();

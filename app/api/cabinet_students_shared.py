@@ -42,7 +42,7 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score
-from app.services.section_access import has_grant
+from app.services.section_access import can, has_grant
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level, student_point_a
 from app.services.review_aggregate import (
@@ -498,7 +498,13 @@ def _render_students_panel(
             else "statistics" if (tab in valid_tabs and tab == "statistics")
             else "students"
         ),
+        # Значки «Проверено» в списке — только чтение.
         "can_score": can_score,
+        # `CAN_SCORE` в скрипте карточки открывает все кнопки записи: анкету,
+        # «+ Загрузить», удаление работ, разблокировку, балл. Ранга 4 мало:
+        # модератору и любому с «Смотреть» в «Учениках» сервер ответит 403
+        # (шаг 2 плана тонких доступов, «кнопка = сервер»).
+        "can_edit_card": can_score and can(user, "students"),
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
         "months": MONTHS,

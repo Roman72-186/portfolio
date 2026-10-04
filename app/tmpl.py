@@ -8,6 +8,8 @@ from app.config import settings
 from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS, TIMEZONE_DISPLAY
 from app.csrf import generate_csrf_token
 from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
+from app.services.section_access import LEVEL_EDIT
+from app.services.section_access import can as _section_can
 from app.services.tz import msk_text
 
 templates = Jinja2Templates(directory="app/templates")
@@ -47,6 +49,12 @@ def _unread_count_for(user) -> int:
         return count
     except Exception:
         return 0
+
+
+def _can(user, section_key: str, level: str = LEVEL_EDIT) -> bool:
+    """`can(user, "program")` в шаблоне: кнопка записи спрашивает то же
+    правило, что сервер (`section_access.can`). Без пользователя — нет."""
+    return bool(user) and _section_can(user, section_key, level)
 
 
 # Make csrf_token(request) available in every template automatically
@@ -201,3 +209,4 @@ def ru_plural(count: int, one: str, few: str, many: str) -> str:
 
 
 templates.env.filters["plural"] = ru_plural
+templates.env.globals["can"] = _can

@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Карточка ученика — {{ target.last_name or '' }} {{ target.first_name or target.name }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=13">
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=14">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
+{# «Смотреть» в «Людях» — карточка без правки: поля формы неактивны, кнопок
+   сохранения, доступа и входа «глазами» нет (шаг 2 плана тонких доступов). #}
+{% set people_edit = can(user, "people") %}
 <div class="uc-wrap ios-uc">
     <div class="uc-head">
         <a href="/cabinet/superadmin/users" class="back-link uc-back-link">← Все ученики</a>
@@ -33,6 +36,7 @@
 
     <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/tags">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <fieldset class="uc-fields"{% if not people_edit %} disabled{% endif %}>
 
         <div class="uc-section">
             <h3>Доступ в личный кабинет</h3>
@@ -45,7 +49,8 @@
                     {% endif %}
                     <br>Новый пароль будет показан один раз после генерации.
                 </div>
-                {% set can_manage = user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% set can_manage = people_edit and user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% set can_impersonate = people_edit and can_impersonate %}
                 {% if can_manage or can_impersonate %}
                 <div class="uc-btn-group">
                     {% if can_manage %}
@@ -142,11 +147,14 @@
                 </label>
             </div>
 
+            {% if people_edit %}
             <div class="form-actions">
                 <a href="/cabinet/superadmin/users" class="btn-outline">Отмена</a>
                 <button type="submit" class="btn-blue">Сохранить</button>
             </div>
+            {% endif %}
         </div>
+        </fieldset>
     </form>
 
     {# Личные исключения из правил роли (services/section_access.py). Список
