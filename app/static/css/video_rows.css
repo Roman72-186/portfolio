@@ -1,0 +1,22 @@
+/* Строка ролика в списке: каталог `/cabinet/videos` и архив ученика
+   `/cabinet/learning/archive` (04.10.2026). Вынесено из инлайнового <style>
+   каталога, чтобы архив не заводил вторую копию. Вид iOS для каталога —
+   `.ios-videos .video-row*` в video_ios.css, он перекрывает эти правила. */
+.video-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center;
+    padding: 18px 20px; color: inherit; text-decoration: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--sh-sm); transition: border-color var(--duration-fast), transform var(--duration-fast);
+}
+.video-row:hover { border-color: var(--blue); transform: translateY(-1px); opacity: 1; }
+.video-row:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.video-row-title { margin: 0 0 6px; font: 700 16px/1.3 var(--font-display); color: var(--text); }
+.video-row-description { margin: 0; max-width: 65ch; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.video-row-state { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 11px; border-radius: var(--r-pill); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.video-row-state--new { color: var(--blue-on-soft); background: var(--blue-soft); }
+.video-row-state--started { color: var(--warning); background: var(--warning-soft); }
+.video-row-state--completed { color: var(--ok-strong); background: rgba(4,120,87,.10); }
+@media (max-width: 600px) {
+    .video-row { grid-template-columns: 1fr; gap: 12px; padding: 16px; }
+    .video-row-state { justify-self: start; }
+}

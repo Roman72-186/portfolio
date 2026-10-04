@@ -1,0 +1,25 @@
+/* Архив ученика (`cabinet_learning_archive.html`, владелец 04.10.2026):
+   видео прошедших этапов, циклов и заданий. Карточка этапа — общая
+   `.lrn-card` из tracker.css, строка ролика — `.video-row` из
+   video_rows.css; здесь только раскладка. Отдельный файл, а не правка
+   tracker.css: версия того одна на десять шаблонов
+   (`test_block_assets_are_included_at_one_version`). */
+
+.lrn-archive { display: flex; flex-direction: column; gap: 14px; }
+
+/* Карточка этапа — не ссылка, подсветку наведения у неё снимаем. */
+.lrn-archive-period:hover { border-color: var(--line); }
+
+.lrn-archive-month {
+    margin: 16px 0 0;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--dim);
+}
+
+.lrn-archive-cycle {
+    margin: 10px 0 8px;
+    font-size: 14px; font-weight: 800;
+}
+
+.lrn-archive-videos { display: grid; gap: 10px; }

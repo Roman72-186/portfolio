@@ -26,12 +26,14 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.constants import MONTHS
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
-from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
-from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
+from app.models.learning_video import LearningVideo
+from app.models.task_block import BLOCK_PORTFOLIO, BLOCK_VIDEO, COMPLETABLE_BLOCK_TYPES
+from app.models.tracker import ITEM_MOCK_EXAM, ITEM_VIDEO, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
-from app.services.program import day_bounds
+from app.services.program import day_bounds, item_details
 from app.services.task_blocks import (
     close_block_for_user,
     get_blocks_for_tasks,
@@ -664,6 +666,148 @@ def _cycle_is_over(topic: LearningTopic, today: date) -> bool:
     отметки в первом сервер отклонял 403 «Цикл пройден», хотя цикл ещё шёл.
     """
     return cycle_bounds(topic)[1] < today
+
+
+def _passed_videos(
+    db: Session, steps: list[dict], *, period_over: bool, now: datetime, seen: set[int]
+) -> list[dict]:
+    """Готовые ролики из шагов ленты, чьё задание уже прошло.
+
+    Прошло — закончился весь период (цикл или этап) либо наступил срок
+    задания (`due_at`). Ролик берётся из блока «Видео» или, у задания без
+    блоков, из старого задания-видео по его теме (`program.item_details`).
+    `seen` — один ролик один раз на весь архив: его можно поставить в
+    несколько заданий, и лента соседних циклов подхватывает датные задания
+    по пересечению дат.
+    """
+    passed = []
+    for step in steps:
+        task = step["task"]
+        if not period_over:
+            due_at = task.due_at
+            if due_at is None:
+                continue
+            if due_at.tzinfo is None:
+                due_at = due_at.replace(tzinfo=timezone.utc)
+            if due_at >= now:
+                continue
+        passed.append(step)
+    legacy = item_details(
+        db, [s["task"] for s in passed if s["block"] is None and s["task"].kind == ITEM_VIDEO]
+    )
+    block_video_ids = [
+        s["block"].video_id for s in passed
+        if s["block"] is not None and s["block"].block_type == BLOCK_VIDEO and s["block"].video_id
+    ]
+    by_id = {
+        video.id: video
+        for video in db.query(LearningVideo).filter(LearningVideo.id.in_(block_video_ids)).all()
+    } if block_video_ids else {}
+    videos = []
+    for step in passed:
+        block, task = step["block"], step["task"]
+        if block is None:
+            video = (legacy.get(task.id) or {}).get("video")
+        elif block.block_type == BLOCK_VIDEO:
+            video = by_id.get(block.video_id)
+        else:
+            video = None
+        if (
+            video is None or video.id in seen or video.deleted_at is not None
+            or not video.is_published or video.status != "ready"
+        ):
+            continue
+        seen.add(video.id)
+        videos.append({"video": video, "task_title": task.title})
+    return videos
+
+
+def archive_for_student(
+    db: Session, *, user_id: int, user_tariff: str | None, today: date
+) -> list[dict]:
+    """Архив ученика — видео прошедших этапов, циклов и заданий (владелец
+    04.10.2026), сгруппированные этап → месяц → цикл, от ранних к поздним.
+
+    Прецедент: ученица не нашла прошлые видео («на платформе их уже нет»).
+    Полоса циклов на экране обучения показывает только текущий этап, и со
+    сменой этапа прошлые циклы с роликами пропадали из виду.
+
+    Что попадает: ролики закончившихся циклов и этапов и ролики заданий с
+    прошедшим сроком в идущем цикле. Своих правил видимости нет — ролики
+    берутся из той же ленты, что видит ученик (`build_cycle_feed`: аудитория,
+    тариф блока, «закончился до прихода»), по тем же циклам (`started_cycles`).
+    Цикл, запертый долгом, пропускается: вперёд нельзя (30.09.2026).
+    Ссылка ведёт в плеер `/cabinet/videos/{id}`, он проверяет доступ сам
+    (`is_video_accessible`). Записывать в архиве нечего, поэтому задания
+    прямо на этапе («Портфолио») тоже входят — в отдельную группу этапа.
+
+    Этап — это период («Предобучение», «Семестр 1»), месяц считается по дате
+    начала цикла. Циклы без этапа (до 24.09.2026) — группа `stage=None`.
+    """
+    debt = cycle_debt(db, user_id, today)
+    locked_ids = {item.id for item in debt["locked"]} if debt else set()
+    now = datetime.now(timezone.utc)
+    seen: set[int] = set()
+
+    groups: dict[int | None, dict] = {}
+
+    def group_for(stage: LearningTopic | None) -> dict:
+        key = stage.id if stage is not None else None
+        if key not in groups:
+            groups[key] = {
+                "stage": stage,
+                "label": cycle_label(db, stage) if stage is not None else "",
+                "stage_videos": [],
+                "months": [],
+            }
+        return groups[key]
+
+    stages: dict[int, LearningTopic] = {}
+    for cycle in reversed(started_cycles(db, user_id, today)):
+        if cycle.id in locked_ids:
+            continue
+        stage = _stage_of(db, cycle)
+        if stage is not None:
+            stages.setdefault(stage.id, stage)
+        first, last = cycle_bounds(cycle)
+        steps = build_cycle_feed(
+            db, user_id=user_id, user_tariff=user_tariff, start=first, end=last,
+            topic_id=cycle.id,
+        )
+        videos = _passed_videos(db, steps, period_over=last < today, now=now, seen=seen)
+        if not videos:
+            continue
+        group = group_for(stage)
+        month_label = f"{MONTHS[first.month - 1].capitalize()} {first.year}"
+        if not group["months"] or group["months"][-1]["label"] != month_label:
+            group["months"].append({"label": month_label, "cycles": []})
+        group["months"][-1]["cycles"].append({
+            "id": cycle.id, "title": cycle_label(db, cycle), "videos": videos,
+        })
+
+    # Задания прямо на этапе — тем же фильтром, что лента этапа в
+    # `feed_for_student`: окно этапа широкое и цепляет датные задания циклов.
+    for stage in stages.values():
+        first, last = cycle_bounds(stage)
+        steps = [
+            step for step in build_cycle_feed(
+                db, user_id=user_id, user_tariff=user_tariff, start=first, end=last,
+                topic_id=stage.id,
+            )
+            if step["task"].topic_id == stage.id
+        ]
+        videos = _passed_videos(db, steps, period_over=last < today, now=now, seen=seen)
+        if videos:
+            group_for(stage)["stage_videos"] = videos
+
+    # Циклы без этапа старше любых этапов — они идут первыми.
+    return sorted(
+        groups.values(),
+        key=lambda group: (
+            group["stage"] is not None,
+            cycle_bounds(group["stage"])[0] if group["stage"] is not None else date.min,
+        ),
+    )
 
 
 def feed_for_student(

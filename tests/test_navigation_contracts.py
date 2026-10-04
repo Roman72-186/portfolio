@@ -64,6 +64,8 @@ def test_student_cabinet_uses_student_bottom_nav_only(
 
     assert 'href="/cabinet/tracker"' in bottom_nav
     assert 'href="/cabinet/learning"' in bottom_nav
+    # Архив пройденных этапов и циклов (владелец 04.10.2026).
+    assert 'href="/cabinet/learning/archive"' in bottom_nav
     assert 'href="/cabinet/portfolio"' in bottom_nav
     assert 'href="/cabinet/personal"' in bottom_nav
     # 3D-лаборатория закрыта ученикам на сентябрь 2026 (LAB3D_OPEN_FOR_STUDENTS).
@@ -100,9 +102,12 @@ def test_portfolio_gate_keeps_personal_open_on_mobile_and_desktop(
     resp = client.get("/cabinet/learning")
 
     assert resp.status_code == 200
-    assert "navKey !== 'learning' && navKey !== 'personal'" in resp.text
-    assert "navKey === 'learning' || navKey === 'personal'" in resp.text
+    # Архив — часть обучения: сервер `/cabinet/learning/*` гейтом не закрывает,
+    # и меню клик по нему не перехватывает (04.10.2026).
+    assert "navKey !== 'learning' && navKey !== 'archive' && navKey !== 'personal'" in resp.text
+    assert "navKey === 'learning' || navKey === 'archive' || navKey === 'personal'" in resp.text
     assert client.get("/cabinet/personal").status_code == 200
+    assert client.get("/cabinet/learning/archive").status_code == 200
 
 
 def test_curator_reports_use_curator_nav_not_admin_staff_nav(

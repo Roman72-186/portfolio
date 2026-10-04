@@ -40,6 +40,7 @@ from app.services.video_progress import (
     log_video_view,
     evaluate_watch,
     save_video_progress as persist_video_progress,
+    view_state,
     watch_threshold_seconds,
 )
 from app.tmpl import templates
@@ -274,9 +275,11 @@ def cabinet_videos(
             logger.exception("Video catalogue progress read failed for user_id=%s", user["user_id"])
             db.rollback()
             progress = None
-        resume = get_resume_position(progress)
-        state = "completed" if progress and progress.completed_at else ("started" if resume >= 5 else "new")
-        items.append({"video": video, "resume_seconds": resume, "state": state})
+        items.append({
+            "video": video,
+            "resume_seconds": get_resume_position(progress),
+            "state": view_state(progress),
+        })
     return templates.TemplateResponse(request, "cabinet_videos.html",
         {
             "request": request,

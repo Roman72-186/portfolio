@@ -126,6 +126,19 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         aria_label=LEARNING_SPACE_LABEL,
         icon="learning",
     ),
+    # Архив (владелец 04.10.2026): все пройденные этапы и циклы. Полоса циклов
+    # на экране обучения показывает только текущий этап, и со сменой этапа
+    # прошлые видео пропадали из виду. Гейт портфолио «До» архив не
+    # закрывает — как и саму ленту, сервер `/cabinet/learning/*` не блокирует.
+    StudentNavItem(
+        key="archive",
+        desktop_href="/cabinet/learning/archive",
+        mobile_href="/cabinet/learning/archive",
+        desktop_label="Архив",
+        mobile_label="Архив",
+        aria_label="Архив пройденных циклов",
+        icon="archive",
+    ),
     StudentNavItem(
         key="portfolio",
         desktop_href="/cabinet/portfolio",

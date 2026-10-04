@@ -33,10 +33,11 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
-from app.services.cycle_feed import feed_for_student
+from app.services.cycle_feed import archive_for_student, feed_for_student
 from app.services.program import item_details
 from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
+from app.services.video_progress import get_video_progress, view_state
 from app.constants import SUPPORT_URL
 from app.tmpl import templates
 
@@ -130,4 +131,35 @@ def cabinet_learning(
         "onboarding_on_learning": True,
         "onboarding_access_until_text": msk_text(user.get("access_until")),
         "support_url": SUPPORT_URL,
+    })
+
+
+@router.get("/learning/archive", response_class=HTMLResponse)
+def cabinet_learning_archive(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Архив: видео прошедших этапов, циклов и заданий (владелец 04.10.2026).
+    Сборка — `cycle_feed.archive_for_student`, ролик открывается обычным
+    плеером `/cabinet/videos/{id}`, отметка просмотра — та же, что в каталоге."""
+    if needs_profile_setup(user):
+        return RedirectResponse("/cabinet/profile", status_code=302)
+    periods = archive_for_student(
+        db, user_id=user["user_id"], user_tariff=user.get("tariff"), today=today_msk(),
+    )
+    for period in periods:
+        items = period["stage_videos"] + [
+            item for month in period["months"] for cycle in month["cycles"]
+            for item in cycle["videos"]
+        ]
+        for item in items:
+            item["state"] = view_state(get_video_progress(
+                db, user_id=user["user_id"], video_id=item["video"].bunny_video_id,
+            ))
+    return templates.TemplateResponse(request, "cabinet_learning_archive.html", {
+        "request": request,
+        "user": user,
+        "periods": periods,
+        "active_tab": "archive",
     })

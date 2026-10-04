@@ -59,6 +59,16 @@ def get_resume_position(progress: VideoProgress | None) -> float:
     return round(progress.position_seconds, 1)
 
 
+def view_state(progress: VideoProgress | None) -> str:
+    """Отметка ролика в списке: `completed`, `started` или `new`.
+
+    Одно правило на каталог (`/cabinet/videos`) и архив ученика
+    (`/cabinet/learning/archive`, 04.10.2026)."""
+    if progress is not None and progress.completed_at:
+        return "completed"
+    return "started" if get_resume_position(progress) >= 5 else "new"
+
+
 def compute_watched_seconds(
     previous: VideoProgress | None,
     *,
