@@ -919,9 +919,11 @@
             const missingCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.missing; }, 0);
             stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount
                 + ' (срок прошёл: ' + assignment.overdue.length + ', срок не наступил: ' + assignment.pending.length + ')'
-                + '. По тарифам (сдали / не сдали): '
+                + '. По тарифам: '
                 + Array.from(byTariff, function (entry) {
-                    return entry[0] + ': ' + entry[1].submitted + ' / ' + entry[1].missing;
+                    // Итог по тарифу первым: без него «27 / 2» читали как «27 учеников на тарифе».
+                    const total = entry[1].submitted + entry[1].missing;
+                    return entry[0] + ' — ' + total + ' (сдали ' + entry[1].submitted + ', не сдали ' + entry[1].missing + ')';
                 }).join('; ');
             stats.hidden = false;
         } else {
