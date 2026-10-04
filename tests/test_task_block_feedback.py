@@ -499,7 +499,7 @@ def test_student_can_reply_after_teacher_started_dialog(
     assert f'/cabinet/staff/task-block-submissions/{submission.id}/feedback' in page.text
 
 
-@pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
+@pytest.mark.parametrize("role_name", ["админ", "суперадмин"])
 def test_staff_can_return_wrong_block_work_to_revision(
     db, user_factory, session_factory, client, role_name,
 ):
@@ -533,23 +533,23 @@ def test_staff_can_return_wrong_block_work_to_revision(
         f"/cabinet/staff/students-review/block-work/{submission.id}/reviewed",
         json={"reviewed": True},
     ).status_code == 409
-    if role_name != "куратор":
-        assert client.post(
-            f"/cabinet/staff/task-block-submissions/{submission.id}/score",
-            json={"score": 80},
-        ).status_code == 409
+    assert client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/score",
+        json={"score": 80},
+    ).status_code == 409
 
 
-def test_other_curator_cannot_return_block_work(
+def test_curator_cannot_return_block_work(
     db, user_factory, session_factory, client,
 ):
-    owner = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
-    other = user_factory(vk_id=970_025, name="Другой куратор", role_name="куратор")
+    """Возврат на доработку — только ГП и выше, даже своего ученика
+    (`rbac.REVISION_MIN_RANK`, владелец 04.10.2026)."""
+    curator = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_027, name="Ученик")
-    student.curator_id = owner.id
+    student.curator_id = curator.id
     db.commit()
     submission = _submission(db, student)
-    _login(client, session_factory, other)
+    _login(client, session_factory, curator)
 
     response = client.post(
         f"/cabinet/staff/task-block-submissions/{submission.id}/revision",

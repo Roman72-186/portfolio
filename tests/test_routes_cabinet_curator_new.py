@@ -298,8 +298,44 @@ def test_mock_exams_not_found_404(curator_client):
 # POST /cabinet/mock-exam/unlock
 # ---------------------------------------------------------------------------
 
-def test_curator_unlock_missing_student_keeps_403_contract(curator_client):
+def _chief_login(client, user_factory, session_factory):
+    chief = user_factory(vk_id=800050, name="Chief", role_name="админ")
+    client.cookies.set("session_id", session_factory(chief).id)
+    return chief
+
+
+def _locked(db, student_id):
+    lock = MockExamLock(
+        user_id=student_id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    )
+    db.add(lock)
+    db.commit()
+    db.refresh(lock)
+    return lock
+
+
+def test_curator_cannot_unlock_own_student(curator_client, db, student):
+    """Разблокировать пересдачу — только ГП и выше (владелец 04.10.2026), тот
+    же порог, что у кнопки в карточке ученика."""
     client, _ = curator_client
+    lock = _locked(db, student.id)
+
+    resp = client.post(
+        "/cabinet/mock-exam/unlock",
+        data={"student_id": student.id, "subject": "Рисунок"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    db.refresh(lock)
+    assert lock.is_locked is True
+
+
+def test_unlock_missing_student_keeps_403_contract(client, user_factory, session_factory):
+    _chief_login(client, user_factory, session_factory)
 
     resp = client.post(
         "/cabinet/mock-exam/unlock",
@@ -311,31 +347,8 @@ def test_curator_unlock_missing_student_keeps_403_contract(curator_client):
     assert "Нет доступа к этому студенту" in resp.text
 
 
-def test_curator_unlock_foreign_student_keeps_403_contract(
-    client, db, user_factory, session_factory
-):
-    owner = user_factory(vk_id=820004, name="Owner", role_name="куратор")
-    other = user_factory(vk_id=820005, name="Other", role_name="куратор")
-    student = user_factory(vk_id=820006, name="Student", role_name="ученик")
-    student.curator_id = owner.id
-    db.add(student)
-    db.commit()
-
-    sess = session_factory(other)
-    client.cookies.set("session_id", sess.id)
-
-    resp = client.post(
-        "/cabinet/mock-exam/unlock",
-        data={"student_id": student.id, "subject": "Рисунок"},
-        follow_redirects=False,
-    )
-
-    assert resp.status_code == 403
-    assert "Нет доступа к этому студенту" in resp.text
-
-
-def test_curator_unlock_invalid_subject_still_returns_400(curator_client, student):
-    client, _ = curator_client
+def test_unlock_invalid_subject_still_returns_400(client, user_factory, session_factory, student):
+    _chief_login(client, user_factory, session_factory)
 
     resp = client.post(
         "/cabinet/mock-exam/unlock",
@@ -347,17 +360,9 @@ def test_curator_unlock_invalid_subject_still_returns_400(curator_client, studen
     assert "Неверный предмет" in resp.text
 
 
-def test_curator_unlock_own_student_clears_lock(curator_client, db, student):
-    client, curator = curator_client
-    lock = MockExamLock(
-        user_id=student.id,
-        subject="Рисунок",
-        is_locked=True,
-        locked_at=datetime.now(timezone.utc),
-    )
-    db.add(lock)
-    db.commit()
-    db.refresh(lock)
+def test_chief_unlock_clears_lock(client, db, user_factory, session_factory, student):
+    chief = _chief_login(client, user_factory, session_factory)
+    lock = _locked(db, student.id)
 
     resp = client.post(
         "/cabinet/mock-exam/unlock",
@@ -368,7 +373,7 @@ def test_curator_unlock_own_student_clears_lock(curator_client, db, student):
     assert resp.status_code == 302
     db.refresh(lock)
     assert lock.is_locked is False
-    assert lock.unlocked_by_id == curator.id
+    assert lock.unlocked_by_id == chief.id
 
 
 # ---------------------------------------------------------------------------

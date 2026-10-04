@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_unread
 from app.constants import TARIFFS_WITH_FEEDBACK
 from app.db.database import get_db
-from app.dependencies import require_csrf, require_curator, require_student
+from app.dependencies import require_csrf, require_curator, require_revision_sender, require_student
 from app.models.homework import HomeworkAssignment
 from app.models.homework_feedback import HomeworkFeedback
 from app.models.homework_submission import (
@@ -641,7 +641,7 @@ async def accept_homework_submission(
 async def send_homework_to_revision(
     submission_id: int,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_revision_sender)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     comment: str = Form(default=""),

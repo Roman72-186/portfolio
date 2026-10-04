@@ -61,6 +61,19 @@ def can_score(role_rank: int) -> bool:
     return role_rank >= SCORE_MIN_RANK
 
 
+# Вернуть работу ученику на доработку — любую: сдачу в задании, домашку,
+# пробник — только Главный преподаватель и выше (владелец 04.10.2026: «только
+# ГП», про все возвраты). 02.10.2026 возврат открывали куратору; куратор
+# по-прежнему пишет обратную связь. Эндпоинты берут `require_revision_sender`
+# (`app/dependencies.py`), экран «Проверка по ученику» — флаг отсюда.
+REVISION_MIN_RANK = 4
+
+
+def can_send_to_revision(role_rank: int) -> bool:
+    """Может ли сотрудник с этим уровнем вернуть работу на доработку."""
+    return role_rank >= REVISION_MIN_RANK
+
+
 def is_score_request(method: str, path: str) -> bool:
     """Ставит ли запрос балл: POST на адрес, последний сегмент которого
     кончается на `score` (`.../score`, `.../trainer-score`). Такой запрос

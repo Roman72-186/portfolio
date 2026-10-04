@@ -1065,8 +1065,9 @@ def test_revision_opens_mock_exam_upload_again(client, db, user_factory, session
     assert "Рисунок" in form_resp.text
 
 
-def test_curator_can_unlock_subject(client, db, user_factory, session_factory):
-    """Curator POSTing /cabinet/mock-exam/unlock sets is_locked=False."""
+def test_curator_cannot_unlock_subject(client, db, user_factory, session_factory):
+    """Разблокировать пересдачу — только ГП и выше (04.10.2026): куратор,
+    даже со своим учеником, получает 403, замок остаётся."""
     from app.models.mock_exam_lock import MockExamLock
     from datetime import datetime, timezone
     student = user_factory(vk_id=100_001, role_name="ученик")
@@ -1092,11 +1093,10 @@ def test_curator_can_unlock_subject(client, db, user_factory, session_factory):
         data={"student_id": student.id, "subject": "Рисунок"},
         follow_redirects=False,
     )
-    assert resp.status_code == 302
+    assert resp.status_code == 403
 
     updated = db.query(MockExamLock).filter(MockExamLock.id == lock_id).first()
-    assert updated.is_locked is False
-    assert updated.unlocked_by_id == curator.id
+    assert updated.is_locked is True
 
 
 # ---------------------------------------------------------------------------

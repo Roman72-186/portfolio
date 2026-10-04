@@ -486,11 +486,14 @@ def student_card(student_id: int, _user: Annotated[dict, Depends(require_curator
 
 # ── POST: unlock mock exam ───────────────────────────────────────────────────
 
+# Разблокировать пересдачу — только ГП и выше (владелец 04.10.2026), тот же
+# порог, что у `cabinet_students_shared.unlock_mock_exam`, чья кнопка стоит в
+# карточке ученика. Этот адрес кнопки не имеет, куратору раньше был обходом.
 @router.post("/mock-exam/unlock")
 def unlock_mock_exam(
     student_id: Annotated[int, Form()],
     subject: Annotated[str, Form()],
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     redirect_to: str = Form(""),

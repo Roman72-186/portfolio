@@ -28,7 +28,7 @@ from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockS
 from app.models.user import User
 from app.models.work import Work
 from app.services.notify import notify
-from app.services.rbac import can_score
+from app.services.rbac import can_score, can_send_to_revision
 from app.services.point_a import maybe_notify_point_a_level
 from app.services.review_aggregate import (
     FULL_ACCESS_RANK,
@@ -169,6 +169,9 @@ def student_review_detail(
         # «МАКСИМУМ»/«УВЕРЕННЫЙ» (владелец 30.09.2026).
         "tariffs": tariffs_for_data([student.tariff]),
         "can_score": can_score(user["role_rank"]),
+        # Вернуть на доработку — только ГП и выше (`rbac.REVISION_MIN_RANK`,
+        # 04.10.2026): кнопка спрашивает то же правило, что и сервер.
+        "can_send_revision": can_send_to_revision(user["role_rank"]),
         "nav_active": "students_review",
     })
 

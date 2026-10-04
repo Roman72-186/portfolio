@@ -16,6 +16,7 @@ from app.dependencies import (
     require_csrf,
     require_csrf_header,
     require_curator,
+    require_revision_sender,
     require_scorer,
     require_student,
 )
@@ -226,7 +227,7 @@ def score_submission(
 def send_submission_to_revision(
     submission_id: int,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_revision_sender)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     comment: str = Form(default=""),

@@ -155,7 +155,7 @@
                 <button type="button" class="btn-outline" data-mark-viewed>Просмотрено</button>
                 {% endif %}
                 {% endif %}
-                {% if not item.needs_revision and (
+                {% if can_send_revision and not item.needs_revision and (
                     item.domain == 'block_work'
                     or item.domain == 'homework'
                     or (item.domain == 'work' and item.can_return_revision)

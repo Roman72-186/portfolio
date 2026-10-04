@@ -101,7 +101,8 @@ def test_student_detail_shows_items_across_domains(db, user_factory, session_fac
     assert resp.status_code == 200
     assert "Пробник" in resp.text
     assert "Композиция" in resp.text
-    assert 'data-return-revision>Вернуть' in resp.text
+    # Возврат на доработку — только ГП и выше (04.10.2026): куратор кнопки не видит.
+    assert 'data-return-revision>Вернуть' not in resp.text
 
 
 def test_chief_teacher_sees_probnik_revision_on_student_review(
@@ -124,10 +125,13 @@ def test_chief_teacher_sees_probnik_revision_on_student_review(
     assert "На доработке" in page.text
 
 
-def test_curator_returns_own_mock_and_cannot_review_until_resubmission(
+def test_chief_returns_mock_and_nobody_reviews_until_resubmission(
     db, user_factory, session_factory, client,
 ):
+    """Свой куратор пробник не возвращает (только ГП, 04.10.2026); после
+    возврата ГП отметить «просмотрено» нельзя до новой сдачи."""
     curator = user_factory(vk_id=860_140, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=860_146, name="Главный", role_name="админ")
     student = user_factory(vk_id=860_141, name="Ученик")
     student.curator_id = curator.id
     db.commit()
@@ -135,6 +139,9 @@ def test_curator_returns_own_mock_and_cannot_review_until_resubmission(
     work.viewed_at = datetime.now(timezone.utc)
     db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
+    refused = client.post(f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision")
+    assert refused.status_code == 403
+    client.cookies.set("session_id", session_factory(chief).id)
 
     returned = client.post(f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision")
 

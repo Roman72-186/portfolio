@@ -622,7 +622,27 @@ def test_homework_message_queues_outside_delivery(auth_client, db, user_factory,
     assert add_task.call_args.args[1] == notif.id
 
 
-@pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
+def test_curator_cannot_return_homework_to_revision(auth_client, db, user_factory, session_factory):
+    """Возврат на доработку — только ГП и выше, даже своего ученика
+    (`rbac.REVISION_MIN_RANK`, владелец 04.10.2026)."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+    curator = user_factory(vk_id=888_003, name="Куратор", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+
+    assert resp.status_code == 403
+    db.refresh(submission)
+    assert submission.status == "submitted"
+
+
+@pytest.mark.parametrize("role_name", ["админ", "суперадмин"])
 def test_staff_can_return_wrong_homework_to_revision(auth_client, db, user_factory, session_factory, role_name):
     """Ошибочную домашку ученик может загрузить снова после возврата."""
     client, user = auth_client
@@ -679,6 +699,8 @@ def test_accepted_homework_can_be_returned_and_uploaded_again(
     client.cookies.set("session_id", session_factory(curator).id)
     assert client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept").status_code == 200
 
+    chief = user_factory(vk_id=888_004, name="Главный", role_name="админ")
+    client.cookies.set("session_id", session_factory(chief).id)
     with patch("app.api.homework_submission.notify"):
         returned = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
     assert returned.status_code == 200

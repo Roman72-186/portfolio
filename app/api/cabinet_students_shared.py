@@ -31,6 +31,7 @@ from app.dependencies import (
     require_csrf,
     require_csrf_header,
     require_curator,
+    require_revision_sender,
     require_scorer,
 )
 from app.models.session import Session
@@ -984,7 +985,7 @@ def score_work(
 def send_mock_exam_to_revision(
     student_id: int,
     work_id: int,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_revision_sender)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     background_tasks: BackgroundTasks,
