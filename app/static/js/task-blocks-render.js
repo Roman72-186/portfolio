@@ -1396,13 +1396,18 @@ scope)` и свойством `answered` (одна попытка: после о
 
             // Правила школы с галочкой у каждого пункта (владелец 03.09.2026:
             // «прочитать и поставить галочки рядом с этими правилами»).
-            // Разметка вариантов та же, что у вопроса (.lrn-blk-option,
-            // .lrn-blk-question-body — самостоятельные классы, не вложенные),
-            // а класс карточки свой: с чужим `lrn-blk-question` правила
-            // получали розовую полосу вопроса и в ленте от него не отличались.
+            // Строка-галочка та же, что у вопроса (`.lrn-blk-option`), а класс
+            // карточки свой: с чужим `lrn-blk-question` правила получали
+            // розовую полосу вопроса и в ленте от него не отличались.
+            //
+            // Текст согласия и текст пункта — эталонное тело текстового блока
+            // `.lrn-blk-body` (владелец 04.10.2026: форматирование в полях и
+            // блоках — от эталонной настройки). До этого согласие шло
+            // полужирным шрифтом вопроса, и выделенное жирным в нём терялось,
+            // а у текста пункта была своя копия стилей.
             function renderRules(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-rules'), block);
-                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-question-body', block.body_html));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 var chosen = block.answer_option_ids || [];
                 var locked = !!block.edit_reason || !!block.answered;
                 var inputs = [];
@@ -1417,7 +1422,11 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.disabled = locked;
                     inputs.push(input);
                     row.appendChild(input);
-                    row.appendChild(el('span', null, option.text));
+                    // Подпись размечена так же, как вариант вопроса: сервер и
+                    // предпросмотр конструктора отдают её готовой в `text_html`.
+                    row.appendChild(option.text_html
+                        ? elHtml('span', null, option.text_html)
+                        : el('span', null, option.text));
                     // Пункт без содержимого — правило в одну строку, как до
                     // 04.10.2026. С содержимым — оно сверху, галочка под ним.
                     var content = ruleItemContent(option);
@@ -1533,7 +1542,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     return media;
                 }
                 if (!kind && option.description_html) {
-                    return elHtml('div', 'lrn-blk-rule-text', option.description_html);
+                    return elHtml('div', 'lrn-blk-body', option.description_html);
                 }
                 return null;
             }

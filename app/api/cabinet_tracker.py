@@ -927,12 +927,18 @@ def cabinet_tracker_task_blocks(
             # С 04.10.2026 пункт несёт текст, фото, видео или аудио (`kind`,
             # пусто — текст), а `text` — подпись у галочки под ним. Файлы —
             # те же публичные ссылки S3, что у блока «Голосовое / кружок».
+            #
+            # Подпись и текст пункта — готовым HTML из `format_rich_text`, как
+            # у вариантов вопроса (владелец 04.10.2026: форматирование в полях
+            # и блоках — от эталонной настройки). До этого подпись шла сырой
+            # строкой, и `**жирный**` ученик видел со звёздочками.
             rule_options = options.get(block.id, [])
             rule_images = get_task_block_option_images(db, [o.id for o in rule_options])
             item["options"] = [
                 {
                     "id": o.id,
                     "text": o.text,
+                    "text_html": format_rich_text(o.text) if o.text else None,
                     "kind": o.content_kind,
                     "description_html": (
                         format_rich_text(o.description) if o.description else None
