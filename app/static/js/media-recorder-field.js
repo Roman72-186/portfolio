@@ -22,6 +22,10 @@
  *                                   первый `input[name=csrf_token]`); основной
  *                                   путь — свежий ключ из `window.csrfFresh`
  *                                   (`static/js/csrf.js`), см. `upload`;
+ *   data-mrf-attach-only          — обычное видео файлом (пункт правил,
+ *                                   владелец 04.10.2026): без кнопки
+ *                                   «Записать…», только «Прикрепить», и превью
+ *                                   прямоугольником, а не кружком;
  *   data-media-url/-kind          — уже сохранённая запись (редактор блока);
  *   data-mrf-form-status="…"      — подпись под записью в режиме формы (по
  *                                   умолчанию «Уйдёт вместе с сообщением»:
@@ -117,7 +121,7 @@
         return 'Не получилось начать запись. Можно прикрепить готовый файл.';
     }
 
-    function markup(modes) {
+    function markup(modes, attachOnly) {
         // Пара на каждый вид записи: «Записать голосовое» рядом с «Прикрепить
         // аудио», «Записать кружок» рядом с «Прикрепить видео» (владелец
         // 25.09.2026). Раньше шли обе записи, потом оба прикрепления, и на
@@ -126,8 +130,8 @@
         // `.mrf [hidden] { display: none }` в media-recorder.css.
         var pairs = modes.map(function (kind) {
             return '<div class="mrf-row mrf-pair">'
-                + '<button type="button" class="btn-outline mrf-btn" data-mrf-start="' + kind + '">'
-                + START_LABELS[kind] + '</button>'
+                + (attachOnly ? '' : '<button type="button" class="btn-outline mrf-btn" data-mrf-start="' + kind + '">'
+                    + START_LABELS[kind] + '</button>')
                 + '<button type="button" class="btn-outline mrf-btn" data-mrf-attach="' + kind + '">'
                 + ATTACH_LABELS[kind] + '</button>'
                 + '<input type="file" class="mrf-file-input" data-mrf-file="' + kind + '" accept="' + ATTACH_ACCEPT[kind] + '" hidden>'
@@ -174,7 +178,8 @@
         var modes = (root.getAttribute('data-mrf-modes') || 'voice note')
             .split(/\s+/).filter(function (m) { return LIMIT_SECONDS[m]; });
         root.classList.add('mrf');
-        root.innerHTML = markup(modes.length ? modes : ['voice', 'note']);
+        this.attachOnly = root.hasAttribute('data-mrf-attach-only');
+        root.innerHTML = markup(modes.length ? modes : ['voice', 'note'], this.attachOnly);
         this.stream = null;
         this.recorder = null;
         this.chunks = [];
@@ -467,7 +472,7 @@
         media.controls = true;
         media.preload = 'metadata';
         if (kind === 'note') {
-            media.className = 'mrf-circle';
+            media.className = this.attachOnly ? 'mrf-video' : 'mrf-circle';
             media.setAttribute('playsinline', '');
         } else {
             media.className = 'mrf-audio';

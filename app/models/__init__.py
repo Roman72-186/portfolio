@@ -34,6 +34,7 @@ from app.models.task_block import (
     TaskBlockCompareStep,
     TaskBlockImage,
     TaskBlockOption,
+    TaskBlockOptionImage,
     TaskBlockResponse,
     TaskBlockState,
     TaskBlockSubmission,

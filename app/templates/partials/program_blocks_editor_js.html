@@ -72,10 +72,10 @@ var REQUIRED_PHOTOS_FIELD = ''
     + '  <span class="prg-hint">Ученик сдаст ровно столько. Нужен один снимок со всей работой – поставьте 1 и напишите это в условии.</span>'
     + '</label>';
 
-// Пока в форме пишется или грузится запись блока «Голосовое / кружок»
-// (контейнер с `data-mrf-busy`, см. media-recorder-field.js), кнопки
-// сохранения не срабатывают (владелец 25.09.2026): иначе блок ушёл бы без
-// файла, `_is_empty` отбросил бы его, и запись молча пропала бы. Одна
+// Пока в форме пишется или грузится запись — блока «Голосовое / кружок»
+// или пункта правил (контейнер с `data-mrf-busy`, см. media-recorder-field.js),
+// кнопки сохранения не срабатывают (владелец 25.09.2026): иначе блок ушёл бы
+// без файла, `_is_empty` отбросил бы его, и запись молча пропала бы. Одна
 // проверка в фазе захвата на весь документ, а не по строке в каждом из
 // пяти обработчиков сохранения двух страниц.
 var MEDIA_BUSY_SAVE_BUTTONS = '[data-mock-save], [data-video-save], [data-homework-save], '
@@ -84,7 +84,7 @@ document.addEventListener('click', function (event) {
     var button = event.target.closest(MEDIA_BUSY_SAVE_BUTTONS);
     if (!button) return;
     var form = button.closest('form');
-    if (!form || !form.querySelector('[data-b-media][data-mrf-busy]')) return;
+    if (!form || !form.querySelector('[data-media-recorder][data-mrf-busy]')) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     window.alert('Запись ещё не сохранилась. Дождитесь надписи «Сохранится вместе с заданием» и нажмите кнопку снова.');
@@ -338,16 +338,22 @@ function blockBodyHTML(type) {
     }
     if (type === 'rules') {
         // Правила школы (владелец 03.09.2026): «он должен их прочитать и
-        // поставить галочки рядом с этими правилами». Пункты — те же
-        // варианты, что у шкалы; отметки «верный вариант» здесь нет:
+        // поставить галочки рядом с этими правилами». С 04.10.2026 пункт —
+        // не только текст: фото, видео или аудио, а галочка «ознакомлен(а)»
+        // под содержимым (`ruleItemHTML`). Отметки «верный вариант» нет:
         // согласие не бывает неправильным.
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Правила школы»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст согласия" placeholder="Текст согласия, например «Отметьте каждый пункт, с которым ознакомились»"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<div class="prg-blk-options">'
-            + '  <p class="prg-hint">Пункты правил. Шаг закроется, только когда ученик отметит все.</p>'
+            + '  <p class="prg-hint">Пункты правил: текст, фото, видео или аудио. Под каждым у ученика галочка, шаг закроется, только когда он отметит все.</p>'
             + '  <div data-b-options></div>'
-            + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить правило</button></div>'
+            + '  <div class="prg-actions">'
+            + '    <button type="button" class="btn-outline" data-add-rule-item="text">+ Текст</button>'
+            + '    <button type="button" class="btn-outline" data-add-rule-item="photo">+ Фото</button>'
+            + '    <button type="button" class="btn-outline" data-add-rule-item="video">+ Видео</button>'
+            + '    <button type="button" class="btn-outline" data-add-rule-item="audio">+ Аудио</button>'
+            + '  </div>'
             + '</div>';
     }
     if (type === 'portfolio') {
@@ -603,6 +609,127 @@ function blockOptionHTML(type) {
         + '</div>';
 }
 
+// Пункт блока «Правила с галочками» (владелец 04.10.2026: «добавлять фото,
+// видео, аудио, текст, чтобы под ними стоял чек бокс»). Своя разметка, а не
+// `blockOptionHTML`: у пункта правил есть содержимое и нет «Верный».
+//
+// Файлы грузятся сразу, как у одноимённых блоков: фото — тем же
+// `data-b-photo-file` и `addImageThumb` (страница передаёт загрузке ближайший
+// пункт), видео и аудио — компонентом записи на `/upload-media`. Видео
+// уходит видом `note` — то же перекодирование в mp4, что у кружка, — но у
+// ученика играет обычным прямоугольным плеером: вид пункта хранится свой.
+//
+// Подпись у галочки заполнена сразу: у фото или записи её чаще не меняют.
+var RULE_ITEM_DEFAULT_LABEL = 'Ознакомлен(а)';
+var RULE_ITEM_LABELS = {text: 'Текст', photo: 'Фото', video: 'Видео', audio: 'Аудио'};
+var RULE_ITEM_MEDIA_KIND = {video: 'note', audio: 'voice'};
+
+function ruleItemHTML(kind) {
+    var content;
+    if (kind === 'photo') {
+        content = ''
+            + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото пункта"></label>'
+            + '<p class="prg-hint" data-b-photo-status></p>'
+            + '<div class="prg-blk-gallery" data-b-images></div>';
+    } else if (kind === 'video') {
+        content = ''
+            + '<div data-media-recorder data-mrf-modes="note" data-mrf-attach-only data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
+            + '<p class="prg-hint">Видеофайл до 50 МБ – это примерно 2–5 минут.</p>';
+    } else if (kind === 'audio') {
+        content = ''
+            + '<div data-media-recorder data-mrf-modes="voice" data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>';
+    } else {
+        content = '<label class="prg-field"><textarea data-rich-text data-b-option-description maxlength="5000" aria-label="Текст правила" placeholder="Текст правила"></textarea>' + BODY_FORMAT_HINT + '</label>';
+    }
+    return ''
+        + '<div class="prg-rule-item" data-b-option data-rule-kind="' + kind + '">'
+        + '  <div class="prg-rule-item-head">'
+        + '    <strong>' + RULE_ITEM_LABELS[kind] + '</strong>'
+        + '    <span class="prg-blk-actions">'
+        + '      <span class="prg-blk-move">'
+        + '        <button type="button" class="btn-outline" data-rule-item-move="-1" aria-label="Пункт выше">↑</button>'
+        + '        <button type="button" class="btn-outline" data-rule-item-move="1" aria-label="Пункт ниже">↓</button>'
+        + '      </span>'
+        + '      <button type="button" class="btn-outline prg-blk-remove" data-remove-b-option>Убрать</button>'
+        + '    </span>'
+        + '  </div>'
+        + content
+        + '  <label class="prg-field"><input type="text" data-b-option-text maxlength="300" aria-label="Подпись у галочки" placeholder="Подпись у галочки" value="' + RULE_ITEM_DEFAULT_LABEL + '"></label>'
+        + '</div>';
+}
+
+// Добавить пункт правил в строку блока и вернуть его.
+function addRuleItem(row, kind) {
+    var holder = row.querySelector('[data-b-options]');
+    holder.insertAdjacentHTML('beforeend', ruleItemHTML(RULE_ITEM_LABELS[kind] ? kind : 'text'));
+    var item = holder.lastElementChild;
+    window.RichTextField.enhanceAll(item);
+    return item;
+}
+
+// Пункт правил из формы в том виде, в каком его ждёт сервер
+// (`BlockOptionItem`); `null` — пустой текстовый пункт, его не шлём.
+// Фото-, видео- и аудиопункт без файла уходит как есть: сервер ответит
+// «в пункте №N нет фото», и преподаватель не потеряет пункт молча.
+function collectRuleItem(optionRow) {
+    var kind = optionRow.getAttribute('data-rule-kind') || 'text';
+    var label = optionRow.querySelector('[data-b-option-text]').value.trim();
+    var optionId = optionRow.getAttribute('data-b-option-id');
+    var option = {
+        id: optionId ? Number(optionId) : null,
+        text: label || RULE_ITEM_DEFAULT_LABEL,
+        // Верного пункта у согласия нет.
+        is_correct: false,
+        content_kind: kind === 'text' ? null : kind
+    };
+    if (kind === 'text') {
+        var description = optionRow.querySelector('[data-b-option-description]');
+        option.description = description ? description.value.trim() : '';
+        // Подпись по умолчанию вписана сразу, поэтому пункт без текста и с
+        // нетронутой подписью — пустая заготовка, а не правило «Ознакомлен(а)».
+        if (!option.description && (!label || label === RULE_ITEM_DEFAULT_LABEL)) return null;
+    } else if (kind === 'photo') {
+        option.images = [];
+        optionRow.querySelectorAll('[data-b-image]').forEach(function (thumb) {
+            option.images.push({
+                url: thumb.getAttribute('data-url'),
+                path: thumb.getAttribute('data-path') || null
+            });
+        });
+    } else {
+        var recorder = optionRow.querySelector('[data-media-recorder]');
+        option.media_url = recorder.getAttribute('data-media-url') || null;
+        option.media_path = recorder.getAttribute('data-media-path') || null;
+    }
+    return option;
+}
+
+// Сохранённый пункт правил обратно в форму. Старые пункты — текст без
+// развёрнутого описания: правило лежит в подписи, как было до 04.10.2026.
+function fillRuleItem(row, option) {
+    var item = addRuleItem(row, option.content_kind || 'text');
+    if (option.id) item.setAttribute('data-b-option-id', option.id);
+    item.querySelector('[data-b-option-text]').value = option.text || '';
+    var description = item.querySelector('[data-b-option-description]');
+    if (description) {
+        description.value = option.description || '';
+        // Редактор разметки уже поднят в addRuleItem — подтягиваем текст.
+        window.RichTextField.refresh(description);
+    }
+    (option.images || []).forEach(function (image) {
+        addImageThumb(item, image.url, image.path);
+    });
+    var recorder = item.querySelector('[data-media-recorder]');
+    if (recorder && option.media_url) {
+        recorder.setAttribute('data-media-url', option.media_url);
+        recorder.setAttribute('data-media-path', option.media_path || '');
+        recorder.setAttribute('data-media-kind', RULE_ITEM_MEDIA_KIND[option.content_kind] || '');
+        if (recorder._mrf) {
+            recorder._mrf.showPreview(option.media_url, RULE_ITEM_MEDIA_KIND[option.content_kind], 'Сохранено в задании');
+        }
+    }
+}
+
 // Варианты ответа нужны только выбору из вариантов — у свободного текста
 // блок вариантов прячем, сервер их всё равно вычистит.
 //
@@ -776,7 +903,8 @@ function collectPollQuestions(row) {
 }
 
 // «Добавить вариант» — одна функция на оба экрана и все типы с вариантами
-// (вопрос, шкала, правила, вопрос опроса). До 30.09.2026 у каждого экрана
+// (вопрос, шкала, вопрос опроса). У правил с 04.10.2026 свои кнопки —
+// `addRuleItem`. До 30.09.2026 у каждого экрана
 // была своя копия, и обе брали первый список вариантов в строке — в опросе
 // с несколькими вопросами вариант уехал бы в первый вопрос.
 function addBlockOption(button) {
@@ -789,13 +917,12 @@ function addBlockOption(button) {
     holder.insertAdjacentHTML('beforeend', blockOptionHTML(type));
     var fresh = holder.lastElementChild;
     window.RichTextField.enhanceAll(fresh);
-    // У шкалы и правил верного варианта нет по устройству: там пункт — это
-    // навык или правило. Прячем отметку сразу при добавлении, как она уже
-    // прячется при открытии сохранённого блока.
-    if (type === 'scale' || type === 'rules') {
+    // У шкалы верного варианта нет по устройству: там пункт — это навык.
+    // Прячем отметку сразу при добавлении, как она уже прячется при открытии
+    // сохранённого блока.
+    if (type === 'scale') {
         var freshCorrect = fresh.querySelector('[data-b-option-correct]');
         if (freshCorrect) freshCorrect.closest('label').hidden = true;
-        if (type === 'rules') fresh.querySelector('[data-b-option-text]').placeholder = 'Текст правила';
     }
     if (question) syncPollQuestion(question);
 }
@@ -908,6 +1035,22 @@ function runPollTrainer(row) {
 // Кнопки внутри опроса есть в обоих конструкторах (день и задания цикла) —
 // обработчик один, здесь, как у тренажёра сравнения работ.
 document.addEventListener('click', function (event) {
+    var addRule = event.target.closest('[data-add-rule-item]');
+    if (addRule) {
+        var ruleItem = addRuleItem(addRule.closest('[data-block]'), addRule.getAttribute('data-add-rule-item'));
+        ruleItem.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        return;
+    }
+    var moveRule = event.target.closest('[data-rule-item-move]');
+    if (moveRule) {
+        var movedRule = moveRule.closest('[data-b-option]');
+        var ruleSibling = Number(moveRule.getAttribute('data-rule-item-move')) < 0
+            ? movedRule.previousElementSibling : movedRule.nextElementSibling;
+        if (!ruleSibling) return;
+        if (ruleSibling === movedRule.previousElementSibling) ruleSibling.before(movedRule); else ruleSibling.after(movedRule);
+        movedRule.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        return;
+    }
     var trainer = event.target.closest('[data-poll-trainer]');
     if (trainer) {
         var trainerRow = trainer.closest('[data-block]');
@@ -1026,16 +1169,7 @@ function fillBlockRow(row, block) {
         }
     });
     if (row.getAttribute('data-block-type') === 'rules') {
-        var rulesHolder = row.querySelector('[data-b-options]');
-        (block.options || []).forEach(function (option) {
-            rulesHolder.insertAdjacentHTML('beforeend', blockOptionHTML('rules'));
-            var ruleRow = rulesHolder.lastElementChild;
-            if (option.id) ruleRow.setAttribute('data-b-option-id', option.id);
-            ruleRow.querySelector('[data-b-option-text]').value = option.text;
-            var ruleCorrect = ruleRow.querySelector('[data-b-option-correct]');
-            // Согласие не бывает верным или неверным — отметку прячем.
-            if (ruleCorrect) ruleCorrect.closest('label').hidden = true;
-        });
+        (block.options || []).forEach(function (option) { fillRuleItem(row, option); });
     }
     if (row.getAttribute('data-block-type') === 'scale') {
         var scaleHolder = row.querySelector('[data-b-options]');
@@ -1324,15 +1458,8 @@ function collectFormBlocks(form) {
         if (type === 'rules') {
             item.options = [];
             row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
-                var ruleText = optionRow.querySelector('[data-b-option-text]').value.trim();
-                if (!ruleText) return;
-                var ruleId = optionRow.getAttribute('data-b-option-id');
-                item.options.push({
-                    id: ruleId ? Number(ruleId) : null,
-                    text: ruleText,
-                    // Верного пункта у согласия нет.
-                    is_correct: false
-                });
+                var rule = collectRuleItem(optionRow);
+                if (rule) item.options.push(rule);
             });
             if (!item.options.length) return;
         }

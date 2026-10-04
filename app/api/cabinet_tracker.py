@@ -98,6 +98,7 @@ from app.services.task_blocks import (
     list_submission_images as list_task_block_submission_images,
     mark_submitted as mark_task_block_submitted,
     get_blocks as get_task_blocks,
+    get_option_images as get_task_block_option_images,
     get_images as get_task_block_images,
     grade_response as grade_task_blocks,
     get_options as get_task_block_options,
@@ -913,9 +914,24 @@ def cabinet_tracker_task_blocks(
             # Правила школы: варианты — сами правила, `body` — текст согласия.
             # Отмеченные отдаём, чтобы уже закрытый блок открывался с
             # проставленными галочками, а не пустым.
+            #
+            # С 04.10.2026 пункт несёт текст, фото, видео или аудио (`kind`,
+            # пусто — текст), а `text` — подпись у галочки под ним. Файлы —
+            # те же публичные ссылки S3, что у блока «Голосовое / кружок».
+            rule_options = options.get(block.id, [])
+            rule_images = get_task_block_option_images(db, [o.id for o in rule_options])
             item["options"] = [
-                {"id": o.id, "text": o.text}
-                for o in options.get(block.id, [])
+                {
+                    "id": o.id,
+                    "text": o.text,
+                    "kind": o.content_kind,
+                    "description_html": (
+                        format_rich_text(o.description) if o.description else None
+                    ),
+                    "images": [{"url": i.image_s3_url} for i in rule_images.get(o.id, [])],
+                    "media_url": o.media_s3_url,
+                }
+                for o in rule_options
             ]
             item["answer_option_ids"] = sorted(selected.get(block.id, set()))
         payload.append(item)

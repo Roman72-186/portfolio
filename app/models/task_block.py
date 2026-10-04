@@ -143,6 +143,24 @@ MEDIA_VOICE = "voice"
 MEDIA_NOTE = "note"
 MEDIA_KINDS = (MEDIA_VOICE, MEDIA_NOTE)
 
+# Что лежит в пункте правил (владелец 04.10.2026: «дать возможность добавлять
+# в данное задание фото, видео, аудио, текст, чтобы под ними стоял чек бокс,
+# что пользователь ознакомился»). Текст — `TaskBlockOption.content_kind IS
+# NULL`: так выглядят и все пункты, заведённые до этого дня, переносить их не
+# нужно. Видео — загруженный файл в S3 (`/upload-media`, kind `note`), а не
+# ролик каталога: решение владельца, чтобы не расширять правило доступа к
+# урокам (`video_catalog`) на пункты правил. Фото — галерея до
+# MAX_BLOCK_IMAGES (`TaskBlockOptionImage`), галочка одна под всей галереей.
+RULE_ITEM_PHOTO = "photo"
+RULE_ITEM_VIDEO = "video"
+RULE_ITEM_AUDIO = "audio"
+RULE_ITEM_KINDS = (RULE_ITEM_PHOTO, RULE_ITEM_VIDEO, RULE_ITEM_AUDIO)
+# Пункты с файлом записи — видео и аудио; у фото файлы в отдельной таблице.
+RULE_ITEM_MEDIA_KINDS = (RULE_ITEM_VIDEO, RULE_ITEM_AUDIO)
+# Подпись у галочки, если преподаватель её не вписал. `TaskBlockOption.text`
+# NOT NULL, а пункт с фото или записью без подписи — обычное дело.
+RULE_ITEM_DEFAULT_LABEL = "Ознакомлен(а)"
+
 # Час на контрольную — число из созвона 03.09.2026 («давай сделаем один час»).
 TIMED_DEFAULT_MINUTES = 60
 
@@ -572,12 +590,43 @@ class TaskBlockOption(Base):
     # шкалы 0 и 10). NULL у вопросов и правил — та же конвенция, что у
     # video_id/url/question_type в TaskBlock: специализированные колонки
     # nullable у чужих типов, полиморфных таблиц вложений в проекте нет.
+    #
+    # У BLOCK_RULES `description` — развёрнутый текст пункта с разметкой
+    # (владелец 04.10.2026), а `text` — подпись у галочки под ним. Смысл тот
+    # же, что у шкалы: «текст под названием пункта», поэтому колонка общая.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     scale_min_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     scale_max_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # Только у BLOCK_RULES (владелец 04.10.2026): что лежит в пункте —
+    # RULE_ITEM_KINDS, NULL — текст. Файл видео или аудио — пара url+path, как
+    # у `TaskBlock.media_s3_*`; фото — в `TaskBlockOptionImage`.
+    content_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    media_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    media_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     __table_args__ = (
         Index("ix_task_block_options_order", "block_id", "sort_order"),
+    )
+
+
+class TaskBlockOptionImage(Base):
+    """Одна картинка пункта правил (владелец 04.10.2026). Копия
+    `TaskBlockImage`, только привязана к пункту, а не к блоку: в одном блоке
+    правил несколько фото-пунктов, у каждого своя галерея и своя галочка."""
+
+    __tablename__ = "task_block_option_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    option_id: Mapped[int] = mapped_column(
+        ForeignKey("task_block_options.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    image_s3_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        Index("ix_task_block_option_images_order", "option_id", "sort_order"),
     )
 
 

@@ -1210,7 +1210,9 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
     """
     # Локальный импорт: `task_blocks` ничего из `tracker` не тянет, но
     # держать зависимость на уровне модуля незачем — она нужна одной функции.
-    from app.models.task_block import TaskBlock, TaskBlockImage, TaskBlockOption
+    from app.models.task_block import (
+        TaskBlock, TaskBlockImage, TaskBlockOption, TaskBlockOptionImage,
+    )
 
     source_blocks = (
         db.query(TaskBlock)
@@ -1248,14 +1250,38 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
             .all()
         )
         for option in options:
-            db.add(
-                TaskBlockOption(
-                    block_id=clone.id,
-                    text=option.text,
-                    is_correct=option.is_correct,
-                    sort_order=option.sort_order,
-                )
+            # Описание, подписи шкалы и медиа пункта правил (04.10.2026): без
+            # них копия недели получала навыки без описаний, а правила — без
+            # текста, фото и записей. Файлы в S3 общие, как у картинок ниже.
+            option_clone = TaskBlockOption(
+                block_id=clone.id,
+                text=option.text,
+                is_correct=option.is_correct,
+                requires_text=option.requires_text,
+                sort_order=option.sort_order,
+                description=option.description,
+                scale_min_label=option.scale_min_label,
+                scale_max_label=option.scale_max_label,
+                content_kind=option.content_kind,
+                media_s3_url=option.media_s3_url,
+                media_s3_path=option.media_s3_path,
             )
+            db.add(option_clone)
+            option_images = (
+                db.query(TaskBlockOptionImage)
+                .filter(TaskBlockOptionImage.option_id == option.id)
+                .order_by(TaskBlockOptionImage.sort_order, TaskBlockOptionImage.id)
+                .all()
+            )
+            if option_images:
+                db.flush()
+                for image in option_images:
+                    db.add(TaskBlockOptionImage(
+                        option_id=option_clone.id,
+                        image_s3_url=image.image_s3_url,
+                        image_s3_path=image.image_s3_path,
+                        sort_order=image.sort_order,
+                    ))
         images = (
             db.query(TaskBlockImage)
             .filter(TaskBlockImage.block_id == block.id)

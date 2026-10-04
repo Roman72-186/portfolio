@@ -1178,6 +1178,13 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-option > span > strong { display: block; font-weight: 650; }
 .lrn-blk-option > span > .lrn-card-note { display: block; margin-top: var(--s-1); font-size: 14px; line-height: 1.5; color: var(--text); }
 .lrn-blk-option:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* Пункт правил с содержимым (владелец 04.10.2026): фото, видео, аудио или
+   текст, а под ним — та же строка-галочка `.lrn-blk-option`. */
+.lrn-blk-rule-item { display: grid; gap: var(--s-2); }
+.lrn-blk-rule-text { margin: 0; color: var(--text); line-height: 1.55; }
+/* Список из разметки `- пункт`: без отступа маркеры висели за краем карточки. */
+.lrn-blk-rule-text ul { margin: var(--s-1) 0 0; padding-left: 20px; }
+.lrn-blk-rule-video { display: block; width: 100%; max-width: 640px; height: auto; border-radius: var(--r-sm); background: var(--ink); }
 .lrn-blk-profile { padding: var(--s-4); border-radius: var(--r-md); background: var(--blue-soft); }
 .lrn-blk-profile .lrn-blk-title { margin: var(--s-2) 0; color: var(--ink); }
 .lrn-blk-profile .lrn-blk-body { margin: var(--s-2) 0; }

@@ -38,6 +38,10 @@ from app.models.task_block import (
     VIDEO_BLOCK_TYPES,
     QUESTION_TEXT,
     QUESTION_TYPES,
+    RULE_ITEM_DEFAULT_LABEL,
+    RULE_ITEM_KINDS,
+    RULE_ITEM_MEDIA_KINDS,
+    RULE_ITEM_PHOTO,
     TaskBlock,
     TaskBlockAnswer,
     TaskBlockAnswerOption,
@@ -45,6 +49,7 @@ from app.models.task_block import (
     TaskBlockDialogTariff,
     TaskBlockImage,
     TaskBlockOption,
+    TaskBlockOptionImage,
     TaskBlockRequiredTariff,
     TaskBlockResponse,
     TaskBlockState,
@@ -120,12 +125,92 @@ def _clean(value: str | None, limit: int) -> str | None:
     return text[:limit] if text else None
 
 
+def get_option_images(
+    db: DBSession, option_ids: list[int]
+) -> dict[int, list[TaskBlockOptionImage]]:
+    """Галереи фото-пунктов правил, сгруппированные по пункту — близнец
+    `get_images` этажом ниже."""
+    if not option_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockOptionImage)
+        .filter(TaskBlockOptionImage.option_id.in_(option_ids))
+        .order_by(
+            TaskBlockOptionImage.option_id,
+            TaskBlockOptionImage.sort_order,
+            TaskBlockOptionImage.id,
+        )
+        .all()
+    )
+    grouped: dict[int, list[TaskBlockOptionImage]] = {}
+    for row in rows:
+        grouped.setdefault(row.option_id, []).append(row)
+    return grouped
+
+
+def _rule_item_fields(raw: dict) -> dict | None:
+    """Поля пункта правил из формы (владелец 04.10.2026); `None` — пустой пункт.
+
+    Пункт несёт текст, фото, видео или аудио (`RULE_ITEM_KINDS`, текст —
+    NULL), под содержимым — галочка с подписью `text`. Подпись необязательна:
+    у фото или записи без неё ставится `RULE_ITEM_DEFAULT_LABEL`, иначе
+    NOT NULL у `text` отбросил бы пункт с содержимым молча.
+
+    Пустой пункт — без подписи и без своего содержимого: нажали «+ Фото» и
+    ничего не загрузили. Чужие виду поля обнуляются — пункт могли
+    переключить, и файл видео не должен остаться у текстового пункта.
+    """
+    kind = raw.get("content_kind")
+    kind = kind if kind in RULE_ITEM_KINDS else None
+    label = _clean(raw.get("text"), 300)
+    description = _clean(raw.get("description"), 5000) if kind is None else None
+    media_url = _clean(raw.get("media_url"), 500) if kind in RULE_ITEM_MEDIA_KINDS else None
+    images = [
+        image for image in (raw.get("images") or [])[:MAX_BLOCK_IMAGES]
+        if (image.get("url") or "").strip()
+    ] if kind == RULE_ITEM_PHOTO else []
+    has_content = bool(description or media_url or images)
+    if kind is not None and not has_content:
+        return None
+    if not label and not has_content:
+        return None
+    return {
+        "text": label or RULE_ITEM_DEFAULT_LABEL,
+        "description": description,
+        "content_kind": kind,
+        "media_s3_url": media_url,
+        "media_s3_path": _clean(raw.get("media_path"), 500) if media_url else None,
+        "images": images,
+    }
+
+
+def _sync_option_images(db: DBSession, option: TaskBlockOption, images: list[dict]) -> None:
+    """Пересборка галереи пункта — та же причина сноса-и-пересборки, что у
+    `_sync_images`: у картинки нечего сохранять между сохранениями формы, а
+    файлы в S3 не трогаем (та же картинка бывает в копии недели)."""
+    db.query(TaskBlockOptionImage).filter(
+        TaskBlockOptionImage.option_id == option.id
+    ).delete(synchronize_session=False)
+    for order, raw in enumerate(images):
+        db.add(TaskBlockOptionImage(
+            option_id=option.id,
+            image_s3_url=raw["url"].strip()[:500],
+            image_s3_path=(raw.get("path") or None),
+            sort_order=order,
+        ))
+
+
 def _sync_options(
     db: DBSession, block: TaskBlock, items: list[dict] | None
 ) -> None:
     """Варианты ответа одного блока — та же id-сохраняющая логика, что у самих
     блоков: выбранные учениками варианты не должны пропадать при правке
-    соседнего варианта."""
+    соседнего варианта.
+
+    У правил вариант — пункт с фото, видео, аудио или текстом
+    (`_rule_item_fields`); у остальных типов эти поля держим пустыми.
+    """
+    is_rules = block.block_type == BLOCK_RULES
     existing = {
         option.id: option
         for option in db.query(TaskBlockOption)
@@ -133,49 +218,59 @@ def _sync_options(
         .all()
     }
     matched_ids: set[int] = set()
+    # Пункт и его картинки — парой: картинкам нужен id пункта, а он у нового
+    # появится только после flush.
+    synced: list[tuple[TaskBlockOption, list[dict]]] = []
     for order, raw in enumerate(items or []):
-        text = _clean(raw.get("text"), 300)
-        if not text:
-            continue
-        # Описание и подписи краёв — только у BLOCK_SCALE (владелец 11.09.2026,
-        # анкета «Метакомпетенции»). У вопроса/правил фронт эти ключи не шлёт,
-        # `.get()` тогда даёт None — то же nullable-поведение, что у
-        # requires_text для не-вопросных типов.
-        description = _clean(raw.get("description"), 5000)
-        scale_min_label = _clean(raw.get("scale_min_label"), 200)
-        scale_max_label = _clean(raw.get("scale_max_label"), 200)
+        if is_rules:
+            rule = _rule_item_fields(raw)
+            if rule is None:
+                continue
+            text = rule["text"]
+            description = rule["description"]
+        else:
+            rule = None
+            text = _clean(raw.get("text"), 300)
+            if not text:
+                continue
+            # Описание и подписи краёв — только у BLOCK_SCALE (владелец
+            # 11.09.2026, анкета «Метакомпетенции»). У вопроса фронт эти
+            # ключи не шлёт, `.get()` тогда даёт None — то же
+            # nullable-поведение, что у requires_text для не-вопросных типов.
+            description = _clean(raw.get("description"), 5000)
         raw_id = raw.get("id")
         row = existing.get(raw_id) if raw_id is not None else None
-        if row is not None:
-            row.text = text
-            row.is_correct = bool(raw.get("is_correct"))
-            row.requires_text = bool(raw.get("requires_text"))
-            row.sort_order = order
-            row.description = description
-            row.scale_min_label = scale_min_label
-            row.scale_max_label = scale_max_label
-            matched_ids.add(row.id)
+        if row is None:
+            row = TaskBlockOption(block_id=block.id)
+            db.add(row)
         else:
-            db.add(
-                TaskBlockOption(
-                    block_id=block.id,
-                    text=text,
-                    is_correct=bool(raw.get("is_correct")),
-                    requires_text=bool(raw.get("requires_text")),
-                    sort_order=order,
-                    description=description,
-                    scale_min_label=scale_min_label,
-                    scale_max_label=scale_max_label,
-                )
-            )
+            matched_ids.add(row.id)
+        row.text = text
+        row.is_correct = bool(raw.get("is_correct"))
+        row.requires_text = bool(raw.get("requires_text"))
+        row.sort_order = order
+        row.description = description
+        row.scale_min_label = _clean(raw.get("scale_min_label"), 200)
+        row.scale_max_label = _clean(raw.get("scale_max_label"), 200)
+        row.content_kind = rule["content_kind"] if rule else None
+        row.media_s3_url = rule["media_s3_url"] if rule else None
+        row.media_s3_path = rule["media_s3_path"] if rule else None
+        synced.append((row, rule["images"] if rule else []))
+    db.flush()
+    for row, images in synced:
+        _sync_option_images(db, row, images)
     dropped = False
     for option_id, row in existing.items():
         if option_id in matched_ids:
             continue
         # SQLite в тестах не исполняет ON DELETE CASCADE — чистим явно, иначе
-        # осиротевшая строка выбранного варианта переживёт свой вариант.
+        # осиротевшая строка выбранного варианта или картинка пункта
+        # переживёт свой вариант.
         db.query(TaskBlockAnswerOption).filter(
             TaskBlockAnswerOption.option_id == option_id
+        ).delete()
+        db.query(TaskBlockOptionImage).filter(
+            TaskBlockOptionImage.option_id == option_id
         ).delete()
         db.delete(row)
         dropped = True
@@ -898,6 +993,9 @@ def _drop_block(db: DBSession, block: TaskBlock) -> None:
         db.query(TaskBlockAnswerOption).filter(
             TaskBlockAnswerOption.option_id.in_(option_ids)
         ).delete(synchronize_session=False)
+        db.query(TaskBlockOptionImage).filter(
+            TaskBlockOptionImage.option_id.in_(option_ids)
+        ).delete(synchronize_session=False)
     if answer_ids:
         db.query(TaskBlockAnswerOption).filter(
             TaskBlockAnswerOption.answer_id.in_(answer_ids)
@@ -943,10 +1041,18 @@ def _is_empty(block_type: str, item: dict) -> bool:
     if block_type == BLOCK_TIMED:
         # Кнопка «Начать» самодостаточна, как и «Загрузить портфолио».
         return False
-    if block_type in (BLOCK_SCALE, BLOCK_RULES):
+    if block_type == BLOCK_SCALE:
         return not [
             option for option in (item.get("options") or [])
             if (option.get("text") or "").strip()
+        ]
+    if block_type == BLOCK_RULES:
+        # Пункт правил бывает и без подписи — фото или запись получают
+        # подпись по умолчанию (владелец 04.10.2026), поэтому правило то же,
+        # что у сохранения пункта.
+        return not [
+            option for option in (item.get("options") or [])
+            if _rule_item_fields(option) is not None
         ]
     if block_type in (BLOCK_PORTFOLIO, BLOCK_UPLOAD, BLOCK_PHOTO_UPLOAD):
         # Кнопки «Загрузить портфолио» и «Домашнее задание» самодостаточны:

@@ -1397,7 +1397,17 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.disabled = locked;
                     row.appendChild(input);
                     row.appendChild(el('span', null, option.text));
-                    wrap.appendChild(row);
+                    // Пункт без содержимого — правило в одну строку, как до
+                    // 04.10.2026. С содержимым — оно сверху, галочка под ним.
+                    var content = ruleItemContent(option);
+                    if (!content) {
+                        wrap.appendChild(row);
+                        return;
+                    }
+                    var item = el('div', 'lrn-blk-rule-item');
+                    item.appendChild(content);
+                    item.appendChild(row);
+                    wrap.appendChild(item);
                 });
                 if (!locked) {
                     // Отмечено не всё — сервер такую отправку не сохранит,
@@ -1408,6 +1418,34 @@ scope)` и свойством `answered` (одна попытка: после о
                     ));
                 }
                 return wrap;
+            }
+
+            // Содержимое пункта правил (владелец 04.10.2026: «фото, видео,
+            // аудио, текст, чтобы под ними стоял чек бокс»). Фото — та же
+            // галерея с лайтбоксом, что у блока «Фото»; видео и аудио —
+            // штатный плеер браузера, как у «Голосового / кружка», только
+            // видео прямоугольником. `kind` — с сервера, `content_kind` — из
+            // формы в предпросмотре «Глазами ученика».
+            function ruleItemContent(option) {
+                var kind = option.kind || option.content_kind || null;
+                if (kind === 'photo') {
+                    var urls = (option.images || []).map(function (image) { return image.url; });
+                    return urls.length ? photoGallery(urls, option.text || 'Фото к правилу') : null;
+                }
+                if ((kind === 'video' || kind === 'audio') && option.media_url) {
+                    var isVideo = kind === 'video';
+                    var media = el(isVideo ? 'video' : 'audio', isVideo ? 'lrn-blk-rule-video' : 'lrn-blk-audio');
+                    media.controls = true;
+                    media.preload = 'metadata';
+                    if (isVideo) media.setAttribute('playsinline', '');
+                    media.src = option.media_url;
+                    media.setAttribute('aria-label', isVideo ? 'Видео к правилу' : 'Аудио к правилу');
+                    return media;
+                }
+                if (!kind && option.description_html) {
+                    return elHtml('div', 'lrn-blk-rule-text', option.description_html);
+                }
+                return null;
             }
 
             // Сравнение работ (Лиза 27.09.2026). Ученик видит пару работ и

@@ -492,6 +492,15 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
     font: 500 13px/1.4 var(--font-body);
 }
+/* Пункт блока «Правила с галочками» (владелец 04.10.2026): текст, фото,
+   видео или аудио и подпись у галочки — колонкой, а не строкой, как у
+   варианта ответа: содержимое бывает в полэкрана. Поля оформляет `.prg-field`. */
+.prg-rule-item {
+    display: grid; gap: 8px; padding: 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+.prg-rule-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prg-rule-item-head strong { font: 700 13px/1 var(--font-display); color: var(--text); }
 
 .prg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .prg-actions button { min-height: 44px; }

@@ -57,6 +57,9 @@ from app.models.task_block import (
     DIALOG_REPLY_LIMIT_MAX,
     LATE_SUBMISSION_BLOCK_TYPES,
     QUESTION_TEXT,
+    RULE_ITEM_KINDS,
+    RULE_ITEM_MEDIA_KINDS,
+    RULE_ITEM_PHOTO,
 )
 from app.services.feedback import read_audio_upload, read_video_upload
 from app.services.task_blocks import (
@@ -64,6 +67,7 @@ from app.services.task_blocks import (
     get_blocks_for_tasks as get_task_blocks_for_tasks,
     get_dialog_tariffs as get_task_block_dialog_tariffs,
     get_images as get_task_block_images,
+    get_option_images as get_task_block_option_images,
     get_options as get_task_block_options,
     get_required_tariffs as get_task_block_required_tariffs,
     get_submit_deadlines as get_task_block_submit_deadlines,
@@ -393,6 +397,22 @@ def _submit_deadline_fields(
     }
 
 
+def _rule_item_payload(option, option_images: dict) -> dict:
+    """Медиа пункта правил в том виде, в каком его ждёт форма (владелец
+    04.10.2026). Нужны и форме правки, и «Взять содержимое из другого
+    задания»: без них повторное сохранение сочло бы фото-пункт пустым и
+    отбило 422, а копия получила бы пункты без фото и записей."""
+    return {
+        "content_kind": option.content_kind,
+        "media_url": option.media_s3_url,
+        "media_path": option.media_s3_path,
+        "images": [
+            {"url": i.image_s3_url, "path": i.image_s3_path}
+            for i in option_images.get(option.id, [])
+        ],
+    }
+
+
 def _edit_payloads(
     db: DBSession, items: list[TrackerTask], details: dict
 ) -> dict[int, dict]:
@@ -477,6 +497,9 @@ def _edit_payloads(
         # смысл универсального конструктора.
         blocks = get_task_blocks(db, item.id)
         block_options = get_task_block_options(db, [b.id for b in blocks])
+        block_option_images = get_task_block_option_images(
+            db, [o.id for options in block_options.values() for o in options]
+        )
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
@@ -579,6 +602,8 @@ def _edit_payloads(
                         "description": o.description,
                         "scale_min_label": o.scale_min_label,
                         "scale_max_label": o.scale_max_label,
+                        **(_rule_item_payload(o, block_option_images)
+                           if b.block_type == BLOCK_RULES else {}),
                     }
                     for o in block_options.get(b.id, [])
                 ]
@@ -1102,6 +1127,25 @@ class BlockOptionItem(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     scale_min_label: str | None = Field(default=None, max_length=200)
     scale_max_label: str | None = Field(default=None, max_length=200)
+    # Только у пункта правил (владелец 04.10.2026): что в пункте — фото,
+    # видео или аудио, пусто — текст (`description`). `text` у такого пункта —
+    # подпись у галочки. Файлы уже в S3: фото — через `/upload-cover`,
+    # видео и аудио — через `/upload-media`. Чужие виду поля вычищает
+    # `task_blocks._rule_item_fields`.
+    content_kind: str | None = Field(default=None, max_length=10)
+    images: list[BlockImageItem] = Field(default_factory=list, max_length=MAX_BLOCK_IMAGES)
+    media_url: str | None = Field(default=None, max_length=500)
+    media_path: str | None = Field(default=None, max_length=500)
+
+    @field_validator("content_kind")
+    @classmethod
+    def known_rule_item_kind(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in RULE_ITEM_KINDS:
+            raise ValueError(f"Неизвестный вид пункта правил: {value}")
+        return value
 
     @field_validator("text")
     @classmethod
@@ -1343,6 +1387,21 @@ class BlockItem(BaseModel):
             raise ValueError("В сравнении нужно минимум две работы")
         if sum(1 for image in self.images if image.is_pick) != 1:
             raise ValueError("Отметьте одну работу как свой выбор")
+        return self
+
+    @model_validator(mode="after")
+    def rule_items_have_content(self) -> "BlockItem":
+        """Пункт правил с фото, видео или аудио не сохраняется без файла
+        (владелец 04.10.2026). Иначе сервис отбросил бы его как пустой молча,
+        и преподаватель не узнал бы, что пункт пропал."""
+        if self.block_type != BLOCK_RULES:
+            return self
+        for position, option in enumerate(self.options, start=1):
+            if option.content_kind == RULE_ITEM_PHOTO and not option.images:
+                raise ValueError(f"В пункте правил №{position} нет фото")
+            if option.content_kind in RULE_ITEM_MEDIA_KINDS and not (option.media_url or "").strip():
+                what = "видео" if option.content_kind == "video" else "аудио"
+                raise ValueError(f"В пункте правил №{position} нет {what}")
         return self
 
     @field_validator("block_type")
@@ -2130,6 +2189,9 @@ def blocks_source_content(
         raise HTTPException(status_code=404, detail="У этого задания нет содержимого")
     options = get_task_block_options(db, [b.id for b in blocks])
     images = get_task_block_images(db, [b.id for b in blocks])
+    option_images = get_task_block_option_images(
+        db, [o.id for block_options in options.values() for o in block_options]
+    )
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
     required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
     dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
@@ -2184,6 +2246,9 @@ def blocks_source_content(
                     "description": o.description,
                     "scale_min_label": o.scale_min_label,
                     "scale_max_label": o.scale_max_label,
+                    # Файлы в S3 общие у оригинала и копии, как у фото блока.
+                    **(_rule_item_payload(o, option_images)
+                       if b.block_type == BLOCK_RULES else {}),
                 }
                 for o in options.get(b.id, [])
             ],
