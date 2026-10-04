@@ -31,7 +31,7 @@ from app.api import cabinet_point_a_audio
 from app.api import cabinet_staff_notifications
 from app.api import cabinet_access_admin
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
-from app.services.section_access import SECTION_CLOSED_DETAIL
+from app.services.section_access import SECTION_CLOSED_DETAIL, SECTION_VIEW_ONLY_DETAIL
 from app.services.cycle_feed import LINK_LOCKED_DETAIL
 from app.limiter import limiter
 from app import log_masking
@@ -189,6 +189,8 @@ async def forbidden_handler(request: Request, exc):
     # заголовка заглушка сказала бы сотруднику «Аккаунт заблокирован».
     if detail == SECTION_CLOSED_DETAIL:
         ctx["heading"] = "Раздел закрыт"
+    if detail == SECTION_VIEW_ONLY_DETAIL:
+        ctx["heading"] = "Только просмотр"
     # Кнопка-ссылка закрытого шага (`cabinet_tracker.go_link_block`).
     if detail == LINK_LOCKED_DETAIL:
         ctx["heading"] = "Ссылка пока закрыта"

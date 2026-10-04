@@ -233,8 +233,8 @@ def test_moderator_with_every_section_open_browses_without_writes(
     client, db, user_factory, session_factory,
 ):
     """Суперадмин может открыть модератору любой раздел сверх роли — на чтение
-    (`section_access.moderator_may_read`, владелец 03.10.2026). Значит, ни
-    один GET этих разделов не должен ничего писать, тот же довод, что выше."""
+    (уровень «Смотреть», владелец 03.10.2026). Значит, ни один GET этих
+    разделов не должен ничего писать, тот же довод, что выше."""
     from fastapi.routing import APIRoute
     from sqlalchemy import event
 
@@ -248,7 +248,7 @@ def test_moderator_with_every_section_open_browses_without_writes(
     db.commit()
     extra = [s.key for s in section_access.SECTIONS if "модератор" not in s.roles]
     db.add_all([
-        SectionAccessRule(section_key=key, user_id=moderator.id, is_open=True) for key in extra
+        SectionAccessRule(section_key=key, user_id=moderator.id, level="view") for key in extra
     ])
     db.commit()
     _login_as(client, session_factory, moderator)
@@ -322,7 +322,7 @@ def test_moderator_with_personal_program_grant_adds_digest_event(
     from app.models.tracker import ScheduleEvent
 
     moderator = user_factory(vk_id=990_330, name="Модератор АОП", role_name="модератор")
-    db.add(SectionAccessRule(section_key="program", user_id=moderator.id, is_open=True))
+    db.add(SectionAccessRule(section_key="program", user_id=moderator.id, level="edit"))
     digest, event_type = _digest_with_type(db)
     _login_as(client, session_factory, moderator)
 
@@ -341,7 +341,7 @@ def test_moderator_with_role_program_grant_still_only_reads(
     from app.models.section_access import SectionAccessRule
 
     moderator = user_factory(vk_id=990_331, name="Модератор роли", role_name="модератор")
-    db.add(SectionAccessRule(section_key="program", role_id=moderator.role_id, is_open=True))
+    db.add(SectionAccessRule(section_key="program", role_id=moderator.role_id, level="view"))
     digest, event_type = _digest_with_type(db)
     _login_as(client, session_factory, moderator)
 
@@ -350,13 +350,20 @@ def test_moderator_with_role_program_grant_still_only_reads(
     assert resp.status_code == 403
 
 
-def test_personal_grant_policy_writes_only_inside_workable_sections():
-    from app.services.section_access import moderator_may_use
+def test_moderator_writes_only_where_level_is_edit():
+    """Прод 04.10.2026 после миграции: АОП у Александрии «Менять» (личная
+    строка), 3D Лаб у роли — «Смотреть»."""
+    from app.services.section_access import judge_request
 
-    granted = frozenset({"program", "lab3d"})
-    workable = frozenset({"program"})
-    assert moderator_may_use("POST", "/cabinet/staff/digest/2/events", {}, granted, workable)
-    assert moderator_may_use("POST", "/cabinet/upload-ticket-image", {}, granted, workable)
-    assert not moderator_may_use("POST", "/cabinet/3dlab", {}, granted, workable)
-    assert moderator_may_use("GET", "/cabinet/3dlab", {}, granted, workable)
-    assert not moderator_may_use("POST", "/cabinet/staff/digest/2/events", {}, granted)
+    def raised(method, path, levels):
+        return judge_request(method, path, {}, levels, "модератор").raised
+
+    levels = {"program": "edit", "lab3d": "view"}
+    assert raised("POST", "/cabinet/staff/digest/2/events", levels)
+    assert raised("POST", "/cabinet/upload-ticket-image", levels)
+    assert not raised("POST", "/cabinet/3dlab", levels)
+    assert raised("GET", "/cabinet/3dlab", levels)
+    assert not raised("POST", "/cabinet/staff/digest/2/events", {"program": "view"})
+    # Положенные модератору разделы на уровне по умолчанию белый список не
+    # обходят: «Смотреть» там и так его уровень.
+    assert not raised("GET", "/cabinet/admin/students", {"students": "view"})

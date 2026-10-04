@@ -78,7 +78,7 @@ def is_score_request(method: str, path: str) -> bool:
     """Ставит ли запрос балл: POST на адрес, последний сегмент которого
     кончается на `score` (`.../score`, `.../trainer-score`). Такой запрос
     проверяется по родному рангу, раздел, открытый сверх роли
-    (`section_access.elevated_rank`), ранг для него не поднимает."""
+    (`section_access.judge_request`), ранг для него не поднимает."""
     return method == "POST" and path.rstrip("/").rsplit("/", 1)[-1].endswith("score")
 
 

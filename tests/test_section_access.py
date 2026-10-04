@@ -15,8 +15,8 @@ from app.services import section_access
 from app.services.navigation import curator_nav_items, staff_nav_items
 from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
-    blocked_section,
-    resolve_sections,
+    judge_request,
+    resolve_levels,
     save_role_matrix,
     section_owners,
 )
@@ -26,13 +26,15 @@ def closed_sections(db, *, user_id, role_id):
     from app.models.role import Role
 
     role = db.get(Role, role_id)
-    return resolve_sections(db, user_id=user_id, role_id=role_id, role_name=role.name)[0]
+    levels = resolve_levels(db, user_id=user_id, role_id=role_id, role_name=role.name)
+    return section_access.closed_sections(levels, role.name)
 
 
 def granted_sections(db, user):
-    return resolve_sections(
+    levels = resolve_levels(
         db, user_id=user.id, role_id=user.role_id, role_name=user.role.name,
-    )[1]
+    )
+    return section_access.granted_sections(levels, user.role.name)
 
 
 def _login(client, session_factory, user):
@@ -47,8 +49,8 @@ def _open_for_role(db, actor, role_name, *keys):
     save_role_matrix(db, actor_id=actor.id, desired={role_name: {k: True for k in keys}})
 
 
-def _personal(db, user, key, is_open):
-    db.add(SectionAccessRule(section_key=key, user_id=user.id, is_open=is_open))
+def _personal(db, user, key, level):
+    db.add(SectionAccessRule(section_key=key, user_id=user.id, level=level))
     db.commit()
 
 
@@ -162,22 +164,25 @@ def test_section_owners(method, path, query, owners):
 
 def test_shared_card_is_closed_only_when_every_owner_is_closed():
     path = "/cabinet/students/5/profile"
-    assert blocked_section("GET", path, {}, frozenset({"students"})) is None
-    assert blocked_section("GET", path, {}, frozenset({"students", "archive"})) == "students"
+    head = {s.key: "edit" for s in section_access.SECTIONS}
+    assert judge_request("GET", path, {}, {**head, "students": "none"}, "админ").refusal is None
+    refused = judge_request("GET", path, {}, {**head, "students": "none", "archive": "none"}, "админ")
+    assert refused.refusal == SECTION_CLOSED_DETAIL
+    assert refused.refused_section == "students"
 
 
 # ── Правила: роль, личное, приоритет ──────────────────────────────────────────
 
 def test_personal_rule_beats_role_rule(db, superadmin, curator):
     _close_for_role(db, superadmin, "куратор", "statistics", "reports")
-    _personal(db, curator, "statistics", True)
-    _personal(db, curator, "students", False)
+    _personal(db, curator, "statistics", "edit")
+    _personal(db, curator, "students", "none")
     closed = closed_sections(db, user_id=curator.id, role_id=curator.role_id)
     assert closed == frozenset({"reports", "students"})
 
 
 def test_unknown_section_key_in_db_is_ignored(db, curator):
-    _personal(db, curator, "removed_section", False)
+    _personal(db, curator, "removed_section", "none")
     assert closed_sections(db, user_id=curator.id, role_id=curator.role_id) == frozenset()
 
 
@@ -223,7 +228,7 @@ def test_closed_statistics_tab_gives_403_but_list_stays(client, db, session_fact
 def test_personal_open_reopens_for_one_curator(client, db, session_factory, superadmin, curator, user_factory):
     other = user_factory(vk_id=990_510, name="Второй куратор", role_name="куратор")
     _close_for_role(db, superadmin, "куратор", "reports")
-    _personal(db, curator, "reports", True)
+    _personal(db, curator, "reports", "edit")
     _login(client, session_factory, curator)
     assert client.get("/cabinet/curator/reports", follow_redirects=False).status_code == 200
     _login(client, session_factory, other)
@@ -246,7 +251,7 @@ def test_head_closed_program_gets_403(client, db, session_factory, superadmin, h
 
 
 def test_superadmin_is_never_closed(client, db, session_factory, superadmin):
-    _personal(db, superadmin, "people", False)
+    _personal(db, superadmin, "people", "none")
     _login(client, session_factory, superadmin)
     assert client.get("/cabinet/superadmin/users", follow_redirects=False).status_code == 200
 
@@ -389,7 +394,7 @@ def test_granted_curator_sees_whole_school_archive(
     other = user_factory(vk_id=990_530, name="Чужой куратор", role_name="куратор")
     mine = _archived_student(db, user_factory, 990_531, curator)
     foreign = _archived_student(db, user_factory, 990_532, other)
-    _personal(db, curator, "archive", True)
+    _personal(db, curator, "archive", "view")
     _login(client, session_factory, curator)
 
     page = client.get("/cabinet/archive", follow_redirects=False)
@@ -409,7 +414,7 @@ def test_granted_archive_does_not_open_foreign_active_students(
     active = user_factory(vk_id=990_536, name="Действующий чужой")
     active.curator_id = other.id
     db.commit()
-    _personal(db, curator, "archive", True)
+    _personal(db, curator, "archive", "view")
     _login(client, session_factory, curator)
 
     assert client.get(f"/cabinet/students/{active.id}/profile").status_code == 403
@@ -435,7 +440,7 @@ def test_granted_archive_stays_read_only(client, db, session_factory, user_facto
     )
     db.add(work)
     db.commit()
-    _personal(db, curator, "archive", True)
+    _personal(db, curator, "archive", "view")
     _login(client, session_factory, curator)
     resp = client.post(
         f"/cabinet/students/{student.id}/works/{work.id}/score",
@@ -455,7 +460,7 @@ def test_granted_archive_appears_in_curator_menu():
 
 
 def test_curator_menu_shows_archive_when_granted(client, db, session_factory, curator):
-    _personal(db, curator, "archive", True)
+    _personal(db, curator, "archive", "view")
     _login(client, session_factory, curator)
     resp = client.get("/cabinet/curator", follow_redirects=False)
     assert 'href="/cabinet/archive"' in resp.text
@@ -482,7 +487,7 @@ def test_card_shows_every_section_and_marks_above_role(db, superadmin, curator):
 def test_personal_close_beats_role_opened_above_rank(db, superadmin, curator, user_factory):
     other = user_factory(vk_id=990_560, name="Другой куратор", role_name="куратор")
     _open_for_role(db, superadmin, "куратор", "program")
-    _personal(db, curator, "program", False)
+    _personal(db, curator, "program", "none")
     assert "program" not in granted_sections(db, curator)
     assert "program" in granted_sections(db, other)
 
@@ -490,7 +495,7 @@ def test_personal_close_beats_role_opened_above_rank(db, superadmin, curator, us
 # ── Открыть сверх роли (владелец 03.10.2026) ──────────────────────────────────
 
 def test_curator_with_program_works_in_it_as_head(client, db, session_factory, superadmin, curator):
-    _personal(db, curator, "program", True)
+    _personal(db, curator, "program", "edit")
     _login(client, session_factory, curator)
     page = client.get("/cabinet/staff/program/cycles", follow_redirects=False)
     assert page.status_code == 200
@@ -514,7 +519,7 @@ def test_role_wide_open_reaches_every_curator(client, db, session_factory, super
 def test_open_section_does_not_lift_rank_for_score(client, db, session_factory, curator, user_factory):
     """Балл ставит только ГП (30.09.2026) — и в разделе, открытом сверх роли."""
     student = user_factory(vk_id=990_562, name="Ученик точки А")
-    _personal(db, curator, "point_a", True)
+    _personal(db, curator, "point_a", "edit")
     _login(client, session_factory, curator)
     assert client.get(f"/cabinet/staff/point-a/{student.id}", follow_redirects=False).status_code != 403
     resp = client.post(
@@ -535,7 +540,7 @@ def test_open_mock_check_shows_any_students_mock_exams(
     db.commit()
     _login(client, session_factory, curator)
     assert client.get(f"/cabinet/students/{foreign.id}/mock-exams").status_code in (403, 404)
-    _personal(db, curator, "mock_check", True)
+    _personal(db, curator, "mock_check", "edit")
     assert client.get("/cabinet/admin/mock-check", follow_redirects=False).status_code == 200
     assert client.get(f"/cabinet/students/{foreign.id}/mock-exams").status_code == 200
     # Остальные вкладки чужой карточки по-прежнему закрыты.

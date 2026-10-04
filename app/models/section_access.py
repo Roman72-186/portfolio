@@ -1,20 +1,19 @@
-"""Переключатели доступа к разделам кабинета (владелец 30.09.2026).
+"""Правила доступа к разделам кабинета (владелец 30.09.2026, уровни — 04.10.2026).
 
-Суперадмин закрывает сотрудникам разделы: всей роли сразу или одному
-человеку. Переключатель только сужает — потолок по-прежнему задаёт ранг
-роли (`require_*` в `app/dependencies.py`), открыть сверх него нельзя.
+Суперадмин задаёт сотрудникам уровень в разделе: всей роли сразу или одному
+человеку. Уровень — `none` (нет), `view` (смотреть), `edit` (менять).
 
 Строка — либо правило роли (`role_id`), либо личное правило сотрудника
-(`user_id`), ровно одно из двух. У роли хранится только «закрыто»: нет
-строки — раздел открыт. У сотрудника строка бывает и «открыто» (исключение
-из закрытия ролью), и «закрыто»; нет строки — действует правило роли.
+(`user_id`), ровно одно из двух. Хранится только расхождение с уровнем,
+положенным роли по умолчанию; нет строки — у сотрудника действует правило
+роли, у роли — её уровень по умолчанию.
 
-Каталог разделов и сама проверка — `app/services/section_access.py`.
+Каталог разделов, уровни по умолчанию и сама проверка —
+`app/services/section_access.py`.
 """
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -38,7 +37,9 @@ class SectionAccessRule(Base):
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
-    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    level: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="none", server_default="none",
+    )
     updated_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -52,6 +53,9 @@ class SectionAccessRule(Base):
         CheckConstraint(
             "(role_id IS NULL) <> (user_id IS NULL)",
             name="ck_section_access_rules_one_target",
+        ),
+        CheckConstraint(
+            "level IN ('none', 'view', 'edit')", name="ck_section_access_rules_level",
         ),
         UniqueConstraint("section_key", "role_id", name="uq_section_access_rules_role"),
         UniqueConstraint("section_key", "user_id", name="uq_section_access_rules_user"),

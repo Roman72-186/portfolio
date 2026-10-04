@@ -81,8 +81,7 @@ from app.services.task_blocks import (
 from app.services.cycle_stats import cycle_debtors, cycle_stats, reminder_message, remind_cycle_debtors
 from app.services.exam_cycle import MAX_INTERMEDIATE_PER_FINAL
 from app.services.notify import notify
-from app.services.rbac import MODERATOR_ROLE_NAME
-from app.services.section_access import moderator_can_change
+from app.services.section_access import can
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
     ITEM_ARCHI_PROFILE,
@@ -961,13 +960,9 @@ def program_cycle_stats(
         "debtors": debtors,
         "to_remind": sum(1 for debtor in debtors if not debtor["reminded_today"]),
         "preview": preview,
-        # Модератор страницу видит, а отправить может, только если АОП ему
-        # открыт личной галочкой: иначе POST закрывает белый список
-        # `rbac.is_moderator_request_allowed`.
-        "can_remind": (
-            user.get("role_name") != MODERATOR_ROLE_NAME
-            or moderator_can_change(user, "program")
-        ),
+        # Отправка — запись в АОП: кнопку видит тот, кому раздел открыт на
+        # «Менять». Страницу статистики модератор видит и без этого.
+        "can_remind": can(user, "program"),
     })
 
 

@@ -22,13 +22,11 @@ from app.services.rbac import (
     is_moderator_request_allowed,
 )
 from app.services.section_access import (
-    SECTION_CLOSED_DETAIL,
-    blocked_section,
-    elevated_rank,
+    closed_sections,
+    granted_sections,
     is_configurable_role,
-    moderator_may_use,
-    moderator_work_sections,
-    resolve_sections,
+    judge_request,
+    resolve_levels,
 )
 
 
@@ -201,47 +199,43 @@ def get_current_user(
     role_name = role.name if role else None
     role_rank = effective_role_rank(role_name, role.rank) if role else 0
 
-    # Разделы суперадмина (services/section_access.py, владелец 30.09 и
-    # 03.10.2026): `closed` — положенные роли, но закрытые; `granted` —
-    # открытые сверх роли. Только сотрудники: ученика держат срок доступа и
-    # гейты ниже, суперадмина не закрывает ничто. В режиме «глазами» сессия
-    # принадлежит сотруднику — суперадмин видит ровно его ограничения.
-    closed = frozenset()
-    granted = frozenset()
-    workable = frozenset()
+    # Уровни в разделах (services/section_access.py, владелец 30.09, 03.10 и
+    # 04.10.2026): «Нет / Смотреть / Менять» по каждому разделу. Только
+    # сотрудники: ученика держат срок доступа и гейты ниже, суперадмина не
+    # ограничивает ничто. В режиме «глазами» сессия принадлежит сотруднику —
+    # суперадмин видит ровно его ограничения.
+    levels: dict[str, str] = {}
     if is_configurable_role(role_name):
-        closed, granted = resolve_sections(
+        levels = resolve_levels(
             db, user_id=user.id, role_id=user.role_id, role_name=role_name,
         )
-        if role_name == MODERATOR_ROLE_NAME:
-            workable = moderator_work_sections(db, user_id=user.id, granted=granted)
+    access = judge_request(
+        request.method, request.url.path, request.query_params, levels, role_name,
+    )
 
     # Модератор — наблюдатель: уровень ГП, но открыт только белый список
-    # адресов из rbac.py и разделы, открытые ему сверх роли: галочкой роли —
-    # на чтение, личной галочкой — на полную работу (владелец 04.10.2026).
-    # Проверка здесь, а не в роутах, по той же причине, что и срок доступа
-    # ниже: сюда приходит каждый запрос кабинета.
+    # адресов из rbac.py и разделы, где суперадмин поднял ему уровень:
+    # «Смотреть» — чтение, «Менять» — работа. Проверка здесь, а не в роутах,
+    # по той же причине, что и срок доступа ниже: сюда приходит каждый
+    # запрос кабинета.
     if role_name == MODERATOR_ROLE_NAME and not (
-        is_moderator_request_allowed(request.method, request.url.path)
-        or moderator_may_use(
-            request.method, request.url.path, request.query_params, granted, workable,
-        )
+        is_moderator_request_allowed(request.method, request.url.path) or access.raised
     ):
         _log_access_refusal(user.id, role_name, request, "вне белого списка модератора")
         raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
-    section = blocked_section(request.method, request.url.path, request.query_params, closed)
-    if section:
-        _log_access_refusal(user.id, role_name, request, f"раздел {section} закрыт")
-        raise HTTPException(status_code=403, detail=SECTION_CLOSED_DETAIL)
+    if access.refusal:
+        _log_access_refusal(
+            user.id, role_name, request,
+            f"раздел {access.refused_section}: {access.refusal}",
+        )
+        raise HTTPException(status_code=403, detail=access.refusal)
 
-    # Внутри раздела, открытого сверх роли, сотрудник работает с рангом
-    # раздела — прежние `require_*` пропускают сами. Только на этот запрос и
-    # только на адреса раздела; меню и плашки строятся по `nav_rank`.
+    # Внутри раздела, где уровень выше положенного роли, сотрудник работает с
+    # рангом раздела — прежние `require_*` пропускают сами. Только на этот
+    # запрос и только на адреса раздела; меню и плашки строятся по `nav_rank`.
     nav_rank = role_rank
-    role_rank = elevated_rank(
-        role_rank, request.method, request.url.path, request.query_params, granted,
-    )
+    role_rank = max(role_rank, access.rank)
     is_admin = role_rank >= 4 if role else user.is_admin
 
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
@@ -342,10 +336,10 @@ def get_current_user(
         # Родной уровень роли без подъёма в открытом разделе — по нему
         # строится меню (`base.html`, `_curator_nav.html`).
         "nav_rank": nav_rank,
-        "closed_sections": closed,
-        "granted_sections": granted,
-        # Разделы, где модератор работает, а не только смотрит (личная галочка).
-        "moderator_work_sections": workable,
+        "closed_sections": closed_sections(levels, role_name),
+        "granted_sections": granted_sections(levels, role_name),
+        # {раздел: none|view|edit}; кнопки спрашивают `section_access.can`.
+        "section_levels": levels,
     }
 
     return result

@@ -1,29 +1,34 @@
-"""Переключатели доступа к разделам кабинета (владелец 30.09.2026, 03.10.2026).
+"""Доступ сотрудников к разделам кабинета (владелец 30.09, 03.10 и 04.10.2026).
 
-Суперадмин открывает и закрывает сотрудникам разделы — всей роли сразу или
-одному человеку. С 03.10.2026 любой раздел можно открыть любой настраиваемой
-роли, в том числе сверх её ранга (владелец: «всем ролям по максимум добавить
-поля с доступами, а я уже буду решать, выдавать или нет»). Без правила раздел
-открыт ровно тем ролям, что перечислены в `Section.roles`, поэтому новые
-переключатели ничего не меняют, пока их не тронули.
+Суперадмин задаёт сотрудникам уровень в каждом разделе — всей роли сразу или
+одному человеку: «Нет» (`none`), «Смотреть» (`view`), «Менять» (`edit`).
+Любой уровень доступен любой настраиваемой роли, в том числе сверх её ранга
+(владелец 03.10.2026: «всем ролям по максимум добавить поля с доступами, а я
+уже буду решать, выдавать или нет»). Без правила действует уровень по
+умолчанию (`native_level`): то, что роль может сейчас, — поэтому уровни
+ничего не меняют, пока их не тронули.
 
-Как устроено поверх прежних слоёв:
+Как устроено поверх прежних слоёв (`judge_request`, зовёт `get_current_user`):
 
 1. Ранг роли (`require_*` в `app/dependencies.py`) — по-прежнему потолок для
-   всего, что не входит в открытый раздел.
-2. Закрытый раздел (из положенных роли) пропадает из меню, а его адреса
-   отвечают 403 с причиной `SECTION_CLOSED_DETAIL`.
-3. Открытый сверх роли раздел лежит в `user["granted_sections"]`. На запросе
-   к его адресам `get_current_user` поднимает ранг до `Section.min_rank`
-   (`elevated_rank`), и прежние `require_*` пропускают сами — 450 проверок
-   ранга переписывать не нужно. Подъём действует только на этот запрос и
+   всего, где суперадмин не поднял уровень выше положенного роли.
+2. Уровень запроса — по методу: GET и HEAD требуют «Смотреть», остальное —
+   «Менять». Запрос к разделу, где уровня не хватает, отвечает 403: раздел
+   закрыт (`SECTION_CLOSED_DETAIL`, пропадает из меню) или открыт только на
+   просмотр (`SECTION_VIEW_ONLY_DETAIL`). Раздел вне роли без правила 403 от
+   этого слоя не получает — его держит ранг, как раньше.
+3. Уровень выше положенного роли поднимает ранг на запрос до
+   `Section.min_rank`, и прежние `require_*` пропускают сами — 450 проверок
+   ранга переписывать не нужно. «Смотреть» поднимает только на GET,
+   «Менять» — на всех методах. Подъём действует только на этот запрос и
    только на адреса раздела: соседние разделы, общие адреса и меню живут по
    родному рангу (`user["nav_rank"]`).
-4. Модератор — наблюдатель: раздел, открытый ему галочкой роли, добавляется
-   к белому списку `rbac.py` только на чтение (GET). Личная галочка в карточке
-   сотрудника открывает раздел на полную работу (`moderator_may_use`,
-   владелец 04.10.2026). Ранг модератору поднимать не нужно: его уровень и так
-   равен ГП (`rbac.effective_role_rank`).
+4. Модератор — наблюдатель (28.09.2026): положенные ему разделы по умолчанию
+   на просмотр, и всё, что суперадмин не поднял выше, держит белый список
+   `rbac.py`. Поднятый уровень открывает модератору раздел так же, как
+   остальным: «Смотреть» — чтение, «Менять» — работу (прод 04.10.2026: АОП
+   ролью — смотреть, лично Александрии — менять). Ранг модератору поднимать
+   не нужно: его уровень и так равен ГП (`rbac.effective_role_rank`).
 
 Балл подъём ранга не даёт: адреса с `score` в конце (`rbac.is_score_request`)
 остаются за родным рангом — правило 30.09.2026 «балл ставит только Главный
@@ -69,6 +74,7 @@ from app.models.user import User
 from app.services.rbac import is_score_request
 
 SECTION_CLOSED_DETAIL = "Раздел закрыт суперадмином"
+SECTION_VIEW_ONLY_DETAIL = "Раздел открыт только на просмотр"
 
 ROLE_CURATOR = "куратор"
 ROLE_MODERATOR = "модератор"
@@ -76,6 +82,21 @@ ROLE_HEAD = "админ"  # в интерфейсе — «Главный пре�
 
 # Порядок — порядок столбцов на странице «Доступы».
 CONFIGURABLE_ROLES: tuple[str, ...] = (ROLE_CURATOR, ROLE_MODERATOR, ROLE_HEAD)
+
+LEVEL_NONE = "none"
+LEVEL_VIEW = "view"
+LEVEL_EDIT = "edit"
+LEVELS: tuple[str, ...] = (LEVEL_NONE, LEVEL_VIEW, LEVEL_EDIT)
+_LEVEL_ORDER = {level: i for i, level in enumerate(LEVELS)}
+
+
+def at_least(level: str, needed: str) -> bool:
+    return _LEVEL_ORDER.get(level, 0) >= _LEVEL_ORDER[needed]
+
+
+def request_level(method: str) -> str:
+    """Какой уровень нужен запросу: чтение — «Смотреть», остальное — «Менять»."""
+    return LEVEL_VIEW if method in ("GET", "HEAD") else LEVEL_EDIT
 
 # Состояния личного правила сотрудника (select в карточке).
 USER_STATE_ROLE = "role"
@@ -89,8 +110,9 @@ class Section:
     key: str
     label: str
     hint: str
-    # Роли, которым раздел положен по рангу: без правила он у них открыт, у
-    # остальных закрыт. Открыть сверх роли можно любой раздел любой роли.
+    # Роли, которым раздел положен по рангу: без правила он у них открыт
+    # (`native_level`), у остальных закрыт. Открыть сверх роли можно любой
+    # раздел любой роли.
     roles: tuple[str, ...]
     # Пункты меню (`navigation.py`), которые пропадают вместе с разделом и
     # появляются, когда его открыли сверх роли.
@@ -277,75 +299,6 @@ def section_owners(method: str, path: str, query_params) -> tuple[str, ...]:
     return ()
 
 
-def blocked_section(method: str, path: str, query_params, closed: frozenset[str]) -> str | None:
-    """Ключ раздела, из-за которого запрос закрыт, или None."""
-    if not closed:
-        return None
-    owners = section_owners(method, path, query_params)
-    if owners and all(key in closed for key in owners):
-        return owners[0]
-    return None
-
-
-def elevated_rank(rank: int, method: str, path: str, query_params, granted: frozenset[str]) -> int:
-    """Ранг на этот запрос: родной, а внутри раздела, открытого сверх роли, —
-    `Section.min_rank`. Балл (`rbac.is_score_request`) и разделы с
-    `elevates=False` ранг не поднимают."""
-    if not granted or is_score_request(method, path):
-        return rank
-    owners = section_owners(method, path, query_params)
-    target = rank
-    for key in owners:
-        section = SECTIONS_BY_KEY[key]
-        if key in granted and section.elevates:
-            target = max(target, section.min_rank)
-    return target
-
-
-def moderator_may_use(
-    method: str, path: str, query_params,
-    granted: frozenset[str], workable: frozenset[str] = frozenset(),
-) -> bool:
-    """Открыт ли модератору запрос через раздел, открытый ему сверх роли.
-
-    Галочка на всю роль — только чтение: модератор наблюдатель (28.09.2026).
-    Личная галочка в карточке сотрудника — полная работа в разделе, как у
-    Главного преподавателя (`workable`, владелец 04.10.2026: «ей дать все права
-    по АОП, что и у меня и ГП» — про одного модератора, остальным просмотр)."""
-    if not granted:
-        return False
-    owners = section_owners(method, path, query_params)
-    if method in _GET:
-        return any(key in granted for key in owners)
-    return any(key in workable for key in owners)
-
-
-def moderator_work_sections(
-    db: DBSession, *, user_id: int, granted: frozenset[str],
-) -> frozenset[str]:
-    """Разделы, где модератор работает, а не только смотрит: открытые ему
-    сверх роли личным правилом. Правило роли сюда не входит — оно открывает
-    раздел всем модераторам сразу и остаётся просмотром."""
-    if not granted:
-        return frozenset()
-    rows = (
-        db.query(SectionAccessRule.section_key)
-        .filter(
-            SectionAccessRule.user_id == user_id,
-            SectionAccessRule.is_open.is_(True),
-            SectionAccessRule.section_key.in_(granted),
-        )
-        .all()
-    )
-    return frozenset(row.section_key for row in rows)
-
-
-def moderator_can_change(user: dict, section_key: str) -> bool:
-    """Показывать ли модератору кнопки изменений в разделе. Для экранов, где
-    кнопку прячут от наблюдателя (`can_remind` в статистике цикла)."""
-    return section_key in (user.get("moderator_work_sections") or ())
-
-
 def is_configurable_role(role_name: str | None) -> bool:
     return role_name in CONFIGURABLE_ROLES
 
@@ -353,6 +306,87 @@ def is_configurable_role(role_name: str | None) -> bool:
 def is_native(section: Section, role_name: str | None) -> bool:
     """Положен ли раздел роли по рангу — открыт ли он ей без правил."""
     return role_name in section.roles
+
+
+def native_level(section: Section, role_name: str | None) -> str:
+    """Уровень роли в разделе без правил — то, что она может сейчас.
+
+    Модератор — наблюдатель (28.09.2026): положенные ему разделы («Ученики»,
+    архив, статистика) он только смотрит, адреса держит белый список
+    `rbac.py`. Остальным положенный раздел открыт целиком, внутри его делит
+    ранг."""
+    if not is_native(section, role_name):
+        return LEVEL_NONE
+    return LEVEL_VIEW if role_name == ROLE_MODERATOR else LEVEL_EDIT
+
+
+@dataclass(frozen=True)
+class RequestAccess:
+    """Что слой разделов решил про один запрос (`judge_request`)."""
+    # Причина отказа 403 или None, если слой разделов запрос не держит.
+    refusal: str | None = None
+    # Раздел, из-за которого отказ, — для строки в логе.
+    refused_section: str | None = None
+    # Запрос пускает раздел, где уровень поднят выше положенного роли. Для
+    # модератора это второй путь мимо белого списка `rbac.py`.
+    raised: bool = False
+    # Ранг на этот запрос: `Section.min_rank` поднятого раздела, 0 — без подъёма.
+    rank: int = 0
+
+
+def judge_request(
+    method: str, path: str, query_params, levels: dict[str, str], role_name: str | None,
+) -> RequestAccess:
+    """Решение слоя разделов по запросу. `levels` — уровни сотрудника
+    (`resolve_levels`); пусто — роль не настраивается, слой молчит.
+
+    Адрес бывает у нескольких разделов сразу (карточка ученика — у «Учеников»
+    и «Архива»): запрос пускает любой из них, где уровня хватает. Отказ —
+    только когда не хватает во всех и каждый из них суперадмин ограничил:
+    положенный роли или открытый сверх роли на просмотр. Раздел вне роли без
+    правила держит ранг, как до переключателей."""
+    if not levels:
+        return RequestAccess()
+    owners = section_owners(method, path, query_params)
+    if not owners:
+        return RequestAccess()
+    needed = request_level(method)
+    allowing = [key for key in owners if at_least(levels.get(key, LEVEL_NONE), needed)]
+    if not allowing:
+        restricted = all(
+            is_native(SECTIONS_BY_KEY[key], role_name) or levels.get(key) != LEVEL_NONE
+            for key in owners
+        )
+        if not restricted:
+            return RequestAccess()
+        view_only = any(levels.get(key) == LEVEL_VIEW for key in owners)
+        return RequestAccess(
+            refusal=SECTION_VIEW_ONLY_DETAIL if view_only else SECTION_CLOSED_DETAIL,
+            refused_section=owners[0],
+        )
+    raised = [
+        key for key in allowing
+        if not at_least(native_level(SECTIONS_BY_KEY[key], role_name), levels[key])
+    ]
+    rank = 0
+    # Балл подъём ранга не даёт: правило 30.09.2026 «балл ставит только ГП»
+    # сильнее переключателя.
+    if not is_score_request(method, path):
+        rank = max(
+            (SECTIONS_BY_KEY[key].min_rank for key in raised if SECTIONS_BY_KEY[key].elevates),
+            default=0,
+        )
+    return RequestAccess(raised=bool(raised), rank=rank)
+
+
+def can(user: dict, section_key: str, level: str = LEVEL_EDIT) -> bool:
+    """Открыт ли сотруднику раздел на этом уровне — для кнопок в шаблонах,
+    чтобы кнопка спрашивала то же, что сервер. Суперадмина не ограничивает
+    ничто; у ученика уровней нет."""
+    levels = user.get("section_levels") or {}
+    if section_key not in levels:
+        return (user.get("nav_rank") or user.get("role_rank") or 0) >= 5
+    return at_least(levels[section_key], level)
 
 
 def _rules_for(db: DBSession, *, user_id: int | None, role_id: int | None):
@@ -366,35 +400,44 @@ def _rules_for(db: DBSession, *, user_id: int | None, role_id: int | None):
     return db.query(SectionAccessRule).filter(or_(*conds)).all()
 
 
-def resolve_sections(
+def resolve_levels(
     db: DBSession, *, user_id: int, role_id: int | None, role_name: str | None,
-) -> tuple[frozenset[str], frozenset[str]]:
-    """(закрытые, открытые сверх роли) разделы сотрудника.
+) -> dict[str, str]:
+    """{раздел: уровень} сотрудника по всем разделам каталога.
 
-    Порядок: личное правило, затем правило роли, затем `Section.roles`.
-    Закрытые — положенные роли, но закрытые правилом; открытые сверх роли —
-    не положенные, но открытые. Ключи, которых нет в `SECTIONS` (раздел
-    переименовали или убрали), пропускаются — старая строка в базе не должна
-    ронять вход."""
-    by_role: dict[str, bool] = {}
-    by_user: dict[str, bool] = {}
+    Порядок: личное правило, затем правило роли, затем `native_level`. Ключи,
+    которых нет в `SECTIONS` (раздел переименовали или убрали), и незнакомые
+    уровни пропускаются — старая строка в базе не должна ронять вход."""
+    by_role: dict[str, str] = {}
+    by_user: dict[str, str] = {}
     for row in _rules_for(db, user_id=user_id, role_id=role_id):
-        if row.section_key not in SECTIONS_BY_KEY:
+        if row.section_key not in SECTIONS_BY_KEY or row.level not in LEVELS:
             continue
         if row.user_id is not None:
-            by_user[row.section_key] = row.is_open
+            by_user[row.section_key] = row.level
         else:
-            by_role[row.section_key] = row.is_open
-    closed: set[str] = set()
-    granted: set[str] = set()
-    for s in SECTIONS:
-        native = is_native(s, role_name)
-        is_open = by_user.get(s.key, by_role.get(s.key, native))
-        if native and not is_open:
-            closed.add(s.key)
-        elif is_open and not native:
-            granted.add(s.key)
-    return frozenset(closed), frozenset(granted)
+            by_role[row.section_key] = row.level
+    return {
+        s.key: by_user.get(s.key, by_role.get(s.key, native_level(s, role_name)))
+        for s in SECTIONS
+    }
+
+
+def closed_sections(levels: dict[str, str], role_name: str | None) -> frozenset[str]:
+    """Положенные роли разделы, закрытые правилом: пропадают из меню."""
+    return frozenset(
+        s.key for s in SECTIONS
+        if is_native(s, role_name) and levels.get(s.key) == LEVEL_NONE
+    )
+
+
+def granted_sections(levels: dict[str, str], role_name: str | None) -> frozenset[str]:
+    """Разделы вне роли, открытые правилом хотя бы на просмотр: появляются в
+    меню, их спрашивает `has_grant`."""
+    return frozenset(
+        s.key for s in SECTIONS
+        if not is_native(s, role_name) and levels.get(s.key, LEVEL_NONE) != LEVEL_NONE
+    )
 
 
 def has_grant(user: dict, section_key: str) -> bool:
@@ -426,16 +469,39 @@ def granted_nav_keys(granted: frozenset[str] | None) -> tuple[str, ...]:
 
 
 # ── Настройка суперадмином ──────────────────────────────────────────────────
+#
+# Экран пока прежний: галочка на раздел (шаг 3 плана
+# `plans/2026-10-04-apparchi-тонкие-доступы.md` заменит её сегментами
+# «Нет · Смотреть · Менять»). Галочка читается как «уровень не `none`», а
+# включённая галочка ставит `open_level` — ровно то, что она значила до уровней.
+
+LEVEL_LABELS = {LEVEL_NONE: "нет", LEVEL_VIEW: "смотреть", LEVEL_EDIT: "менять"}
+
+
+def open_level(section: Section, role_name: str | None, *, personal: bool) -> str:
+    """Уровень, который ставит включённая галочка экрана.
+
+    Положенный роли раздел — её уровень по умолчанию. Сверх роли: галочка всей
+    роли модераторов — «Смотреть» (наблюдатель, 28.09.2026), личная галочка и
+    галочка остальных ролей — «Менять» (владелец 04.10.2026 про модератора:
+    «ей дать все права по АОП, что и у меня и ГП»)."""
+    native = native_level(section, role_name)
+    if native != LEVEL_NONE:
+        return native
+    if role_name == ROLE_MODERATOR and not personal:
+        return LEVEL_VIEW
+    return LEVEL_EDIT
+
 
 def _configurable_roles(db: DBSession) -> dict[str, Role]:
     rows = db.query(Role).filter(Role.name.in_(CONFIGURABLE_ROLES)).all()
     return {r.name: r for r in rows}
 
 
-def role_matrix(db: DBSession) -> dict[str, dict[str, bool]]:
-    """{роль: {раздел: открыт}} для страницы «Доступы», все разделы у всех ролей."""
+def role_levels(db: DBSession) -> dict[str, dict[str, str]]:
+    """{роль: {раздел: уровень}} — все разделы у всех настраиваемых ролей."""
     roles = _configurable_roles(db)
-    stored: dict[int, dict[str, bool]] = {}
+    stored: dict[int, dict[str, str]] = {}
     if roles:
         rows = (
             db.query(SectionAccessRule)
@@ -443,15 +509,24 @@ def role_matrix(db: DBSession) -> dict[str, dict[str, bool]]:
             .all()
         )
         for row in rows:
-            stored.setdefault(row.role_id, {})[row.section_key] = row.is_open
-    matrix: dict[str, dict[str, bool]] = {}
+            if row.level in LEVELS:
+                stored.setdefault(row.role_id, {})[row.section_key] = row.level
+    result: dict[str, dict[str, str]] = {}
     for name in CONFIGURABLE_ROLES:
         role = roles.get(name)
         role_rows = stored.get(role.id, {}) if role else {}
-        matrix[name] = {
-            s.key: role_rows.get(s.key, is_native(s, name)) for s in SECTIONS
+        result[name] = {
+            s.key: role_rows.get(s.key, native_level(s, name)) for s in SECTIONS
         }
-    return matrix
+    return result
+
+
+def role_matrix(db: DBSession) -> dict[str, dict[str, bool]]:
+    """{роль: {раздел: открыт}} для галочек страницы «Доступы»."""
+    return {
+        name: {key: level != LEVEL_NONE for key, level in levels.items()}
+        for name, levels in role_levels(db).items()
+    }
 
 
 def _audit(db: DBSession, *, action: str, actor_id: int, target_user_id: int | None, details: str) -> None:
@@ -469,46 +544,49 @@ def save_role_matrix(db: DBSession, *, actor_id: int, desired: dict[str, dict[st
     `desired` — {роль: {раздел: открыт}}; незнакомые роли и ключи молча
     пропускаются. Раздела, которого нет в `desired`, правка не касается:
     обрезанная или пустая форма не должна разом закрыть всё всем. Поэтому
-    форма шлёт каждую ячейку явно — скрытое «0» перед галочкой «1».
+    форма шлёт каждую ячейку явно — скрытое «0» перед галочкой «1». Ячейка,
+    чья галочка не изменилась, не трогается: уровень «Смотреть» у открытого
+    раздела переживает сохранение формы.
 
-    Строка в базе хранится, только пока ячейка расходится с `Section.roles`:
+    Строка в базе хранится, только пока уровень расходится с `native_level`:
     вернули как положено роли — строка удаляется."""
     roles = _configurable_roles(db)
-    current = role_matrix(db)
+    current = role_levels(db)
     changes = 0
     for name in CONFIGURABLE_ROLES:
         role = roles.get(name)
         if role is None:
             continue
         wanted_for_role = desired.get(name, {})
-        for key, is_open_now in current[name].items():
+        for key, level_now in current[name].items():
             if key not in wanted_for_role:
                 continue
             want_open = bool(wanted_for_role[key])
-            if want_open == is_open_now:
+            if want_open == (level_now != LEVEL_NONE):
                 continue
             section = SECTIONS_BY_KEY[key]
+            level = open_level(section, name, personal=False) if want_open else LEVEL_NONE
             row = (
                 db.query(SectionAccessRule)
                 .filter(SectionAccessRule.role_id == role.id, SectionAccessRule.section_key == key)
                 .first()
             )
-            if want_open == is_native(section, name):
+            if level == native_level(section, name):
                 if row is not None:
                     db.delete(row)
             elif row is None:
                 db.add(SectionAccessRule(
-                    section_key=key, role_id=role.id, is_open=want_open, updated_by_id=actor_id,
+                    section_key=key, role_id=role.id, level=level, updated_by_id=actor_id,
                 ))
             else:
-                row.is_open = want_open
+                row.level = level
                 row.updated_by_id = actor_id
             extra = "" if is_native(section, name) else " (сверх роли)"
             _audit(
                 db, action="section_access_role", actor_id=actor_id, target_user_id=None,
                 details=(
                     f"роль «{role.display_name}», раздел «{section.label}»{extra}: "
-                    f"{'закрыт → открыт' if want_open else 'открыт → закрыт'}"
+                    f"{LEVEL_LABELS[level_now]} → {LEVEL_LABELS[level]}"
                 ),
             )
             changes += 1
@@ -521,25 +599,26 @@ def user_rules(db: DBSession, target: User) -> list[dict]:
     role_name = target.role.name if target.role else None
     if not is_configurable_role(role_name):
         return []
-    by_role: dict[str, bool] = {}
-    personal: dict[str, bool] = {}
+    by_role: dict[str, str] = {}
+    personal: dict[str, str] = {}
     for row in _rules_for(db, user_id=target.id, role_id=target.role_id):
+        if row.level not in LEVELS:
+            continue
         if row.user_id is not None:
-            personal[row.section_key] = row.is_open
+            personal[row.section_key] = row.level
         else:
-            by_role[row.section_key] = row.is_open
+            by_role[row.section_key] = row.level
     result = []
     for s in SECTIONS:
         if s.key in personal:
-            state = USER_STATE_OPEN if personal[s.key] else USER_STATE_CLOSED
+            state = USER_STATE_OPEN if personal[s.key] != LEVEL_NONE else USER_STATE_CLOSED
         else:
             state = USER_STATE_ROLE
-        native = is_native(s, role_name)
         result.append({
             "key": s.key,
             "label": s.label,
-            "native": native,
-            "role_open": by_role.get(s.key, native),
+            "native": is_native(s, role_name),
+            "role_open": by_role.get(s.key, native_level(s, role_name)) != LEVEL_NONE,
             "state": state,
         })
     return result
@@ -574,7 +653,10 @@ def save_user_rules(db: DBSession, *, actor_id: int, target: User, desired: dict
             if row is None:
                 row = SectionAccessRule(section_key=key, user_id=target.id)
                 db.add(row)
-            row.is_open = want == USER_STATE_OPEN
+            row.level = (
+                open_level(SECTIONS_BY_KEY[key], role_name, personal=True)
+                if want == USER_STATE_OPEN else LEVEL_NONE
+            )
             row.updated_by_id = actor_id
         extra = "" if item["native"] else " (сверх роли)"
         _audit(
@@ -602,7 +684,7 @@ def staff_with_personal_rules(db: DBSession) -> list[dict]:
             "user": user, "opened": [], "closed": [],
         })
         label = SECTIONS_BY_KEY[rule.section_key].label
-        (entry["opened"] if rule.is_open else entry["closed"]).append(label)
+        (entry["opened"] if rule.level != LEVEL_NONE else entry["closed"]).append(label)
     return sorted(
         by_user.values(),
         key=lambda e: ((e["user"].last_name or ""), (e["user"].first_name or e["user"].name or "")),
