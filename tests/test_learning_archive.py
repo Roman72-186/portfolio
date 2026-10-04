@@ -16,7 +16,7 @@ from app.models.task_block import BLOCK_VIDEO
 from app.models.tracker import ITEM_VIDEO
 from app.services.cycle_feed import archive_for_student
 from app.services.task_blocks import sync_blocks
-from app.services.tracker import create_task
+from app.services.tracker import close_task_for_user, create_task
 from app.services.tz import msk_midnight, today_msk
 
 TODAY = today_msk()
@@ -126,6 +126,39 @@ def test_video_of_task_with_passed_due_in_current_cycle_is_in_archive(db, regula
 
     assert _titles(periods) == ["Срок прошёл"]
     assert periods[0]["stage"].id == sem.id
+
+
+def test_completed_running_cycle_is_in_archive(db, regular_user):
+    """Этап не закрыт, цикл ещё идёт, но ученик его выполнил — ролики цикла
+    в архиве (владелец 04.10.2026: «Цикл 4» закрыли до его конца)."""
+    _, _, sem, sem1 = _program(db, regular_user)
+    _video_task(db, regular_user, sem1, _video(db, "Выполнено"))
+    required = _task(db, regular_user, sem1, title="Сдать работу", required=True)
+    close_task_for_user(db, required, regular_user.id, source="manual")
+    db.commit()
+
+    periods = _archive(db, regular_user)
+
+    assert _titles(periods) == ["Выполнено"]
+    assert periods[0]["stage"].id == sem.id
+
+
+def test_running_cycle_with_open_required_task_is_not_in_archive(db, regular_user):
+    _, _, _, sem1 = _program(db, regular_user)
+    _video_task(db, regular_user, sem1, _video(db, "Не выполнено"))
+    _task(db, regular_user, sem1, title="Сдать работу", required=True)
+
+    assert _archive(db, regular_user) == []
+
+
+def test_running_cycle_without_required_tasks_is_not_in_archive(db, regular_user):
+    """Цикл без обязательных заданий «пройден» для долга сразу, но ученик в
+    нём ничего не сделал — его ролики не уезжают в архив с первого дня
+    (прод 04.10.2026: «Подготовка к годовому курсу»)."""
+    _, _, _, sem1 = _program(db, regular_user)
+    _video_task(db, regular_user, sem1, _video(db, "Только началось"))
+
+    assert _archive(db, regular_user) == []
 
 
 def test_draft_and_unready_videos_are_skipped(db, regular_user):

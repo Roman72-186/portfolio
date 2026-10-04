@@ -54,6 +54,7 @@ from app.services.tracker import (
     accessible_task_entries,
     cycle_bounds,
     cycle_debt,
+    cycle_done_by_user,
     cycle_label,
     effective_cycle,
     effective_week_start,
@@ -732,8 +733,14 @@ def archive_for_student(
     Полоса циклов на экране обучения показывает только текущий этап, и со
     сменой этапа прошлые циклы с роликами пропадали из виду.
 
-    Что попадает: ролики закончившихся циклов и этапов и ролики заданий с
-    прошедшим сроком в идущем цикле. Своих правил видимости нет — ролики
+    Что попадает: ролики закончившихся циклов и этапов, ролики заданий с
+    прошедшим сроком в идущем цикле и ролики идущего цикла, который ученик
+    уже выполнил (`cycle_done_by_user`; владелец 04.10.2026: «если этап не
+    закрыт, то можно показать ещё последний выполненный цикл» — «Цикл 4»
+    закрыли 83 ученика из 98 до его конца, а в архиве его не было). Не только
+    последний: идущие циклы пересекаются датами, и последним выполненным
+    оказывается цикл без роликов («Игра»), за которым роликовый не показался
+    бы вовсе. Своих правил видимости нет — ролики
     берутся из той же ленты, что видит ученик (`build_cycle_feed`: аудитория,
     тариф блока, «закончился до прихода»), по тем же циклам (`started_cycles`).
     Цикл, запертый долгом, пропускается: вперёд нельзя (30.09.2026).
@@ -774,7 +781,8 @@ def archive_for_student(
             db, user_id=user_id, user_tariff=user_tariff, start=first, end=last,
             topic_id=cycle.id,
         )
-        videos = _passed_videos(db, steps, period_over=last < today, now=now, seen=seen)
+        period_over = last < today or cycle_done_by_user(db, user_id, cycle)
+        videos = _passed_videos(db, steps, period_over=period_over, now=now, seen=seen)
         if not videos:
             continue
         group = group_for(stage)

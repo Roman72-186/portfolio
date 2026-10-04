@@ -807,6 +807,32 @@ def missing_required_tasks(
     него бездатное задание любого другого доступного ученику цикла тоже
     попало бы в эту проверку и вечно держало бы цикл A незавершённым.
     """
+    return [
+        entry["task"]
+        for entry in _required_cycle_entries(db, user_id, topic)
+        if entry["status"] != "done"
+    ]
+
+
+def cycle_done_by_user(db: Session, user_id: int, topic: LearningTopic) -> bool:
+    """Ученик выполнил цикл: в нём есть обязательные задачи, и все закрыты.
+
+    Отличие от `is_cycle_complete` — цикл без обязательных задач здесь не
+    выполнен: тот «пройден» сразу, чтобы не держать долгом, но ученик в нём
+    ещё ничего не сделал. Нужна архиву (владелец 04.10.2026: пока этап не
+    закрыт, показать и выполненный цикл) — иначе ролики идущего цикла без
+    обязательных заданий («Подготовка к годовому курсу») уезжали бы в архив
+    с первого дня.
+    """
+    entries = _required_cycle_entries(db, user_id, topic)
+    return bool(entries) and all(entry["status"] == "done" for entry in entries)
+
+
+def _required_cycle_entries(
+    db: Session, user_id: int, topic: LearningTopic
+) -> list[dict]:
+    """Обязательные задачи цикла с их статусом у ученика — общая выборка для
+    `missing_required_tasks` и `cycle_done_by_user`."""
     first, last = cycle_bounds(topic)
     start, _ = day_bounds(first)
     _, end = day_bounds(last)
@@ -814,10 +840,8 @@ def missing_required_tasks(
         db, user_id, start=start, end=end, topic_id=topic.id, include_undated=True,
     )
     return [
-        entry["task"]
-        for entry in entries
+        entry for entry in entries
         if entry["task"].is_required and entry["task"].kind != ITEM_MOCK_EXAM
-        and entry["status"] != "done"
     ]
 
 
