@@ -101,6 +101,7 @@
 {% include "partials/bottom_nav.html" %}
 
 {% if feature_available %}
+<script src="/static/js/photo-prep.js?v=1"></script>
 <script>
 const MAX_FILES = {{ max_files }}, MAX_SIZE = 10*1024*1024;
 const input = document.getElementById('photoInput'), dropZone = document.getElementById('dropZone');
@@ -143,6 +144,7 @@ function renderPreviews() {
         btn.type = 'button'; btn.className = 'preview-remove'; btn.textContent = '\u2715';
         btn.onclick = function() { removeFile(i); };
         wrap.appendChild(btn);
+        PhotoPrep.attachRotate(wrap, f);
         var reader = new FileReader();
         reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
         reader.readAsDataURL(f);
@@ -184,8 +186,22 @@ dropZone.addEventListener('drop', function(e) {
     e.preventDefault(); dropZone.classList.remove('drag-over');
     if(e.dataTransfer&&e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); }
 });
-document.getElementById('retakeForm').addEventListener('submit', function(){
+// Форма уходит обычной отправкой. Если ученик повернул фото в превью,
+// отправку придерживаем: canvas асинхронный — сначала крутим пиксели
+// (`photo-prep.js`), кладём готовые файлы в поле и отправляем форму сами.
+// `form.submit()` событие submit второй раз не вызывает.
+var retakeForm = document.getElementById('retakeForm');
+retakeForm.addEventListener('submit', function(ev){
     syncInputFiles(); submitBtn.disabled=true; submitBtn.innerHTML='<span class="spinner"></span>Загружаем…';
+    var needsRotate = selectedFiles.some(function(f){ return PhotoPrep.getTurns(f); });
+    if (!needsRotate) return;
+    ev.preventDefault();
+    PhotoPrep.prepareAll(selectedFiles).then(function(ready){
+        var dt = new DataTransfer();
+        ready.forEach(function(f) { dt.items.add(f); });
+        input.files = dt.files;
+        retakeForm.submit();
+    });
 });
 updateSubmit();
 </script>

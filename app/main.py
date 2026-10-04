@@ -15,7 +15,7 @@ from app.db.database import engine, Base, SessionLocal
 from app.config import settings
 from app.api import auth, cabinet, upload, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
-from app.api import cabinet_students_shared, cabinet_tags, cases
+from app.api import cabinet_students_shared, cabinet_tags, cases, photo_rotation
 from app.api import cycle_upload, feedback as feedback_router
 from app.api import legacy_portfolio, video, video_admin
 from app.api import guest_exam, cabinet_guest_exam_admin
@@ -365,6 +365,7 @@ app.include_router(cabinet_student.router)
 app.include_router(cabinet_curator.router)
 app.include_router(cabinet_admin.router)
 app.include_router(cabinet_superadmin.router)
+app.include_router(photo_rotation.router)
 app.include_router(cabinet_tags.router)
 app.include_router(cases.router)
 app.include_router(cabinet_students_shared.router)

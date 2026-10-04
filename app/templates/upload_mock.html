@@ -172,6 +172,7 @@
 {% include "partials/lightbox.html" %}
 
 {% if feature_available %}
+<script src="/static/js/photo-prep.js?v=1"></script>
 <script>
 const MAX_STAGE_LIMIT = {{ max_stage_files | default(max_files) }}, MAX_SIZE = 10*1024*1024;
 const submitBtn = document.getElementById('submitBtn');
@@ -190,6 +191,7 @@ function renderFinal() {
     if (!finalFile) return;
     var wrap = document.createElement('div');
     wrap.className = 'preview-cell';
+    PhotoPrep.attachRotate(wrap, finalFile);
     var reader = new FileReader();
     reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
     reader.readAsDataURL(finalFile);
@@ -286,6 +288,7 @@ function renderStage() {
             if (!stageFiles.length) { stagePreviewArea.style.display = 'none'; stageDrop.style.display = 'flex'; }
         };
         wrap.appendChild(btn);
+        PhotoPrep.attachRotate(wrap, f);
         var reader = new FileReader();
         reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
         reader.readAsDataURL(f);
@@ -385,9 +388,10 @@ function doUploadIntermediate() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
     uploadMsg.style.display = 'none';
-    refreshCsrf().then(function(){
+    // Повёрнутые в превью фото крутим по-настоящему перед отправкой (`photo-prep.js`).
+    refreshCsrf().then(function(){ return PhotoPrep.prepareAll(stageFiles); }).then(function(ready){
         var fd = new FormData();
-        stageFiles.forEach(function(f){ fd.append('photos', f); });
+        ready.forEach(function(f){ fd.append('photos', f); });
         fd.append('subject', _currentSubject);
         fd.append('csrf_token', CSRF_TOKEN);
         // Без fetchWithTimeout: это большой multipart-запрос с фото, у которого нет
@@ -444,9 +448,9 @@ function doUploadFinal() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
     uploadMsg.style.display = 'none';
-    refreshCsrf().then(function(){
+    refreshCsrf().then(function(){ return PhotoPrep.prepare(finalFile); }).then(function(ready){
         var fd = new FormData();
-        fd.append('photos', finalFile);
+        fd.append('photos', ready);
         fd.append('subject', _currentSubject);
         fd.append('csrf_token', CSRF_TOKEN);
         return fetch('/upload/probnik/final', {

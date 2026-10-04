@@ -1,26 +1,13 @@
-{% set lightbox_can_rotate = (user is defined and user and user.role_rank is defined and (user.role_rank|int) >= 5) %}
-{% if lightbox_can_rotate %}
-<style>
-.lightbox-tools {
-    position: absolute; top: 16px; left: 16px; z-index: 3;
-    display: flex; gap: 8px;
-}
-.lightbox-tool {
-    background: rgba(255,255,255,.15); border: none; color: #fff;
-    width: 44px; height: 44px; border-radius: 50%; font-size: 20px; line-height: 1;
-    cursor: pointer; transition: background 0.2s;
-    display: flex; align-items: center; justify-content: center;
-}
-.lightbox-tool:hover { background: rgba(255,255,255,.28); }
-.lightbox-tools.is-busy { opacity: .5; pointer-events: none; }
-</style>
-{% endif %}
+{# Поворот фото — у всех ролей, кроме модератора (он только смотрит; имя роли —
+   `rbac.MODERATOR_ROLE_NAME`). Какие именно фото можно крутить, решает сервер
+   (`services/photo_rotation.py`), кнопки до его ответа скрыты. #}
+{% set lightbox_can_rotate = (user is defined and user and user.role_rank is defined and user.role_name != "модератор") %}
 <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фото" aria-hidden="true" onclick="closeLightbox(event)">
     <button class="lightbox-close" type="button" onclick="closeLightbox(event)" aria-label="Закрыть">&times;</button>
 
     <div class="lightbox-stage" onclick="event.stopPropagation()">
         {% if lightbox_can_rotate %}
-        <div class="lightbox-tools" id="lightbox-tools">
+        <div class="lightbox-tools" id="lightbox-tools" hidden>
             <button class="lightbox-tool" type="button" onclick="lightboxRotate('left')" title="Повернуть влево" aria-label="Повернуть влево">⟲</button>
             <button class="lightbox-tool" type="button" onclick="lightboxRotate('right')" title="Повернуть вправо" aria-label="Повернуть вправо">⟳</button>
         </div>
@@ -38,4 +25,4 @@
 {# Код лайтбокса — в `/static/js/lightbox.js` (с 01.10.2026, аудит АОП ученика, п. 4.1):
    партиал стоит на 18 экранах, встроенным он заново качался на каждом. Правишь файл —
    поднимай `?v=` здесь. Ключ для поворота остаётся строкой выше: он у каждой сессии свой. #}
-<script src="/static/js/lightbox.js?v=1"></script>
+<script src="/static/js/lightbox.js?v=2"></script>

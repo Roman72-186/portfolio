@@ -195,6 +195,7 @@
 {% set active_tab = "portfolio" %}
 {% include "partials/bottom_nav.html" %}
 
+<script src="/static/js/photo-prep.js?v=1"></script>
 <script>
 const MAX_FILES  = {{ max_files }};
 const MAX_SIZE   = 10 * 1024 * 1024;
@@ -242,6 +243,7 @@ function renderPreviews() {
         btn.textContent = '\u2715';
         btn.onclick = function() { removeFile(i); };
         wrap.appendChild(btn);
+        PhotoPrep.attachRotate(wrap, f);
         var reader = new FileReader();
         reader.onload = function(e) {
             var img = document.createElement('img');
@@ -268,38 +270,10 @@ function escapeText(s) {
     return d.innerHTML;
 }
 
-function loadImage(file) {
-    return new Promise(function(resolve, reject) {
-        var url = URL.createObjectURL(file);
-        var img = new Image();
-        img.onload = function() { URL.revokeObjectURL(url); resolve(img); };
-        img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('decode')); };
-        img.src = url;
-    });
-}
-
-function canvasToBlob(canvas, quality) {
-    return new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', quality); });
-}
-
-// Фото до лимита уходит как есть — пережимать его незачем.
-async function shrinkPhoto(file) {
-    if (file.size <= MAX_SIZE) return file;
-    var img = await loadImage(file);
-    var longSide = Math.max(img.naturalWidth, img.naturalHeight);
-    for (var s = 0; s < SHRINK_STEPS.length; s++) {
-        var scale = Math.min(1, SHRINK_STEPS[s][0] / longSide);
-        var canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.naturalWidth * scale);
-        canvas.height = Math.round(img.naturalHeight * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        var blob = await canvasToBlob(canvas, SHRINK_STEPS[s][1]);
-        if (blob && blob.size <= MAX_SIZE) {
-            var name = file.name.replace(/\.[^.]*$/, '') + '.jpg';
-            return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified });
-        }
-    }
-    throw new Error('too-big');
+// Фото до лимита уходит как есть — пережимать его незачем. Сам код ужатия —
+// в `static/js/photo-prep.js`, там же поворот перед отправкой.
+function shrinkPhoto(file) {
+    return PhotoPrep.shrink(file, MAX_SIZE, SHRINK_STEPS);
 }
 
 // Сколько выборов ещё ужимается: пока не ноль, отправлять нечего.
@@ -416,10 +390,11 @@ uploadForm.addEventListener('submit', function(ev) {
     if (!window.FormData || !window.XMLHttpRequest) return;
     ev.preventDefault();
 
-    var fd = new FormData(ev.target);
+    var form = ev.target;
+    var fd = null;
     var btnOriginal = submitBtn.innerHTML;
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner"></span>Загружаем 0%…';
+    submitBtn.innerHTML = '<span class="spinner"></span>Готовим фото…';
 
     // Свежий ключ перед отправкой (`static/js/csrf.js`): страница загрузки
     // живёт долго, а ключ из разметки старился вместе с ней и отдавал
@@ -474,13 +449,22 @@ uploadForm.addEventListener('submit', function(ev) {
         xhr.send(fd);
     }
 
-    var freshToken = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
-    freshToken.then(function (token) {
-        startUpload(token || CSRF_TOKEN);
-    }).catch(function () {
-        // Ключ не пришёл — шлём тот, что в разметке: сервер решит сам, а
-        // кнопка не остаётся запертой с текстом «Загружаем 0%…».
-        startUpload(CSRF_TOKEN);
+    // Повёрнутые в превью фото крутим по-настоящему перед отправкой
+    // (`PhotoPrep.prepareAll` не падает: не вышло — уходит оригинал).
+    PhotoPrep.prepareAll(selectedFiles).then(function (ready) {
+        fd = new FormData(form);
+        fd.delete('photos');
+        ready.forEach(function (f) { fd.append('photos', f); });
+        submitBtn.innerHTML = '<span class="spinner"></span>Загружаем 0%…';
+
+        var freshToken = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
+        freshToken.then(function (token) {
+            startUpload(token || CSRF_TOKEN);
+        }).catch(function () {
+            // Ключ не пришёл — шлём тот, что в разметке: сервер решит сам, а
+            // кнопка не остаётся запертой с текстом «Загружаем 0%…».
+            startUpload(CSRF_TOKEN);
+        });
     });
 });
 }

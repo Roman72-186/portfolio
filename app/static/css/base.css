@@ -1163,6 +1163,30 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
    ═══════════════════════════════════════ */
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 .photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); }
+/* Превью выбранного фото до отправки (`static/js/photo-prep.js`, 04.10.2026):
+   крестик убирает фото, ⟳ поворачивает его на 90° — пиксели крутятся в
+   браузере перед отправкой, на экране превью крутится через transform. */
+.photo-grid[hidden] { display: none; }
+/* Превью под кнопкой «Выбрать фото» в блоке задания — до подписи «Описание работы». */
+.file-pick + .photo-grid { margin-bottom: 12px; }
+.preview-cell { position: relative; overflow: hidden; border-radius: var(--r-sm); }
+.preview-cell img { display: block; transition: transform var(--duration-fast); }
+.preview-remove,
+.preview-rotate {
+    position: absolute; width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(28,28,30,0.6); color: var(--on-color);
+    border: none; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2; line-height: 1;
+}
+.preview-remove { top: 4px; right: 4px; }
+.preview-rotate { bottom: 4px; left: 4px; font-size: 18px; }
+.preview-rotate[hidden] { display: none; }
+.preview-remove:hover { background: var(--error-fill); }
+.preview-rotate:hover { background: rgba(28,28,30,0.8); }
+@media (prefers-reduced-motion: reduce) {
+    .preview-cell img { transition: none; }
+}
 
 /* Ход выбора в блоке «Сравнение работ» на экране проверки (владелец
    28.09.2026): пара за парой, выбранная работа обведена. */
@@ -1232,6 +1256,22 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 .lightbox-thumb:hover img { opacity: 0.9; }
 .lightbox-thumb.is-current { border-color: var(--blue); }
 .lightbox-thumb.is-current img { opacity: 1; }
+/* Поворот фото (с 04.10.2026 — у всех ролей, каждой в своей зоне). Кнопки
+   рендерятся скрытыми, `lightbox.js` открывает их только у слайда, который
+   сервер разрешил крутить (`/cabinet/rotate-photo/allowed`). */
+.lightbox-tools {
+    position: absolute; top: 16px; left: 16px; z-index: 3;
+    display: flex; gap: 8px;
+}
+.lightbox-tools[hidden] { display: none; }
+.lightbox-tool {
+    background: rgba(255,255,255,.15); border: none; color: var(--on-color);
+    width: 44px; height: 44px; border-radius: 50%; font-size: 20px; line-height: 1;
+    cursor: pointer; transition: background 0.2s;
+    display: flex; align-items: center; justify-content: center;
+}
+.lightbox-tool:hover { background: rgba(255,255,255,.28); }
+.lightbox-tools.is-busy { opacity: .5; pointer-events: none; }
 
 /* ═══════════════════════════════════════
    GATE MODAL — портфолио «До» не загружено (14.09.2026)

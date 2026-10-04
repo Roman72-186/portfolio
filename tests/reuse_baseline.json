@@ -127,11 +127,6 @@
     ],
     "style_lines": 80
   },
-  "partials/lightbox.html": {
-    "hex": 1,
-    "shadow": [],
-    "style_lines": 13
-  },
   "partials/staff_nav.html": {
     "hex": 1,
     "shadow": [

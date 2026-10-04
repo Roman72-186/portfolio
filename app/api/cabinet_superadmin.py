@@ -1,10 +1,7 @@
-import asyncio
 import logging
 import re
 import secrets
 import string
-import time
-import urllib.parse
 import uuid
 from datetime import datetime, timedelta, timezone, date
 from typing import Annotated
@@ -52,7 +49,6 @@ from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-from app.services.works import upload_work_thumb
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
@@ -71,7 +67,7 @@ from app.services.staff_dashboard import (
     load_staff_dashboard,
     parse_registration_date,
 )
-from app.services.utils import compress_image, rotate_image_bytes
+from app.services.utils import compress_image
 from app.services.upload_validation import MAX_UPLOAD_FILE_SIZE
 from app.tmpl import templates
 
@@ -132,77 +128,6 @@ def _issue_login_password(db: DBSession, target: User) -> dict:
 
 
 router = APIRouter(prefix="/cabinet")
-
-
-# ── Поворот фото в S3 (только суперадмин) ────────────────────────────────────
-#
-# Суперадмин при просмотре в лайтбоксе может повернуть любое фото на 90°. Поворот
-# деструктивный: скачиваем объект из S3, крутим на полном разрешении и
-# перезаписываем тот же ключ (s3_url/s3_path не меняются → запись Work не трогаем).
-# Авторизация на конкретный файл — через s3_path_from_public_url: он вернёт None
-# для любой ссылки вне нашего бакета. Видео (отчёты кураторов) отсекаются тем, что
-# PIL не сможет открыть их как изображение.
-# Превью работы (с 29.09.2026) крутится вместе с фото: его пересобирают из
-# повёрнутого снимка, и в `thumb_s3_url` уходит `?v=`, иначе браузер показал
-# бы старую ориентацию из кэша.
-@router.post("/rotate-photo")
-async def rotate_photo(
-    user: Annotated[dict, Depends(require_superadmin)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    src: Annotated[str, Form()],
-    direction: Annotated[str, Form()],
-):
-    if direction not in ("left", "right"):
-        return JSONResponse({"success": False, "error": "Неверное направление поворота"}, status_code=422)
-    if not s3_service.is_configured():
-        return JSONResponse({"success": False, "error": "S3 не настроен"}, status_code=503)
-
-    # Срезаем cache-busting ?v=… (повторный поворот шлёт уже изменённый URL).
-    clean_url = src.split("?", 1)[0]
-    s3_path = s3_service.s3_path_from_public_url(clean_url)
-    if not s3_path:
-        return JSONResponse({"success": False, "error": "Неизвестный файл"}, status_code=400)
-    # Браузер отдаёт img.src percent-encoded (пути пробников/портфолио содержат
-    # кириллицу: тариф, папки «До»/«После»). Ключ в S3 — сырой, поэтому декодируем.
-    s3_path = urllib.parse.unquote(s3_path)
-
-    work_with_thumb = (
-        db.query(Work)
-        .filter(Work.s3_path == s3_path, Work.thumb_s3_url.isnot(None))
-        .first()
-    )
-
-    def _do() -> tuple[str | None, str | None, str | None]:
-        data = s3_service.download_from_s3(s3_path)
-        if data is None:
-            return None, None, "Не удалось загрузить файл из хранилища"
-        try:
-            rotated = rotate_image_bytes(data, clockwise=(direction == "right"))
-        except Exception:  # noqa: BLE001 — PIL не открыл (видео/битый файл)
-            return None, None, "Это не изображение — поворот недоступен"
-        new_url = s3_service.upload_to_s3(s3_path, rotated, "image/jpeg")
-        if not new_url:
-            return None, None, "Не удалось сохранить повёрнутое фото"
-        thumb_url = upload_work_thumb(s3_path, rotated) if work_with_thumb else None
-        return new_url, thumb_url, None
-
-    loop = asyncio.get_running_loop()
-    new_url, thumb_url, err = await loop.run_in_executor(None, _do)
-    if err:
-        return JSONResponse({"success": False, "error": err}, status_code=422)
-
-    version = int(time.time())
-    thumb_src = None
-    if work_with_thumb:
-        # Превью не пересобралось — пусть квадратик берёт само фото, а не
-        # показывает старую ориентацию.
-        thumb_src = f"{thumb_url}?v={version}" if thumb_url else None
-        work_with_thumb.thumb_s3_url = thumb_src
-        db.commit()
-
-    logger.info("rotate-photo by %s: %s (%s)", user.get("user_id"), s3_path, direction)
-    return JSONResponse({"success": True, "src": f"{new_url}?v={version}", "thumb_src": thumb_src})
 
 
 @router.get("/superadmin", response_class=HTMLResponse)

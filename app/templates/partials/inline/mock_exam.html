@@ -109,6 +109,9 @@ mock_exam-задания одной недели), синглтон-id стол�
     </div>
 </div>
 
+{# Поворот фото перед отправкой (04.10.2026). Повторное подключение на втором
+   пробнике недели безвредно: браузер берёт файл из кэша. #}
+<script src="/static/js/photo-prep.js?v=1"></script>
 <script>
 (function () {
     // Скрипт грузится с каждым вхождением партиала (Рисунок + Композиция на
@@ -466,6 +469,7 @@ mock_exam-задания одной недели), синглтон-id стол�
                     if (!stageFiles.length) { stagePreviewAreaEl.style.display = 'none'; stageDropEl.style.display = 'flex'; }
                 };
                 wrap.appendChild(btn);
+                PhotoPrep.attachRotate(wrap, f);
                 var reader = new FileReader();
                 reader.onload = function (e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
                 reader.readAsDataURL(f);
@@ -513,6 +517,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             if (!finalFile) return;
             var wrap = document.createElement('div');
             wrap.className = 'preview-cell';
+            PhotoPrep.attachRotate(wrap, finalFile);
             var reader = new FileReader();
             reader.onload = function (e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
             reader.readAsDataURL(finalFile);
@@ -561,9 +566,10 @@ mock_exam-задания одной недели), синглтон-id стол�
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
             uploadMsgEl.hidden = true;
-            refreshCsrf().then(function () {
+            // Повёрнутые в превью фото крутим по-настоящему перед отправкой.
+            refreshCsrf().then(function () { return PhotoPrep.prepareAll(stageFiles); }).then(function (ready) {
                 var fd = new FormData();
-                stageFiles.forEach(function (f) { fd.append('photos', f); });
+                ready.forEach(function (f) { fd.append('photos', f); });
                 fd.append('subject', subject);
                 fd.append('csrf_token', CSRF_TOKEN);
                 return fetch('/upload/probnik/intermediate', {
@@ -611,9 +617,9 @@ mock_exam-задания одной недели), синглтон-id стол�
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
             uploadMsgEl.hidden = true;
-            refreshCsrf().then(function () {
+            refreshCsrf().then(function () { return PhotoPrep.prepare(finalFile); }).then(function (ready) {
                 var fd = new FormData();
-                fd.append('photos', finalFile);
+                fd.append('photos', ready);
                 fd.append('subject', subject);
                 fd.append('csrf_token', CSRF_TOKEN);
                 return fetch('/upload/probnik/final', {

@@ -6,6 +6,41 @@
     var slides = [];
     var idx = 0;
     var lastFocusedEl = null;
+    // Поворот: кнопки есть только в разметке ролей, которым он вообще положен,
+    // а какие фото крутить можно, сервер отвечает на каждое открытие.
+    var tools = document.getElementById('lightbox-tools');
+    var rotatable = new Set();
+    var rotatableSeq = 0;
+
+    function baseUrl(u) { return (u || '').split('?')[0]; }
+
+    function updateTools() {
+        if (!tools) return;
+        var s = slides[idx];
+        tools.hidden = !(s && rotatable.has(baseUrl(s.full)));
+    }
+
+    function checkRotatable() {
+        if (!tools) return;
+        rotatable = new Set();
+        updateTools();
+        var seq = ++rotatableSeq;
+        var srcs = [];
+        slides.forEach(function(s){
+            var u = baseUrl(s.full);
+            if (u && srcs.indexOf(u) < 0) srcs.push(u);
+        });
+        if (!srcs.length) return;
+        fetch('/cabinet/rotate-photo/allowed', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.LIGHTBOX_CSRF || ''},
+            body: JSON.stringify({srcs: srcs})
+        }).then(function(r){ return r.ok ? r.json() : {allowed: []}; }).then(function(d){
+            if (seq !== rotatableSeq) return;  // просмотрщик уже открыли на другом наборе
+            rotatable = new Set((d && d.allowed) || []);
+            updateTools();
+        }).catch(function(){});
+    }
 
     function render() {
         if (!slides.length) return;
@@ -23,6 +58,7 @@
             }
         });
         lb.classList.toggle('is-single', slides.length <= 1);
+        updateTools();
     }
 
     function setSlides(list, startIdx) {
@@ -44,6 +80,7 @@
             thumbs.appendChild(btn);
         });
         render();
+        checkRotatable();
     }
 
     window.lightboxStep = function(delta){
@@ -52,13 +89,13 @@
         render();
     };
 
-    // Superadmin: поворот текущего фото на 90° (перезаписывает файл в S3).
+    // Поворот текущего фото на 90° (перезаписывает файл в S3). Ссылка без `?v=`
+    // остаётся прежней, поэтому разрешение из `rotatable` действует и дальше.
     window.lightboxRotate = function(direction){
         if (!slides.length) return;
         var s = slides[idx];
-        var base = (s.full || '').split('?')[0];
+        var base = baseUrl(s.full);
         if (!base) return;
-        var tools = document.getElementById('lightbox-tools');
         if (tools) tools.classList.add('is-busy');
         var fd = new FormData();
         fd.append('src', base);

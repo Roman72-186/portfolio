@@ -983,12 +983,36 @@ scope)` и свойством `answered` (одна попытка: после о
                 var pickNames = el('p', 'file-pick-names', 'Фото не выбраны');
                 pickNames.id = fileId + '-names';
                 input.setAttribute('aria-describedby', pickNames.id);
+                // Превью выбранного с кнопкой ⟳ (04.10.2026): ученик крутит
+                // фото до отправки, пиксели поворачивает `photo-prep.js`.
+                // Выбор как был: повторный заменяет набор целиком.
+                var previews = el('div', 'photo-grid');
+                var previewUrls = [];
+                function renderPreviews() {
+                    previewUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+                    previewUrls = [];
+                    previews.innerHTML = '';
+                    Array.prototype.forEach.call(input.files || [], function (file, index) {
+                        var cell = el('div', 'preview-cell');
+                        var img = el('img');
+                        img.alt = 'Фото ' + (index + 1);
+                        var url = URL.createObjectURL(file);
+                        previewUrls.push(url);
+                        img.src = url;
+                        cell.appendChild(img);
+                        if (window.PhotoPrep) window.PhotoPrep.attachRotate(cell, file);
+                        previews.appendChild(cell);
+                    });
+                    previews.hidden = !previews.children.length;
+                }
+                previews.hidden = true;
                 input.addEventListener('change', function () {
                     var names = Array.prototype.map.call(input.files || [], function (file) {
                         return file.name;
                     });
                     pickNames.textContent = names.length ? 'Выбрано: ' + names.join(', ') : 'Фото не выбраны';
                     pickButton.textContent = names.length ? 'Выбрать другие' : 'Выбрать фото';
+                    renderPreviews();
                     syncSend();
                 });
                 pick.appendChild(input);
@@ -1058,18 +1082,24 @@ scope)` и свойством `answered` (одна попытка: после о
                         syncSend();
                         return;
                     }
-                    var data = new FormData();
-                    for (var i = 0; i < input.files.length; i += 1) {
-                        data.append('photos', input.files[i]);
-                    }
-                    data.append('comment', comment.value || '');
-                    if (replaceMode) data.append('replace', '1');
                     send.disabled = true;
                     note.classList.remove('is-error');
                     note.textContent = 'Загружаем…';
-                    post(block.upload_endpoint, {
-                        method: 'POST',
-                        body: data
+                    // Повёрнутые в превью фото крутим по-настоящему; не вышло —
+                    // уходит оригинал (`prepareAll` не падает).
+                    var chosen = Array.prototype.slice.call(input.files);
+                    var ready = window.PhotoPrep
+                        ? window.PhotoPrep.prepareAll(chosen)
+                        : Promise.resolve(chosen);
+                    ready.then(function (files) {
+                        var data = new FormData();
+                        files.forEach(function (file) { data.append('photos', file); });
+                        data.append('comment', comment.value || '');
+                        if (replaceMode) data.append('replace', '1');
+                        return post(block.upload_endpoint, {
+                            method: 'POST',
+                            body: data
+                        });
                     }).then(function (resp) {
                         // Ответ разбираем через text(): при отказе на уровне
                         // прокси (обрыв, 502) JSON не приходит вовсе, и
@@ -1110,6 +1140,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 function appendForm() {
                     wrap.appendChild(label);
                     wrap.appendChild(pick);
+                    wrap.appendChild(previews);
                     if (!uploaded) {
                         wrap.appendChild(commentLabel);
                         wrap.appendChild(comment);
@@ -1130,6 +1161,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         send.textContent = 'Заменить работу';
                         input.multiple = required !== 1;
                         input.value = '';
+                        renderPreviews();
                         pickNames.textContent = 'Фото не выбраны';
                         pickButton.textContent = 'Выбрать фото';
                         if (!label.parentNode) appendForm();
