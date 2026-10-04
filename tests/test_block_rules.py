@@ -36,7 +36,7 @@ from app.services.task_blocks import (
     question_blocks,
     sync_blocks,
 )
-from app.services.tracker import create_task
+from app.services.tracker import create_task, task_done_for_user
 from app.services.tz import msk_midnight, today_msk
 
 TODAY = today_msk()
@@ -60,10 +60,10 @@ def _cycle(db, owner):
     db.commit()
 
 
-def _task(db, owner, *, title="18 сентября"):
+def _task(db, owner, *, title="18 сентября", days=2):
     task = create_task(
         db, title=title, user_id=owner.id, kind="material",
-        due_at=day_bounds(TODAY + timedelta(days=2))[0] + timedelta(hours=6),
+        due_at=day_bounds(TODAY + timedelta(days=days))[0] + timedelta(hours=6),
         assign_to_all=True, is_required=True,
     )
     task.is_published = True
@@ -291,6 +291,123 @@ def test_rules_and_test_by_them_go_one_after_another(auth_client, db):
         {"block_id": question.id, "option_ids": _option_ids(db, question)[:1]}
     ])
     assert _statuses(db, user) == ["done", "done", "current"]
+
+
+# ── галочки уходят сами (владелец 04.10.2026) ───────────────────────────────
+#
+# «После проставления галочки чек-бокса в „Правила с галочками“ считать
+# задание выполненным и открывать следующее задание». Решение владельца в тот
+# же день: правило автозакрытия не меняется — задание закрывается, когда
+# сделаны все его шаги. Галочки закрывают задание, если правила — последний
+# несделанный шаг; если за ними шаг того же задания (видео в задании 108
+# «Старт годового курса»), открывается он.
+
+def _blocks_payload(client, task_id, block_id):
+    payload = client.get(f"/cabinet/tracker/tasks/{task_id}/blocks").json()
+    return next(item for item in payload["blocks"] if item["id"] == block_id)
+
+
+def test_rules_block_carries_its_own_submit_endpoint(auth_client, db):
+    """Адрес у самого блока — по нему экран шлёт галочки без общей кнопки.
+
+    После сохранения адреса нет: слать больше нечего, и общая форма тоже не
+    рисуется (`lrnBlockRender.formOpen`).
+    """
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _rules_block(db, task, tail=False)
+
+    item = _blocks_payload(client, task.id, block.id)
+    assert item["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
+
+    _answer(client, task.id, [{"block_id": block.id, "option_ids": _option_ids(db, block)}])
+
+    item = _blocks_payload(client, task.id, block.id)
+    assert item["submit_endpoint"] is None
+    assert item["edit_reason"] == "Согласие с правилами уже сохранено."
+
+
+def test_rules_only_task_closes_and_the_next_task_becomes_current(auth_client, db):
+    """Задание из одних правил: последняя галочка закрывает задание, и следующее
+    задание ленты открывается без кнопки «Завершить задание»."""
+    client, user = auth_client
+    _cycle(db, user)
+    rules_task = _task(db, user, title="Старт годового курса")
+    block = _rules_block(db, rules_task, tail=False)
+    next_task = _task(db, user, title="1 неделя", days=3)
+    sync_blocks(db, task_id=next_task.id, items=[
+        {"block_type": "upload", "body": "Первая работа", "is_required": True},
+    ])
+    db.commit()
+
+    assert _statuses(db, user) == ["current", "locked"]
+
+    resp = _answer(client, rules_task.id, [
+        {"block_id": block.id, "option_ids": _option_ids(db, block)}
+    ])
+
+    assert resp.status_code == 200
+    assert task_done_for_user(db, rules_task.id, user.id)
+    assert not task_done_for_user(db, next_task.id, user.id)
+    assert _statuses(db, user) == ["done", "current"]
+
+
+def test_rules_before_another_step_open_it_and_keep_the_task_open(auth_client, db):
+    """Выбор владельца 04.10.2026: за правилами шаг того же задания — галочки
+    открывают его, а задание остаётся открытым, пока шаг не сделан. Следующее
+    задание при этом заперто."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    # Как в задании 108: правила, за ними обязательный шаг того же задания.
+    block = sync_blocks(db, task_id=task.id, items=[
+        {
+            "block_type": BLOCK_RULES, "title": "Правила на годовом курсе", "is_required": True,
+            "options": [{"id": None, "text": text, "is_correct": False} for text in RULES],
+        },
+        {"block_type": "upload", "body": "Устройство месяца", "is_required": True},
+    ])[0]
+    next_task = _task(db, user, title="1 неделя", days=3)
+    sync_blocks(db, task_id=next_task.id, items=[
+        {"block_type": "upload", "body": "Первая работа", "is_required": True},
+    ])
+    db.commit()
+
+    assert _statuses(db, user) == ["current", "locked", "locked"]
+
+    _answer(client, task.id, [{"block_id": block.id, "option_ids": _option_ids(db, block)}])
+
+    assert not task_done_for_user(db, task.id, user.id)
+    assert _statuses(db, user) == ["done", "current", "locked"]
+
+
+def test_screens_send_ticks_by_themselves():
+    """Галочки шлёт общий рендерер, а не кнопка формы, — и обоим экранам одной функцией.
+
+    Статическая проверка исходников: запрос идёт через `post()` со свежим
+    ключом (`tests/test_csrf_freshness.py`), правила не уходят в общую форму,
+    условие «нужна ли форма» не копируется в экраны, а лента после
+    сохранения переходит к открывшемуся шагу.
+    """
+    from pathlib import Path
+
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    render = (app_dir / "static" / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
+    feed = (app_dir / "static" / "js" / "cycle-feed.js").read_text(encoding="utf-8")
+    tracker = (app_dir / "templates" / "partials" / "inline" / "task_blocks.html").read_text(encoding="utf-8")
+    learning = (app_dir / "templates" / "cabinet_learning.html").read_text(encoding="utf-8")
+
+    assert "function wireRulesAutosave(" in render
+    assert "post(block.submit_endpoint, {" in render.split("function wireRulesAutosave(")[1]
+    # Правила со своим адресом в общую форму не идут.
+    assert "if (block.submit_endpoint) return;" in render
+    for screen in (feed, tracker):
+        assert "window.lrnBlockRender.formOpen(" in screen
+        assert "['question', 'scale', 'rules']" not in screen
+    assert "onRulesSaved: showStepAfter" in feed
+    assert "searchParams.set('after'" in feed
+    assert "lrnFocusAfterStep(after)" in learning
 
 
 # ── конструктор преподавателя ───────────────────────────────────────────────

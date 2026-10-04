@@ -291,10 +291,46 @@ function lrnToggleStep(button, open) {
     button.textContent = open ? 'Свернуть' : 'Показать';
 }
 
+// После того как «Правила с галочками» сохранились сами (владелец 04.10.2026,
+// `cycle-feed.js::showStepAfter`), показать шаг, открывшийся ниже: первый
+// «можно делать» после сохранённого блока, а нет такого — просто следующий,
+// он сам скажет, когда откроется. Шаг из другой вкладки предмета переключает
+// вкладку: очередь одна на весь цикл.
+function lrnFocusAfterStep(blockId) {
+    var steps = Array.prototype.slice.call(document.querySelectorAll('.lrn-feed .lrn-step'));
+    var from = -1;
+    steps.forEach(function (step, index) {
+        if (step.getAttribute('data-block-id') === blockId) from = index;
+    });
+    if (from === -1) return;
+    var rest = steps.slice(from + 1);
+    var target = rest.filter(function (step) {
+        return step.classList.contains('lrn-step--current');
+    })[0] || rest[0];
+    if (!target) return;
+    if (target.hasAttribute('data-subject-off')) {
+        document.querySelectorAll('.lrn-subject-btn').forEach(function (btn) {
+            if (btn.getAttribute('data-subject') === target.getAttribute('data-subject')) lrnSwitchSubject(btn);
+        });
+    }
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.scrollIntoView({block: 'start'});
+    target.focus({preventScroll: true});
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     var focusTaskId = {{ focus_task_id | tojson }};
     lrnRestoreSubject(focusTaskId !== null);
     lrnApplySubjectFilter();
+    var params = new URLSearchParams(window.location.search);
+    var after = params.get('after');
+    if (after !== null) {
+        // Метка одноразовая: обновил страницу сам — лента не прыгает снова.
+        params.delete('after');
+        var query = params.toString();
+        history.replaceState(null, '', window.location.pathname + (query ? '?' + query : ''));
+        lrnFocusAfterStep(after);
+    }
     if (focusTaskId === null) return;
     var target = document.getElementById('learning-task-' + focusTaskId);
     if (!target) return;

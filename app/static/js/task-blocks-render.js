@@ -245,12 +245,31 @@ scope)` и свойством `answered` (одна попытка: после о
             });
             return groups;
         },
+        // Нужна ли под заданием общая кнопка «Сохранить ответы»: есть вопрос
+        // или шкала, которые ещё можно менять. Правила со своим адресом
+        // (`submit_endpoint`) уходят сами по последней галочке (владелец
+        // 04.10.2026) и кнопку не держат — у задания из одних правил её нет.
+        // Одна функция на ленту (`cycle-feed.js`) и трекер
+        // (`partials/inline/task_blocks.html`), до 04.10.2026 там были копии.
+        formOpen: function (blocks) {
+            return (blocks || []).some(function (block) {
+                if (block.edit_reason) return false;
+                if (block.block_type === 'rules') return !block.answered && !block.submit_endpoint;
+                return block.block_type === 'question' || block.block_type === 'scale';
+            });
+        },
         isAnswerFilled: isAnswerFilled,
         create: function (options) {
             var csrfToken = (options || {}).csrfToken;
             // Локальной переменной, не полем `api`: снаружи флаг никто не
             // читает, в отличие от `answered`.
             var titlesOutside = !!(options || {}).titlesOutside;
+            // Что делать, когда галочки правил сохранились сами
+            // (`wireRulesAutosave`). Лента подставляет переход к открывшемуся
+            // шагу, остальным экранам хватает перезагрузки.
+            var onRulesSaved = (options || {}).onRulesSaved || function () {
+                window.location.reload();
+            };
             var api = {
                 answered: !!(options || {}).answered,
                 uid: Math.random().toString(36).slice(2)
@@ -1386,6 +1405,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-question-body', block.body_html));
                 var chosen = block.answer_option_ids || [];
                 var locked = !!block.edit_reason || !!block.answered;
+                var inputs = [];
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('label', 'lrn-blk-option');
                     var input = el('input');
@@ -1395,6 +1415,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.checked = chosen.indexOf(option.id) !== -1;
                     input.setAttribute('data-rules-option', block.id);
                     input.disabled = locked;
+                    inputs.push(input);
                     row.appendChild(input);
                     row.appendChild(el('span', null, option.text));
                     // Пункт без содержимого — правило в одну строку, как до
@@ -1409,15 +1430,84 @@ scope)` и свойством `answered` (одна попытка: после о
                     item.appendChild(row);
                     wrap.appendChild(item);
                 });
-                if (!locked) {
-                    // Отмечено не всё — сервер такую отправку не сохранит,
-                    // и ученик должен понимать почему, а не жать вслепую.
+                if (!locked && block.submit_endpoint) {
+                    wrap.appendChild(el('p', 'lrn-card-note', 'Отметь все пункты – шаг закроется сам.'));
+                    wireRulesAutosave(block, wrap, inputs);
+                } else if (!locked) {
+                    // Без адреса отправки (предпросмотр в конструкторе) —
+                    // прежняя подсказка: шаг закрывают только все галочки.
                     wrap.appendChild(el(
                         'p', 'lrn-card-note',
                         'Отметь все пункты – иначе шаг не закроется.'
                     ));
                 }
                 return wrap;
+            }
+
+            // Галочки правил уходят на сервер сами, как только отмечены все
+            // (владелец 04.10.2026: «после проставления галочки… считать
+            // задание выполненным и открывать следующее»). До этого ученик
+            // отмечал пункты и жал общую «Сохранить ответы» под последним
+            // вопросом задания, а у задания из одних правил искал её глазами.
+            //
+            // Частичную отметку не шлём: сервер её всё равно не сохраняет
+            // (`task_blocks._save_rules`, иначе обязательный блок запер бы
+            // ленту). Закрытие задания и открытие следующего решает сервер —
+            // `close_block_for_user` → `maybe_close_task_by_blocks`; здесь только
+            // доставка галочек и то, что экран делает после (`onRulesSaved`).
+            // Отказ показывается словами сервера (срок вышел, уже сохранено),
+            // как у кружков, а «Сохранить ещё раз» нужна, потому что повторно
+            // отметить уже отмеченное нечем.
+            function wireRulesAutosave(block, wrap, inputs) {
+                var status = el('p', 'video-progress-status');
+                status.setAttribute('aria-live', 'polite');
+                wrap.appendChild(status);
+                var retry = el('button', 'btn-blue', 'Сохранить ещё раз');
+                retry.type = 'button';
+
+                function send() {
+                    var optionIds = [];
+                    inputs.forEach(function (input) {
+                        if (input.checked) optionIds.push(Number(input.value));
+                    });
+                    if (!inputs.length || optionIds.length !== inputs.length) return;
+                    inputs.forEach(function (input) { input.disabled = true; });
+                    if (retry.parentNode) retry.remove();
+                    status.classList.remove('is-error');
+                    status.textContent = 'Сохраняем…';
+                    post(block.submit_endpoint, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            answers: [{ block_id: block.id, option_ids: optionIds }]
+                        })
+                    }).then(function (resp) {
+                        return resp.json().then(function (body) {
+                            return { ok: resp.ok && body.ok, body: body };
+                        }, function () {
+                            return { ok: false, body: null };
+                        });
+                    }).then(function (result) {
+                        if (!result.ok) {
+                            var text = failure(result.body, '');
+                            var error = new Error('rejected');
+                            error.answered = true;
+                            error.serverText = typeof text === 'string' ? text : '';
+                            throw error;
+                        }
+                        block.answered = true;
+                        status.textContent = 'Сохранено.';
+                        onRulesSaved(block);
+                    }).catch(function (err) {
+                        inputs.forEach(function (input) { input.disabled = false; });
+                        status.classList.add('is-error');
+                        status.textContent = checkErrorText(err);
+                        wrap.appendChild(retry);
+                    });
+                }
+
+                inputs.forEach(function (input) { input.addEventListener('change', send); });
+                retry.addEventListener('click', send);
             }
 
             // Содержимое пункта правил (владелец 04.10.2026: «фото, видео,
@@ -1713,6 +1803,9 @@ scope)` и свойством `answered` (одна попытка: после о
                         return;
                     }
                     if (block.block_type === 'rules') {
+                        // Правила со своим адресом уходят сами
+                        // (`wireRulesAutosave`), общей форме их не слать.
+                        if (block.submit_endpoint) return;
                         // Шлём отмеченное как есть: решение «все или ничего»
                         // принимает сервер, чтобы обход формы ничего не менял.
                         var ruleAnswer = { block_id: block.id, option_ids: [] };

@@ -47,6 +47,20 @@
         });
     }
 
+    // Галочки правил сохранились сами (владелец 04.10.2026). Статусы шагов
+    // считает сервер, поэтому лента перезагружается, а метка `after` просит
+    // показать шаг, открывшийся ниже сохранённого (`lrnFocusAfterStep` в
+    // `cabinet_learning.html`). `task` снимаем: фокус ссылки из трекера
+    // раскрыл бы уже сделанный шаг. `replace` — новая загрузка без
+    // восстановления прокрутки, которое вернуло бы ученика к правилам.
+    function showStepAfter(block) {
+        var url = new URL(window.location.href);
+        url.searchParams.delete('task');
+        url.searchParams.set('after', block.id);
+        url.hash = '';
+        window.location.replace(url.toString());
+    }
+
     function renderTask(taskId, data) {
         // `titlesOutside` — подпись шага печатает сервер
         // (`cabinet_learning.html`, `<h2 class="lrn-step-title">`), поэтому
@@ -57,7 +71,8 @@
         var renderer = window.lrnBlockRender.create({
             csrfToken: csrfToken,
             answered: !!data.answered,
-            titlesOutside: true
+            titlesOutside: true,
+            onRulesSaved: showStepAfter
         });
         var blocks = data.blocks || [];
 
@@ -162,10 +177,7 @@
             lastQuestionBody.appendChild(window.lrnBlockRender.profileResult(data.archi_profile));
         }
         var formBlocks = (data.blocks || []).filter(function (block) { return !wizardIds[block.id]; });
-        var formOpen = formBlocks.some(function (block) {
-            return ['question', 'scale', 'rules'].indexOf(block.block_type) !== -1
-                && !block.edit_reason && !(block.answered && block.block_type === 'rules');
-        });
+        var formOpen = window.lrnBlockRender.formOpen(formBlocks);
         if (data.has_questions && data.submit_endpoint && lastQuestionBody && formOpen) {
             appendSubmit(taskId, data, renderer, lastQuestionBody, formBlocks);
         } else if (data.answered && data.has_questions && lastQuestionBody) {
