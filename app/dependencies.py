@@ -115,6 +115,16 @@ def is_path_blocked_by_portfolio_gate(path: str) -> bool:
     return path in PORTFOLIO_GATE_BLOCKED_EXACT or path.startswith(PORTFOLIO_GATE_BLOCKED_PREFIXES)
 
 
+def _log_access_refusal(user_id: int, role_name: str | None, request: Request, reason: str) -> None:
+    """Строка в `docker logs` на отказ по доступу сотрудника. До 04.10.2026
+    отказ не оставлял следа: девять 403 Александрии на сохранении дайджеста
+    восстанавливали по базе. Адрес без query — в нём бывают одноразовые токены."""
+    log.warning(
+        "Отказ в доступе | user=%s | роль=%s | %s %s | причина=%s",
+        user_id, role_name, request.method, request.url.path, reason,
+    )
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -216,9 +226,12 @@ def get_current_user(
             request.method, request.url.path, request.query_params, granted, workable,
         )
     ):
+        _log_access_refusal(user.id, role_name, request, "вне белого списка модератора")
         raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
-    if blocked_section(request.method, request.url.path, request.query_params, closed):
+    section = blocked_section(request.method, request.url.path, request.query_params, closed)
+    if section:
+        _log_access_refusal(user.id, role_name, request, f"раздел {section} закрыт")
         raise HTTPException(status_code=403, detail=SECTION_CLOSED_DETAIL)
 
     # Внутри раздела, открытого сверх роли, сотрудник работает с рангом

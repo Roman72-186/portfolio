@@ -31,6 +31,8 @@ def _login_as(client, session_factory, user):
         "/cabinet/admin/registration-stats.csv",
         "/cabinet/staff/program/cycles/12/stats",
         "/cabinet/notifications/feed",
+        "/cabinet/staff/notifications",
+        "/csrf",
         "/static/css/base.css",
     ],
 )
@@ -89,7 +91,10 @@ def moderator_client(client, user_factory, session_factory):
 
 @pytest.mark.parametrize(
     "path",
-    ["/cabinet/students", "/cabinet/archive", "/cabinet/superadmin/activity"],
+    [
+        "/cabinet/students", "/cabinet/archive", "/cabinet/superadmin/activity",
+        "/cabinet/staff/notifications", "/csrf",
+    ],
 )
 def test_moderator_opens_observer_pages(moderator_client, path):
     resp = moderator_client.get(path, follow_redirects=False)
@@ -110,6 +115,16 @@ def test_moderator_gets_403_outside_whitelist(moderator_client, path):
     resp = moderator_client.get(path, follow_redirects=False)
     assert resp.status_code == 403
     assert "Модератору открыты только" in resp.text
+
+
+def test_moderator_refusal_leaves_log_line(moderator_client, caplog):
+    """Отказ пишется в лог с адресом и причиной (04.10.2026): до этого девять
+    403 подряд не оставили следа, и причину искали по базе."""
+    with caplog.at_level("WARNING", logger="app.dependencies"):
+        moderator_client.get("/cabinet/staff/point-a", follow_redirects=False)
+    lines = [r.getMessage() for r in caplog.records if "Отказ в доступе" in r.getMessage()]
+    assert lines and "GET /cabinet/staff/point-a" in lines[0]
+    assert "белого списка модератора" in lines[0]
 
 
 def test_moderator_sees_all_students_but_cannot_score(
