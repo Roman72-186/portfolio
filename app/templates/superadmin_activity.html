@@ -227,6 +227,13 @@
                         <option value="all">Все сдавшие</option>
                     </select>
                 </label>
+                {# Средний балл крупно, рядом с «Баллом» (служба заботы 04.10.2026:
+                   «тут показывается средний балл, а ниже уже все остальные»).
+                   Только шрифты плитки, без .ss-stat: у плитки свои линии. #}
+                <div data-score-avg hidden>
+                    <div class="ss-stat-lbl">Средний балл</div>
+                    <div class="ss-stat-val" data-score-avg-value></div>
+                </div>
                 <button type="button" class="btn-blue btn-save" data-score-copy-summary disabled>Скопировать сводку</button>
                 <button type="button" class="btn-blue btn-save" data-score-copy-list disabled>Скопировать список</button>
                 <span class="ss-dim-sm" data-score-copy-status role="status" aria-live="polite"></span>
@@ -987,6 +994,7 @@
     if (!assignmentSelect) return;
     const valueSelect = root.querySelector('[data-score-value]');
     const stats = root.querySelector('[data-score-stats]');
+    const avgBox = root.querySelector('[data-score-avg]');
     const dist = root.querySelector('[data-score-dist]');
     const listWrap = root.querySelector('[data-score-list-wrap]');
     const copySummary = root.querySelector('[data-score-copy-summary]');
@@ -1022,6 +1030,7 @@
         valueSelect.innerHTML = '<option value="all">Все сдавшие</option>';
         valueSelect.disabled = !item;
         copySummary.disabled = !item;
+        avgBox.hidden = !item;
         dist.innerHTML = '';
         dist.hidden = !item;
         if (item) {
@@ -1034,9 +1043,9 @@
                 valueSelect.add(new Option('Без балла (' + item.unscored.length + ' чел.)', UNSCORED));
                 addTile('—', 'без балла: ' + item.unscored.length + ' чел.');
             }
+            avgBox.querySelector('[data-score-avg-value]').textContent = num(item.avg);
             stats.textContent = 'Сдали: ' + item.submitted + ' · оценено: ' + total
-                + ' · без балла: ' + item.unscored.length
-                + ' · средний балл: ' + num(item.avg) + ' · медиана: ' + num(item.median);
+                + ' · без балла: ' + item.unscored.length + ' · медиана: ' + num(item.median);
         } else {
             stats.textContent = 'Выберите задание.';
         }
