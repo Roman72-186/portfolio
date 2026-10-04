@@ -1579,6 +1579,50 @@ document.addEventListener('click', function (event) {
     if (row) runCompareTrainer(row);
 });
 
+// Загрузка фото в галерею блока или пункта правил — одна на оба экрана
+// конструктора (до 04.10.2026 у каждого была своя копия). `uploadImage`
+// объявляет страница.
+//
+// Файлы грузятся параллельно, но миниатюры встают в порядке выбора, а не в
+// порядке окончания загрузки (владелец 04.10.2026: фото «загрузились не в той
+// последовательности» — маленький файл обгонял большой).
+function uploadBlockPhotos(row, files) {
+    var status = row.querySelector('[data-b-photo-status]');
+    var room = MAX_BLOCK_IMAGES - row.querySelectorAll('[data-b-image]').length;
+    status.classList.remove('is-error');
+    if (room <= 0) {
+        status.textContent = 'В одном блоке не больше ' + MAX_BLOCK_IMAGES + ' фото.';
+        status.classList.add('is-error');
+        return;
+    }
+    var queue = Array.prototype.slice.call(files, 0, room);
+    var skipped = files.length - queue.length;
+    status.textContent = 'Загружаем ' + queue.length + '…';
+    var results = new Array(queue.length);
+    var done = 0;
+    var failed = 0;
+    queue.forEach(function (file, position) {
+        uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
+            if (!result || !result.ok) throw new Error();
+            results[position] = result;
+        }).catch(function () {
+            failed += 1;
+        }).then(function () {
+            done += 1;
+            if (done < queue.length) return;
+            results.forEach(function (result) {
+                if (result) addImageThumb(row, result.url, result.path);
+            });
+            var parts = [];
+            if (done - failed) parts.push('Загружено: ' + (done - failed) + '.');
+            if (failed) parts.push('Не удалось: ' + failed + '.');
+            if (skipped) parts.push('Лишние ' + skipped + ' не влезли в лимит.');
+            status.textContent = parts.join(' ');
+            if (failed) status.classList.add('is-error');
+        });
+    });
+}
+
 // Фото уходит на сервер сразу при выборе — форма несёт только {url, path},
 // тот же контракт, что у обложек видео и картинок самостоятельной работы.
 // Переиспользует общий `uploadImage` и готовую ручку `/upload-cover`.

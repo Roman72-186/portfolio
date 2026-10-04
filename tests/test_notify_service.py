@@ -202,3 +202,134 @@ def test_send_message_reply_to(monkeypatch):
 
     assert asyncio.run(telegram.send_message(-100500, "текст", reply_to_message_id=11)) is True
     assert b'"reply_parameters":{"message_id":11' in seen["body"].replace(b" ", b"")
+
+
+# ── пачка без удержания базы (прод-инцидент 04.10.2026) ─────────────────────
+#
+# Публикация видеоурока разослала 90 уведомлений разом: все шли параллельно и
+# держали соединение с базой, пока ждали Telegram и push. Пул воркера кончился,
+# сохранение заданий падало, пока приложение не перезапустили.
+
+def _telegram_notifications(db, user_factory, count, base_chat=880_000):
+    ids = []
+    for index in range(count):
+        user = user_factory(vk_id=base_chat + index)
+        user.telegram_chat_id = base_chat + index
+        user.telegram_notifications_enabled = True
+        db.commit()
+        n = Notification(user_id=user.id, title="Новый видеоурок", text="")
+        db.add(n)
+        db.commit()
+        ids.append(n.id)
+    return ids
+
+
+def _counting_sessions(monkeypatch):
+    """Подменяет фабрику сессий рассылки счётчиком открытых сессий."""
+    real = notify_module.SessionLocal
+    state = {"open": 0}
+
+    def factory():
+        session = real()
+        state["open"] += 1
+        close = session.close
+
+        def counted_close():
+            state["open"] -= 1
+            close()
+
+        session.close = counted_close
+        return session
+
+    monkeypatch.setattr(notify_module, "SessionLocal", factory)
+    return state
+
+
+def test_db_session_is_closed_while_waiting_for_network(db, user_factory, monkeypatch):
+    ids = _telegram_notifications(db, user_factory, 3)
+    sessions = _counting_sessions(monkeypatch)
+    seen_open = []
+
+    async def send_message(chat_id, text):
+        seen_open.append(sessions["open"])
+        await asyncio.sleep(0)
+        return True
+
+    monkeypatch.setattr(notify_module.telegram_service, "send_message", send_message)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
+
+    asyncio.run(notify_module.notify_many(ids))
+
+    assert seen_open == [0, 0, 0]
+    assert sessions["open"] == 0
+
+
+def test_batch_is_sent_with_limited_concurrency(db, user_factory, monkeypatch):
+    ids = _telegram_notifications(db, user_factory, notify_module.NOTIFY_CONCURRENCY * 3)
+    state = {"now": 0, "peak": 0, "sent": 0}
+
+    async def send_message(chat_id, text):
+        state["now"] += 1
+        state["peak"] = max(state["peak"], state["now"])
+        await asyncio.sleep(0.01)
+        state["now"] -= 1
+        state["sent"] += 1
+        return True
+
+    monkeypatch.setattr(notify_module.telegram_service, "send_message", send_message)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
+
+    asyncio.run(notify_module.notify_many(ids))
+
+    assert state["sent"] == len(ids)
+    assert state["peak"] == notify_module.NOTIFY_CONCURRENCY
+
+
+def _push_subscription(db, user_factory):
+    from app.models.push_subscription import PushSubscription
+
+    user = user_factory(vk_id=881_000)
+    sub = PushSubscription(
+        user_id=user.id, endpoint="https://push.example/abc", p256dh="k", auth_key="a",
+    )
+    db.add(sub)
+    n = Notification(user_id=user.id, title="Тест", text="")
+    db.add(n)
+    db.commit()
+    return sub, n
+
+
+def test_push_has_timeout(db, user_factory, monkeypatch):
+    _sub, n = _push_subscription(db, user_factory)
+    push = AsyncMock()
+    monkeypatch.setattr(notify_module, "webpush_async", push)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
+
+    asyncio.run(notify_module.notify(n.id))
+
+    assert push.await_args.kwargs["timeout"] == notify_module.PUSH_TIMEOUT_SEC
+
+
+def test_gone_push_subscription_is_deactivated(db, user_factory, monkeypatch):
+    sub, n = _push_subscription(db, user_factory)
+    gone = notify_module.WebPushException("gone", response=Mock(status_code=410))
+    monkeypatch.setattr(notify_module, "webpush_async", AsyncMock(side_effect=gone))
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
+
+    asyncio.run(notify_module.notify(n.id))
+
+    db.expire_all()
+    assert sub.is_active is False
+
+
+def test_push_network_error_keeps_subscription(db, user_factory, monkeypatch):
+    sub, n = _push_subscription(db, user_factory)
+    monkeypatch.setattr(
+        notify_module, "webpush_async", AsyncMock(side_effect=asyncio.TimeoutError()),
+    )
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
+
+    asyncio.run(notify_module.notify(n.id))
+
+    db.expire_all()
+    assert sub.is_active is True

@@ -1137,40 +1137,8 @@ FORM: Operate.
     {% include "partials/program_task_id_js.html" %}
 
     // renderFormBlocks/collectFormBlocks/addImageThumb переехали в
-    // partials/program_blocks_editor_js.html (10.09.2026).
-
-    function uploadBlockPhotos(row, files) {
-        var status = row.querySelector('[data-b-photo-status]');
-        var room = MAX_BLOCK_IMAGES - row.querySelectorAll('[data-b-image]').length;
-        status.classList.remove('is-error');
-        if (room <= 0) {
-            status.textContent = 'В одном блоке не больше ' + MAX_BLOCK_IMAGES + ' фото.';
-            status.classList.add('is-error');
-            return;
-        }
-        var queue = Array.prototype.slice.call(files, 0, room);
-        var skipped = files.length - queue.length;
-        status.textContent = 'Загружаем ' + queue.length + '…';
-        var done = 0;
-        var failed = 0;
-        queue.forEach(function (file) {
-            uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
-                if (!result || !result.ok) throw new Error();
-                addImageThumb(row, result.url, result.path);
-            }).catch(function () {
-                failed += 1;
-            }).then(function () {
-                done += 1;
-                if (done < queue.length) return;
-                var parts = [];
-                if (done - failed) parts.push('Загружено: ' + (done - failed) + '.');
-                if (failed) parts.push('Не удалось: ' + failed + '.');
-                if (skipped) parts.push('Лишние ' + skipped + ' не влезли в лимит.');
-                status.textContent = parts.join(' ');
-                if (failed) status.classList.add('is-error');
-            });
-        });
-    }
+    // partials/program_blocks_editor_js.html (10.09.2026), uploadBlockPhotos —
+    // туда же 04.10.2026.
 
     if (videoForm) {
         videoForm.addEventListener('change', function (event) {
