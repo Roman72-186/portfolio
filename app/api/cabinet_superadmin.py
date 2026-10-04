@@ -2427,6 +2427,7 @@ def superadmin_user_card(
         "section_rules": (
             section_access.user_rules(db, target) if user["role_rank"] >= 5 else []
         ),
+        "level_titles": section_access.LEVEL_TITLES,
     })
 
 

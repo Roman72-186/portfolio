@@ -17,7 +17,7 @@ from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
     judge_request,
     resolve_levels,
-    save_role_matrix,
+    save_role_levels,
     section_owners,
 )
 
@@ -42,11 +42,11 @@ def _login(client, session_factory, user):
 
 
 def _close_for_role(db, actor, role_name, *keys):
-    save_role_matrix(db, actor_id=actor.id, desired={role_name: {k: False for k in keys}})
+    save_role_levels(db, actor_id=actor.id, desired={role_name: {k: "none" for k in keys}})
 
 
-def _open_for_role(db, actor, role_name, *keys):
-    save_role_matrix(db, actor_id=actor.id, desired={role_name: {k: True for k in keys}})
+def _open_for_role(db, actor, role_name, *keys, level="edit"):
+    save_role_levels(db, actor_id=actor.id, desired={role_name: {k: level for k in keys}})
 
 
 def _personal(db, user, key, level):
@@ -186,27 +186,40 @@ def test_unknown_section_key_in_db_is_ignored(db, curator):
     assert closed_sections(db, user_id=curator.id, role_id=curator.role_id) == frozenset()
 
 
-def test_role_matrix_skips_cells_the_form_did_not_send(db, superadmin, curator):
+def test_role_levels_skip_cells_the_form_did_not_send(db, superadmin, curator):
     _close_for_role(db, superadmin, "куратор", "reports")
-    changes = save_role_matrix(db, actor_id=superadmin.id, desired={})
+    changes = save_role_levels(db, actor_id=superadmin.id, desired={})
     assert changes == 0
-    assert section_access.role_matrix(db)["куратор"]["reports"] is False
+    assert section_access.role_levels(db)["куратор"]["reports"] == "none"
+
+
+def test_role_levels_ignore_unknown_level(db, superadmin, curator):
+    assert save_role_levels(
+        db, actor_id=superadmin.id, desired={"куратор": {"reports": "full"}},
+    ) == 0
+    assert section_access.role_levels(db)["куратор"]["reports"] == "edit"
+
+
+def test_view_only_section_cannot_be_set_to_edit(db, superadmin, curator):
+    """У архива нет адресов на запись — «Менять» сохраняется как «Смотреть»."""
+    _open_for_role(db, superadmin, "куратор", "archive", level="edit")
+    assert section_access.role_levels(db)["куратор"]["archive"] == "view"
 
 
 def test_role_matrix_stores_only_differences_from_rank(db, superadmin, curator):
     """Закрыть то, чего у роли и так нет, — ничего не записать. Открыть сверх
     роли и вернуть обратно — строка появляется и исчезает."""
-    save_role_matrix(db, actor_id=superadmin.id, desired={"куратор": {"program": False}})
+    _close_for_role(db, superadmin, "куратор", "program")
     assert db.query(SectionAccessRule).count() == 0
     _open_for_role(db, superadmin, "куратор", "program")
-    assert section_access.role_matrix(db)["куратор"]["program"] is True
+    assert section_access.role_levels(db)["куратор"]["program"] == "edit"
     assert db.query(SectionAccessRule).count() == 1
-    save_role_matrix(db, actor_id=superadmin.id, desired={"куратор": {"program": False}})
+    _close_for_role(db, superadmin, "куратор", "program")
     assert db.query(SectionAccessRule).count() == 0
 
 
 def test_every_role_has_every_section_in_matrix(db):
-    matrix = section_access.role_matrix(db)
+    matrix = section_access.role_levels(db)
     for role in section_access.CONFIGURABLE_ROLES:
         assert set(matrix[role]) == set(section_access.SECTIONS_BY_KEY)
 
@@ -317,6 +330,14 @@ def test_access_page_is_superadmin_only(client, session_factory, superadmin, hea
     # С 03.10.2026 ячейка есть у каждой роли, в том числе сверх ранга.
     assert 'name="cell__curator__program"' in resp.text
     assert 'name="cell__moderator__people"' in resp.text
+    # С 04.10.2026 в ячейке уровни; у раздела без записи их два.
+    assert 'name="cell__head__program" value="edit"' in resp.text
+    assert 'name="cell__head__archive" value="edit"' not in resp.text
+    assert 'name="cell__head__archive" value="view"' in resp.text
+    # «Люди и доступы» сверх роли просят подтверждения, у ГП — родной раздел.
+    # «Смотреть» и «Менять» у куратора и модератора — четыре кнопки.
+    assert 'data-risky-what="«Люди и доступы» роли «Куратор»"' in resp.text
+    assert resp.text.count('data-risky-what="«Люди и доступы»') == 4
 
 
 def test_access_page_saves_matrix_and_audits(client, db, session_factory, superadmin, curator, head):
@@ -324,24 +345,26 @@ def test_access_page_saves_matrix_and_audits(client, db, session_factory, supera
     resp = client.post(
         "/cabinet/superadmin/access",
         data={
-            "cell__curator__statistics": ["0"],
-            "cell__head__program": ["0", "1"],
+            "cell__curator__statistics": "none",
+            "cell__head__program": "edit",
+            "cell__moderator__program": "view",
         },
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    matrix = section_access.role_matrix(db)
-    assert matrix["куратор"]["statistics"] is False
-    assert matrix["админ"]["program"] is True
+    levels = section_access.role_levels(db)
+    assert levels["куратор"]["statistics"] == "none"
+    assert levels["админ"]["program"] == "edit"
+    assert levels["модератор"]["program"] == "view"
     audit = db.query(AuditLog).filter(AuditLog.action == "section_access_role").all()
-    assert len(audit) == 1
+    assert len(audit) == 2
 
 
 def test_user_card_block_and_save(client, db, session_factory, superadmin, curator, head):
     _login(client, session_factory, head)
     assert 'name="section__students"' not in client.get(f"/cabinet/superadmin/users/{curator.id}").text
     assert client.post(
-        f"/cabinet/superadmin/users/{curator.id}/access", data={"section__students": "closed"},
+        f"/cabinet/superadmin/users/{curator.id}/access", data={"section__students": "none"},
         follow_redirects=False,
     ).status_code == 403
 
@@ -349,7 +372,7 @@ def test_user_card_block_and_save(client, db, session_factory, superadmin, curat
     assert 'name="section__students"' in client.get(f"/cabinet/superadmin/users/{curator.id}").text
     resp = client.post(
         f"/cabinet/superadmin/users/{curator.id}/access",
-        data={"section__students": "closed", "section__reports": "role"},
+        data={"section__students": "none", "section__reports": "role"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -361,7 +384,7 @@ def test_user_rules_refuse_student_target(client, session_factory, superadmin, u
     student = user_factory(vk_id=990_520, name="Ученик")
     _login(client, session_factory, superadmin)
     resp = client.post(
-        f"/cabinet/superadmin/users/{student.id}/access", data={"section__students": "closed"},
+        f"/cabinet/superadmin/users/{student.id}/access", data={"section__students": "none"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -471,11 +494,12 @@ def test_card_shows_every_section_and_marks_above_role(db, superadmin, curator):
     assert set(rules) == set(section_access.SECTIONS_BY_KEY)
     assert rules["archive"]["native"] is False
     assert rules["archive"]["state"] == "role"
-    assert rules["archive"]["role_open"] is False
+    assert rules["archive"]["role_level"] == "none"
+    assert rules["archive"]["levels"] == ("none", "view")
     assert rules["students"]["native"] is True
 
     section_access.save_user_rules(
-        db, actor_id=superadmin.id, target=curator, desired={"archive": "open"},
+        db, actor_id=superadmin.id, target=curator, desired={"archive": "view"},
     )
     assert granted_sections(db, curator) == frozenset({"archive"})
     section_access.save_user_rules(
@@ -550,7 +574,7 @@ def test_open_mock_check_shows_any_students_mock_exams(
 def test_moderator_open_section_is_read_only(client, db, session_factory, superadmin, moderator):
     _login(client, session_factory, moderator)
     assert client.get("/cabinet/staff/program/cycles", follow_redirects=False).status_code == 403
-    _open_for_role(db, superadmin, "модератор", "program")
+    _open_for_role(db, superadmin, "модератор", "program", level="view")
     assert client.get("/cabinet/staff/program/cycles", follow_redirects=False).status_code == 200
     resp = client.post(
         "/cabinet/staff/program/stages", data={"title": "Новый этап"}, follow_redirects=False,
@@ -563,7 +587,7 @@ def test_moderator_open_section_is_read_only(client, db, session_factory, supera
 
 def test_moderator_home_falls_back_to_granted_section(client, db, session_factory, superadmin, moderator):
     _close_for_role(db, superadmin, "модератор", "students", "archive", "statistics")
-    _open_for_role(db, superadmin, "модератор", "program")
+    _open_for_role(db, superadmin, "модератор", "program", level="view")
     _login(client, session_factory, moderator)
     resp = client.get("/cabinet", follow_redirects=False)
     assert resp.status_code == 302

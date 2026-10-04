@@ -160,21 +160,24 @@
     {# Личные исключения из правил роли (services/section_access.py). Список
        пуст у ученика и суперадмина и у всех, кто смотрит не суперадмином. #}
     {% if section_rules %}
-    <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/access" id="section-access">
+    <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/access" id="section-access" data-access-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <div class="uc-section">
             <h3>Доступ к разделам</h3>
             {% if request.query_params.get('saved') == 'access' %}
             <div class="alert alert-success uc-gap-16">Доступ к разделам сохранён.</div>
             {% endif %}
+            <p class="uc-access-meta">Свой уровень сотрудника поверх правила роли. «Как у роли» – действует то, что задано на экране «Доступы».</p>
             <div class="uc-grid">
                 {% for rule in section_rules %}
                 <label>
                     {{ rule.label }}{% if not rule.native %} (сверх роли){% endif %}
-                    <select name="section__{{ rule.key }}" class="form-select">
-                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли ({{ 'открыт' if rule.role_open else 'закрыт' }})</option>
-                        <option value="open" {% if rule.state == 'open' %}selected{% endif %}>Открыт</option>
-                        <option value="closed" {% if rule.state == 'closed' %}selected{% endif %}>Закрыт</option>
+                    <select name="section__{{ rule.key }}" class="form-select" data-initial="{{ rule.state }}">
+                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли – {{ level_titles[rule.role_level] | lower }}</option>
+                        {% for lv in rule.levels %}
+                        <option value="{{ lv }}" {% if rule.state == lv %}selected{% endif %}
+                                {% if lv in rule.risky %}data-risky data-risky-what="«{{ rule.label }}» сотруднику"{% endif %}>{{ level_titles[lv] }}</option>
+                        {% endfor %}
                     </select>
                 </label>
                 {% endfor %}
@@ -196,4 +199,5 @@
     </form>
 </div>
 <script src="/static/js/rich-text-field.js?v=3"></script>
+{% if section_rules %}{% include "partials/access_levels_script.html" %}{% endif %}
 {% endblock %}

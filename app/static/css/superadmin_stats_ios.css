@@ -258,3 +258,71 @@
     }
     .ios-ss .ss-table td:not(:first-child)::after { content: ""; display: table; clear: both; }
 }
+
+/* ── Экран «Доступы» (шаг 3 плана тонких доступов, 04.10.2026): одна роль на
+   экран, в строке раздела — уровень сегментами «Нет · Смотреть · Менять».
+   Переключатель ролей — тот же iOS segmented control, что `.cyc-tabs` в
+   cycle_ios.css. Общий `.seg` из base.css не взят: там кнопки, а здесь
+   радиокнопки формы, и переопределять общий класс запрещает храповик. ── */
+.ios-ss .acc-roles {
+    display: flex; gap: 2px; padding: 3px; margin: 0 0 12px;
+    background: rgba(118,118,128,0.12); border-radius: 10px;
+}
+.ios-ss .acc-role {
+    flex: 1; min-height: 40px; padding: 8px 10px; border: none; background: none;
+    border-radius: 8px; cursor: pointer;
+    font: 600 14px/1.2 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-ss .acc-role.is-active {
+    background: var(--ios-card-bg); color: var(--ios-label);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+.ios-ss .acc-role:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
+/* С переключателем заголовок роли над списком повторял бы выбранную вкладку. */
+.ios-ss .is-tabbed .acc-panel-head { display: none; }
+
+.ios-ss .acc-list {
+    list-style: none; margin: 0; padding: 0;
+    background: var(--ios-card-bg); border-radius: 0 0 12px 12px;
+}
+.ios-ss .is-tabbed .acc-list { border-radius: 12px; }
+.ios-ss .acc-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; border-bottom: 0.5px solid var(--ios-sep);
+}
+.ios-ss .acc-row:last-child { border-bottom: none; }
+.ios-ss .acc-row-text { min-width: 0; }
+.ios-ss .acc-extra { color: var(--blue-text); font-weight: 600; }
+
+.ios-ss .acc-level {
+    display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 3px; margin: 0;
+    border: none; border-radius: 9px; background: var(--ios-grouped-bg);
+}
+/* Подпись группы нужна экранному диктору, глазами её заменяет строка слева. */
+.ios-ss .acc-level legend {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+}
+.ios-ss .acc-level-opt { position: relative; display: block; }
+.ios-ss .acc-level-opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.ios-ss .acc-level-opt span {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 76px; min-height: 36px; padding: 6px 10px; border-radius: 7px;
+    font: 600 13px/1 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-ss .acc-level-opt input:checked + span { background: var(--blue-fill); color: #fff; }
+.ios-ss .acc-level-opt input:focus-visible + span { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
+
+@media (max-width: 600px) {
+    /* Строка складывается: название сверху, уровни во всю ширину под ним. */
+    .ios-ss .acc-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .ios-ss .acc-level { display: flex; }
+    .ios-ss .acc-level-opt { flex: 1; }
+    .ios-ss .acc-level-opt span { min-width: 0; min-height: 40px; }
+}
+/* Пояснения под списком — в карточке, маркеры внутри неё. */
+.ios-ss .acc-notes {
+    margin: 0; padding: 10px 14px 12px 32px;
+    background: var(--ios-card-bg); border-radius: 0 0 12px 12px;
+}
+.ios-ss .acc-notes li + li { margin-top: 6px; }

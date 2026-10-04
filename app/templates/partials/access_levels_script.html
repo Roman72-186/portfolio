@@ -1,0 +1,72 @@
+{#
+Скрипт уровней доступа — экран «Доступы» и блок «Доступ к разделам» в карточке
+сотрудника (шаг 3 плана `plans/2026-10-04-apparchi-тонкие-доступы.md`).
+
+1. Переключатель ролей (`[data-acc-tabs]`, только на экране «Доступы»): одна
+   роль на экран. Без скрипта переключатель скрыт, видны все три списка.
+2. Подтверждение перед сохранением, если уровень открывает доступ к чужим
+   аккаунтам сверх положенного роли: радиокнопка или пункт списка с
+   `data-risky`, выбранный не тот, что был (`data-initial`).
+#}
+<script>
+(function () {
+    var tabs = document.querySelector('[data-acc-tabs]');
+    if (tabs) {
+        var buttons = Array.prototype.slice.call(tabs.querySelectorAll('[data-acc-tab]'));
+        var panels = document.querySelectorAll('[data-acc-panel]');
+        var KEY = 'apparchi.access.role';
+        var show = function (slug, focus) {
+            buttons.forEach(function (b) {
+                var on = b.getAttribute('data-acc-tab') === slug;
+                b.classList.toggle('is-active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+                b.tabIndex = on ? 0 : -1;
+                if (on && focus) b.focus();
+            });
+            panels.forEach(function (p) {
+                p.hidden = p.getAttribute('data-acc-panel') !== slug;
+            });
+            try { sessionStorage.setItem(KEY, slug); } catch (e) { /* без хранилища — с первой роли */ }
+        };
+        var start = buttons[0].getAttribute('data-acc-tab');
+        try {
+            var saved = sessionStorage.getItem(KEY);
+            if (saved && tabs.querySelector('[data-acc-tab="' + saved + '"]')) start = saved;
+        } catch (e) { /* то же */ }
+        tabs.hidden = false;
+        tabs.closest('form').classList.add('is-tabbed');
+        show(start, false);
+        buttons.forEach(function (b, i) {
+            b.addEventListener('click', function () { show(b.getAttribute('data-acc-tab'), false); });
+            b.addEventListener('keydown', function (ev) {
+                var step = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
+                if (!step) return;
+                ev.preventDefault();
+                var next = buttons[(i + step + buttons.length) % buttons.length];
+                show(next.getAttribute('data-acc-tab'), true);
+            });
+        });
+    }
+
+    document.querySelectorAll('[data-access-form]').forEach(function (form) {
+        form.addEventListener('submit', function (ev) {
+            var risky = [];
+            form.querySelectorAll('input[data-risky]:checked').forEach(function (input) {
+                if (input.value !== input.getAttribute('data-initial')) {
+                    risky.push(input.getAttribute('data-risky-what'));
+                }
+            });
+            form.querySelectorAll('select[data-initial]').forEach(function (select) {
+                var option = select.options[select.selectedIndex];
+                if (option && option.hasAttribute('data-risky') && select.value !== select.getAttribute('data-initial')) {
+                    risky.push(option.getAttribute('data-risky-what'));
+                }
+            });
+            if (!risky.length) return;
+            var text = 'Открыть ' + risky.join(', ') + '?\n\n'
+                + 'Сотрудник сможет менять роли, выдавать логины и пароли и входить «глазами» в чужие кабинеты.';
+            if (!window.confirm(text)) ev.preventDefault();
+        });
+    });
+})();
+</script>

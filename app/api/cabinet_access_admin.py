@@ -1,5 +1,5 @@
-"""Экран «Доступы»: суперадмин закрывает сотрудникам разделы кабинета
-(владелец 30.09.2026).
+"""Экран «Доступы»: суперадмин задаёт сотрудникам уровень в разделах кабинета —
+«Нет · Смотреть · Менять» (владелец 30.09 и 04.10.2026).
 
 Вся логика — в `app/services/section_access.py`, здесь только разбор формы.
 Отдельный модуль, а не `cabinet_superadmin.py`: тот и так на три тысячи строк.
@@ -45,12 +45,31 @@ def access_page(
         }
         for name in section_access.CONFIGURABLE_ROLES
     ]
+    levels = section_access.role_levels(db)
+    # Строки экрана по ролям: уровень сейчас, доступные уровни, какие из них
+    # открывают чужие аккаунты (подтверждение перед сохранением).
+    rows = {
+        col["name"]: [
+            {
+                "section": section,
+                "level": levels[col["name"]][section.key],
+                "levels": section_access.levels_of(section),
+                "native": section_access.is_native(section, col["name"]),
+                "risky": [
+                    lv for lv in section_access.levels_of(section)
+                    if section_access.is_risky(section, col["name"], lv)
+                ],
+            }
+            for section in section_access.SECTIONS
+        ]
+        for col in columns
+    }
     return templates.TemplateResponse(request, "superadmin_access.html", {
         "request": request,
         "user": user,
-        "sections": section_access.SECTIONS,
         "columns": columns,
-        "matrix": section_access.role_matrix(db),
+        "rows": rows,
+        "level_labels": section_access.LEVEL_TITLES,
         "personal": section_access.staff_with_personal_rules(db),
         "saved": request.query_params.get("saved"),
     })
@@ -64,16 +83,14 @@ async def access_save(
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     form = await request.form()
-    desired: dict[str, dict[str, bool]] = {}
+    desired: dict[str, dict[str, str]] = {}
     for name, slug in _ROLE_SLUGS.items():
         for section in section_access.SECTIONS:
-            # Скрытое «0» и галочка «1» с одним именем: отмеченная ячейка
-            # приходит как ["0", "1"], снятая — как ["0"], отсутствующая —
-            # никак, и тогда её не трогаем.
-            values = form.getlist(f"cell__{slug}__{section.key}")
-            if values:
-                desired.setdefault(name, {})[section.key] = "1" in values
-    changes = section_access.save_role_matrix(db, actor_id=user["user_id"], desired=desired)
+            # Ячейка — группа радиокнопок с уровнем. Не пришла — не трогаем.
+            value = form.get(f"cell__{slug}__{section.key}")
+            if value is not None:
+                desired.setdefault(name, {})[section.key] = str(value)
+    changes = section_access.save_role_levels(db, actor_id=user["user_id"], desired=desired)
     return RedirectResponse(f"/cabinet/superadmin/access?saved={changes}", status_code=303)
 
 

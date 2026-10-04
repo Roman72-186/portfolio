@@ -264,12 +264,15 @@ def test_prod_rows_keep_every_right_after_migration(db, user_factory):
 def test_default_levels_repeat_the_role_matrix(db, user_factory):
     """`reports/2026-10-04-матрица-прав-ролей.md`: без строк в базе уровень —
     то, что роль может сейчас."""
+    # В разделах без адресов на запись (`VIEW_ONLY_SECTIONS`) положенное —
+    # «Смотреть»: «Менять» там не к чему, и экран предлагает два уровня.
+    view_only = section_access.VIEW_ONLY_SECTIONS
     expected = {
         "куратор": {"students": "edit", "students_review": "edit", "reports": "edit",
-                    "statistics": "edit", "lab3d": "edit"},
+                    "statistics": "view", "lab3d": "view"},
         # Модератор — наблюдатель (28.09.2026).
         "модератор": {"students": "view", "archive": "view", "statistics": "view"},
-        "админ": {s.key: "edit" for s in SECTIONS},
+        "админ": {s.key: "view" if s.key in view_only else "edit" for s in SECTIONS},
     }
     for i, (role_name, native) in enumerate(expected.items()):
         user = user_factory(vk_id=991_100 + i, name=role_name, role_name=role_name)
@@ -332,30 +335,37 @@ def test_can_follows_levels(user, expected):
     assert can(user, "program") is expected
 
 
-# ── Экран пока прежний: галочки не затирают уровни ───────────────────────────
+# ── Экран уровней (шаг 3): сохранение того же уровня ничего не меняет ─────────
 
-def test_unchanged_checkbox_keeps_view_level(db, user_factory):
+def test_saving_same_levels_changes_nothing(db, user_factory):
     superadmin = user_factory(vk_id=991_300, name="СА", role_name="суперадмин")
     moderator = user_factory(vk_id=991_301, name="Модератор", role_name="модератор")
     curator = user_factory(vk_id=991_302, name="Куратор", role_name="куратор")
-    section_access.save_role_matrix(
-        db, actor_id=superadmin.id, desired={"модератор": {"program": True}},
+    section_access.save_role_levels(
+        db, actor_id=superadmin.id, desired={"модератор": {"program": "view"}},
     )
     db.add(SectionAccessRule(section_key="archive", user_id=curator.id, level="view"))
     db.commit()
-    # Галочка роли модераторов — «Смотреть», как до уровней.
     assert section_access.role_levels(db)["модератор"]["program"] == "view"
-    # Повторное сохранение с той же галочкой ничего не меняет.
-    assert section_access.save_role_matrix(
-        db, actor_id=superadmin.id, desired={"модератор": {"program": True}},
+    # Форма шлёт все ячейки — неизменённые не пишут ни строки, ни журнала.
+    assert section_access.save_role_levels(
+        db, actor_id=superadmin.id, desired={"модератор": {"program": "view", "students": "view"}},
     ) == 0
     assert section_access.save_user_rules(
-        db, actor_id=superadmin.id, target=curator, desired={"archive": "open"},
+        db, actor_id=superadmin.id, target=curator, desired={"archive": "view", "students": "role"},
     ) == 0
-    row = db.query(SectionAccessRule).filter_by(user_id=curator.id).one()
-    assert row.level == "view"
-    # Личная галочка модератору — «Менять» (владелец 04.10.2026).
+    # Личный уровень модератору — любой из трёх (владелец 04.10.2026).
     section_access.save_user_rules(
-        db, actor_id=superadmin.id, target=moderator, desired={"people": "open"},
+        db, actor_id=superadmin.id, target=moderator, desired={"people": "edit"},
     )
     assert db.query(SectionAccessRule).filter_by(user_id=moderator.id).one().level == "edit"
+    # Вернуть «Как у роли» — строка уходит.
+    section_access.save_user_rules(
+        db, actor_id=superadmin.id, target=moderator, desired={"people": "role"},
+    )
+    assert db.query(SectionAccessRule).filter_by(user_id=moderator.id).count() == 0
+
+
+def test_view_only_sections_match_migration_snapshot():
+    """Экран предлагает два уровня ровно там, где миграция не нашла записи."""
+    assert set(_load_migration().VIEW_ONLY_SECTIONS) == section_access.VIEW_ONLY_SECTIONS

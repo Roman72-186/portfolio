@@ -1,72 +1,77 @@
 {% extends "base.html" %}
 {% block title %}Доступы к разделам{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=14">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=15">
 {% endblock %}
 {% block content %}
-{# Переключатели разделов для сотрудников (владелец 30.09 и 03.10.2026). Логика —
-   services/section_access.py, роуты — api/cabinet_access_admin.py. Вёрстка
-   целиком на .ss-* из superadmin_stats_ios.css: та же таблица, что на
-   «Статистике активности», на телефоне строка складывается в карточку. #}
+{# Уровни разделов для сотрудников (владелец 30.09, 03.10 и 04.10.2026). Логика —
+   services/section_access.py, роуты — api/cabinet_access_admin.py. Вёрстка на
+   .ss-* из superadmin_stats_ios.css, уровни — .acc-* там же.
+
+   Одна роль на экран (шаг 3 плана тонких доступов, развилка 7): таблица
+   «12 разделов × 3 роли» с тремя кнопками в ячейке на телефоне не помещается.
+   Переключатель ролей рисует скрипт; без скрипта видны все три списка подряд,
+   и форма работает так же. #}
 <div class="ss-wrap ios-ss">
 
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="ss-title">Доступы</h1>
-        <span class="ss-since">Галочка открывает раздел всей роли, снятая – закрывает: пропадает пункт меню, страница не открывается. «Сверх роли» – раздела у роли нет, пока его не открыли.</span>
+        <span class="ss-since">Уровень раздела для всей роли. «Нет» – раздела не видно в меню. «Смотреть» – раздел открывается, кнопок правки нет. «Менять» – полная работа. «Сверх роли» – раздела у роли нет, пока его не открыли.</span>
     </div>
 
     {% if saved is not none %}
     <div class="alert alert-success">{% if saved == "0" %}Изменений нет.{% else %}Сохранено.{% endif %}</div>
     {% endif %}
 
-    <form method="post" action="/cabinet/superadmin/access">
+    <form method="post" action="/cabinet/superadmin/access" data-access-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <div class="ss-sub">
-            <h2 class="ss-sub-head">Разделы по ролям</h2>
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead>
-                        <tr>
-                            <th>Раздел</th>
-                            {% for col in columns %}<th class="ss-ta-c">{{ col.label }}</th>{% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for section in sections %}
-                    <tr>
-                        <td data-label="Раздел">
-                            <div class="ss-bold">{{ section.label }}</div>
-                            <div class="ss-dim-sm">{{ section.hint }}</div>
-                        </td>
-                        {% for col in columns %}
-                        <td data-label="{{ col.label }}" class="ss-ta-c">
-                            {% set _field = "cell__" ~ col.slug ~ "__" ~ section.key %}
-                            <input type="hidden" name="{{ _field }}" value="0">
-                            <label>
-                                <input type="checkbox" name="{{ _field }}" value="1"
-                                       {% if matrix[col.name][section.key] %}checked{% endif %}
-                                       aria-label="{{ section.label }} – {{ col.label }}">
-                                открыт
-                            </label>
-                            {% if col.name not in section.roles %}
-                            <div class="ss-dim-sm">сверх роли</div>
-                            {% endif %}
-                        </td>
-                        {% endfor %}
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+
+        <div class="acc-roles" role="tablist" aria-label="Роль" data-acc-tabs hidden>
+            {% for col in columns %}
+            <button type="button" class="acc-role" role="tab" id="acc-tab-{{ col.slug }}"
+                    aria-controls="acc-panel-{{ col.slug }}" data-acc-tab="{{ col.slug }}">{{ col.label }}</button>
+            {% endfor %}
         </div>
+
+        {% for col in columns %}
+        <section class="ss-sub acc-panel" id="acc-panel-{{ col.slug }}" data-acc-panel="{{ col.slug }}"
+                 aria-labelledby="acc-tab-{{ col.slug }}">
+            <h2 class="ss-sub-head acc-panel-head">{{ col.label }}</h2>
+            <ul class="acc-list">
+                {% for row in rows[col.name] %}
+                {% set section = row.section %}
+                <li class="acc-row">
+                    <div class="acc-row-text">
+                        <div class="ss-bold">{{ section.label }}</div>
+                        <div class="ss-dim-sm">{{ section.hint }}{% if not row.native %} · <span class="acc-extra">сверх роли</span>{% endif %}</div>
+                    </div>
+                    <fieldset class="acc-level">
+                        <legend>{{ section.label }} – {{ col.label }}</legend>
+                        {% for lv in row.levels %}
+                        <label class="acc-level-opt">
+                            <input type="radio" name="cell__{{ col.slug }}__{{ section.key }}" value="{{ lv }}"
+                                   {% if lv == row.level %}checked{% endif %}
+                                   {% if lv in row.risky %}data-risky data-risky-what="«{{ section.label }}» роли «{{ col.label }}»"{% endif %}
+                                   data-initial="{{ row.level }}">
+                            <span>{{ level_labels[lv] }}</span>
+                        </label>
+                        {% endfor %}
+                    </fieldset>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endfor %}
+
         <div class="ss-sub">
-            <h2 class="ss-sub-head">Как работает «сверх роли»</h2>
-            <ul class="ss-dim-sm">
-                <li>Куратор в открытом разделе работает как Главный преподаватель: видит всю школу и пользуется кнопками раздела.</li>
-                <li>Модератору открытый раздел доступен только на просмотр: он наблюдатель и ничего не меняет.</li>
-                <li>Балл за работу ученика ставит только Главный преподаватель, открытый раздел этого не меняет.</li>
-                <li>Архив куратору открывается целиком, но чужие действующие ученики ему по-прежнему не видны.</li>
+            <h2 class="ss-sub-head">Что важно знать</h2>
+            <ul class="ss-dim-sm acc-notes">
+                <li>Уровень выше положенного роли – сотрудник работает в разделе как Главный преподаватель: видит всю школу и пользуется кнопками раздела.</li>
+                <li>Балл, возврат на доработку и разблокировку пересдачи даёт только роль Главного преподавателя. Уровень «Менять» их не открывает.</li>
+                <li>«Люди и доступы» сверх роли – это смена ролей, логины и пароли, вход «глазами» в чужие кабинеты. Перед сохранением экран спросит подтверждение.</li>
+                <li>Архив куратору открывается целиком, чужие действующие ученики ему по-прежнему не видны.</li>
+                <li>Одному сотруднику уровень меняют в его карточке, блок «Доступ к разделам».</li>
             </ul>
         </div>
         <div class="form-actions">
@@ -79,7 +84,7 @@
         {% if personal %}
         <div class="ss-table-wrap">
             <table class="ss-table">
-                <thead><tr><th>Сотрудник</th><th>Открыто лично</th><th>Закрыто лично</th></tr></thead>
+                <thead><tr><th>Сотрудник</th><th>Свой уровень</th></tr></thead>
                 <tbody>
                 {% for p in personal %}
                 <tr>
@@ -87,8 +92,9 @@
                         <a href="/cabinet/superadmin/users/{{ p.user.id }}#section-access">{{ p.user.last_name or '' }} {{ p.user.first_name or p.user.name }}</a>
                         {% if p.user.role %}<div class="ss-dim-sm">{{ p.user.role.display_name }}</div>{% endif %}
                     </td>
-                    <td data-label="Открыто лично">{{ p.opened | join(", ") or "–" }}</td>
-                    <td data-label="Закрыто лично">{{ p.closed | join(", ") or "–" }}</td>
+                    <td data-label="Свой уровень">
+                        {% for r in p.rules %}<div>{{ r.label }}: {{ level_labels[r.level] | lower }}</div>{% endfor %}
+                    </td>
                 </tr>
                 {% endfor %}
                 </tbody>
@@ -99,4 +105,5 @@
         {% endif %}
     </div>
 </div>
+{% include "partials/access_levels_script.html" %}
 {% endblock %}
