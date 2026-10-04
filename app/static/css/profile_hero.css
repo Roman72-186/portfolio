@@ -156,6 +156,12 @@
     letter-spacing: -0.01em;
 }
 .profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.28); }
+/* Точка А — строкой под Р/К, той же границей, что год (04.10.2026). */
+.profile-score-point-a {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 4px 8px 5px;
+    border-top: 0.5px solid rgba(255,255,255,0.28);
+}
 /* Год поступления — отдельной строкой под баллами, через тонкую границу,
    как в макете (таблица «Р/К» сверху, год снизу на всю ширину). */
 .profile-score-year {
@@ -169,7 +175,8 @@
 @media (max-width: 480px) {
     .profile-hero-top { gap: 10px; }
     .profile-score-cell { padding: 5px 7px 4px; min-width: 20px; }
-    .profile-score-year { padding: 3px 7px 4px; }
+    .profile-score-year,
+    .profile-score-point-a { padding: 3px 7px 4px; }
 }
 @media (min-width: 1024px) {
     .profile-hero { padding: 28px 32px 30px; }

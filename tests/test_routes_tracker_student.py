@@ -554,3 +554,91 @@ def test_undated_cycle_task_is_visible_in_personal_tracker(auth_client, db):
     resp = client.get(PAGE)
     assert resp.status_code == 200
     assert "Задание цикла без даты" in resp.text
+
+
+# ── Шапка трекера: баллы Р/К и точка А (владелец 04.10.2026) ─────────────────
+
+
+def _scored_submission(db, user_id, *, score, block_subject=None, task_subject=None, deleted=False):
+    from datetime import datetime
+
+    from app.models.task_block import TaskBlock, TaskBlockSubmission
+
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Контрольная", subject=task_subject,
+                       deleted_at=now if deleted else None)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload", subject=block_subject)
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(
+        block_id=block.id, user_id=user_id, submitted_at=now, score=score, scored_at=now,
+    ))
+    db.commit()
+
+
+def test_avg_scores_include_task_block_submissions(db, user_factory):
+    """С 17.07.2026 баллы ставятся сдачам в заданиях, а не работам-пробникам:
+    без второго источника у всех новых оценок в шапке стоял прочерк.
+    Предмет — у блока, иначе у задания; удалённое задание в среднее не идёт."""
+    from app.models.work import WORK_TYPE_MOCK_EXAM, Work
+    from app.services.stats import avg_score_by_subject_all_time
+
+    student = user_factory(vk_id=980401, name="Баллы", role_name="ученик")
+    db.add(Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, subject="Рисунок",
+        month="июль", year=2026, filename="m.jpg", status="success", score=60,
+        tariff=student.tariff,
+    ))
+    db.commit()
+    _scored_submission(db, student.id, score=80, block_subject="Рисунок")
+    _scored_submission(db, student.id, score=55, task_subject="Композиция")
+    _scored_submission(db, student.id, score=10, task_subject="Композиция", deleted=True)
+    _scored_submission(db, student.id, score=99)  # без предмета
+
+    assert avg_score_by_subject_all_time(db, student.id) == {"Рисунок": 70, "Композиция": 55}
+
+
+def test_tracker_hero_shows_task_block_score(auth_client, db):
+    client, user = auth_client
+    _scored_submission(db, user.id, score=67, block_subject="Композиция")
+
+    resp = client.get(PAGE)
+
+    assert resp.status_code == 200
+    assert '<span class="profile-score-value">67</span>' in resp.text
+
+
+def _fake_point_a(monkeypatch, *, is_done, average):
+    from app.api import cabinet_tracker
+    from app.services.point_a import PointA
+
+    monkeypatch.setattr(
+        cabinet_tracker, "student_point_a",
+        lambda db, student, with_images=True: PointA(
+            student=student, plates=[], average=average, is_done=is_done, scored_count=0,
+        ),
+    )
+
+
+def test_tracker_hero_shows_point_a_when_done(auth_client, monkeypatch):
+    client, _ = auth_client
+    _fake_point_a(monkeypatch, is_done=True, average=74)
+
+    resp = client.get(PAGE)
+
+    assert 'class="profile-score-point-a"' in resp.text
+    assert '<span class="profile-score-value">74</span>' in resp.text
+
+
+def test_tracker_hero_hides_partial_point_a(auth_client, monkeypatch):
+    """Пока ГП не оценил все плашки, среднее неполное — его не показываем:
+    уровень ученик узнаёт уведомлением ровно в момент разбора."""
+    client, _ = auth_client
+    _fake_point_a(monkeypatch, is_done=False, average=74)
+
+    resp = client.get(PAGE)
+
+    assert resp.status_code == 200
+    assert 'class="profile-score-point-a"' not in resp.text

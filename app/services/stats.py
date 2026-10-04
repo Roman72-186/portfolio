@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session as DBSession
 from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
 from app.models.feature_period import FeaturePeriod
 from app.models.role import Role
+from app.models.task_block import TaskBlock, TaskBlockSubmission
+from app.models.tracker import TrackerTask
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.feature_periods import get_active_period
@@ -244,9 +246,18 @@ def avg_score_by_subject_all_time(db: DBSession, student_id: int) -> dict:
     для бейджей шапки ученика на всех вкладках карточки/кабинета. Намеренно не
     учитывает period_only: тот фильтр относится только к списку работ на
     вкладке mock-exams, иначе бейджи шапки дёргались бы при переключении
-    фильтра."""
-    scored = (
-        db.query(Work)
+    фильтра.
+
+    Источников баллов два. `Work.score` пробников ставили до 17.07.2026; с
+    тех пор Главный преподаватель оценивает сдачи внутри заданий —
+    `TaskBlockSubmission.score` (`/staff/task-block-submissions/{id}/score`).
+    Пока шапка читала только первый источник, у всех, кого оценили после
+    июля, вместо баллов стоял прочерк (владелец 04.10.2026). Предмет сдачи —
+    у блока, а если там пусто, у задания: так же его берёт уведомление о
+    балле. Сдачи без предмета и из удалённых заданий в среднее не идут."""
+    by_subject: dict[str, list[float]] = {subj: [] for subj in MOCK_SUBJECTS}
+    works = (
+        db.query(Work.subject, Work.score)
         .filter(
             Work.user_id == student_id,
             Work.work_type == WORK_TYPE_MOCK_EXAM,
@@ -255,12 +266,28 @@ def avg_score_by_subject_all_time(db: DBSession, student_id: int) -> dict:
         )
         .all()
     )
-    result: dict = {}
-    for subj in MOCK_SUBJECTS:
-        subj_scored = [w for w in scored if w.subject == subj]
-        if subj_scored:
-            result[subj] = round(sum(float(w.score) for w in subj_scored) / len(subj_scored))
-    return result
+    submissions = (
+        db.query(TaskBlock.subject, TrackerTask.subject, TaskBlockSubmission.score)
+        .join(TaskBlock, TaskBlockSubmission.block_id == TaskBlock.id)
+        .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
+        .filter(
+            TaskBlockSubmission.user_id == student_id,
+            TaskBlockSubmission.score.isnot(None),
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for subject, score in works:
+        if subject in by_subject:
+            by_subject[subject].append(float(score))
+    for block_subject, task_subject, score in submissions:
+        subject = block_subject or task_subject
+        if subject in by_subject:
+            by_subject[subject].append(float(score))
+    return {
+        subj: round(sum(scores) / len(scores))
+        for subj, scores in by_subject.items() if scores
+    }
 
 
 def curator_avg_scores(

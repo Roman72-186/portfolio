@@ -4,7 +4,8 @@
 Стили — app/static/css/profile_hero.css,
 подключить его в extra_styles экрана, который вставляет этот partial.
 
-Требует в контексте: user, avg_score_by_subject (dict вида {"Рисунок": 67, ...}).
+Требует в контексте: user, avg_score_by_subject (dict вида {"Рисунок": 67, ...});
+необязательно — point_a_average (средний балл точки А или None).
 Владелец 21.08.2026: ученик видит здесь имя, баллы, год поступления и тариф —
 остальные личные данные (контакты, «уже учится», доступ) в шапку не выносить,
 им место во вкладке «Личное». Роль отдельно не подписываем (слово «Ученик»
@@ -63,6 +64,14 @@
                     <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
                 </div>
             </div>
+            {# Точка А — строкой под Р/К (владелец 04.10.2026). Приходит только
+               у разобранного ученика, см. `cabinet_tracker.py`. #}
+            {% if point_a_average is defined and point_a_average is not none %}
+            <div class="profile-score-point-a" title="Точка А — средний балл входной оценки">
+                <span class="profile-score-label">Точка А</span>
+                <span class="profile-score-value">{{ point_a_average }}</span>
+            </div>
+            {% endif %}
             {% if user.university_year %}
             <div class="profile-score-year" title="Год поступления">{{ user.university_year }}</div>
             {% endif %}

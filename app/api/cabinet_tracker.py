@@ -50,6 +50,7 @@ from app.models.tracker import (
     TrackerTask,
     TrackerTaskState,
 )
+from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import (
     WEEKDAY_LABELS,
@@ -68,6 +69,7 @@ from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
 )
+from app.services.point_a import student_point_a
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.submission_edit import (
     block_work_reason, deadline_reason, late_first_submission,
@@ -191,6 +193,14 @@ def cabinet_tracker(
         db, user_id=user["user_id"], today=today
     )
 
+    # Средний балл точки А — под баллами Р/К в шапке (владелец 04.10.2026).
+    # Только у разобранного ученика: уровень сообщается уведомлением ровно в
+    # этот момент (`point_a.maybe_notify_point_a_level`), а промежуточное
+    # среднее по части плашек выглядело бы итогом и прыгало бы с каждой новой
+    # оценкой.
+    student = db.get(User, user["user_id"])
+    point_a = student_point_a(db, student, with_images=False) if student is not None else None
+
     return templates.TemplateResponse(request, "cabinet_tracker.html", {
         "request": request,
         "user": user,
@@ -216,6 +226,7 @@ def cabinet_tracker(
         "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,
         "active_tab": "tracker",
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
+        "point_a_average": point_a.average if point_a is not None and point_a.is_done else None,
     })
 
 
