@@ -565,6 +565,34 @@ def started_cycles(
     return list(reversed(started))
 
 
+def _carousel_cycles(
+    db: Session, user_id: int, today: date, stage_id: int | None
+) -> list[LearningTopic]:
+    """Циклы для карусели: текущего этапа и этапов, чья крайняя дата ещё не
+    прошла, от поздних к ранним.
+
+    Владелец 04.10.2026: последний день «Предобучения» совпал с первым днём
+    семестра, ученица закрыла всё, встала на цикл «Октябрь» нового этапа — и
+    кнопка «Итоговая встреча» в «Занятии 4 октября» пропала вместе со всем
+    прежним этапом. Этап показывается, «пока крайняя дата не прошла».
+    """
+    if stage_id is None:
+        return started_cycles(db, user_id, today)
+    open_stage_ids = {stage_id}
+    result = []
+    for topic in started_cycles(db, user_id, today):
+        parent_id = topic.parent_id
+        if parent_id is None:
+            continue
+        if parent_id not in open_stage_ids:
+            stage = db.get(LearningTopic, parent_id)
+            if stage is None or cycle_bounds(stage)[1] < today:
+                continue
+            open_stage_ids.add(parent_id)
+        result.append(topic)
+    return result
+
+
 def cycle_is_archived_for_user(
     db: Session, user_id: int, topic_id: int, today: date
 ) -> bool:
@@ -894,16 +922,17 @@ def feed_for_student(
             if stage_of_topic is not None else []
         )
     ]
-    # Карусель показывает циклы только текущего этапа — прямая ссылка на
-    # старый цикл (`chosen` выше) при этом ищется без сужения по этапу,
-    # владелец 24.09.2026 просил её не запирать.
+    # Карусель показывает циклы текущего этапа и этапов, чья крайняя дата ещё
+    # не прошла (`_carousel_cycles`, 04.10.2026) — прямая ссылка на старый
+    # цикл (`chosen` выше) при этом ищется без сужения по этапу, владелец
+    # 24.09.2026 просил её не запирать.
     stage_id = current_topic.parent_id if current_topic is not None else None
     stage = None
     if stage_id is not None:
         stage_topic = db.get(LearningTopic, stage_id)
         if stage_topic is not None:
             stage = {"id": stage_topic.id, "label": stage_topic.title or ""}
-    cycles = started_cycles(db, user_id, today, stage_id=stage_id)
+    cycles = _carousel_cycles(db, user_id, today, stage_id)
     # «Следующее задание откроется 23 сентября» (владелец 03.09.2026): подсказка
     # тому, кто закрыл всё доступное и упёрся в календарь, а не в собственные
     # долги. Если впереди есть хоть один шаг, который можно делать сейчас,

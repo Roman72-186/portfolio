@@ -597,6 +597,30 @@ def test_carousel_narrows_to_current_stage(db, regular_user):
     assert feed["stage"]["id"] == stage_b.id
 
 
+def test_carousel_keeps_previous_stage_until_its_last_day(db, regular_user):
+    """Последний день старого этапа совпал с первым днём нового: ученик уже
+    стоит в новом, но циклы старого остаются в карусели, пока крайняя дата
+    этапа не прошла (владелец 04.10.2026: пропала кнопка «Итоговая встреча»
+    в «Занятии 4 октября»)."""
+    stage_a = _stage(db, regular_user, starts_on=TODAY - timedelta(days=20), ends_on=TODAY)
+    stage_b = _stage(db, regular_user, starts_on=TODAY, ends_on=TODAY + timedelta(days=40))
+    lesson = _cycle(db, regular_user, title="Занятие", starts_on=TODAY, ends_on=TODAY)
+    lesson.parent_id = stage_a.id
+    october = _cycle(db, regular_user, title="Октябрь",
+                     starts_on=TODAY, ends_on=TODAY + timedelta(days=28))
+    october.parent_id = stage_b.id
+    db.commit()
+
+    feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
+    assert feed["topic"].id == october.id
+    assert {c["title"] for c in feed["cycles"]} == {"Занятие", "Октябрь"}
+
+    tomorrow = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY + timedelta(days=1),
+    )
+    assert [c["title"] for c in tomorrow["cycles"]] == ["Октябрь"]
+
+
 def test_direct_link_opens_cycle_from_closed_stage(db, regular_user):
     """Прямая ссылка на цикл закрытого этапа открывается архивом, а не 404 —
     владелец 24.09.2026 просил не запирать её, даже когда этап уже сменился."""
