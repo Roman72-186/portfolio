@@ -20,6 +20,7 @@ from app.models.notification import Notification
 from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import (  # переиспользование, не завязано на Work
     ROLE_STUDENT,
+    dialog_sender,
     role_from_rank,
     role_label_ru,
 )
@@ -240,13 +241,15 @@ def serialize_messages(
     names: dict[int, str] | None = None,
 ) -> list[dict]:
     names = names or {}
-    return [
-        {
+    result = []
+    for m in messages:
+        sender_name, sender_role_label = dialog_sender(m.sender_role, names.get(m.sender_id))
+        result.append({
             "id": m.id,
             "sender_id": m.sender_id,
             "sender_role": m.sender_role,
-            "sender_name": names.get(m.sender_id),
-            "sender_role_label": role_label_ru(m.sender_role),
+            "sender_name": sender_name,
+            "sender_role_label": sender_role_label,
             "text": m.text,
             "photo_s3_url": m.photo_s3_url,
             "video_s3_url": m.video_s3_url,
@@ -254,9 +257,8 @@ def serialize_messages(
             "audio_s3_url": m.audio_s3_url,
             "video_is_note": bool(m.video_is_note),
             "created_at": m.created_at.isoformat() if m.created_at else None,
-        }
-        for m in messages
-    ]
+        })
+    return result
 
 
 __all__ = [

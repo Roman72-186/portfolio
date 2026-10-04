@@ -15,7 +15,7 @@ from app.models.task_block import DIALOG_BLOCK_TYPES, TaskBlock, TaskBlockSubmis
 from app.models.user import User
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services import media_transcode, s3 as s3_service
-from app.services.feedback import ROLE_STUDENT, role_from_rank, role_label_ru
+from app.services.feedback import ROLE_STUDENT, dialog_sender, role_from_rank
 from app.services.utils import compress_image
 
 logger = logging.getLogger(__name__)
@@ -301,13 +301,17 @@ def serialize_messages(
     messages: list[TaskBlockFeedbackMessage], names: dict[int, str] | None = None,
 ) -> list[dict]:
     names = names or {}
-    return [
-        {
+    result = []
+    for message in messages:
+        sender_name, sender_role_label = dialog_sender(
+            message.sender_role, names.get(message.sender_id),
+        )
+        result.append({
             "id": message.id,
             "sender_id": message.sender_id,
             "sender_role": message.sender_role,
-            "sender_name": names.get(message.sender_id),
-            "sender_role_label": role_label_ru(message.sender_role),
+            "sender_name": sender_name,
+            "sender_role_label": sender_role_label,
             "text": message.text,
             "photo_s3_url": message.photo_s3_url,
             "video_s3_url": message.video_s3_url,
@@ -315,9 +319,8 @@ def serialize_messages(
             "audio_s3_url": message.audio_s3_url,
             "video_is_note": bool(message.video_is_note),
             "created_at": message.created_at.isoformat() if message.created_at else None,
-        }
-        for message in messages
-    ]
+        })
+    return result
 
 
 __all__ = [

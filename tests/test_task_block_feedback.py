@@ -44,6 +44,37 @@ def _login(client, session_factory, user):
     client.cookies.set("session_id", session_factory(user).id)
 
 
+def test_staff_messages_are_anonymous_for_student_and_staff(
+    db, user_factory, session_factory, client,
+):
+    """Владелец 04.10.2026: ОС при проверке работ обезличена. Сообщение
+    сотрудника подписано «Преподаватель» — без имени и должности, и у ученика,
+    и у сотрудника, как в диалоге пробника."""
+    curator = user_factory(vk_id=970_031, name="Ирина Кураторова", role_name="куратор")
+    student = user_factory(vk_id=970_032, name="Пётр Ученицын")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, curator)
+    with patch("app.api.task_block_feedback.notify"):
+        sent = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+            data={"text": "Доработай фон"},
+        )
+    assert sent.status_code == 200
+
+    for user, url in (
+        (student, f"/cabinet/task-block-submissions/{submission.id}/feedback"),
+        (curator, f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"),
+    ):
+        _login(client, session_factory, user)
+        page = client.get(url)
+        assert page.status_code == 200
+        assert "Доработай фон" in page.text
+        assert "Кураторова" not in page.text, user.name
+        assert '<span class="chip">Преподаватель</span>' in page.text
+
+
 def test_chief_teacher_can_score_submission_without_marking_it_reviewed(
     db, user_factory, session_factory, client,
 ):

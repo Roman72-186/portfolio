@@ -146,6 +146,22 @@ def role_label_ru(sender_role: str) -> str:
     return ROLE_LABELS_RU.get(sender_role, sender_role)
 
 
+# Подпись сотрудника в диалогах ОС по работам — без имени и должности.
+STAFF_SENDER_LABEL_RU = "Преподаватель"
+
+
+def dialog_sender(sender_role: str, name: str | None) -> tuple[str | None, str]:
+    """Имя и подпись отправителя для диалога ОС по сдаче: `(sender_name,
+    sender_role_label)`. Сообщения сотрудников обезличены для всех — и для
+    ученика, и для staff (владелец 04.10.2026: «в обратной связи должно быть
+    обезличено… при проверке работ»), как давно сделано в диалоге пробника
+    (`cabinet_feedback_detail.html`, `anon_staff`). Должность тоже не
+    пишется: «Главный преподаватель» в маленькой команде — почти имя."""
+    if sender_role == ROLE_STUDENT:
+        return name, role_label_ru(sender_role)
+    return None, STAFF_SENDER_LABEL_RU
+
+
 def role_from_rank(role_rank: int) -> str:
     """Map numeric role_rank → sender_role string for FeedbackMessage."""
     if role_rank >= 5:

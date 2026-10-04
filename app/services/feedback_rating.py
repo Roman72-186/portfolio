@@ -289,8 +289,10 @@ def _person(user: User | None) -> str:
 def care_topic_text(
     db: DBSession, rating: FeedbackRating, *, screenshot_links: bool = False,
 ) -> str:
-    """Сообщение в служебный топик (О17): ученик, тариф, куратор, вид ОС и
-    задание, оценка, комментарий. Скриншоты обычно идут картинками рядом
+    """Сообщение в служебный топик (О17): тариф, куратор, вид ОС и задание,
+    оценка, комментарий. Обезличено: ученика в сообщении нет (владелец
+    04.10.2026 — «везде, где отправлено, обезличено»), тариф остаётся — он
+    человека не называет. Скриншоты обычно идут картинками рядом
     (`send_rating_to_care_topic`), ссылками — только запасным путём
     (`screenshot_links`). Ссылки на диалог нет: владелец 01.10.2026 — не нужна.
     Telegram разбирает HTML — всё пользовательское экранируется."""
@@ -299,7 +301,6 @@ def care_topic_text(
     esc = html.escape
     lines = [
         f"<b>Оценка ОС: {rating.score} из {RATING_MAX}</b>",
-        f"Ученик: {esc(_person(student))}",
         f"Тариф: {esc((student.tariff if student else None) or '—')}",
         f"Куратор: {esc(_person(curator))}",
         f"{esc(FEEDBACK_TYPE_LABELS.get(rating.feedback_type, rating.feedback_type))}: "
