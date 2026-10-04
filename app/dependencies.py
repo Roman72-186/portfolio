@@ -25,7 +25,8 @@ from app.services.section_access import (
     blocked_section,
     elevated_rank,
     is_configurable_role,
-    moderator_may_read,
+    moderator_may_use,
+    moderator_work_sections,
     resolve_sections,
 )
 
@@ -196,18 +197,24 @@ def get_current_user(
     # принадлежит сотруднику — суперадмин видит ровно его ограничения.
     closed = frozenset()
     granted = frozenset()
+    workable = frozenset()
     if is_configurable_role(role_name):
         closed, granted = resolve_sections(
             db, user_id=user.id, role_id=user.role_id, role_name=role_name,
         )
+        if role_name == MODERATOR_ROLE_NAME:
+            workable = moderator_work_sections(db, user_id=user.id, granted=granted)
 
     # Модератор — наблюдатель: уровень ГП, но открыт только белый список
-    # адресов из rbac.py и разделы, открытые ему сверх роли, — на чтение.
+    # адресов из rbac.py и разделы, открытые ему сверх роли: галочкой роли —
+    # на чтение, личной галочкой — на полную работу (владелец 04.10.2026).
     # Проверка здесь, а не в роутах, по той же причине, что и срок доступа
     # ниже: сюда приходит каждый запрос кабинета.
     if role_name == MODERATOR_ROLE_NAME and not (
         is_moderator_request_allowed(request.method, request.url.path)
-        or moderator_may_read(request.method, request.url.path, request.query_params, granted)
+        or moderator_may_use(
+            request.method, request.url.path, request.query_params, granted, workable,
+        )
     ):
         raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
@@ -323,6 +330,8 @@ def get_current_user(
         "nav_rank": nav_rank,
         "closed_sections": closed,
         "granted_sections": granted,
+        # Разделы, где модератор работает, а не только смотрит (личная галочка).
+        "moderator_work_sections": workable,
     }
 
     return result

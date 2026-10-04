@@ -19,8 +19,11 @@
    ранга переписывать не нужно. Подъём действует только на этот запрос и
    только на адреса раздела: соседние разделы, общие адреса и меню живут по
    родному рангу (`user["nav_rank"]`).
-4. Модератор — наблюдатель: открытый ему раздел добавляется к белому списку
-   `rbac.py` только на чтение (GET), ранг ему поднимать не нужно.
+4. Модератор — наблюдатель: раздел, открытый ему галочкой роли, добавляется
+   к белому списку `rbac.py` только на чтение (GET). Личная галочка в карточке
+   сотрудника открывает раздел на полную работу (`moderator_may_use`,
+   владелец 04.10.2026). Ранг модератору поднимать не нужно: его уровень и так
+   равен ГП (`rbac.effective_role_rank`).
 
 Балл подъём ранга не даёт: адреса с `score` в конце (`rbac.is_score_request`)
 остаются за родным рангом — правило 30.09.2026 «балл ставит только Главный
@@ -241,7 +244,10 @@ _RULES: tuple[_Rule, ...] = (
     _rule("exams", _tree("/cabinet/superadmin/exam-assignments")),
     _rule("exams", _tree("/cabinet/periods")),
     _rule("exams", _tree("/cabinet/intake")),
-    _rule("exams", _exact("/cabinet/upload-ticket-image")),
+    # Фото билета грузит и редактор дня программы (блок пробника) — без
+    # «program» в владельцах кнопка не работала бы у сотрудника, которому
+    # открыт только АОП.
+    _rule(("exams", "program"), _exact("/cabinet/upload-ticket-image")),
     _rule("lab3d", _exact("/3dlab")),
     _rule("lab3d", _tree("/cabinet/3dlab")),
     _rule("lab3d", _tree("/lab")),
@@ -296,12 +302,48 @@ def elevated_rank(rank: int, method: str, path: str, query_params, granted: froz
     return target
 
 
-def moderator_may_read(method: str, path: str, query_params, granted: frozenset[str]) -> bool:
+def moderator_may_use(
+    method: str, path: str, query_params,
+    granted: frozenset[str], workable: frozenset[str] = frozenset(),
+) -> bool:
     """Открыт ли модератору запрос через раздел, открытый ему сверх роли.
-    Только чтение: наблюдатель ничего не меняет и в открытом разделе."""
-    if not granted or method not in _GET:
+
+    Галочка на всю роль — только чтение: модератор наблюдатель (28.09.2026).
+    Личная галочка в карточке сотрудника — полная работа в разделе, как у
+    Главного преподавателя (`workable`, владелец 04.10.2026: «ей дать все права
+    по АОП, что и у меня и ГП» — про одного модератора, остальным просмотр)."""
+    if not granted:
         return False
-    return any(key in granted for key in section_owners(method, path, query_params))
+    owners = section_owners(method, path, query_params)
+    if method in _GET:
+        return any(key in granted for key in owners)
+    return any(key in workable for key in owners)
+
+
+def moderator_work_sections(
+    db: DBSession, *, user_id: int, granted: frozenset[str],
+) -> frozenset[str]:
+    """Разделы, где модератор работает, а не только смотрит: открытые ему
+    сверх роли личным правилом. Правило роли сюда не входит — оно открывает
+    раздел всем модераторам сразу и остаётся просмотром."""
+    if not granted:
+        return frozenset()
+    rows = (
+        db.query(SectionAccessRule.section_key)
+        .filter(
+            SectionAccessRule.user_id == user_id,
+            SectionAccessRule.is_open.is_(True),
+            SectionAccessRule.section_key.in_(granted),
+        )
+        .all()
+    )
+    return frozenset(row.section_key for row in rows)
+
+
+def moderator_can_change(user: dict, section_key: str) -> bool:
+    """Показывать ли модератору кнопки изменений в разделе. Для экранов, где
+    кнопку прячут от наблюдателя (`can_remind` в статистике цикла)."""
+    return section_key in (user.get("moderator_work_sections") or ())
 
 
 def is_configurable_role(role_name: str | None) -> bool:

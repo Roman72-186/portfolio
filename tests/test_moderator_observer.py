@@ -274,3 +274,74 @@ def test_moderator_with_every_section_open_browses_without_writes(
     # «просмотрено» она не снимает — для наблюдателя безвредна.
     writes = [w for w in writes if w[0] != "/cabinet/superadmin/tags"]
     assert writes == []
+
+
+# ── Личная галочка: модератор работает в разделе (владелец 04.10.2026) ─────────
+
+def _digest_with_type(db):
+    from app.models.tracker import ScheduleDigest
+    from app.services.schedule_event_types import create_type
+
+    digest = ScheduleDigest(title="Октябрь", year=2026, month=10, assign_to_all=True)
+    db.add(digest)
+    event_type = create_type(db, name="Занятие", color="violet", style="fill")
+    db.commit()
+    return digest, event_type
+
+
+def _event_payload(type_id):
+    return {
+        "type_id": type_id, "title": "Эфир", "note": None,
+        "starts_on": "2026-10-10", "ends_on": "2026-10-10",
+        "meeting_url": None, "sort_order": 0,
+    }
+
+
+def test_moderator_with_personal_program_grant_adds_digest_event(
+    client, db, user_factory, session_factory,
+):
+    """«Ей дать все права по АОП, что и у меня и ГП»: личная галочка АОП в
+    карточке модератора открывает раздел на полную работу. Прод 04.10.2026:
+    Александрия девять раз сохраняла событие дайджеста и получала 403."""
+    from app.models.section_access import SectionAccessRule
+    from app.models.tracker import ScheduleEvent
+
+    moderator = user_factory(vk_id=990_330, name="Модератор АОП", role_name="модератор")
+    db.add(SectionAccessRule(section_key="program", user_id=moderator.id, is_open=True))
+    digest, event_type = _digest_with_type(db)
+    _login_as(client, session_factory, moderator)
+
+    resp = client.post(f"/cabinet/staff/digest/{digest.id}/events", json=_event_payload(event_type.id))
+    assert resp.status_code == 200
+    assert db.get(ScheduleEvent, resp.json()["event_id"]).title == "Эфир"
+    # Работа только в АОП: соседние разделы ГП остаются закрытыми.
+    assert client.get("/cabinet/staff/point-a").status_code == 403
+    assert client.post("/cabinet/students/5/works/7/score").status_code == 403
+
+
+def test_moderator_with_role_program_grant_still_only_reads(
+    client, db, user_factory, session_factory,
+):
+    """Галочка на всю роль открывает АОП всем модераторам — только на просмотр."""
+    from app.models.section_access import SectionAccessRule
+
+    moderator = user_factory(vk_id=990_331, name="Модератор роли", role_name="модератор")
+    db.add(SectionAccessRule(section_key="program", role_id=moderator.role_id, is_open=True))
+    digest, event_type = _digest_with_type(db)
+    _login_as(client, session_factory, moderator)
+
+    assert client.get(f"/cabinet/staff/digest/{digest.id}/events").status_code == 200
+    resp = client.post(f"/cabinet/staff/digest/{digest.id}/events", json=_event_payload(event_type.id))
+    assert resp.status_code == 403
+
+
+def test_personal_grant_policy_writes_only_inside_workable_sections():
+    from app.services.section_access import moderator_may_use
+
+    granted = frozenset({"program", "lab3d"})
+    workable = frozenset({"program"})
+    assert moderator_may_use("POST", "/cabinet/staff/digest/2/events", {}, granted, workable)
+    assert moderator_may_use("POST", "/cabinet/upload-ticket-image", {}, granted, workable)
+    assert not moderator_may_use("POST", "/cabinet/3dlab", {}, granted, workable)
+    assert moderator_may_use("GET", "/cabinet/3dlab", {}, granted, workable)
+    assert not moderator_may_use("POST", "/cabinet/staff/digest/2/events", {}, granted)
