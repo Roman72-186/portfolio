@@ -214,6 +214,7 @@
 .dgst--edit .dgst-cal { max-width: none; }
 .dgst--edit > .dge-panel { grid-column: 2; grid-row: 1 / span 6; }
 .dge-preview-hint { margin-top: 12px; }
+.dge-tariffs { margin: 0 0 16px; }
 .dge-panel {
     position: sticky; top: 16px; display: grid; gap: 12px;
     padding-left: 24px; border-left: 1px solid var(--line);

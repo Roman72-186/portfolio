@@ -12,9 +12,9 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
 #}
 {% block title %}События — {{ digest.title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=55">
+<link rel="stylesheet" href="/static/css/program.css?v=58">
 <link rel="stylesheet" href="/static/css/tracker.css?v=85">
-<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=12">
 {% endblock %}
 {% block content %}
 <div class="trk-page ios-digest-events">
@@ -26,13 +26,41 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         <a class="btn-outline" href="/cabinet/staff/digest/types?digest={{ digest.id }}">Типы событий</a>
     </div>
 
+    {# Месяц глазами ученика одного тарифа — для скриншота (служба заботы
+       04.10.2026). Ссылки, а не кнопки: вид живёт в адресе и переживает
+       перезагрузку после сохранения (`reloadOnDay` меняет только `day`). #}
+    <nav class="nav-pill nav-pill--scroll dge-tariffs" aria-label="Чей месяц показать">
+        <a class="nav-pill-item{% if not tariff_view %} active{% endif %}" href="?"{% if not tariff_view %} aria-current="page"{% endif %}>Все события</a>
+        {% for key in tariff_choices %}
+        <a class="nav-pill-item{% if tariff_view == key %} active{% endif %}" href="?tariff={{ key|urlencode }}"{% if tariff_view == key %} aria-current="page"{% endif %}>{{ tariff_display[key] }}</a>
+        {% endfor %}
+    </nav>
+
     {% include "partials/digest_list.html" %}
-    <p class="trk-hint dge-preview-hint">Так месяц увидит ученик, только без событий чужих тарифов и без панели дня.</p>
+    {% if tariff_view %}
+    <p class="trk-hint dge-preview-hint">Так месяц видит ученик тарифа «{{ tariff_display[tariff_view] }}»: общие события и события его тарифа.</p>
+    {% else %}
+    <p class="trk-hint dge-preview-hint">Здесь все события месяца. Ученик видит только общие и события своего тарифа – переключите тариф сверху, чтобы увидеть его месяц.</p>
+    {% endif %}
 </div>
 
 <script type="application/json" id="digestEventsData">{{ events_payload|tojson }}</script>
 <script>
 (function () {
+    // Полоса тарифов на телефоне прокручивается вбок: выбранный тариф
+    // подводим в видимую часть, иначе «Уверенный максимум» обрезан краем, а
+    // экран снимают на скриншот. scrollLeft, не scrollIntoView — тот
+    // дёрнул бы и вертикальную прокрутку страницы.
+    var tariffStrip = document.querySelector('.dge-tariffs');
+    var tariffActive = tariffStrip && tariffStrip.querySelector('[aria-current]');
+    if (tariffActive) {
+        var stripBox = tariffStrip.getBoundingClientRect();
+        var activeBox = tariffActive.getBoundingClientRect();
+        if (activeBox.right > stripBox.right || activeBox.left < stripBox.left) {
+            tariffStrip.scrollLeft += activeBox.left - stripBox.left - (stripBox.width - activeBox.width) / 2;
+        }
+    }
+
     var base = '/cabinet/staff/digest/{{ digest.id }}/events';
     var events = JSON.parse(document.getElementById('digestEventsData').textContent || '[]');
     var calendar = document.querySelector('[data-digest-cal]');

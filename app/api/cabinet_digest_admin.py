@@ -49,6 +49,7 @@ from app.services.tracker import (
     digest_calendar,
     digest_heading,
     event_tariffs_map,
+    events_for_tariff,
     format_event_dates,
     get_digest,
     get_digest_assignee_ids,
@@ -529,14 +530,24 @@ def digest_events_page(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    tariff: str | None = None,
 ):
     """Редактор месяца: календарь первым экраном, тап по дате открывает день
     (владелец 04.10.2026: «нажимаю на нужную дату и внутри неё создаю
     событие»). Календарь — тот же партиал, что у ученика, поэтому редактор и
     есть предпросмотр; ученик видит из него только общие события и события
-    своего тарифа."""
+    своего тарифа.
+
+    `?tariff=` — месяц глазами ученика одного тарифа (служба заботы
+    04.10.2026: «видеть 3 отдельных календаря по тарифам, чтобы можно было
+    делать скрин»). Отбор тот же `events_for_tariff`, что у ученика, и он
+    режет всю страницу — сетку, список и панель дня, иначе панель показала
+    бы событие, которого нет в клетке. Незнакомый тариф — все события."""
     digest = _get_digest_or_404(db, digest_id)
     events = list_events(db, digest_id)
+    tariff_view = tariff if tariff in TARIFFS_CURRENT else None
+    if tariff_view:
+        events = events_for_tariff(db, events, tariff_view)
     tariffs = event_tariffs_map(db, [event.id for event in events])
     return templates.TemplateResponse(request, "cabinet_digest_events.html",
         {
@@ -546,6 +557,7 @@ def digest_events_page(
             "event_types": list_types(db),
             "tariff_choices": TARIFFS_CURRENT,
             "tariff_display": TARIFF_DISPLAY,
+            "tariff_view": tariff_view,
             "month_names": MONTH_NAMES,
             # Данные событий для формы — одним JSON, а не data-атрибутами:
             # строка списка общая с учеником, служебному в ней не место.

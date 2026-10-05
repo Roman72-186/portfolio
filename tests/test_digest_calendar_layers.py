@@ -97,9 +97,58 @@ def test_shorter_period_wins_the_layer_and_day_is_flagged(db, user_factory):
     days = _days(db, digest)
 
     assert days["2026-04-14"]["fill"]["color"] == "sky"
-    assert days["2026-04-14"]["more"] is True
+    # Спрятанный длинный период другого типа — цветная точка, а не серая
+    # (с 05.10.2026: цвет говорит, что именно ещё есть в этот день).
+    assert days["2026-04-14"]["extra"] == [{"color": "gray"}]
+    assert days["2026-04-14"]["more"] is False
     assert days["2026-04-20"]["fill"]["color"] == "gray"
+    assert days["2026-04-20"]["extra"] == []
     assert days["2026-04-20"]["more"] is False
+
+
+def test_other_types_of_the_day_become_colour_dots(db, user_factory):
+    """Служба заботы 04.10.2026: «если в один день несколько событий, то
+    ребёнку нужно видеть это в календаре, а то у него только один цвет».
+    Прод, 11.10: публикация и три занятия рисовались одним кружком."""
+    digest, types = _setup(db, user_factory)
+    publish = create_type(db, name="Публикация", color="sky", style="fill")
+    _add(db, digest, publish, "2 неделя", date(2026, 4, 11))
+    for title in ("Композиция", "Рисунок", "Р+К очно"):
+        _add(db, digest, types["lesson"], title, date(2026, 4, 11))
+
+    day = _days(db, digest)["2026-04-11"]
+
+    assert day["dot"]["color"] == "sky"
+    # Точка на тип, а не на событие: три занятия — одна фиолетовая.
+    assert day["extra"] == [{"color": "violet"}]
+    assert day["more"] is False
+
+
+def test_same_type_duplicates_keep_the_grey_more_flag(db, user_factory):
+    """Три занятия одного типа — цветом нового не сказать, остаётся серая точка."""
+    digest, types = _setup(db, user_factory)
+    for title in ("Композиция", "Рисунок"):
+        _add(db, digest, types["lesson"], title, date(2026, 4, 18))
+
+    day = _days(db, digest)["2026-04-18"]
+
+    assert day["dot"]["color"] == "violet"
+    assert day["extra"] == []
+    assert day["more"] is True
+
+
+def test_colour_dots_are_capped_and_overflow_is_flagged(db, user_factory):
+    digest, types = _setup(db, user_factory)
+    colours = ("sky", "pink", "mint", "teal", "coral")
+    for index, colour in enumerate(colours):
+        kind = create_type(db, name=f"Тип {index}", color=colour, style="fill")
+        _add(db, digest, kind, f"Событие {index}", date(2026, 4, 22))
+
+    day = _days(db, digest)["2026-04-22"]
+
+    assert day["dot"]["color"] == "sky"
+    assert [extra["color"] for extra in day["extra"]] == ["pink", "mint", "teal"]
+    assert day["more"] is True
 
 
 def test_one_day_period_is_solo(db, user_factory):

@@ -900,6 +900,10 @@ audio { max-width: 100%; }
     background: var(--blue-fill);
     color: #fff;
 }
+/* Полоса, которая не помещается в 375px, прокручивается вбок, а не ломает
+   страницу. Тот же приём, что `.act-tabs` на «Статистике активности». */
+.nav-pill--scroll { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.nav-pill--scroll .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
 
 /* ═══════════════════════════════════════
    CHIPS / TAGS

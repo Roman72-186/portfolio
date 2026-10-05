@@ -7,7 +7,8 @@
   расписано». Однодневное событие — кружок вокруг числа, период — таблетка
   через дни; заливка или контур и цвет берутся от типа события
   (`ScheduleEventType`), их настраивает Главный преподаватель. Слои клетки
-  (`fill`, `ring`, `dot`, `more`) раскладывает
+  (`fill`, `ring`, `dot`, `extra` — цветные точки типов, не попавших в
+  слои, `more`) раскладывает
   services/tracker.py::digest_calendar, сетка — .dgst-cal в program.css.
 
   Цвет не единственный носитель смысла: в списке рядом с плашкой дат стоит
@@ -42,6 +43,7 @@
             {% if day.fill %}<span class="dgst-band dgst-band--fill dgst-band--{{ day.fill.pos }}" aria-hidden="true"></span>{% endif %}
             {% if day.ring %}<span class="dgst-band dgst-band--ring dgst-band--{{ day.ring.pos }} dgst-color--{{ day.ring.color }}" aria-hidden="true"></span>{% endif %}
             <span class="dgst-cal-num{% if day.dot %} has-dot is-{{ day.dot.style }} dgst-color--{{ day.dot.color }}{% endif %}" aria-hidden="true">{{ day.number }}</span>
+            {% if day.extra %}<span class="dgst-cal-dots" aria-hidden="true">{% for extra in day.extra %}<span class="dgst-cal-dot dgst-color--{{ extra.color }}"></span>{% endfor %}</span>{% endif %}
             {% if day.more %}<span class="dgst-cal-more" aria-hidden="true"></span>{% endif %}
         {% if editable %}</button>{% else %}</div>{% endif %}
         {% endfor %}

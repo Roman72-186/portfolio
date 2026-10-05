@@ -523,3 +523,47 @@ def test_refused_event_save_leaves_no_audit_row(client, db, user_factory, sessio
     digest_id = _digest_id(client)
     assert client.post(f"{PAGE}/{digest_id}/events", json=_event_body(999_999)).status_code == 422
     assert db.query(AuditLog).filter(AuditLog.action.like("digest_event_%")).count() == 0
+
+
+def test_editor_shows_the_month_of_one_tariff(client, db, user_factory, session_factory):
+    """Служба заботы 04.10.2026: «видеть 3 отдельных календаря по тарифам,
+    чтобы можно было делать скрин». `?tariff=` режет страницу тем же отбором,
+    что у ученика: общие события плюс события тарифа — в сетке, списке и
+    данных панели дня. Незнакомый тариф — все события."""
+    import json
+    import re
+    from urllib.parse import quote
+
+    _staff_client(client, user_factory, session_factory)
+    lesson = _type(db, "Занятие", "violet", "fill")
+    digest_id = _digest_id(client)
+    for title, tariffs in (
+        ("Публикация недели", []),
+        ("Занятие для максимума", ["УВЕРЕННЫЙ МАКСИМУМ"]),
+        ("Разбор для «Я сам»", ["Я САМ"]),
+    ):
+        assert client.post(
+            f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id, title=title, tariffs=tariffs)
+        ).status_code == 200
+
+    def titles(url):
+        html = client.get(url).text
+        payload = re.search(r'id="digestEventsData">(.*?)</script>', html, re.S).group(1)
+        return html, sorted(item["title"] for item in json.loads(payload))
+
+    html, everything = titles(f"{PAGE}/{digest_id}/events")
+    assert everything == ["Занятие для максимума", "Публикация недели", "Разбор для «Я сам»"]
+    assert 'aria-current="page">Все события' in html
+    for label in ("Я сам", "Я с вами", "Уверенный максимум"):
+        assert f">{label}</a>" in html
+
+    html, self_only = titles(f"{PAGE}/{digest_id}/events?tariff={quote('Я САМ')}")
+    assert self_only == ["Публикация недели", "Разбор для «Я сам»"]
+    assert "Занятие для максимума" not in html
+    assert 'aria-current="page">Я сам' in html
+
+    _, with_you = titles(f"{PAGE}/{digest_id}/events?tariff={quote('Я С ВАМИ')}")
+    assert with_you == ["Публикация недели"]
+
+    _, unknown = titles(f"{PAGE}/{digest_id}/events?tariff=whatever")
+    assert unknown == everything

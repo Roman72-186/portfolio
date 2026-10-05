@@ -105,6 +105,7 @@
 .dgst-cal {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
     column-gap: 0; row-gap: 4px; max-width: 420px;
+    padding-bottom: 4px; /* точки последней строки висят ниже клетки */
 }
 .dgst-cal-dow {
     padding: 4px 0 6px; text-align: center; color: var(--muted);
@@ -142,6 +143,14 @@
     position: absolute; top: 4px; right: 18%; width: 5px; height: 5px;
     border-radius: 50%; background: var(--muted);
 }
+/* Точки под числом — остальные типы дня (digest_calendar → `extra`). Висят
+   ниже клетки, в зазоре между строками (row-gap 4px): внутри клетки они
+   легли бы на контур периода, который доходит до её нижнего края. */
+.dgst-cal-dots {
+    position: absolute; left: 0; right: 0; bottom: -3px;
+    display: flex; justify-content: center; gap: 3px; pointer-events: none;
+}
+.dgst-cal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dgst-color); }
 .dgst-cal-day.is-outside .dgst-cal-num { color: var(--muted); }
 .dgst-cal-day.is-outside .dgst-band { opacity: .55; }
 .dgst-cal-day.is-past:not(.is-outside):not(.has-fill) .dgst-cal-num:not(.has-dot) { color: var(--muted); }

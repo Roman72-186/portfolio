@@ -1723,6 +1723,10 @@ def format_event_dates(event: ScheduleEvent) -> str:
     )
 
 
+# Сколько цветных точек помещается под числом клетки шириной ~48px на 375px.
+DIGEST_DAY_EXTRA_LIMIT = 3
+
+
 def _layer_winner(events: list[ScheduleEvent]) -> ScheduleEvent:
     """Кто рисуется, если в одном слое дня встретились два события.
 
@@ -1769,7 +1773,7 @@ def digest_calendar(
         singles = [e for e in day_events if e.starts_on == e.ends_on]
         rings = [e for e in day_events if e.starts_on != e.ends_on and e.type.style == EVENT_STYLE_RING]
         fills = [e for e in day_events if e.starts_on != e.ends_on and e.type.style != EVENT_STYLE_RING]
-        shown = 0
+        drawn: list[ScheduleEvent] = []
         for layer, candidates in (("fill", fills), ("ring", rings)):
             day[layer] = None
             if not candidates:
@@ -1781,13 +1785,29 @@ def digest_calendar(
                 "color": event.type.color,
                 "pos": "solo" if opens and closes else "start" if opens else "end" if closes else "mid",
             }
-            shown += 1
+            drawn.append(event)
         day["dot"] = None
         if singles:
             event = _layer_winner(singles)
             day["dot"] = {"color": event.type.color, "style": event.type.style}
-            shown += 1
-        day["more"] = len(day_events) > shown
+            drawn.append(event)
+        # Точки под числом — типы дня, не попавшие ни в один слой (служба
+        # заботы 04.10.2026: «если в один день несколько событий, то ребёнку
+        # нужно видеть это в календаре, а то у него только один цвет»; на
+        # проде 11.10 у «Уверенного максимума» публикация и три занятия
+        # рисовались одним голубым кружком). Точка — на тип, а не на событие:
+        # три занятия одного цвета дали бы три одинаковые точки.
+        seen_types = {event.type_id for event in drawn}
+        extra_types = []
+        for event in sorted(day_events, key=lambda e: (e.sort_order, e.id)):
+            if event.type_id not in seen_types:
+                seen_types.add(event.type_id)
+                extra_types.append(event.type)
+        day["extra"] = [{"color": t.color} for t in extra_types[:DIGEST_DAY_EXTRA_LIMIT]]
+        # Серая точка — «в этот день есть ещё», когда цветом это не сказано:
+        # события того же типа, что уже нарисован, или типов больше лимита.
+        hidden = len(day_events) > len(drawn)
+        day["more"] = (hidden and not day["extra"]) or len(extra_types) > DIGEST_DAY_EXTRA_LIMIT
     return days
 
 
