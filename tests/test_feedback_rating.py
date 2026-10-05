@@ -276,6 +276,8 @@ def test_rating_goes_to_care_topic_with_thread(
     monkeypatch.setattr(settings, "telegram_care_chat_id", -100500)
     monkeypatch.setattr(settings, "telegram_care_thread_id", 77)
     curator, student, _task, submission = _setup_block(db, user_factory, base=991_071)
+    student.tg_username = "@uchenik_ocenka"
+    db.commit()
     _staff_says(client, session_factory, curator, submission)
     _close(client, session_factory, curator, submission)
 
@@ -287,7 +289,7 @@ def test_rating_goes_to_care_topic_with_thread(
     assert args[0] == -100500
     assert kwargs["message_thread_id"] == 77
     text = args[1]
-    for part in ("Оценка ОС: 4 из 5", "Ученик: Ученик Оценка", TARIFF_WITH_YOU, "Куратор Оценка",
+    for part in ("Оценка ОС: 4 из 5", "Ученик: Ученик Оценка · @uchenik_ocenka", TARIFF_WITH_YOU, "Куратор Оценка",
                  "Домашка: Домашка недели", "&lt;b&gt;Спасибо&lt;/b&gt;"):
         assert part in text, part
     # Ученик назван: топик — для команды (владелец 05.10.2026).

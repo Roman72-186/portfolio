@@ -48,6 +48,7 @@ from app.models.notification import Notification
 from app.models.task_block import BLOCK_TIMED
 from app.models.user import User
 from app.services import s3 as s3_service, telegram as telegram_service
+from app.services.contacts import normalize_tg_username
 from app.services.feedback import ROLE_STUDENT
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
@@ -289,11 +290,18 @@ def _person(user: User | None) -> str:
     return full or (user.name or f"id={user.id}")
 
 
+def _tg_handle(user: User | None) -> str:
+    """« · @ник» для служебного топика — чтобы сразу написать ученику
+    (владелец 05.10.2026). Ника нет — пусто."""
+    username = normalize_tg_username(user.tg_username or "") if user else ""
+    return f" · @{username}" if username else ""
+
+
 def care_topic_text(
     db: DBSession, rating: FeedbackRating, *, screenshot_links: bool = False,
 ) -> str:
     """Сообщение в служебный топик (О17): ученик, тариф, куратор, вид ОС и
-    задание, оценка, комментарий. Топик — закрытая группа команды, ученик в
+    задание, оценка, комментарий. Ученик — с ником Telegram. Топик — закрытая группа команды, ученик в
     нём назван (владелец 05.10.2026: «для детей обезличено, для нас нужно
     имя»); 04.10.2026 его убирали, и команда не могла понять, кто поставил
     оценку. Обезличен сотрудник — для ученика, в диалоге
@@ -306,7 +314,7 @@ def care_topic_text(
     esc = html.escape
     lines = [
         f"<b>Оценка ОС: {rating.score} из {RATING_MAX}</b>",
-        f"Ученик: {esc(_person(student))}",
+        f"Ученик: {esc(_person(student))}{esc(_tg_handle(student))}",
         f"Тариф: {esc((student.tariff if student else None) or '—')}",
         f"Куратор: {esc(_person(curator))}",
         f"{esc(FEEDBACK_TYPE_LABELS.get(rating.feedback_type, rating.feedback_type))}: "
