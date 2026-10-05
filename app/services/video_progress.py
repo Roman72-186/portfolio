@@ -43,18 +43,31 @@ def get_video_progress(
     return db.get(VideoProgress, (user_id, video_id))
 
 
+# Запас к недостающим секундам при возврате к незасчитанному ролику: первый
+# кусок после «плей» и задержки сети съедают несколько секунд.
+RESUME_SHORTFALL_MARGIN_SECONDS = 15.0
+
+
 def get_resume_position(progress: VideoProgress | None) -> float:
     if progress is None or progress.position_seconds < 5:
         return 0.0
-    # Точная позиция в конце возвращает в начало даже при ещё не подтверждённом
-    # просмотре: например, ученик перемотал в конец и ролик закончился раньше,
-    # чем набрался порог. Возврат в начало даёт досмотреть вместо тупика на
-    # duration/duration. Позицию рядом с концом сохраняем: ученик мог уйти за
-    # несколько секунд до `ended`.
-    if (
-        progress.duration_seconds is not None
-        and progress.position_seconds >= progress.duration_seconds
-    ):
+    duration = progress.duration_seconds
+    # Позиция за порогом, а просмотр не засчитан — честных секунд не хватило
+    # (перемотка, обрыв сети, второе устройство). Прод 05.10.2026: ученица в
+    # 5 секундах от конца 20-минутного ролика, засчитано 1106 из нужных 1224.
+    # Возврат на ту же позицию давал петлю: досмотрела 5 секунд, порога нет,
+    # обновила страницу — снова в конце (так застряли 66 пар ученик×ролик).
+    # Засчитывается любое проигранное время, поэтому ставим ученика ровно за
+    # столько секунд до конца, сколько не хватает, — досмотрел до конца, и
+    # зачёт есть. Правило зачёта при этом не мягче.
+    if progress.completed_at is None and duration:
+        threshold = watch_threshold_seconds(duration)
+        missing = threshold - progress.watched_seconds
+        if progress.position_seconds >= threshold and missing > 0:
+            return round(max(0.0, duration - missing - RESUME_SHORTFALL_MARGIN_SECONDS), 1)
+    # Засчитанный ролик, досмотренный до конца, начинается сначала. Позицию
+    # рядом с концом сохраняем: ученик мог уйти за несколько секунд до `ended`.
+    if duration is not None and progress.position_seconds >= duration:
         return 0.0
     return round(progress.position_seconds, 1)
 

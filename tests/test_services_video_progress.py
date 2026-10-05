@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.constants import VIDEO_WATCH_TAIL_SECONDS
 from app.models.video_progress import VideoProgress
 from app.services.video_progress import (
@@ -143,6 +145,8 @@ def test_rewatch_updates_last_completion_but_preserves_first(db, regular_user):
 
 
 def test_position_near_end_resumes_when_not_completed(db, regular_user):
+    """Ученик ушёл за несколько секунд до конца, честного времени хватает —
+    возвращаем на то же место."""
     save_video_progress(
         db,
         user_id=regular_user.id,
@@ -150,17 +154,38 @@ def test_position_near_end_resumes_when_not_completed(db, regular_user):
         position_seconds=595.0,
         duration_seconds=600.0,
         completed=False,
+        watched_seconds=590.0,
     )
 
     progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
     assert get_resume_position(progress) == 595.0
 
 
-def test_position_at_end_restarts_when_watch_time_is_not_completed(db, regular_user):
-    """Ролик может дойти до ended раньше порога watched_seconds на
-    ускорении. Возобновление с duration/duration не дало бы добрать
-    недостающее календарное время.
-    """
+@pytest.mark.parametrize("position", [575.0, 595.0, 600.0])
+def test_unconfirmed_watch_resumes_where_finishing_completes_it(db, regular_user, position):
+    """Прод 05.10.2026: позиция у конца, засчитано меньше порога — возврат на ту
+    же позицию давал петлю «досмотрела 5 секунд, порога нет». Ставим за столько
+    секунд до конца, сколько не хватает, плюс запас, и досмотр до конца
+    действительно засчитывается."""
+    save_video_progress(
+        db,
+        user_id=regular_user.id,
+        video_id=VIDEO_ID,
+        position_seconds=position,
+        duration_seconds=600.0,
+        completed=False,
+        watched_seconds=500.0,
+    )
+
+    progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
+    resume = get_resume_position(progress)
+    # Порог 570, не хватает 70: старт на 600 − 70 − 15.
+    assert resume == 515.0
+    assert progress.watched_seconds + (600.0 - resume) >= watch_threshold_seconds(600.0)
+
+
+def test_scrubbed_to_end_resumes_near_start(db, regular_user):
+    """Перемотал в конец почти без просмотра — досматривать почти всё."""
     save_video_progress(
         db,
         user_id=regular_user.id,
@@ -168,12 +193,11 @@ def test_position_at_end_restarts_when_watch_time_is_not_completed(db, regular_u
         position_seconds=600.0,
         duration_seconds=600.0,
         completed=False,
-        watched_seconds=300.0,
+        watched_seconds=10.0,
     )
 
     progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
-    assert progress.completed_at is None
-    assert get_resume_position(progress) == 0.0
+    assert get_resume_position(progress) == 25.0
 
 
 def test_save_video_progress_persists_watched_seconds(db, regular_user):
