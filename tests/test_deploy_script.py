@@ -390,3 +390,112 @@ def test_failed_predeploy_dump_stops_deploy(response):
     with pytest.raises(SystemExit) as exc:
         deploy.dump_database_before_deploy(client, "abc")
     assert "ОТМЕНА" in str(exc.value)
+
+
+# --- Блокировка выкатки (05.10.2026) -------------------------------------
+# Две выкатки разом дважды клали прод (03.10 и 05.10.2026): параллельные
+# `docker compose up -d --build` сталкивались на пересоздании `app`.
+
+
+def test_lock_is_taken_before_dump_and_released_after(monkeypatch):
+    """Порядок в `main`: замок до дампа, снятие — в finally до закрытия связи."""
+    source = Path(deploy.__file__).read_text(encoding="utf-8")
+    main_src = source[source.index("def main():"):]
+    assert main_src.index("acquire_deploy_lock(client") < main_src.index("dump_database_before_deploy(")
+    finally_src = main_src[main_src.index("    finally:"):]
+    assert finally_src.index("release_deploy_lock(") < finally_src.index("client.close()")
+    # Внутри выкатки связь не закрывается: иначе упавшая сборка оставила бы
+    # замок висеть до признания брошенным.
+    body = main_src[main_src.index("acquire_deploy_lock(client"):main_src.index("    finally:")]
+    assert "client.close()" not in body
+
+
+def test_lock_acquired_at_once(monkeypatch):
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: pytest.fail("ждать не нужно"))
+    client = _FakeClient([("ACQUIRED", 0)])
+
+    deploy.acquire_deploy_lock(client, "me", wait_seconds=60, poll_seconds=0)
+    assert client.calls == 1
+
+
+def test_lock_waits_for_neighbour_then_takes_it(monkeypatch, capsys):
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: None)
+    client = _FakeClient([
+        ("BUSY 90\nother-host pid=1 commit=abc", 0),
+        ("BUSY 100\nother-host pid=1 commit=abc", 0),
+        ("ACQUIRED", 0),
+    ])
+
+    deploy.acquire_deploy_lock(client, "me", wait_seconds=600, poll_seconds=0)
+    assert client.calls == 3
+    out = capsys.readouterr().out
+    assert out.count("Идёт другая выкатка") == 1
+    assert "other-host pid=1 commit=abc" in out
+
+
+def test_lock_gives_up_without_touching_prod(monkeypatch):
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: None)
+    client = _FakeClient([("BUSY 300\nother-host pid=1", 0)])
+
+    with pytest.raises(SystemExit) as exc:
+        deploy.acquire_deploy_lock(client, "me", wait_seconds=0, poll_seconds=0)
+    message = str(exc.value)
+    assert "ОТМЕНА" in message and "ничего не менялось" in message
+    assert "other-host pid=1" in message
+    assert deploy.DEPLOY_LOCK_DIR in message
+
+
+@pytest.mark.parametrize("reply", [("", 1), ("garbage", 0)])
+def test_lock_unknown_reply_stops_deploy(monkeypatch, reply):
+    client = _FakeClient([reply])
+
+    with pytest.raises(SystemExit):
+        deploy.acquire_deploy_lock(client, "me", wait_seconds=60, poll_seconds=0)
+
+
+def test_release_survives_connection_failure(capsys):
+    class _Broken:
+        def exec_command(self, command, timeout=None):
+            raise OSError("связь оборвалась")
+
+    deploy.release_deploy_lock(_Broken(), "me")
+    assert "замок выкатки не снят" in capsys.readouterr().out
+
+
+def _bash():
+    import shutil
+
+    path = shutil.which("bash")
+    if path is None or "system32" in path.lower():  # WSL-заглушка Windows — не тот bash
+        pytest.skip("нужен bash")
+    return path
+
+
+def _run(command):
+    import subprocess
+
+    argv = deploy.shlex.split(command)
+    assert argv[:2] == ["bash", "-c"]
+    out = subprocess.run([_bash(), "-c", argv[2]], capture_output=True, text=True, check=True)
+    return out.stdout.strip().splitlines()
+
+
+def test_lock_shell_commands_really_exclude_each_other(tmp_path, monkeypatch):
+    """Настоящие shell-команды замка на временном каталоге: второй не входит,
+    чужой не снимает, свой снимает, брошенный забирается."""
+    monkeypatch.setattr(deploy, "DEPLOY_LOCK_DIR", (tmp_path / "lock").as_posix())
+
+    assert _run(deploy.deploy_lock_acquire_command("first host pid=1"))[0] == "ACQUIRED"
+    busy = _run(deploy.deploy_lock_acquire_command("second"))
+    assert busy[0].startswith("BUSY ") and busy[1] == "first host pid=1"
+
+    assert _run(deploy.deploy_lock_release_command("second")) == ["NOT_OWNER"]
+    assert (tmp_path / "lock").exists()
+
+    monkeypatch.setattr(deploy, "DEPLOY_LOCK_STALE_SECONDS", 0)
+    stale = _run(deploy.deploy_lock_acquire_command("second"))
+    assert stale[0].startswith("STALE ") and stale[1] == "first host pid=1"
+
+    assert _run(deploy.deploy_lock_release_command("first host pid=1")) == ["NOT_OWNER"]
+    assert _run(deploy.deploy_lock_release_command("second")) == ["RELEASED"]
+    assert not (tmp_path / "lock").exists()

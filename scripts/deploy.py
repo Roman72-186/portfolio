@@ -43,11 +43,17 @@ HEAD и дополнительно сверяет sha256 всех отслежи
 миграции применяет старт контейнера, и без свежей копии плохая миграция
 стоила бы данных с ночного дампа. Не вышел дамп — деплой отменяется до
 заливки файлов, прод не тронут. Аварийный обход — `--no-db-dump`.
+
+**Одновременно идёт только одна выкатка** (`acquire_deploy_lock`, 05.10.2026):
+от дампа до маркера деплой держит замок `DEPLOY_LOCK_DIR` на сервере, второй
+ждёт до 15 минут и сдаётся, не тронув прод. Две сборки разом клали сайт 03.10
+и 05.10.2026. Замок старше 30 минут считается брошенным и забирается.
 """
 import hashlib
 import json
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -138,6 +144,118 @@ def dump_database_before_deploy(client, commit: str | None) -> str:
     path, _, size = out.rpartition("\n")[2].partition(" ")
     print(f"  {path} ({size} байт)")
     return path
+
+
+# Блокировка выкатки. Два `deploy.py` разом дважды клали прод (03.10 и
+# 05.10.2026, оба раза ~3 минуты 404): параллельные `docker compose up -d
+# --build` сталкиваются на пересоздании `app`, старый контейнер исчезает,
+# новый остаётся `Created` под временным именем. Урок 03.10 «проверять руками,
+# нет ли чужой сборки» не сработал: параллельные сессии друг о друге не знают.
+# `mkdir` атомарен — кто создал каталог, тот и выкатывает, второй ждёт.
+# Каталог вне REMOTE_DIR: иначе попал бы в контекст сборки и в список лишних
+# файлов полного деплоя.
+DEPLOY_LOCK_DIR = "/var/lock/portfolio-saas-deploy"
+# Дольше любой честной выкатки (дамп и сборка ждут до 600 с, здоровье до
+# 200 с): такой замок оставил оборвавшийся деплой, его забирают с предупреждением.
+DEPLOY_LOCK_STALE_SECONDS = 30 * 60
+DEPLOY_LOCK_WAIT_SECONDS = 15 * 60
+DEPLOY_LOCK_POLL_SECONDS = 10
+
+
+def deploy_lock_acquire_command(token: str) -> str:
+    """Первая строка ответа: `ACQUIRED`, `STALE <возраст>` или `BUSY <возраст>`;
+    вторая — кто держал замок."""
+    script = (
+        f"lock={shlex.quote(DEPLOY_LOCK_DIR)}; token={shlex.quote(token)}; "
+        'if mkdir "$lock" 2>/dev/null; then '
+        """printf '%s\\n' "$token" > "$lock/owner"; echo ACQUIRED; exit 0; fi; """
+        'now=$(date +%s); born=$(stat -c %Y "$lock" 2>/dev/null || echo "$now"); '
+        "age=$((now - born)); "
+        'holder=$(cat "$lock/owner" 2>/dev/null); '
+        f'if [ "$age" -ge {DEPLOY_LOCK_STALE_SECONDS} ]; then rm -rf "$lock"; '
+        'if mkdir "$lock" 2>/dev/null; then '
+        """printf '%s\\n' "$token" > "$lock/owner"; echo "STALE $age"; echo "$holder"; exit 0; fi; fi; """
+        'echo "BUSY $age"; echo "$holder"'
+    )
+    return "bash -c " + shlex.quote(script)
+
+
+def deploy_lock_release_command(token: str) -> str:
+    """Снимает только свой замок: чужой, перехваченный как устаревший, не трогает."""
+    script = (
+        f"lock={shlex.quote(DEPLOY_LOCK_DIR)}; token={shlex.quote(token)}; "
+        'if [ "$(cat "$lock/owner" 2>/dev/null)" = "$token" ]; then '
+        'rm -rf "$lock"; echo RELEASED; else echo NOT_OWNER; fi'
+    )
+    return "bash -c " + shlex.quote(script)
+
+
+def _deploy_lock_reply(client, command: str) -> tuple[str, int, str]:
+    _, stdout, _ = client.exec_command(command, timeout=30)
+    lines = stdout.read().decode("utf-8", errors="replace").strip().splitlines()
+    head = lines[0].split() if lines else []
+    state = head[0] if head else ""
+    age = int(head[1]) if len(head) > 1 and head[1].isdigit() else 0
+    holder = lines[1].strip() if len(lines) > 1 else ""
+    return state, age, holder
+
+
+def acquire_deploy_lock(
+    client,
+    token: str,
+    *,
+    wait_seconds: int = DEPLOY_LOCK_WAIT_SECONDS,
+    poll_seconds: int = DEPLOY_LOCK_POLL_SECONDS,
+) -> None:
+    """Взять замок выкатки или ждать, пока его отпустит соседняя выкатка.
+
+    Не дождались — SystemExit до дампа и заливки: прод не тронут.
+    """
+    deadline = time.monotonic() + wait_seconds
+    announced = False
+    while True:
+        state, age, holder = _deploy_lock_reply(client, deploy_lock_acquire_command(token))
+        if state == "ACQUIRED":
+            print("  Блокировка выкатки взята.")
+            return
+        if state == "STALE":
+            print(
+                f"  ВНИМАНИЕ: замок выкатки висел {age // 60} мин и забран как брошенный "
+                f"({holder or 'владелец неизвестен'}). Если тот деплой оборвался на "
+                "середине — проверьте, что контейнер app поднят."
+            )
+            return
+        if state != "BUSY":
+            raise SystemExit(
+                "\nОТМЕНА: не удалось взять блокировку выкатки, на сервере ничего не менялось.\n"
+                f"Ответ сервера: {state or '(пусто)'}"
+            )
+        if time.monotonic() >= deadline:
+            raise SystemExit(
+                "\nОТМЕНА: другая выкатка не закончилась за "
+                f"{wait_seconds // 60} мин, на сервере ничего не менялось.\n"
+                f"Замок держит: {holder or 'владелец неизвестен'} ({age // 60} мин).\n"
+                "Если та выкатка точно мертва — снять замок руками:\n"
+                f"  ssh apparchi-prod rm -rf {DEPLOY_LOCK_DIR}"
+            )
+        if not announced:
+            print(
+                f"  Идёт другая выкатка: {holder or 'владелец неизвестен'} "
+                f"({age // 60} мин). Ждём до {wait_seconds // 60} мин..."
+            )
+            announced = True
+        time.sleep(poll_seconds)
+
+
+def release_deploy_lock(client, token: str) -> None:
+    try:
+        state, _, _ = _deploy_lock_reply(client, deploy_lock_release_command(token))
+    except Exception as exc:  # сбой связи не должен прятать исход самой выкатки
+        print(f"  ВНИМАНИЕ: замок выкатки не снят ({exc}). Через "
+              f"{DEPLOY_LOCK_STALE_SECONDS // 60} мин его заберёт следующий деплой.")
+        return
+    if state != "RELEASED":
+        print("  ВНИМАНИЕ: замок выкатки к концу деплоя был уже не наш — его забрали как брошенный.")
 
 
 def assert_known_host(host: str) -> None:
@@ -846,119 +964,129 @@ def main():
         client.close()
         return
 
-    # Дамп — до первого изменения на сервере: не вышел, значит прод не тронут.
-    if skip_db_dump:
-        print("\n  Дамп базы перед деплоем пропущен (--no-db-dump).")
-    else:
-        dump_database_before_deploy(client, state.get("commit"))
-
-    # Create remote dir
+    # Замок — до дампа: дамп тоже ходит в compose, а заливка, сборка и маркер
+    # соседней выкатки не должны перемежаться с нашими (05.10.2026).
+    lock_token = (
+        f"{socket.gethostname()} pid={os.getpid()} "
+        f"commit={(state.get('commit') or 'nocommit')[:8]} "
+        f"files={len(target_files) or 'все'} "
+        f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+    )
+    acquire_deploy_lock(client, lock_token)
     try:
-        sftp.stat(REMOTE_DIR)
-    except FileNotFoundError:
-        sftp.mkdir(REMOTE_DIR)
+        # Дамп — до первого изменения на сервере: не вышел, значит прод не тронут.
+        if skip_db_dump:
+            print("\n  Дамп базы перед деплоем пропущен (--no-db-dump).")
+        else:
+            dump_database_before_deploy(client, state.get("commit"))
 
-    # Читаем маркер до заливки: поштучный режим опирается на коммит прошлого
-    # полного деплоя, а после записи нового маркера прежний уже не восстановить.
-    previous_marker = read_version_marker(sftp)
-
-    if target_files:
-        print(f"Uploading {len(target_files)} file(s) -> {REMOTE_DIR}")
-        upload_files(sftp, target_files)
-    else:
-        # Источник множества — индекс git, а не обход файловой системы. Обход
-        # увозил на сервер всё игнорируемое: `.env.prod` с боевыми секретами,
-        # `.env.deploy` (а он по умолчанию целится в чужой прод), `.codegraph/`,
-        # `.pytest_cache/`, `visual_smoke.db`, выгрузки `reports/`. Причём
-        # `--status` их не показывал — он сверяет ровно `git ls-files`, поэтому
-        # проверка молчала именно про те файлы, которых на сервере быть не должно.
-        # Теперь заливается и сверяется одно и то же множество.
-        tracked = deployable_files()
-        if not tracked:
-            raise SystemExit(
-                "\nОТМЕНА: список файлов пуст — git недоступен или каталог не репозиторий.\n"
-                "Полный деплой берёт файлы из индекса git, вслепую дерево не заливается."
-            )
-        print(f"Uploading {len(tracked)} tracked file(s) -> {REMOTE_DIR}")
-        upload_files(sftp, [LOCAL_DIR / path for path in tracked])
-        warn_about_stale_remote_files(client, tracked)
-
-    if sync_env:
-        sync_app_env(sftp, allow_remove=allow_remove)
-    else:
-        print("\n  Окружение сервера не трогаем (нужен флаг --sync-env).")
-
-    print("\nDone! Files uploaded.")
-
-    # Build and start (пересобирает только app, db и redis не трогает)
-    print(f"\nBuilding and starting containers (compose: {COMPOSE_FILE})...")
-    stdin, stdout, stderr = client.exec_command(
-        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
-        timeout=600,
-    )
-    output = stdout.read().decode("utf-8", errors="replace")
-    errors = stderr.read().decode("utf-8", errors="replace")
-    build_status = stdout.channel.recv_exit_status()
-    # Windows console cp1251 не печатает часть UTF-символов — заменяем их на ?
-    def _safe_print(text):
+        # Create remote dir
         try:
-            print(text)
-        except UnicodeEncodeError:
-            enc = sys.stdout.encoding or "cp1251"
-            print(text.encode(enc, errors="replace").decode(enc, errors="replace"))
-    _safe_print(output)
-    if errors:
-        _safe_print("STDERR: " + errors)
+            sftp.stat(REMOTE_DIR)
+        except FileNotFoundError:
+            sftp.mkdir(REMOTE_DIR)
 
-    # Маркер пишется только после успешной сборки и читает её код возврата.
-    # Иначе упавший build оставлял бы на сервере запись о новом коммите при
-    # работающем старом образе, а `--status` подтверждал бы, что всё выкачено.
-    if build_status != 0:
-        sftp.close()
-        client.close()
-        raise SystemExit(
-            f"\nОТМЕНА: сборка на сервере вернула код {build_status}.\n"
-            "Маркер версии не записан, но прод УЖЕ ЗАТРОНУТ: каталог app/ примонтирован\n"
-            "в контейнер, поэтому залитые шаблоны отдаются ученикам сразу, а Python-код\n"
-            "останется старым до ближайшего рестарта — после которого поедет новый код\n"
-            "без пересобранного образа.\n"
-            "Разберите вывод выше и либо доведите деплой до конца, либо выкатите\n"
-            "предыдущий коммит целиком."
+        # Читаем маркер до заливки: поштучный режим опирается на коммит прошлого
+        # полного деплоя, а после записи нового маркера прежний уже не восстановить.
+        previous_marker = read_version_marker(sftp)
+
+        if target_files:
+            print(f"Uploading {len(target_files)} file(s) -> {REMOTE_DIR}")
+            upload_files(sftp, target_files)
+        else:
+            # Источник множества — индекс git, а не обход файловой системы. Обход
+            # увозил на сервер всё игнорируемое: `.env.prod` с боевыми секретами,
+            # `.env.deploy` (а он по умолчанию целится в чужой прод), `.codegraph/`,
+            # `.pytest_cache/`, `visual_smoke.db`, выгрузки `reports/`. Причём
+            # `--status` их не показывал — он сверяет ровно `git ls-files`, поэтому
+            # проверка молчала именно про те файлы, которых на сервере быть не должно.
+            # Теперь заливается и сверяется одно и то же множество.
+            tracked = deployable_files()
+            if not tracked:
+                raise SystemExit(
+                    "\nОТМЕНА: список файлов пуст — git недоступен или каталог не репозиторий.\n"
+                    "Полный деплой берёт файлы из индекса git, вслепую дерево не заливается."
+                )
+            print(f"Uploading {len(tracked)} tracked file(s) -> {REMOTE_DIR}")
+            upload_files(sftp, [LOCAL_DIR / path for path in tracked])
+            warn_about_stale_remote_files(client, tracked)
+
+        if sync_env:
+            sync_app_env(sftp, allow_remove=allow_remove)
+        else:
+            print("\n  Окружение сервера не трогаем (нужен флаг --sync-env).")
+
+        print("\nDone! Files uploaded.")
+
+        # Build and start (пересобирает только app, db и redis не трогает)
+        print(f"\nBuilding and starting containers (compose: {COMPOSE_FILE})...")
+        stdin, stdout, stderr = client.exec_command(
+            f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
+            timeout=600,
         )
+        output = stdout.read().decode("utf-8", errors="replace")
+        errors = stderr.read().decode("utf-8", errors="replace")
+        build_status = stdout.channel.recv_exit_status()
+        # Windows console cp1251 не печатает часть UTF-символов — заменяем их на ?
+        def _safe_print(text):
+            try:
+                print(text)
+            except UnicodeEncodeError:
+                enc = sys.stdout.encoding or "cp1251"
+                print(text.encode(enc, errors="replace").decode(enc, errors="replace"))
+        _safe_print(output)
+        if errors:
+            _safe_print("STDERR: " + errors)
 
-    if not wait_until_healthy(client):
-        sftp.close()
-        client.close()
-        raise SystemExit(
-            "\nОТМЕНА: контейнер не вышел в состояние healthy.\n"
-            "Маркер версии не записан, поэтому --status не покажет этот коммит\n"
-            "выкаченным. Но прод УЖЕ ЗАТРОНУТ: файлы залиты, а каталог app/\n"
-            "примонтирован в контейнер — шаблоны отдаются новые. Чаще всего сюда\n"
-            "приводит упавшая миграция: alembic upgrade head идёт в CMD, то есть\n"
-            "уже после успешной сборки.\n"
-            f"Логи: docker compose -f {COMPOSE_FILE} logs --tail=100 app"
+        # Маркер пишется только после успешной сборки и читает её код возврата.
+        # Иначе упавший build оставлял бы на сервере запись о новом коммите при
+        # работающем старом образе, а `--status` подтверждал бы, что всё выкачено.
+        if build_status != 0:
+            sftp.close()
+            raise SystemExit(
+                f"\nОТМЕНА: сборка на сервере вернула код {build_status}.\n"
+                "Маркер версии не записан, но прод УЖЕ ЗАТРОНУТ: каталог app/ примонтирован\n"
+                "в контейнер, поэтому залитые шаблоны отдаются ученикам сразу, а Python-код\n"
+                "останется старым до ближайшего рестарта — после которого поедет новый код\n"
+                "без пересобранного образа.\n"
+                "Разберите вывод выше и либо доведите деплой до конца, либо выкатите\n"
+                "предыдущий коммит целиком."
+            )
+
+        if not wait_until_healthy(client):
+            sftp.close()
+            raise SystemExit(
+                "\nОТМЕНА: контейнер не вышел в состояние healthy.\n"
+                "Маркер версии не записан, поэтому --status не покажет этот коммит\n"
+                "выкаченным. Но прод УЖЕ ЗАТРОНУТ: файлы залиты, а каталог app/\n"
+                "примонтирован в контейнер — шаблоны отдаются новые. Чаще всего сюда\n"
+                "приводит упавшая миграция: alembic upgrade head идёт в CMD, то есть\n"
+                "уже после успешной сборки.\n"
+                f"Логи: docker compose -f {COMPOSE_FILE} logs --tail=100 app"
+            )
+
+        write_version_marker(
+            sftp,
+            state,
+            target_files=target_files,
+            dirty_ok=allow_dirty,
+            previous=previous_marker,
         )
+        sftp.close()
 
-    write_version_marker(
-        sftp,
-        state,
-        target_files=target_files,
-        dirty_ok=allow_dirty,
-        previous=previous_marker,
-    )
-    sftp.close()
+        # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
+        print("\nFlushing Redis cache...")
+        stdin, stdout, stderr = client.exec_command(
+            f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} exec -T redis sh -c 'redis-cli -a \"$REDIS_PASSWORD\" FLUSHDB' 2>&1",
+            timeout=30,
+        )
+        redis_out = stdout.read().decode().strip()
+        redis_err = stderr.read().decode().strip()
+        print(f"  Redis FLUSHDB: {redis_out or redis_err or '(no output)'}")
 
-    # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
-    print("\nFlushing Redis cache...")
-    stdin, stdout, stderr = client.exec_command(
-        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} exec -T redis sh -c 'redis-cli -a \"$REDIS_PASSWORD\" FLUSHDB' 2>&1",
-        timeout=30,
-    )
-    redis_out = stdout.read().decode().strip()
-    redis_err = stderr.read().decode().strip()
-    print(f"  Redis FLUSHDB: {redis_out or redis_err or '(no output)'}")
-
-    client.close()
+    finally:
+        release_deploy_lock(client, lock_token)
+        client.close()
 
 
 if __name__ == "__main__":
