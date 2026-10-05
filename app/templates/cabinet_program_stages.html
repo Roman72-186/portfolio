@@ -1,5 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Этапы программы{% endblock %}
+{# Один экран на два уровня программы: этапы и периоды над ними (владелец
+   06.10.2026: «настройки как у этапов»). `level` — 'stage' или 'period',
+   роуты `program_stages` и `program_periods`. #}
+{% block title %}{{ 'Периоды программы' if level == 'period' else 'Этапы программы' }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
@@ -9,42 +12,65 @@
 Этапы учебной программы (владелец 24.09.2026) — крупный период («месяц»,
 «Предобучение»), группирующий несколько циклов подряд. Отдельной сущности под
 этап нет: это `LearningTopic(kind='stage')`, тот же приём, что уже применён к
-циклу. Удаление этапа в этой версии не реализовано намеренно (нельзя убрать
-этап, внутри которого ещё есть живые циклы) — сама возможность добавляется
-отдельной задачей, когда понадобится. Стили — общие `program.css`, своего
-<style> здесь нет: за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
+циклу. С 06.10.2026 над этапом есть период (`kind='period'`): Период → Этап →
+Цикл → задания, этап выбирает свой период в этой же форме. Заданий на
+периоде нет. Удаление этапа и периода в этой версии не реализовано намеренно
+(нельзя убрать рамку, внутри которой ещё есть живые циклы) — сама возможность
+добавляется отдельной задачей, когда понадобится. Стили — общие `program.css`,
+своего <style> здесь нет: за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
 #}
 {# «Смотреть» в АОП (`section_access`, шаг 2 плана тонких доступов) — без
    кнопок записи: сервер ответил бы на них 403. Скрипт выходит сам, если
    формы нет. #}
 {% set prg_edit = can(user, "program") %}
+{% set is_period = level == 'period' %}
+{% set noun = 'период' if is_period else 'этап' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
 
     <div class="prg-head">
         <div>
+            {% if is_period %}
+            <h1>Периоды программы</h1>
+            <p class="prg-hint">
+                Период – самый крупный отрезок курса: «Предобучение», «1 семестр».
+                Внутри него этапы, их привязывают к периоду на вкладке «Этапы».
+            </p>
+            {% else %}
             <h1>Этапы программы</h1>
             <p class="prg-hint">
                 Этап объединяет несколько циклов подряд — например, «Предобучение» или
                 учебный месяц. Внутри этапа преподаватель заводит циклы на вкладке «Циклы»
                 и привязывает их к этапу выпадающим списком.
             </p>
+            {% endif %}
         </div>
         {% if prg_edit %}
-        <button type="button" class="btn-blue" data-stage-new>Новый этап</button>
+        <button type="button" class="btn-blue" data-stage-new>Новый {{ noun }}</button>
         {% endif %}
     </div>
 
+    {% if period_filter %}
+    {# Пришли кнопкой «Этапы периода» со вкладки «Периоды» — список сужен. #}
+    <p class="prg-hint">
+        Этапы периода «{{ period_filter.label }}».
+        <a href="/cabinet/staff/program/stages">Показать все этапы</a>
+    </p>
+    {% endif %}
+
     {# Форма свёрнута до кнопки «Новый этап» или «Название и даты» — тот же
        приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
-       не должен прятаться под раскрытой формой. Пока этапов нет, форма открыта. #}
+       не должен прятаться под раскрытой формой. Пока записей нет, форма открыта. #}
     {% if prg_edit %}
-    <form class="prg-form" data-stage-form{% if stages %} hidden{% endif %}>
-        <h2 data-stage-form-title>Новый этап</h2>
+    <form class="prg-form" data-stage-form{% if stages %} hidden{% endif %}
+          data-endpoint="/cabinet/staff/program/{{ 'periods' if is_period else 'stages' }}"
+          data-new-title="Новый {{ noun }}"
+          data-save-error="Не удалось сохранить {{ noun }}.">
+        <h2 data-stage-form-title>Новый {{ noun }}</h2>
         <input type="hidden" data-s-id value="">
         <label class="prg-field">
             <input type="text" data-s-title maxlength="200" autocomplete="off"
-                   aria-label="Название этапа, необязательно" placeholder="Название этапа, необязательно">
+                   aria-label="Название, необязательно" placeholder="Название {{ 'периода' if is_period else 'этапа' }}, необязательно">
         </label>
         <label class="prg-field">
             <textarea data-rich-text data-s-description maxlength="5000"
@@ -54,13 +80,26 @@
         <div class="prg-grid2">
             <label class="prg-field">
                 <span>С какого</span>
-                <input type="date" data-s-start aria-label="Начало этапа">
+                <input type="date" data-s-start aria-label="Начало">
             </label>
             <label class="prg-field">
                 <span>По какое включительно</span>
-                <input type="date" data-s-end aria-label="Конец этапа">
+                <input type="date" data-s-end aria-label="Конец">
             </label>
         </div>
+        {% if not is_period %}
+        <label class="prg-field">
+            <span>Период (необязательно)</span>
+            {# Внутри периода новый этап по умолчанию заводится в него же. #}
+            <select data-s-period aria-label="Период"
+                    data-s-period-default="{{ period_filter.id if period_filter else '' }}">
+                <option value="">Без периода</option>
+                {% for period in periods %}
+                <option value="{{ period.id }}"{% if period_filter and period.id == period_filter.id %} selected{% endif %}>{{ period.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        {% endif %}
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-s-published checked>
             <span>Показывать ученикам</span>
@@ -80,21 +119,30 @@
         <article class="prg-item" data-stage-id="{{ stage.id }}">
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if stage.is_published else 'Скрыт' }}</span>
+                {% if stage.period_label %}<span class="prg-badge">{{ stage.period_label }}</span>{% endif %}
                 <h3>{{ stage.label }}</h3>
                 {% if stage.description %}<p>{{ stage.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
                     <span>с {{ stage.starts_on }}</span>
                     {% if stage.ends_on %}<span>по {{ stage.ends_on }}</span>{% endif %}
+                    {% if is_period %}
+                    <span>{{ stage.stages_count }} {{ stage.stages_count|plural('этап', 'этапа', 'этапов') }} внутри</span>
+                    {% else %}
                     <span>{{ stage.cycles_count }} {{ stage.cycles_count|plural('цикл', 'цикла', 'циклов') }} внутри</span>
+                    {% endif %}
                 </div>
             </div>
             <div class="prg-item-actions">
+                {% if is_period %}
+                <a class="btn-blue" href="/cabinet/staff/program/stages?period={{ stage.id }}">Этапы периода</a>
+                {% else %}
                 {# Со списком, суженным до этого этапа (аудит 29.09.2026: ссылка вела на
                    все циклы подряд). #}
                 <a class="btn-blue" href="/cabinet/staff/program/cycles?stage={{ stage.id }}">Циклы этапа</a>
                 {# Задания прямо на этапе («Портфолио») — с 29.09.2026, до этого
                    у персонала на них не было входа. #}
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ stage.id }}">Задания этапа ({{ stage.items_count }})</a>
+                {% endif %}
                 {% if prg_edit %}
                 <button type="button" class="btn-outline" data-stage-edit
                         data-payload='{{ stage|tojson }}'>Название и даты</button>
@@ -102,6 +150,10 @@
             </div>
         </article>
         {% endfor %}
+        {% elif is_period %}
+        <p class="prg-hint">Пока ни одного периода. Этапы без периода работают как раньше.</p>
+        {% elif period_filter %}
+        <p class="prg-hint">В этом периоде пока нет этапов. Привяжите этап к периоду в форме «Название и даты».</p>
         {% else %}
         <p class="prg-hint">Пока ни одного этапа. Циклы без этапа остаются общим архивом, как раньше.</p>
         {% endif %}
@@ -123,6 +175,8 @@
         description: form.querySelector('[data-s-description]'),
         start: form.querySelector('[data-s-start]'),
         end: form.querySelector('[data-s-end]'),
+        // Выбор периода есть только у этапа.
+        period: form.querySelector('[data-s-period]'),
         published: form.querySelector('[data-s-published]')
     };
     var message = form.querySelector('[data-stage-message]');
@@ -138,8 +192,11 @@
         window.RichTextField.refresh(fields.description);
         fields.start.value = '';
         fields.end.value = '';
+        if (fields.period) {
+            fields.period.value = fields.period.getAttribute('data-s-period-default') || '';
+        }
         fields.published.checked = true;
-        formTitle.textContent = 'Новый этап';
+        formTitle.textContent = form.getAttribute('data-new-title');
         message.textContent = '';
     }
 
@@ -165,6 +222,7 @@
             window.RichTextField.refresh(fields.description);
             fields.start.value = data.starts_on || '';
             fields.end.value = data.ends_on || '';
+            if (fields.period) fields.period.value = data.period_id || '';
             fields.published.checked = !!data.is_published;
             formTitle.textContent = 'Название и даты';
             returnTo = button;
@@ -188,23 +246,25 @@
             message.textContent = 'Заполните обе даты периода.';
             return;
         }
-        window.csrfFetch('/cabinet/staff/program/stages' + (id ? '/' + id : ''), {
+        var body = {
+            title: fields.title.value.trim(),
+            description: fields.description.value.trim() || null,
+            starts_on: fields.start.value,
+            ends_on: fields.end.value,
+            is_published: fields.published.checked
+        };
+        if (fields.period) body.period_id = fields.period.value ? Number(fields.period.value) : null;
+        window.csrfFetch(form.getAttribute('data-endpoint') + (id ? '/' + id : ''), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                title: fields.title.value.trim(),
-                description: fields.description.value.trim() || null,
-                starts_on: fields.start.value,
-                ends_on: fields.end.value,
-                is_published: fields.published.checked
-            })
+            body: JSON.stringify(body)
         }).then(function (resp) {
             if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
             return resp.json();
         }).then(function () {
             window.location.reload();
         }).catch(function (err) {
-            message.textContent = err.message || 'Не удалось сохранить этап.';
+            message.textContent = err.message || form.getAttribute('data-save-error');
         });
     });
 })();

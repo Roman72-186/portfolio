@@ -65,6 +65,7 @@ def _program_pages(db, owner):
     future_day = (TODAY + timedelta(days=3)).isoformat()
     return {
         "/cabinet/staff/program/stages": "data-stage-new",
+        "/cabinet/staff/program/periods": "data-stage-new",
         "/cabinet/staff/program/cycles": "data-cycle-delete",
         f"/cabinet/staff/program/cycles/{cycle.id}": "data-open-form",
         f"/cabinet/staff/program/{future_day}": 'data-open-form="',

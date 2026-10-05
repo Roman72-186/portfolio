@@ -30,6 +30,12 @@
     <a class="prg-tab{% if _prg_stages %} is-active{% endif %}"
        href="/cabinet/staff/program/stages"
        {% if _prg_stages %}aria-current="page"{% endif %}>Этапы</a>
+    {# Периоды (владелец 06.10.2026) — уровень над этапами: Период → Этап →
+       Цикл → задания. Стоят после «Этапов»: от мелкого к крупному. #}
+    {% set _prg_periods = _prg_p.startswith('/cabinet/staff/program/periods') %}
+    <a class="prg-tab{% if _prg_periods %} is-active{% endif %}"
+       href="/cabinet/staff/program/periods"
+       {% if _prg_periods %}aria-current="page"{% endif %}>Периоды</a>
     <span class="prg-tabs-sep" aria-hidden="true"></span>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"
