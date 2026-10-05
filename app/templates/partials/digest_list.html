@@ -7,9 +7,8 @@
   расписано». Однодневное событие — кружок вокруг числа, период — таблетка
   через дни; заливка или контур и цвет берутся от типа события
   (`ScheduleEventType`), их настраивает Главный преподаватель. Слои клетки
-  (`fill`, `ring`, `dot` — кружок дня, при нескольких типах однодневных
-  событий поделённый на доли `parts`, `extra` — цветные точки типов, не
-  попавших в слои, `more`) раскладывает
+  (`fill`, `ring`, `dot`, `extra` — точки под числом, по одной на каждое
+  событие дня сверх нарисованных) раскладывает
   services/tracker.py::digest_calendar, сетка — .dgst-cal в program.css.
 
   Цвет не единственный носитель смысла: в списке рядом с плашкой дат стоит
@@ -25,11 +24,20 @@
   (`tracker.month_list_events`). В редакторе у чужого события вместо
   «Изменить» ссылка в его дайджест: правится оно только там.
 
+  У ученика день с событиями — кнопка: тап открывает окно со всеми
+  событиями дня, как в календаре айфона (владелец 05.10.2026: «будем
+  показывать что не одно событие и при нажатии показывать небольшое
+  всплывающее окно»). Окно одно на календарь, вид — общий `.hint-pop` из
+  base.css, данные — `digest_day_events`, скрипт — static/js/digest-day-pop.js.
+  В редакторе вместо окна — панель дня.
+
   Ждёт в контексте: digest, digest_heading, digest_events, digest_days,
   digest_weekday_labels, format_event_dates, format_event_time;
-  необязательно digest_editable и digest_neighbors ({id: дайджест}).
+  необязательно digest_editable, digest_neighbors ({id: дайджест}) и
+  digest_day_events (окно дня у ученика).
 #}
 {% set editable = digest_editable|default(false) %}
+{% set day_pop = not editable and digest_day_events is defined %}
 <section class="dgst{% if editable %} dgst--edit{% endif %}" aria-label="Дайджест месяца">
     <header class="dgst-head">
         <span class="dgst-kicker">Дайджест месяца</span>
@@ -43,23 +51,28 @@
         {% endfor %}
         {% for day in digest_days %}
         {% set day_label = day.number ~ ' число' ~ (': ' ~ (day.events | map(attribute='title') | join(', ')) if day.events else '') %}
-        {% if editable %}<button type="button"{% else %}<div{% endif %}
+        {% set is_button = editable or (day_pop and day.events) %}
+        {% if is_button %}<button type="button"{% else %}<div{% endif %}
             class="dgst-cal-day{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if day.fill %} has-fill dgst-color--{{ day.fill.color }}{% endif %}"
             data-dow="{{ day.dow }}" data-day="{{ day.iso }}"
-            {% if editable or day.events %}aria-label="{{ day_label }}"{% endif %}>
+            {% if editable or day.events %}aria-label="{{ day_label }}"{% endif %}
+            {% if day_pop and day.events %}data-day-pop aria-haspopup="dialog" aria-expanded="false" aria-controls="dgstDayPop"{% endif %}>
             {% if day.fill %}<span class="dgst-band dgst-band--fill dgst-band--{{ day.fill.pos }}" aria-hidden="true"></span>{% endif %}
             {% if day.ring %}<span class="dgst-band dgst-band--ring dgst-band--{{ day.ring.pos }} dgst-color--{{ day.ring.color }}" aria-hidden="true"></span>{% endif %}
-            {% if day.dot and day.dot.parts|length > 1 %}
-            {# Несколько типов в один день — кружок делится на доли по цветам. #}
-            <span class="dgst-cal-num has-dot is-split is-split-{{ day.dot.parts|length }}" aria-hidden="true">{% for part in day.dot.parts %}<span class="dgst-cal-part is-{{ part.style }} dgst-color--{{ part.color }}"></span>{% endfor %}<span class="dgst-cal-digit">{{ day.number }}</span></span>
-            {% else %}
             <span class="dgst-cal-num{% if day.dot %} has-dot is-{{ day.dot.style }} dgst-color--{{ day.dot.color }}{% endif %}" aria-hidden="true">{{ day.number }}</span>
-            {% endif %}
             {% if day.extra %}<span class="dgst-cal-dots" aria-hidden="true">{% for extra in day.extra %}<span class="dgst-cal-dot dgst-color--{{ extra.color }}"></span>{% endfor %}</span>{% endif %}
-            {% if day.more %}<span class="dgst-cal-more" aria-hidden="true"></span>{% endif %}
-        {% if editable %}</button>{% else %}</div>{% endif %}
+        {% if is_button %}</button>{% else %}</div>{% endif %}
         {% endfor %}
     </div>
+    {% if day_pop %}
+    <div class="hint-pop dgst-pop" id="dgstDayPop" role="dialog" aria-labelledby="dgstDayPopTitle" hidden data-day-pop-box>
+        <button type="button" class="hint-pop-close" aria-label="Закрыть">&times;</button>
+        <p class="dgst-pop-title" id="dgstDayPopTitle"></p>
+        <ul class="dgst-pop-list"></ul>
+    </div>
+    <script type="application/json" id="digestDayEvents">{{ digest_day_events|tojson }}</script>
+    <script src="/static/js/digest-day-pop.js?v=1" defer></script>
+    {% endif %}
     {% endif %}
     {% if editable %}{% include "partials/digest_day_panel.html" %}{% endif %}
 

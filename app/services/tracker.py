@@ -1831,8 +1831,8 @@ def month_list_events(
     ]
 
 
-# Сколько цветов помещается в клетке шириной ~48px на 375px: долей кружка дня
-# и точек под числом.
+# Сколько точек помещается под числом клетки шириной ~48px на 375px. Больше
+# трёх точек не рисуем: все события дня перечисляет окно по тапу.
 DIGEST_DAY_EXTRA_LIMIT = 3
 
 
@@ -1840,8 +1840,8 @@ def _layer_winner(events: list[ScheduleEvent]) -> ScheduleEvent:
     """Кто рисуется, если в одном слое дня встретились два события.
 
     Короче — конкретнее: недельное окно внутри месячного видно, а месячное
-    продолжается по краям. Остальные события дня читаются в списке под
-    календарём, у клетки для них флаг `more`.
+    продолжается по краям. Остальные события дня — точки под числом и окно
+    по тапу.
     """
     return min(
         events,
@@ -1897,43 +1897,50 @@ def digest_calendar(
             drawn.append(event)
         day["dot"] = None
         if singles:
-            # Кружок дня делится на доли по типам однодневных событий
-            # (служба заботы, второй раз 05.10.2026: «ребёнку нужно видеть
-            # это в календаре, а то у него только один цвет»). Точки под
-            # числом, сделанные 05.10 утром, на телефоне не читались: 5px
-            # под кружком, а сам кружок — одного цвета. Первым идёт тип
-            # самого короткого события, как в слоях; долей не больше трёх.
-            winner = _layer_winner(singles)
-            parts = [winner]
-            for event in sorted(singles, key=lambda e: (e.sort_order, e.id)):
-                if len(parts) >= DIGEST_DAY_EXTRA_LIMIT:
-                    break
-                if all(event.type_id != part.type_id for part in parts):
-                    parts.append(event)
-            day["dot"] = {
-                "color": winner.type.color,
-                "style": winner.type.style,
-                "parts": [{"color": e.type.color, "style": e.type.style} for e in parts],
-            }
-            drawn.extend(parts)
-        # Точки под числом — типы дня, не попавшие ни в один слой (служба
-        # заботы 04.10.2026: «если в один день несколько событий, то ребёнку
-        # нужно видеть это в календаре, а то у него только один цвет»; на
-        # проде 11.10 у «Уверенного максимума» публикация и три занятия
-        # рисовались одним голубым кружком). Точка — на тип, а не на событие:
-        # три занятия одного цвета дали бы три одинаковые точки.
-        seen_types = {event.type_id for event in drawn}
-        extra_types = []
-        for event in sorted(day_events, key=lambda e: (e.sort_order, e.id)):
-            if event.type_id not in seen_types:
-                seen_types.add(event.type_id)
-                extra_types.append(event.type)
-        day["extra"] = [{"color": t.color} for t in extra_types[:DIGEST_DAY_EXTRA_LIMIT]]
-        # Серая точка — «в этот день есть ещё», когда цветом это не сказано:
-        # события того же типа, что уже нарисован, или типов больше лимита.
-        hidden = len(day_events) > len(drawn)
-        day["more"] = (hidden and not day["extra"]) or len(extra_types) > DIGEST_DAY_EXTRA_LIMIT
+            event = _layer_winner(singles)
+            day["dot"] = {"color": event.type.color, "style": event.type.style}
+            drawn.append(event)
+        # Точки под числом — остальные события дня, по точке на событие и
+        # цветом его типа, как в календаре айфона (владелец 05.10.2026: «будем
+        # показывать что не одно событие и при нажатии показывать небольшое
+        # всплывающее окно»). Что именно в этот день, ученик читает в окне по
+        # тапу (`partials/digest_list.html`), поэтому точка — только знак
+        # «здесь не одно». Служба заботы 04.10.2026: «ребёнку нужно видеть
+        # это в календаре, а то у него только один цвет»; 11.10 у
+        # «Уверенного максимума» — публикация и три занятия, три точки.
+        # Кружок, поделённый на доли по цветам, пробовали 05.10 вечером —
+        # владелец: «не красиво, не iOS стиль».
+        drawn_ids = {event.id for event in drawn}
+        rest = [
+            event for event in sorted(day_events, key=lambda e: (e.sort_order, e.id))
+            if event.id not in drawn_ids
+        ]
+        day["extra"] = [{"color": event.type.color} for event in rest[:DIGEST_DAY_EXTRA_LIMIT]]
     return days
+
+
+def digest_day_events(days: list[dict]) -> dict[str, list[dict]]:
+    """События по дням для окна, которое открывается тапом по числу у
+    ученика (владелец 05.10.2026). Только дни, где события есть; события —
+    уже отобранные по тарифу, как и сетка (`digest_calendar` получает тот же
+    список). Ключ — ISO-дата клетки."""
+    payload: dict[str, list[dict]] = {}
+    for day in days:
+        if not day["events"]:
+            continue
+        payload[day["iso"]] = [
+            {
+                "title": event.title,
+                "type": event.type.name,
+                "color": event.type.color,
+                "style": event.type.style,
+                "time": format_event_time(event),
+                "dates": "" if event.starts_on == event.ends_on else format_event_dates(event),
+                "url": event.meeting_url or "",
+            }
+            for event in sorted(day["events"], key=lambda e: (e.time_from is None, e.time_from, e.sort_order, e.id))
+        ]
+    return payload
 
 
 def delete_event(db: Session, event: ScheduleEvent) -> None:

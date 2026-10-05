@@ -121,6 +121,7 @@ from app.services.tracker import (
     active_digest_for_student,
     active_goal_for_student,
     digest_calendar,
+    digest_day_events,
     digest_events_with_edges,
     digest_heading,
     effective_week_start,
@@ -182,6 +183,9 @@ def cabinet_tracker(
     if user.get("role_rank", 0) <= STUDENT_ROLE_RANK:
         digest_events = events_for_tariff(db, digest_events, user.get("tariff"))
     goal = active_goal_for_student(db, user["user_id"], today=today)
+    digest_days = (
+        digest_calendar(digest, digest_events, today=today) if digest is not None else []
+    )
 
     overdue = [e for e in entries if e["status"] == "overdue"]
     upcoming = [e for e in entries if e["status"] == "upcoming"]
@@ -225,10 +229,9 @@ def cabinet_tracker(
         # над списком (вернулась 01.10.2026, отменяет «календарь не нужен» от
         # 17.09). Сетку строит общая month_days, та же, что у преподавателя.
         "digest_heading": digest_heading(digest) if digest is not None else None,
-        "digest_days": (
-            digest_calendar(digest, digest_events, today=today)
-            if digest is not None else []
-        ),
+        "digest_days": digest_days,
+        # Окно дня по тапу на число (владелец 05.10.2026).
+        "digest_day_events": digest_day_events(digest_days),
         "digest_weekday_labels": WEEKDAY_LABELS,
         "format_event_dates": format_event_dates,
         "format_event_time": format_event_time,

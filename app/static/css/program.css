@@ -139,33 +139,35 @@
 .dgst-cal-day.has-fill .dgst-cal-num { color: var(--dgst-ink); }
 .dgst-cal-num.has-dot.is-fill { color: var(--dgst-ink); background: var(--dgst-soft); box-shadow: inset 0 0 0 1.5px var(--dgst-color); }
 .dgst-cal-num.has-dot.is-ring { box-shadow: inset 0 0 0 2px var(--dgst-color); background: var(--surface); }
-/* Кружок, поделённый по типам дня (digest_calendar → `dot.parts`; служба
-   заботы 05.10.2026: точки под числом на телефоне не читались, ребёнок видел
-   «только один цвет»). Каждая доля — целый кружок своего цвета, обрезанный
-   clip-path: две — половины, три — сектора по 120° от верха. Число — над
-   долями своим слоем, цветом текста: чернила у долей разные. */
-.dgst-cal-num.is-split { color: var(--text); }
-.dgst-cal-part { position: absolute; inset: 0; border-radius: 50%; }
-.dgst-cal-part.is-fill { background: var(--dgst-soft); box-shadow: inset 0 0 0 2px var(--dgst-color); }
-.dgst-cal-part.is-ring { background: var(--surface); box-shadow: inset 0 0 0 2px var(--dgst-color); }
-.is-split-2 .dgst-cal-part:nth-child(1) { clip-path: inset(0 50% 0 0); }
-.is-split-2 .dgst-cal-part:nth-child(2) { clip-path: inset(0 0 0 50%); }
-.is-split-3 .dgst-cal-part:nth-child(1) { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 78.9%); }
-.is-split-3 .dgst-cal-part:nth-child(2) { clip-path: polygon(50% 50%, 100% 78.9%, 100% 100%, 0 100%, 0 78.9%); }
-.is-split-3 .dgst-cal-part:nth-child(3) { clip-path: polygon(50% 50%, 0 78.9%, 0 0, 50% 0); }
-.dgst-cal-digit { position: relative; }
-.dgst-cal-more {
-    position: absolute; top: 4px; right: 18%; width: 5px; height: 5px;
-    border-radius: 50%; background: var(--muted);
-}
-/* Точки под числом — остальные типы дня (digest_calendar → `extra`). Висят
-   ниже клетки, в зазоре между строками (row-gap 4px): внутри клетки они
-   легли бы на контур периода, который доходит до её нижнего края. */
+/* Точки под числом — остальные события дня, по точке на событие
+   (digest_calendar → `extra`), как в календаре айфона: знак «здесь не одно»,
+   а что именно — в окне по тапу. Висят ниже клетки, в зазоре между строками
+   (row-gap 4px): внутри клетки они легли бы на контур периода, который
+   доходит до её нижнего края. */
 .dgst-cal-dots {
-    position: absolute; left: 0; right: 0; bottom: -3px;
+    position: absolute; left: 0; right: 0; bottom: -4px;
     display: flex; justify-content: center; gap: 3px; pointer-events: none;
 }
-.dgst-cal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dgst-color); }
+.dgst-cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dgst-color); }
+
+/* День с событиями у ученика — кнопка, тап открывает окно дня
+   (static/js/digest-day-pop.js). Открытый день обведён, как выбранный в
+   редакторе. */
+.dgst-cal-day[data-day-pop] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.dgst-cal-day[data-day-pop]:focus-visible { outline: none; }
+.dgst-cal-day[data-day-pop]:focus-visible .dgst-cal-num,
+.dgst-cal-day[data-day-pop].is-open .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Окно дня — общий .hint-pop из base.css (fixed, тень, крестик), внутри
+   список событий: цвет типа, название, «тип · время». */
+.dgst-pop-title { margin: 0 0 8px; color: var(--muted); font: 600 12px/1.3 var(--font-body); }
+.dgst-pop-title::first-letter { text-transform: uppercase; }
+.dgst-pop-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.dgst-pop-item { display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 8px; align-items: center; }
+.dgst-pop-name { color: var(--text); font: 600 14px/1.3 var(--font-body); overflow-wrap: anywhere; }
+.dgst-pop-meta, .dgst-pop-link { grid-column: 2; }
+.dgst-pop-meta { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.dgst-pop-link { justify-self: start; margin-top: 2px; color: var(--blue-text); font-weight: 600; font-size: 13px; }
 .dgst-cal-day.is-outside .dgst-cal-num { color: var(--muted); }
 .dgst-cal-day.is-outside .dgst-band { opacity: .55; }
 .dgst-cal-day.is-past:not(.is-outside):not(.has-fill) .dgst-cal-num:not(.has-dot) { color: var(--muted); }

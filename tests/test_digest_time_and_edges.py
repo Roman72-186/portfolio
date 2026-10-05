@@ -304,27 +304,50 @@ def test_split_title_takes_time_out_of_the_title():
     assert split_title("Сдача до 10.11") is None
 
 
-# ── Несколько типов в один день — кружок на доли (05.10.2026) ───────────
+# ── Окно дня по тапу на число (05.10.2026) ──────────────────────────────
 
-def test_student_calendar_splits_the_circle_by_types(client, db, user_factory, session_factory):
-    """Служба заботы второй раз 05.10.2026: «ребёнку нужно видеть это в
-    календаре, а то у него только один цвет» — точка 5px под кружком на
-    телефоне не читалась. Кружок дня делится на доли цветов типов."""
+def test_student_day_with_events_opens_a_popup(client, db, user_factory, session_factory):
+    """Владелец 05.10.2026: «будем показывать что не одно событие и при
+    нажатии показывать небольшое всплывающее окно». День с событиями у
+    ученика — кнопка, под числом точки остальных событий, данные окна —
+    все события дня с типом и временем, по времени."""
     student = _student(client, user_factory, session_factory, vk_id=440_103)
     today = today_msk()
     digest = create_digest(db, title="Месяц", year=today.year, month=today.month,
                            assign_to_all=True, user_id=student.id)
     publish = create_type(db, name="Публикация", color="sky", style="fill")
     lesson = create_type(db, name="Занятие", color="violet", style="fill")
-    for event_type, title in ((publish, "2 неделя"), (lesson, "Рисунок"), (lesson, "Композиция")):
-        create_event(db, digest.id, type_id=event_type.id, title=title, note=None,
-                     starts_on=today, ends_on=today, meeting_url=None)
+    create_event(db, digest.id, type_id=publish.id, title="2 неделя", note=None,
+                 starts_on=today, ends_on=today, meeting_url=None)
+    create_event(db, digest.id, type_id=lesson.id, title="Рисунок", note=None,
+                 starts_on=today, ends_on=today, meeting_url="https://zoom.us/j/1",
+                 time_from=time(12, 0), time_to=time(13, 30))
+    create_event(db, digest.id, type_id=lesson.id, title="Композиция", note=None,
+                 starts_on=today, ends_on=today, meeting_url=None, time_from=time(9, 30))
     publish_digest(digest, user_id=student.id)
     db.commit()
 
     html = client.get("/cabinet/tracker").text
-    cell = html.split(f'data-day="{today.isoformat()}"', 1)[1].split("</div>", 1)[0]
-    assert "dgst-cal-num has-dot is-split is-split-2" in cell
-    assert cell.index("dgst-cal-part is-fill dgst-color--sky") < cell.index("dgst-cal-part is-fill dgst-color--violet")
-    assert f'<span class="dgst-cal-digit">{today.day}</span>' in cell
-    assert "dgst-cal-more" in cell
+    cell = html.split(f'data-day="{today.isoformat()}"', 1)[1].split("</button>", 1)[0]
+    assert 'data-day-pop aria-haspopup="dialog" aria-expanded="false"' in cell
+    assert cell.count("dgst-cal-dot dgst-color--") == 2
+    assert 'id="dgstDayPop"' in html and "/static/js/digest-day-pop.js" in html
+
+    raw = re.search(r'id="digestDayEvents">(.*?)</script>', html, re.S).group(1)
+    day = json.loads(raw)[today.isoformat()]
+    assert [(e["title"], e["type"], e["time"]) for e in day] == [
+        ("Композиция", "Занятие", "с 09:30"),
+        ("Рисунок", "Занятие", "12:00–13:30"),
+        ("2 неделя", "Публикация", ""),
+    ]
+    assert day[1]["url"] == "https://zoom.us/j/1"
+
+
+def test_editor_has_no_popup_it_has_the_day_panel(client, db, user_factory, session_factory):
+    _staff(client, user_factory, session_factory)
+    lesson = _lesson(db)
+    digest_id = _new_digest(client, title="Октябрь", year=2026, month=10)
+    client.post(f"{PAGE}/{digest_id}/events", json=_body(lesson.id))
+    html = client.get(f"{PAGE}/{digest_id}/events").text
+    assert "data-day-pop" not in html
+    assert "digest-day-pop.js" not in html
