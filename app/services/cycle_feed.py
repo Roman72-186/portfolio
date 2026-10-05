@@ -765,8 +765,12 @@ def _passed_videos(
 def archive_for_student(
     db: Session, *, user_id: int, user_tariff: str | None, today: date
 ) -> list[dict]:
-    """Архив ученика — видео прошедших этапов, циклов и заданий (владелец
-    04.10.2026), сгруппированные этап → месяц → цикл, от ранних к поздним.
+    """Архив ученика — прошедшие циклы и видео прошедших этапов, циклов и
+    заданий (владелец 04.10.2026), сгруппированные этап → месяц → цикл, от
+    ранних к поздним. С 05.10.2026 пройденный цикл в архиве целиком: кнопка
+    `can_open` открывает его ленту `/cabinet/learning?cycle=` (закончившийся
+    цикл она показывает только на просмотр, выполненный идущий — как обычно),
+    ролики остаются списком под ней.
 
     Прецедент: ученица не нашла прошлые видео («на платформе их уже нет»).
     Полоса циклов на экране обучения показывает только текущий этап, и со
@@ -822,7 +826,13 @@ def archive_for_student(
         )
         period_over = last < today or cycle_done_by_user(db, user_id, cycle)
         videos = _passed_videos(db, steps, period_over=period_over, now=now, seen=seen)
-        if not videos:
+        # Пройденный цикл идёт в архив целиком, даже без роликов (служба
+        # заботы 05.10.2026: «должна быть полная архивация периода со всеми
+        # заданиями, видео, голосовыми, работами»). Кнопка ведёт в ту же ленту
+        # `?cycle=`: задания, свои работы и ответы преподавателя там уже есть.
+        # Идущий невыполненный цикл попадает сюда только роликами с вышедшим
+        # сроком — кнопки у него нет, он и так в карусели.
+        if not steps or not (videos or period_over):
             continue
         group = group_for(stage)
         month_label = f"{MONTHS[first.month - 1].capitalize()} {first.year}"
@@ -830,6 +840,7 @@ def archive_for_student(
             group["months"].append({"label": month_label, "cycles": []})
         group["months"][-1]["cycles"].append({
             "id": cycle.id, "title": cycle_label(db, cycle), "videos": videos,
+            "can_open": period_over,
         })
 
     # Задания прямо на этапе — тем же фильтром, что лента этапа в

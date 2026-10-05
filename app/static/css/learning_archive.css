@@ -23,3 +23,7 @@
 }
 
 .lrn-archive-videos { display: grid; gap: 10px; }
+
+/* «Открыть цикл целиком» (05.10.2026) — ссылка `.lrn-card-cta` из tracker.css
+   между названием цикла и его роликами. */
+.lrn-archive-open { margin: 0 0 10px; }

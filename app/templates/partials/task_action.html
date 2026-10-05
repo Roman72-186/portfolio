@@ -72,6 +72,11 @@
 <a class="btn-blue" href="/cabinet/homework/{{ task.id }}">Начать</a>
 {% endif %}
 
-{% if not autocloses %}
+{# Пройденный цикл (`feed.is_archive`) — только просмотр: живую кнопку
+   «Завершить задание» сервер отклонил бы («Цикл пройден»), остаётся лишь
+   отметка «Задание выполнено». Тот же запрет у заданий с блоками в
+   `cabinet_learning.html`. Прецедент 05.10.2026: архив стал вести в ленту
+   прошлого цикла, и кнопка у задания без блоков оказалась на виду. #}
+{% if not autocloses and (entry.status == 'done' or not (feed is defined and feed.is_archive)) %}
 {% include "partials/task_completion_button.html" %}
 {% endif %}

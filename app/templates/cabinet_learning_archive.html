@@ -3,13 +3,16 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=86">
 <link rel="stylesheet" href="/static/css/video_rows.css?v=1">
-<link rel="stylesheet" href="/static/css/learning_archive.css?v=1">
+<link rel="stylesheet" href="/static/css/learning_archive.css?v=2">
 {% endblock %}
 {% block content %}
 {#
-Архив ученика (владелец 04.10.2026): только видео прошедших этапов, циклов и
+Архив ученика (владелец 04.10.2026): видео прошедших этапов, циклов и
 заданий, этап → месяц → цикл. Полоса циклов на экране обучения показывает
 только текущий этап, и со сменой этапа прошлые ролики пропадали из виду.
+С 05.10.2026 у пройденного цикла кнопка «Открыть цикл целиком» — его лента
+`/cabinet/learning?cycle=`: задания, свои работы, ответы преподавателя
+(служба заботы: «должна быть полная архивация периода»).
 Сборка — `cycle_feed.archive_for_student`, своих правил видимости у экрана
 нет. Ролик открывается обычным плеером `/cabinet/videos/{id}`, строка и
 отметка просмотра — те же, что в каталоге (`video_rows.css`,
@@ -39,7 +42,7 @@
 <div class="lrn-page ios-learning">
     <div class="lrn-hero">
         <h1>Архив</h1>
-        <p>Видео из выполненных и прошедших циклов и заданий. Плеер помнит, где ты остановился.</p>
+        <p>Прошлые циклы целиком: задания, твои работы, ответы преподавателя и видео. Плеер помнит, где ты остановился.</p>
     </div>
 
     {% if periods %}
@@ -56,7 +59,10 @@
             <p class="lrn-archive-month">{{ month.label }}</p>
             {% for cycle in month.cycles %}
             <h3 class="lrn-archive-cycle" data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</h3>
-            {{ video_rows(cycle.videos) }}
+            {% if cycle.can_open %}
+            <a class="lrn-card-cta lrn-archive-open" href="/cabinet/learning?cycle={{ cycle.id }}">Открыть цикл целиком</a>
+            {% endif %}
+            {% if cycle.videos %}{{ video_rows(cycle.videos) }}{% endif %}
             {% endfor %}
             {% endfor %}
         </section>
@@ -64,7 +70,7 @@
     </div>
     {% else %}
     <div class="lrn-empty">
-        <p>Видео появятся здесь, когда выполнишь первый цикл или он закончится. Ролик задания с прошедшим сроком тоже окажется здесь.</p>
+        <p>Цикл попадёт сюда, когда закончится или когда ты его выполнишь. Сюда же уйдёт видео задания, у которого прошёл срок.</p>
         <a class="lrn-card-cta" href="/cabinet/learning">Открыть текущие задания</a>
     </div>
     {% endif %}

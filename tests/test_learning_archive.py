@@ -1,4 +1,5 @@
-"""Архив ученика: видео прошедших этапов, циклов и заданий (владелец 04.10.2026).
+"""Архив ученика: прошедшие циклы и видео прошедших этапов, циклов и заданий
+(владелец 04.10.2026; цикл целиком — служба заботы 05.10.2026).
 
 Прецедент: ученица не нашла видео прошлых циклов («на платформе их уже нет»).
 Полоса циклов на экране обучения показывает только текущий этап, и со сменой
@@ -166,7 +167,7 @@ def test_draft_and_unready_videos_are_skipped(db, regular_user):
     _video_task(db, regular_user, pre1, _video(db, "Черновик", is_published=False))
     _video_task(db, regular_user, pre1, _video(db, "Кодируется", status="processing"))
 
-    assert _archive(db, regular_user) == []
+    assert _titles(_archive(db, regular_user)) == []
 
 
 def test_block_closed_by_another_tariff_is_skipped(db, regular_user):
@@ -174,7 +175,7 @@ def test_block_closed_by_another_tariff_is_skipped(db, regular_user):
     _, pre1, _, _ = _program(db, regular_user)
     _video_task(db, regular_user, pre1, _video(db, "Чужой тариф"), tariffs=[TARIFF_SELF])
 
-    assert _archive(db, regular_user) == []
+    assert _titles(_archive(db, regular_user)) == []
 
 
 def test_cycle_locked_by_debt_is_skipped(db, regular_user):
@@ -237,8 +238,8 @@ def test_page_lists_videos_with_player_links(auth_client, db):
     assert f'href="/cabinet/videos/{video.id}"' in resp.text
     assert "Узлы" in resp.text
     assert "Смотреть" in resp.text
-    # Ссылок в ленту циклов в архиве больше нет — только ролики.
-    assert "/cabinet/learning?cycle=" not in resp.text
+    assert f'href="/cabinet/learning?cycle={pre1.id}"' in resp.text
+    assert "Открыть цикл целиком" in resp.text
 
 
 def test_empty_archive_explains_when_videos_appear(auth_client):
@@ -247,4 +248,89 @@ def test_empty_archive_explains_when_videos_appear(auth_client):
     resp = client.get("/cabinet/learning/archive")
 
     assert resp.status_code == 200
-    assert "Видео появятся здесь" in resp.text
+    assert "Цикл попадёт сюда" in resp.text
+
+
+def _cycles(periods):
+    return {
+        cycle["id"]: cycle
+        for period in periods for month in period["months"] for cycle in month["cycles"]
+    }
+
+
+def test_finished_cycle_without_videos_is_in_archive_with_open_button(db, regular_user):
+    """Служба заботы 05.10.2026: в архиве должен быть весь период — задания и
+    работы, а не только ролики. Цикл без видео тоже в архиве, кнопкой."""
+    _, pre1, _, _ = _program(db, regular_user)
+    _task(db, regular_user, pre1, title="Наброски")
+
+    cycles = _cycles(_archive(db, regular_user))
+
+    assert cycles[pre1.id]["can_open"] is True
+    assert cycles[pre1.id]["videos"] == []
+
+
+def test_completed_running_cycle_can_be_opened(db, regular_user):
+    _, _, _, sem1 = _program(db, regular_user)
+    required = _task(db, regular_user, sem1, title="Сдать работу", required=True)
+    close_task_for_user(db, required, regular_user.id, source="manual")
+    db.commit()
+
+    assert _cycles(_archive(db, regular_user))[sem1.id]["can_open"] is True
+
+
+def test_running_cycle_with_passed_due_video_has_no_open_button(db, regular_user):
+    """Идущий невыполненный цикл в архиве только роликом с вышедшим сроком:
+    он и так в карусели, кнопка «целиком» ему ни к чему."""
+    _, _, _, sem1 = _program(db, regular_user)
+    _video_task(db, regular_user, sem1, _video(db, "Срок прошёл"),
+                due_at=datetime.now(timezone.utc) - timedelta(days=1))
+    _task(db, regular_user, sem1, title="Сдать работу", required=True)
+
+    assert _cycles(_archive(db, regular_user))[sem1.id]["can_open"] is False
+
+
+def test_finished_cycle_without_tasks_is_not_in_archive(db, regular_user):
+    _program(db, regular_user)
+
+    assert _archive(db, regular_user) == []
+
+
+def test_cycle_locked_by_debt_has_no_open_button(db, regular_user):
+    """Вперёд нельзя: запертый долгом цикл не попадает в архив и кнопкой."""
+    pre, pre1, _, _ = _program(db, regular_user)
+    _task(db, regular_user, pre1, title="Долг", required=True)
+    pre2 = _topic(db, regular_user, title="Цикл 2", parent=pre,
+                  starts_on=TODAY - timedelta(days=30), ends_on=TODAY - timedelta(days=12))
+    _task(db, regular_user, pre2, title="За долгом")
+
+    assert pre2.id not in _cycles(_archive(db, regular_user))
+
+
+def test_open_button_leads_to_read_only_cycle(auth_client, db):
+    """Кнопка ведёт в ленту прошлого цикла: задания на месте, изменить нельзя."""
+    client, user = auth_client
+    _, pre1, _, _ = _program(db, user)
+    _task(db, user, pre1, title="Наброски")
+
+    archive = client.get("/cabinet/learning/archive")
+    feed = client.get(f"/cabinet/learning?cycle={pre1.id}")
+
+    assert f'href="/cabinet/learning?cycle={pre1.id}"' in archive.text
+    assert feed.status_code == 200
+    assert "Наброски" in feed.text
+    assert "Пройденный цикл" in feed.text
+    # Кнопку сервер отклонил бы: цикл пройден (05.10.2026).
+    assert "data-toggle-task" not in feed.text
+
+
+def test_read_only_cycle_keeps_done_mark(auth_client, db):
+    client, user = auth_client
+    _, pre1, _, _ = _program(db, user)
+    done = _task(db, user, pre1, title="Наброски")
+    close_task_for_user(db, done, user.id, source="manual")
+    db.commit()
+
+    feed = client.get(f"/cabinet/learning?cycle={pre1.id}")
+
+    assert "Задание выполнено" in feed.text
