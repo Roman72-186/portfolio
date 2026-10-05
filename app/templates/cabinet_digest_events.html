@@ -146,10 +146,18 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         title.textContent = dayLabel(selectedDay);
         eventsOnDay(selectedDay).forEach(function (item) {
             var li = document.createElement('li');
-            var button = document.createElement('button');
-            button.type = 'button';
+            // Событие соседнего дайджеста (край месяца) правится только в
+            // своём дайджесте — здесь ссылка туда, на тот же день.
+            var button;
+            if (item.foreign_digest) {
+                button = document.createElement('a');
+                button.href = '/cabinet/staff/digest/' + item.foreign_digest.id + '/events?day=' + selectedDay;
+            } else {
+                button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.eventEdit = String(item.id);
+            }
             button.className = 'dge-day-event';
-            button.dataset.eventEdit = String(item.id);
             var swatch = document.createElement('span');
             swatch.className = 'dgst-swatch dgst-color--' + item.type_color + (item.type_style === 'ring' ? ' is-ring' : '');
             swatch.setAttribute('aria-hidden', 'true');
@@ -158,7 +166,9 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
             name.textContent = item.title;
             var meta = document.createElement('span');
             meta.className = 'dge-day-event-meta';
-            meta.textContent = item.type_name + ' · ' + item.dates;
+            meta.textContent = item.type_name + ' · ' + item.dates
+                + (item.time ? ' · ' + item.time : '')
+                + (item.foreign_digest ? ' · в дайджесте «' + item.foreign_digest.title + '»' : '');
             button.appendChild(swatch);
             button.appendChild(name);
             button.appendChild(meta);
@@ -221,6 +231,8 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         });
         field('starts').value = item ? item.starts_on : selectedDay;
         field('ends').value = item ? item.ends_on : selectedDay;
+        field('time-from').value = item ? item.time_from : '';
+        field('time-to').value = item ? item.time_to : '';
         setMulti(!!item && item.starts_on !== item.ends_on);
         var tariffs = item ? item.tariffs : [];
         form.querySelectorAll('[data-event-tariff]').forEach(function (input) {
@@ -271,12 +283,20 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         var endsOn = field('multi').checked ? (field('ends').value || startsOn) : startsOn;
         if (!startsOn) { setMessage('Укажите дату.', true); return; }
         if (endsOn < startsOn) { setMessage('Последний день раньше первого.', true); return; }
+        // Те же проверки, что у сервера (EventPayload.check_time): его отказ
+        // 422 приходит списком полей, и человек увидел бы общую заглушку.
+        var timeFrom = field('time-from').value;
+        var timeTo = field('time-to').value;
+        if (timeTo && !timeFrom) { setMessage('Укажите, со скольки начинается событие.', true); field('time-from').focus(); return; }
+        if (timeTo && startsOn === endsOn && timeTo <= timeFrom) { setMessage('Время окончания должно быть позже начала.', true); field('time-to').focus(); return; }
         button.disabled = true;
         api(base + (editingId ? '/' + editingId : ''), {
             title: title,
             type_id: Number(typeInput.value),
             starts_on: startsOn,
             ends_on: endsOn,
+            time_from: timeFrom || null,
+            time_to: timeTo || null,
             note: field('note').value,
             meeting_url: field('url').value,
             tariffs: Array.prototype.map.call(

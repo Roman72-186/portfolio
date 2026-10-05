@@ -121,12 +121,15 @@ from app.services.tracker import (
     active_digest_for_student,
     active_goal_for_student,
     digest_calendar,
+    digest_events_with_edges,
     digest_heading,
     effective_week_start,
     events_for_tariff,
     format_event_dates,
-    list_events,
+    format_event_time,
     mark_task_started,
+    month_list_events,
+    neighbor_digests_for_student,
     task_done_for_user,
     task_status,
 )
@@ -165,7 +168,14 @@ def cabinet_tracker(
     # Дайджест месяца — вкладка рядом с задачами (решение владельца 17.09.2026,
     # отменяет «первый блок на экране» от 22.08).
     digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)
-    digest_events = list_events(db, digest.id) if digest is not None else []
+    # Края сетки — из его же дайджестов соседних месяцев (владелец
+    # 05.10.2026): 1 ноября из октябрьского видно и в ноябре, и наоборот.
+    digest_events = (
+        digest_events_with_edges(
+            db, digest, neighbor_digests_for_student(db, user["user_id"], digest)
+        )
+        if digest is not None else []
+    )
     # Событие с тарифами видит только ученик этих тарифов (созвон 30.09.2026,
     # владелец 01.10.2026). Сотрудник, открывший трекер под собой, видит все —
     # тарифа у него нет, а проверять расписание ему нужно целиком.
@@ -210,7 +220,7 @@ def cabinet_tracker(
         "done": done,
         "learning_task_ids": learning_task_ids,
         "digest": digest,
-        "digest_events": digest_events,
+        "digest_events": month_list_events(digest, digest_events) if digest is not None else [],
         # Заголовок «Сентябрь · тема месяца» и сетка месяца с цветными метками
         # над списком (вернулась 01.10.2026, отменяет «календарь не нужен» от
         # 17.09). Сетку строит общая month_days, та же, что у преподавателя.
@@ -221,6 +231,7 @@ def cabinet_tracker(
         ),
         "digest_weekday_labels": WEEKDAY_LABELS,
         "format_event_dates": format_event_dates,
+        "format_event_time": format_event_time,
         "goal": goal,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
         # → месяц»): ученик застрял на прошлой неделе, а не идёт по текущей.

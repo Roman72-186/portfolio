@@ -19,8 +19,14 @@
   все события; там `digest_editable` — клетки становятся кнопками и открывают
   день, у строк списка кнопка «Изменить»).
 
-  Ждёт в контексте: digest_heading, digest_events, digest_days,
-  digest_weekday_labels, format_event_dates; необязательно digest_editable.
+  Края сетки — события соседних месяцев (владелец 05.10.2026): в сетке они
+  на своих днях, в списке — только те, что задевают сам месяц
+  (`tracker.month_list_events`). В редакторе у чужого события вместо
+  «Изменить» ссылка в его дайджест: правится оно только там.
+
+  Ждёт в контексте: digest, digest_heading, digest_events, digest_days,
+  digest_weekday_labels, format_event_dates, format_event_time;
+  необязательно digest_editable и digest_neighbors ({id: дайджест}).
 #}
 {% set editable = digest_editable|default(false) %}
 <section class="dgst{% if editable %} dgst--edit{% endif %}" aria-label="Дайджест месяца">
@@ -57,16 +63,19 @@
         {% for event in digest_events %}
         <li class="dgst-event"{% if editable %} data-event-id="{{ event.id }}"{% endif %}>
             <span class="dgst-chip is-{{ event.type.style }} dgst-color--{{ event.type.color }}">{{ format_event_dates(event) }}</span>
+            {% set event_time = format_event_time(event) %}
             <span class="dgst-event-title">
                 {{ event.title }}
-                <span class="dgst-event-kind">{{ event.type.name }}</span>
+                <span class="dgst-event-kind">{{ event.type.name }}{% if event_time %} · {{ event_time }}{% endif %}</span>
             </span>
             {% if event.note %}<p class="dgst-event-note">{{ event.note }}</p>{% endif %}
             {% if event.meeting_url %}
             <a class="btn-outline dgst-event-link" href="{{ event.meeting_url }}"
                target="_blank" rel="noopener">Подключиться</a>
             {% endif %}
-            {% if editable %}
+            {% if editable and event.digest_id != digest.id %}
+            <a class="btn-outline dgst-event-edit" href="/cabinet/staff/digest/{{ event.digest_id }}/events?day={{ event.starts_on.isoformat() }}">Изменить в «{{ digest_neighbors[event.digest_id].title }}»</a>
+            {% elif editable %}
             <button type="button" class="btn-outline dgst-event-edit" data-event-edit="{{ event.id }}">Изменить</button>
             {% endif %}
         </li>

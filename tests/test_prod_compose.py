@@ -17,3 +17,15 @@ def test_uvicorn_trusts_forwarded_for_from_traefik_network():
 
     assert "--forwarded-allow-ips=172.18.0.0/16" in command
     assert "--forwarded-allow-ips=*" not in command
+
+
+def test_app_log_survives_redeploy():
+    """Владелец 05.10.2026: хранить журнал между выкатками. Драйвер
+    json-file держит журнал внутри контейнера, выкатка его пересоздаёт — к
+    утру 05.10 не осталось ни строки про девять отказов 403 вечера 04.10.
+    journald лежит на диске сервера; искать — `journalctl -t apparchi-app`."""
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    logging = compose["services"]["app"]["logging"]
+
+    assert logging["driver"] == "journald"
+    assert logging["options"]["tag"] == "apparchi-app"

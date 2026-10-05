@@ -12,7 +12,7 @@
 """
 
 import json
-from datetime import date
+from datetime import date, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -47,16 +47,20 @@ from app.services.tracker import (
     delete_digest,
     delete_event,
     digest_calendar,
+    digest_events_with_edges,
     digest_heading,
     event_tariffs_map,
     events_for_tariff,
     format_event_dates,
+    format_event_time,
     get_digest,
     get_digest_assignee_ids,
     get_digest_tag_ids,
     get_event,
     list_digests,
     list_events,
+    month_list_events,
+    neighbor_digests_for_staff,
     publish_digest,
     resolve_assignees,
     set_digest_assignees,
@@ -117,6 +121,9 @@ class EventPayload(BaseModel):
     note: str | None = Field(default=None, max_length=300)
     starts_on: date
     ends_on: date
+    # Время занятия «с … до …», необязательное (владелец 05.10.2026).
+    time_from: time | None = None
+    time_to: time | None = None
     meeting_url: str | None = Field(default=None, max_length=500)
     sort_order: int = Field(default=0, ge=0, le=1000)
     # Тарифы, которым событие показывается (созвон 30.09.2026). Пусто — всем.
@@ -165,6 +172,28 @@ class EventPayload(BaseModel):
         starts_on = info.data.get("starts_on")
         if starts_on is not None and value < starts_on:
             raise ValueError("ends_on раньше starts_on")
+        return value
+
+    @field_validator("time_from", "time_to", mode="before")
+    @classmethod
+    def empty_time(cls, value):
+        # Пустое поле `<input type="time">` приходит пустой строкой.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("time_to")
+    @classmethod
+    def check_time(cls, value: time | None, info) -> time | None:
+        if value is None:
+            return None
+        time_from = info.data.get("time_from")
+        if time_from is None:
+            raise ValueError("Укажите, со скольки начинается событие")
+        # У периода «до» относится к последнему дню и может быть раньше «с».
+        same_day = info.data.get("starts_on") == info.data.get("ends_on")
+        if same_day and value <= time_from:
+            raise ValueError("Время окончания должно быть позже начала")
         return value
 
 
@@ -544,7 +573,10 @@ def digest_events_page(
     режет всю страницу — сетку, список и панель дня, иначе панель показала
     бы событие, которого нет в клетке. Незнакомый тариф — все события."""
     digest = _get_digest_or_404(db, digest_id)
-    events = list_events(db, digest_id)
+    # Края соседних месяцев видны в обоих дайджестах (владелец 05.10.2026):
+    # чужое событие показывается, но правится в своём дайджесте.
+    neighbors = {n.id: n for n in neighbor_digests_for_staff(db, digest)}
+    events = digest_events_with_edges(db, digest, list(neighbors.values()))
     tariff_view = tariff if tariff in TARIFFS_CURRENT else None
     if tariff_view:
         events = events_for_tariff(db, events, tariff_view)
@@ -573,6 +605,15 @@ def digest_events_page(
                     "starts_on": event.starts_on.isoformat(),
                     "ends_on": event.ends_on.isoformat(),
                     "dates": format_event_dates(event),
+                    "time_from": event.time_from.strftime("%H:%M") if event.time_from else "",
+                    "time_to": event.time_to.strftime("%H:%M") if event.time_to else "",
+                    "time": format_event_time(event),
+                    # Событие соседнего дайджеста: в панели дня — ссылка
+                    # туда, а не форма правки.
+                    "foreign_digest": (
+                        {"id": event.digest_id, "title": neighbors[event.digest_id].title}
+                        if event.digest_id != digest.id else None
+                    ),
                     "note": event.note or "",
                     "meeting_url": event.meeting_url or "",
                     "tariffs": tariffs.get(event.id, []),
@@ -580,10 +621,12 @@ def digest_events_page(
                 for event in events
             ],
             "digest_heading": digest_heading(digest),
-            "digest_events": events,
+            "digest_events": month_list_events(digest, events),
             "digest_days": digest_calendar(digest, events, today=today_msk()),
             "digest_weekday_labels": WEEKDAY_LABELS,
             "format_event_dates": format_event_dates,
+            "format_event_time": format_event_time,
+            "digest_neighbors": neighbors,
             # «Смотреть» в АОП — календарь как у ученика, без правки
             # (шаг 2 плана тонких доступов).
             "digest_editable": can(user, "program"),
@@ -627,6 +670,7 @@ def _audit_event(db: DBSession, *, action: str, user_id: int, event, type_name: 
                     "title": event.title[:200],
                     "starts_on": event.starts_on.isoformat(),
                     "ends_on": event.ends_on.isoformat(),
+                    "time": format_event_time(event),
                     "type": type_name,
                 },
                 ensure_ascii=False,
@@ -653,6 +697,8 @@ def create_digest_event(
         note=payload.note,
         starts_on=payload.starts_on,
         ends_on=payload.ends_on,
+        time_from=payload.time_from,
+        time_to=payload.time_to,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
     )
@@ -684,6 +730,8 @@ def update_digest_event(
         note=payload.note,
         starts_on=payload.starts_on,
         ends_on=payload.ends_on,
+        time_from=payload.time_from,
+        time_to=payload.time_to,
         meeting_url=payload.meeting_url,
         sort_order=payload.sort_order,
     )

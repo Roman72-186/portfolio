@@ -10,7 +10,7 @@ Source of truth по тому, кому адресована задача и к�
 """
 
 import calendar
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
 
 from sqlalchemy import case, or_
@@ -51,6 +51,7 @@ from app.services.program import (
     day_bounds,
     month_days,
     msk_date,
+    shift_month,
     week_start,
 )
 from app.services.tags import parse_usernames
@@ -1596,6 +1597,8 @@ def create_event(
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
+    time_from: time | None = None,
+    time_to: time | None = None,
 ) -> ScheduleEvent:
     event = ScheduleEvent(
         digest_id=digest_id,
@@ -1604,6 +1607,8 @@ def create_event(
         note=note,
         starts_on=starts_on,
         ends_on=ends_on,
+        time_from=time_from,
+        time_to=time_to,
         meeting_url=meeting_url,
         sort_order=sort_order,
     )
@@ -1622,12 +1627,16 @@ def update_event(
     ends_on: date,
     meeting_url: str | None,
     sort_order: int = 0,
+    time_from: time | None = None,
+    time_to: time | None = None,
 ) -> None:
     event.type_id = type_id
     event.title = title
     event.note = note
     event.starts_on = starts_on
     event.ends_on = ends_on
+    event.time_from = time_from
+    event.time_to = time_to
     event.meeting_url = meeting_url
     event.sort_order = sort_order
 
@@ -1721,6 +1730,105 @@ def format_event_dates(event: ScheduleEvent) -> str:
         f"{event.starts_on.day} {MONTH_GENITIVE[event.starts_on.month]} – "
         f"{event.ends_on.day} {MONTH_GENITIVE[event.ends_on.month]}"
     )
+
+
+def format_event_time(event: ScheduleEvent) -> str:
+    """«10:00–11:30», «с 10:00» или пусто — время занятия рядом с типом.
+
+    Время необязательное (владелец 05.10.2026): у публикации и дедлайна его
+    нет, и строка списка тогда остаётся прежней."""
+    if event.time_from is None:
+        return ""
+    start = event.time_from.strftime("%H:%M")
+    if event.time_to is None:
+        return f"с {start}"
+    return f"{start}–{event.time_to.strftime('%H:%M')}"
+
+
+def digest_span(digest: ScheduleDigest) -> tuple[date, date]:
+    """Первый и последний день сетки дайджеста: недели строятся целиком,
+    поэтому сетка начинается с понедельника недели первого числа и кончается
+    воскресеньем недели последнего — `month_days`."""
+    first = week_start(date(digest.year, digest.month, 1))
+    last_day = date(digest.year, digest.month, calendar.monthrange(digest.year, digest.month)[1])
+    return first, last_day + timedelta(days=6 - last_day.weekday())
+
+
+def adjacent_months(digest: ScheduleDigest) -> list[tuple[int, int]]:
+    """(год, месяц) прошлого и следующего месяца — соседи по краям сетки."""
+    return [shift_month(digest.year, digest.month, delta) for delta in (-1, 1)]
+
+
+def neighbor_digests_for_staff(db: Session, digest: ScheduleDigest) -> list[ScheduleDigest]:
+    """Дайджесты прошлого и следующего месяца для редактора: все живые, и
+    черновики тоже — преподаватель собирает ноябрь, пока висит октябрь."""
+    months = adjacent_months(digest)
+    return (
+        db.query(ScheduleDigest)
+        .filter(
+            ScheduleDigest.deleted_at.is_(None),
+            or_(*[
+                (ScheduleDigest.year == year) & (ScheduleDigest.month == month)
+                for year, month in months
+            ]),
+        )
+        .order_by(ScheduleDigest.year, ScheduleDigest.month, ScheduleDigest.id)
+        .all()
+    )
+
+
+def neighbor_digests_for_student(
+    db: Session, user_id: int, digest: ScheduleDigest
+) -> list[ScheduleDigest]:
+    """Дайджесты прошлого и следующего месяца, которые видит ученик, — тот же
+    выбор, что покажет ему сам соседний месяц (`active_digest_for_student`)."""
+    found = (
+        active_digest_for_student(db, user_id, year=year, month=month)
+        for year, month in adjacent_months(digest)
+    )
+    return [neighbor for neighbor in found if neighbor is not None]
+
+
+def digest_events_with_edges(
+    db: Session, digest: ScheduleDigest, neighbors: list[ScheduleDigest]
+) -> list[ScheduleEvent]:
+    """События дайджеста плюс события соседних месяцев на днях его сетки.
+
+    Края месяцев видны в обоих дайджестах (владелец 05.10.2026). До этого 1
+    ноября, заведённое в октябрьском дайджесте, жило только в нём: ноябрьская
+    сетка начинается 26 октября и этих событий не знала. Событие остаётся в
+    своём дайджесте — правится только там, — а соседний его показывает.
+    Отбор по тарифу вызывающий делает уже по объединённому списку.
+    """
+    own = list_events(db, digest.id)
+    neighbor_ids = [n.id for n in neighbors if n.id != digest.id]
+    if not neighbor_ids:
+        return own
+    first, last = digest_span(digest)
+    edges = (
+        db.query(ScheduleEvent)
+        .filter(
+            ScheduleEvent.digest_id.in_(neighbor_ids),
+            ScheduleEvent.starts_on <= last,
+            ScheduleEvent.ends_on >= first,
+        )
+        .all()
+    )
+    return sorted(own + edges, key=lambda e: (e.starts_on, e.sort_order, e.id))
+
+
+def month_list_events(
+    digest: ScheduleDigest, events: list[ScheduleEvent]
+) -> list[ScheduleEvent]:
+    """Строки списка «События месяца»: все свои события и чужие, которые
+    задевают сам месяц. Чужое только на днях соседнего месяца видно в сетке,
+    а в список не идёт — в ноябрьском списке октябрьская неделя была бы шумом."""
+    first = date(digest.year, digest.month, 1)
+    last = date(digest.year, digest.month, calendar.monthrange(digest.year, digest.month)[1])
+    return [
+        event for event in events
+        if event.digest_id == digest.id or (event.starts_on <= last and event.ends_on >= first)
+    ]
 
 
 # Сколько цветных точек помещается под числом клетки шириной ~48px на 375px.

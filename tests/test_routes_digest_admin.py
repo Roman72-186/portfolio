@@ -501,7 +501,7 @@ def test_event_create_update_delete_leave_audit_trail(client, db, user_factory, 
     assert all(row.performed_by_id == staff.id for row in rows)
     assert json.loads(rows[0].details) == {
         "digest_id": digest_id, "event_id": event_id, "title": "тренировка РИСУНОК",
-        "starts_on": "2026-10-07", "ends_on": "2026-10-07", "type": "Занятие",
+        "starts_on": "2026-10-07", "ends_on": "2026-10-07", "time": "", "type": "Занятие",
     }
     updated = json.loads(rows[1].details)
     assert (updated["title"], updated["starts_on"], updated["ends_on"]) == (

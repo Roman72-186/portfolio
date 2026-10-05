@@ -41,6 +41,16 @@
                 </label>
             </div>
             <p class="trk-hint" data-event-multi-hint hidden>Нажмите в календаре на последний день периода.</p>
+            {# Время необязательное (владелец 05.10.2026): у публикации и
+               дедлайна его нет. Раньше его вписывали в название. #}
+            <div class="trk-grid trk-grid--two">
+                <label class="trk-field">Время с
+                    <input data-event-time-from type="time">
+                </label>
+                <label class="trk-field">Время до
+                    <input data-event-time-to type="time">
+                </label>
+            </div>
 
             <div class="trk-hint" id="eventTariffHint">Кому показывать — ничего не отмечено: всем тарифам.</div>
             <div class="trk-tag-picker" role="group" aria-labelledby="eventTariffHint">

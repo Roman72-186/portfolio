@@ -16,10 +16,10 @@ TrackerTaskState: одна задача адресована многим, ст�
 
 Полный разбор решений — plans/2026-08-20-apparchi-tracker-and-digest.md.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text,
+    Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, Time,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -469,6 +469,11 @@ class ScheduleEvent(Base):
 
     starts_on: Mapped[date] = mapped_column(Date, nullable=False)
     ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # Время занятия по Москве, необязательное (владелец 05.10.2026). До этого
+    # его вписывали в название («тренировка РИСУНОК 10:00-11:30»). `time_to`
+    # без `time_from` не бывает — проверяет схема роута.
+    time_from: Mapped[time | None] = mapped_column(Time, nullable=True)
+    time_to: Mapped[time | None] = mapped_column(Time, nullable=True)
 
     # Ссылка на созвон — по требованию созвона 17.08 зашивается в кнопку, а не
     # показывается текстом, который надо копировать.
