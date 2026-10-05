@@ -91,6 +91,10 @@
     border: 2px solid rgba(255,255,255,0.4);
     display: flex; align-items: center; justify-content: center;
     font-size: 28px;
+    /* Значок рисуется `currentColor` в карточке «Учеников» (06.10.2026): там
+       шапка собирается в JS, где цвет числом запрещён. В partial у значка
+       свой `stroke`, на него это не влияет. */
+    color: rgba(255,255,255,0.7);
 }
 .profile-avatar-upload {
     position: absolute; right: -2px; bottom: -2px;

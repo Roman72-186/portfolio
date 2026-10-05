@@ -111,8 +111,6 @@ def test_upload_button_lives_in_portfolio_not_on_hero():
     assert "<div class=\"portfolio-upload-row\">'" in portfolio
     assert "openUploadModal()\">+ Загрузить" in portfolio
     assert "justify-content: flex-end" in _css_rule(_styles(), ".portfolio-upload-row")
-    mobile = _mobile_block(_styles())
-    assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile)
 
 
 def test_upload_modal_has_no_mock_exam():
@@ -520,30 +518,22 @@ def test_no_text_is_painted_with_bare_brand_purple():
 # ── Шаг 11: остаток аудита после шага 10 ─────────────────────────────────────
 
 
-def _hero_stops(css: str, base: str) -> list[str]:
-    # Точки градиента шапки — токены (`--blue-fill-strong` → `--blue-fill` с шага 11.2).
-    gradient = re.search(r"linear-gradient\(135deg,(.*)\)\s*;", _css_rule(css, ".student-hero")).group(1)
-    return [_token_color(base, ":root {", token) for token in re.findall(r"var\(--([\w-]+)\)", gradient)]
-
-
-def test_student_hero_text_is_readable_everywhere():
-    # 29.09.2026, аудит после шага 10 (11.1): светлый конец градиента `--blue-mid` —
-    # по пикселям фона жёлтый балл 1.85–2.8, имя 3.0, подписи «Р/К» и плашки 2.0–2.5.
-    # Шапка от темы не зависит, поэтому меряется по светлым токенам.
-    css, base = _styles(), BASE_CSS.read_text(encoding="utf-8")
-    stops = _hero_stops(css, base)
-    assert len(stops) == 2, stops
-    gold = _theme_tokens(base, ":root {")["gold"]
-    for stop in stops:
-        assert _contrast("#FFFFFF", stop) >= 4.5, f"белое на {stop}"
-        assert _contrast(gold, stop) >= 3, f"балл (крупный) на {stop}"
-    # Мелкий текст шапки — не полупрозрачным белым: 60–85 % на фиолетовом ниже 4.5.
-    assert "color: var(--on-color)" in _css_rule(css, ".student-hero-pill")
-    assert "var(--on-color)90%" in _css_rule(css, ".score-label").replace(" ", "")
-    # Светлая подложка плашки поднимала фон под белым текстом — теперь затемнение.
-    assert "rgba(255,255,255" not in _css_rule(css, ".student-hero-pill").split("border")[0]
-    assert "color: var(--on-color)" in _css_rule(css, ".student-hero-avatar-ph"), "тёмный значок на тёмной шапке"
-    # «+ Загрузить» на шапке нет с 06.10.2026 — он над разделами «Портфолио».
+def test_card_hero_is_the_student_hero():
+    """Шапка карточки — та же, что у ученика в «Трекере» (владелец 06.10.2026):
+    классы `partials/profile_hero.html` и его файл стилей, без своей копии.
+    Читаемость градиента и подписей сторожит `test_student_heroes_use_the_fill_gradient`
+    по `profile_hero.css`. Срока обучения («1 мес.») и прочих плашек нет."""
+    assert '<link rel="stylesheet" href="/static/css/profile_hero.css' in _source()
+    source = _script()
+    hero = source[source.index("function buildHero("):]
+    hero = hero[:hero.index("\nfunction ")]
+    for cls in ("profile-hero", "profile-tariff profile-tariff--", "profile-name-line",
+                "profile-tariff profile-level", "profile-scores", "profile-score-point-a",
+                "profile-score-year"):
+        assert cls in hero, cls
+    assert "study_duration" not in hero
+    assert "student-hero-pill" not in hero and "course_periods" not in hero
+    assert ".student-hero {" not in _styles(), "старая шапка карточки осталась в стилях"
 
 
 def _token_color(css: str, opener: str, name: str) -> str:

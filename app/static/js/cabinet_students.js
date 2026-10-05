@@ -6,9 +6,6 @@
    Подключается обычным <script>, не модулем: обработчики onclick="…" в разметке
    зовут функции отсюда как глобальные. Правишь файл — подними ?v= в шаблоне. */
 
-// Однобуквенные бейджи шапки ученика (по макету 17082026/Скриншот-20260818-081501.png) —
-// только для student-hero, полные названия предметов используются везде остальные.
-const SUBJECT_BADGE_LABEL = {'Рисунок': 'Р', 'Композиция': 'К'};
 const MONTH_NAMES    = MONTHS_LIST;
 const MONTH_TO_NUM   = (function() {
     var m = {};
@@ -793,71 +790,67 @@ function buildStatistics(data) {
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
 
-function cohortBadgeHtml(tag) {
-    var letters = {may: 'М', june: 'И', july: 'И', august: 'А'};
-    if (!tag || !letters[tag]) return '';
-    return '<span class="cohort-badge cohort-' + esc(tag) + '">' + letters[tag] + '</span>';
-}
-
+// Шапка — та же, что видит ученик в «Трекере» (владелец 06.10.2026: «сделай
+// такой же, какую видит ученик»): разметка `partials/profile_hero.html`, стили
+// `profile_hero.css` без своей копии. Слева аватар, тариф над именем в две
+// строки и плашка уровня программы, справа Р/К, точка А и год поступления.
+// Плашек срока обучения, периодов, занятий, КЕЙС, ОЧНО/ОНЛАЙН и буквы набора
+// здесь нет: они видны в строке ученика в списке, формат — ещё и в «Управлении».
+// Загрузки аватара тоже нет — у ученика она меняет его собственное фото.
+// Поля берутся из профиля: вкладки отдают урезанного ученика, а профиль при
+// входе по ссылке `?tab=` дотягивается в фоне (`prefetchProfile`).
 function buildHero(s, bySubj) {
-    // Точка А и уровень — из профиля (`hero`), вкладки их не отдают.
     var cached = _tabCache[s.id] && _tabCache[s.id].profile;
-    var hero = s.hero || (cached && cached.student && cached.student.hero) || {};
-    var avatar = s.photo_url
-        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="" width="56" height="56">'
-        : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
-    avatar = '<span class="avatar-wrap">' + avatar + cohortBadgeHtml(s.cohort_tag) + '</span>';
-    var scoreHtml = '';
-    var hasSubjScores = bySubj && MOCK_SUBJECTS.some(function(subj) { return bySubj[subj] != null; });
-    var hasPointA = hero.point_a_average != null;
-    if (hasSubjScores || hasPointA) {
-        scoreHtml = '<div class="student-hero-score subj-scores">';
-        if (hasSubjScores) MOCK_SUBJECTS.forEach(function(subj) {
-            var sc = bySubj[subj];
-            if (sc != null) {
-                scoreHtml += '<div class="subj-score-item">'
-                    + '<div class="score-big">' + sc + '</div>'
-                    + '<div class="score-label">' + esc(SUBJECT_BADGE_LABEL[subj] || subj) + '</div>'
-                    + '</div>';
-            }
-        });
-        // Точка А — рядом с Р/К, как у ученика в «Трекере» (владелец 05.10.2026).
-        if (hasPointA) {
-            scoreHtml += '<div class="subj-score-item" title="Точка А – средний балл входной оценки">'
-                + '<div class="score-big">' + hero.point_a_average + '</div>'
-                + '<div class="score-label">Точка А</div>'
-                + '</div>';
-        }
-        scoreHtml += '</div>';
+    var p = s.hero !== undefined ? s : ((cached && cached.student) || s);
+    var hero = p.hero || {};
+    var scores = p.avg_score_by_subject || bySubj || {};
+    var avatar = p.photo_url
+        ? '<img src="' + esc(p.photo_url) + '" class="profile-avatar" alt="" width="60" height="60">'
+        : '<div class="profile-avatar-placeholder" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+    var tariff = p.tariff && p.tariff !== '—'
+        ? '<span class="profile-tariff profile-tariff--' + esc(p.tariff_slug || 'legacy') + '">'
+            + '<span class="profile-tariff-dot"></span>'
+            + esc(p.tariff_label || TARIFF_LABELS[p.tariff] || p.tariff) + '</span>'
+        : '';
+    var names = (p.first_name || p.last_name) ? [p.first_name, p.last_name] : [p.name];
+    var nameHtml = names.filter(Boolean).map(function(n) {
+        return '<div class="profile-name-line">' + esc(n) + '</div>';
+    }).join('');
+    var level = hero.point_a_level != null
+        ? '<div class="profile-tariff profile-level">На данный период обучения осваивает '
+            + hero.point_a_level + ' уровень программы</div>'
+        : '';
+    function scoreCell(subj, label) {
+        var v = scores[subj];
+        return '<div class="profile-score-cell">'
+            + '<span class="profile-score-label" title="' + esc(subj) + '">' + label + '</span>'
+            + '<span class="profile-score-value">' + (v != null ? esc(v) : '-') + '</span>'
+            + '</div>';
     }
-    var periodPills = '';
-    if (s.course_periods) {
-        s.course_periods.split(',').forEach(function(p) {
-            var abbrev = p.trim().split(' ')[0];
-            if (abbrev) {
-                var pcls = abbrev === '10-14' ? 'pink' : (abbrev === '15-20' ? 'blue' : 'purple');
-                periodPills += '<span class="student-hero-pill student-hero-pill--' + pcls + '">' + esc(abbrev) + '</span>';
-            }
-        });
-    }
-    var lessonsCls = String(s.lessons_count) === '6' ? 'pink' : (String(s.lessons_count) === '8' ? 'blue' : 'purple');
-    return '<div class="student-hero">'
-        + avatar
-        + '<div class="student-hero-info">'
-        +   '<h2 class="student-hero-name">' + esc(s.name) + '</h2>'
-        +   '<div class="student-hero-pills">'
-        +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(TARIFF_LABELS[s.tariff] || s.tariff) + '</span>' : '')
-        +     (hero.point_a_level != null ? '<span class="student-hero-pill">Осваивает ' + hero.point_a_level + ' уровень программы</span>' : '')
-        +     periodPills
-        +     (s.lessons_count ? '<span class="student-hero-pill student-hero-pill--' + lessonsCls + '">' + esc(s.lessons_count) + '</span>' : '')
-        +     (s.has_case ? '<span class="student-hero-pill">КЕЙС</span>' : '')
-        +     (s.study_mode === 'offline' ? '<span class="student-hero-pill">ОЧНО</span>' : '')
-        +     (s.study_mode === 'online' ? '<span class="student-hero-pill">ОНЛАЙН</span>' : '')
-        +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
+    var pointA = hero.point_a_average != null
+        ? '<div class="profile-score-point-a" title="Точка А — средний балл входной оценки">'
+            + '<span class="profile-score-label">Точка А</span>'
+            + '<span class="profile-score-value">' + esc(hero.point_a_average) + '</span></div>'
+        : '';
+    var year = p.university_year
+        ? '<div class="profile-score-year" title="Год поступления">' + esc(p.university_year) + '</div>'
+        : '';
+    return '<div class="profile-hero"><div class="profile-hero-top">'
+        + '<div class="profile-hero-main">'
+        +   '<div class="profile-hero-ident">'
+        +     '<div class="profile-avatar-wrap">' + avatar + '</div>'
+        +     '<div class="profile-hero-ident-text">' + tariff
+        +       '<div class="profile-name-stack">' + nameHtml + '</div>'
+        +     '</div>'
         +   '</div>'
+        +   level
         + '</div>'
-        + scoreHtml
-        + '</div>';
+        + '<div class="profile-scores">'
+        +   '<div class="profile-scores-row">' + scoreCell('Рисунок', 'Р')
+        +     '<div class="profile-score-divider"></div>' + scoreCell('Композиция', 'К') + '</div>'
+        +   pointA + year
+        + '</div>'
+        + '</div></div>';
 }
 
 // ── Portfolio tab ────────────────────────────────────────────────────────────
