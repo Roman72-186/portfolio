@@ -29,15 +29,20 @@ def _staff(client, user_factory, session_factory, *, vk_id=880_101):
 
 
 def _stage(client, db, *, title="Предобучение"):
+    dates = {
+        "description": None,
+        "starts_on": (today_msk() + timedelta(days=1)).isoformat(),
+        "ends_on": (today_msk() + timedelta(days=60)).isoformat(),
+        "is_published": True,
+    }
+    # Этап всегда внутри периода (владелец 06.10.2026).
+    period = client.post(
+        "/cabinet/staff/program/periods", json={"title": "1 семестр", **dates}, headers=CSRF,
+    )
+    assert period.status_code == 200, period.text
     resp = client.post(
         STAGES_PAGE,
-        json={
-            "title": title,
-            "description": None,
-            "starts_on": (today_msk() + timedelta(days=1)).isoformat(),
-            "ends_on": (today_msk() + timedelta(days=60)).isoformat(),
-            "is_published": True,
-        },
+        json={"title": title, "period_id": period.json()["period_id"], **dates},
         headers=CSRF,
     )
     assert resp.status_code == 200, resp.text

@@ -89,16 +89,21 @@
         </div>
         {% if not is_period %}
         <label class="prg-field">
-            <span>Период (необязательно)</span>
-            {# Внутри периода новый этап по умолчанию заводится в него же. #}
-            <select data-s-period aria-label="Период"
+            <span>Период</span>
+            {# Этапа без периода не бывает (владелец 06.10.2026: «к периоду
+               привязывается этап»), пустой пункт — только приглашение выбрать.
+               Внутри периода новый этап по умолчанию заводится в него же. #}
+            <select data-s-period aria-label="Период" required
                     data-s-period-default="{{ period_filter.id if period_filter else '' }}">
-                <option value="">Без периода</option>
+                <option value="">Выберите период</option>
                 {% for period in periods %}
                 <option value="{{ period.id }}"{% if period_filter and period.id == period_filter.id %} selected{% endif %}>{{ period.label }}</option>
                 {% endfor %}
             </select>
         </label>
+        {% if not periods %}
+        <p class="prg-hint">Периодов пока нет. Заведите его на вкладке <a href="/cabinet/staff/program/periods">«Периоды»</a>, потом этап.</p>
+        {% endif %}
         {% endif %}
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-s-published checked>
@@ -244,6 +249,11 @@
         var id = fields.id.value;
         if (!fields.start.value || !fields.end.value) {
             message.textContent = 'Заполните обе даты периода.';
+            return;
+        }
+        if (fields.period && !fields.period.value) {
+            message.textContent = 'Выберите период этапа.';
+            fields.period.focus();
             return;
         }
         var body = {

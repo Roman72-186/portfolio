@@ -44,6 +44,10 @@ def _period(client, db, **over):
 
 
 def _stage(client, db, **over):
+    # Этапа без периода не бывает (владелец 06.10.2026) — свой период, если
+    # тест его не выбрал.
+    if "period_id" not in over:
+        over["period_id"] = _period(client, db, title="Период этапа").id
     assert client.post(STAGES_PAGE, json=_payload(**over)).status_code == 200
     return sorted(_of_kind(db, TOPIC_KIND_STAGE), key=lambda t: t.id)[-1]
 
@@ -143,7 +147,18 @@ def test_stage_cannot_be_put_into_another_stage(admin_client, db):
     assert resp.status_code == 422
 
 
-def test_editing_stage_moves_and_unlinks_period(admin_client, db):
+def test_stage_without_period_is_rejected(admin_client, db):
+    """Владелец 06.10.2026: «к периоду привязывается этап» — ни пропущенного
+    поля, ни пустого значения сервер при создании не принимает."""
+    client, _ = admin_client
+    for body in (_payload(), _payload(period_id=None)):
+        resp = client.post(STAGES_PAGE, json=body)
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "Выберите период этапа"
+    assert _of_kind(db, TOPIC_KIND_STAGE) == []
+
+
+def test_editing_stage_moves_period_but_never_unlinks(admin_client, db):
     client, _ = admin_client
     first = _period(client, db, title="Предобучение")
     second = _period(client, db, title="1 семестр")
@@ -153,9 +168,23 @@ def test_editing_stage_moves_and_unlinks_period(admin_client, db):
     db.refresh(stage)
     assert stage.parent_id == second.id
 
-    client.post(f"{STAGES_PAGE}/{stage.id}", json=_payload(period_id=None))
+    resp = client.post(f"{STAGES_PAGE}/{stage.id}", json=_payload(period_id=None, title="Другое"))
+    assert resp.status_code == 422
     db.refresh(stage)
-    assert stage.parent_id is None
+    assert stage.parent_id == second.id
+    assert stage.title == "Предобучение"
+
+
+def test_stage_form_requires_period(admin_client, db):
+    client, _ = admin_client
+    resp = client.get(STAGES_PAGE)
+    assert "Без периода" not in resp.text
+    assert "Периодов пока нет" in resp.text
+
+    _period(client, db, title="1 семестр")
+    resp = client.get(STAGES_PAGE)
+    assert '<option value="">Выберите период</option>' in resp.text
+    assert "Периодов пока нет" not in resp.text
 
 
 def test_editing_stage_without_period_field_keeps_link(admin_client, db):
@@ -189,7 +218,8 @@ def test_stages_filter_by_period(admin_client, db):
     client, _ = admin_client
     period = _period(client, db)
     inside = _stage(client, db, period_id=period.id, title="Внутри")
-    outside = _stage(client, db, title="Снаружи")
+    other = _period(client, db, title="Другой период")
+    outside = _stage(client, db, period_id=other.id, title="Снаружи")
 
     resp = client.get(f"{STAGES_PAGE}?period={period.id}")
     assert resp.status_code == 200

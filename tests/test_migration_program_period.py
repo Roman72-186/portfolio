@@ -1,4 +1,5 @@
-"""Миграции `c5f2a8d1e7b3` и `d8a3b6e2f1c4`: период «Предобучение» над этапом.
+"""Миграции `c5f2a8d1e7b3` и `d8a3b6e2f1c4`: период «Предобучение» над этапом;
+`e4b7c1d9a2f6`: период «1 семестр 2026-2027» над двумя этапами без периода.
 
 Первая искала этап ровно «Предобучение», на проде он «Предобучение
 2026-2027» — прошла впустую; вторая ищет по началу названия и берёт название
@@ -173,3 +174,70 @@ def test_fix_downgrade_unlinks_and_removes_period():
         rows = _rows(conn)
         assert all(r.kind != "period" for r in rows.values())
         assert rows[stage].parent_id is None
+
+
+# ── «1 семестр 2026-2027» (e4b7c1d9a2f6) ────────────────────────────────────
+
+SEMESTER = VERSIONS / "e4b7c1d9a2f6_program_period_first_semester.py"
+
+
+def _dates(conn, topic_id):
+    return conn.execute(
+        sa.text("SELECT opens_at, ends_at FROM learning_topics WHERE id = :id"), {"id": topic_id}
+    ).one()
+
+
+def test_semester_puts_both_orphan_stages_into_one_period_like_on_prod():
+    """Прод 06.10.2026: без периода остались «1 семестр_годовой курс
+    2026-2027» (57) и «Октябрь» (60). Владелец: «к периоду привязывается этап»."""
+    with _engine().begin() as conn:
+        preob_period = _topic(conn, title="Предобучение 2026-2027", kind="period")
+        preob = _topic(conn, title="Предобучение 2026-2027", kind="stage", parent_id=preob_period)
+        year = _topic(conn, title="1 семестр_годовой курс 2026-2027", kind="stage")
+        october = _topic(conn, title="Октябрь", kind="stage")
+        cycle = _topic(conn, title="", kind="week", parent_id=year)
+
+        _run(conn, "upgrade", SEMESTER)
+        _run(conn, "upgrade", SEMESTER)
+        rows = _rows(conn)
+
+        semesters = [r for r in rows.values() if r.title == "1 семестр 2026-2027"]
+        assert len(semesters) == 1
+        semester = semesters[0]
+        assert semester.kind == "period"
+        assert semester.parent_id is None
+        assert bool(semester.is_published)
+        assert rows[year].parent_id == semester.id
+        assert rows[october].parent_id == semester.id
+        # Предобучение и цикл остаются где были.
+        assert rows[preob].parent_id == preob_period
+        assert rows[cycle].parent_id == year
+        assert _dates(conn, semester.id) == _dates(conn, year)
+
+
+def test_semester_reuses_period_made_by_hand():
+    with _engine().begin() as conn:
+        own = _topic(conn, title="1 семестр 2026-2027", kind="period")
+        october = _topic(conn, title="Октябрь", kind="stage")
+        _run(conn, "upgrade", SEMESTER)
+        rows = _rows(conn)
+        assert [r.id for r in rows.values() if r.kind == "period"] == [own]
+        assert rows[october].parent_id == own
+
+
+def test_semester_without_stages_does_nothing():
+    with _engine().begin() as conn:
+        _topic(conn, title="Октябрь", kind="stage", deleted=True)
+        _topic(conn, title="Ноябрь", kind="stage")
+        _run(conn, "upgrade", SEMESTER)
+        assert all(r.kind != "period" for r in _rows(conn).values())
+
+
+def test_semester_downgrade_unlinks_and_removes_period():
+    with _engine().begin() as conn:
+        october = _topic(conn, title="Октябрь", kind="stage")
+        _run(conn, "upgrade", SEMESTER)
+        _run(conn, "downgrade", SEMESTER)
+        rows = _rows(conn)
+        assert all(r.kind != "period" for r in rows.values())
+        assert rows[october].parent_id is None

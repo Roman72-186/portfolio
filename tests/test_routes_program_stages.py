@@ -11,6 +11,7 @@ from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, Learnin
 from app.services.tracker import cycle_label, stage_cycle_ordinal
 from app.services.tz import today_msk
 
+PERIODS_PAGE = "/cabinet/staff/program/periods"
 STAGES_PAGE = "/cabinet/staff/program/stages"
 CYCLES_PAGE = "/cabinet/staff/program/cycles"
 
@@ -25,6 +26,19 @@ def _payload(**over):
     }
     data.update(over)
     return data
+
+
+def _create_period(client) -> int:
+    resp = client.post(PERIODS_PAGE, json=_payload(title="1 семестр"))
+    assert resp.status_code == 200
+    return resp.json()["period_id"]
+
+
+def _create_stage(client) -> None:
+    """Этап всегда внутри периода (владелец 06.10.2026: «к периоду
+    привязывается этап») — без периода сервер его не сохранит."""
+    resp = client.post(STAGES_PAGE, json=_payload(period_id=_create_period(client)))
+    assert resp.status_code == 200
 
 
 def _stages(db):
@@ -51,9 +65,10 @@ def test_admin_opens_stages(admin_client):
 
 # ── создание этапа ──────────────────────────────────────────────────────────
 
-def test_admin_creates_stage_with_period(admin_client, db):
+def test_admin_creates_stage_inside_period(admin_client, db):
     client, _ = admin_client
-    resp = client.post(STAGES_PAGE, json=_payload())
+    period_id = _create_period(client)
+    resp = client.post(STAGES_PAGE, json=_payload(period_id=period_id))
     assert resp.status_code == 200
 
     stages = _stages(db)
@@ -61,7 +76,7 @@ def test_admin_creates_stage_with_period(admin_client, db):
     stage = stages[0]
     assert stage.title == "Предобучение"
     assert stage.kind == TOPIC_KIND_STAGE
-    assert stage.parent_id is None
+    assert stage.parent_id == period_id
     assert stage.is_published is True
 
 
@@ -80,7 +95,7 @@ def test_stage_end_before_start_is_rejected(admin_client, db):
 
 def test_admin_edits_stage(admin_client, db):
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
 
     resp = client.post(
@@ -104,7 +119,7 @@ def test_editing_missing_stage_404(admin_client):
 
 def test_cycle_can_be_linked_to_stage(admin_client, db):
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
 
     resp = client.post(
@@ -145,7 +160,7 @@ def test_week_topic_list_does_not_leak_stage(admin_client, db):
     """`/cycles` не должен показывать этап карточкой в списке циклов —
     только в выпадающем списке формы, где он и должен быть виден."""
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
 
     resp = client.get(CYCLES_PAGE)
@@ -156,7 +171,7 @@ def test_week_topic_list_does_not_leak_stage(admin_client, db):
 def test_stage_cycle_ordinal_labels_unnamed_cycles(admin_client, db):
     """Пустой title + есть этап → «Цикл N», по порядку начала периода."""
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
 
     for offset in (1, 8, 15):
@@ -216,7 +231,7 @@ def _linked_cycle(client, db, *, stage_id, offset):
 
 def test_cycle_page_shows_tiles_for_stage_siblings(admin_client, db):
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
     cycle_1 = _linked_cycle(client, db, stage_id=stage.id, offset=1)
     cycle_2 = _linked_cycle(client, db, stage_id=stage.id, offset=8)
@@ -234,7 +249,7 @@ def test_cycle_page_shows_tiles_for_stage_siblings(admin_client, db):
 
 def test_cycle_page_hides_tiles_when_alone_in_stage(admin_client, db):
     client, _ = admin_client
-    client.post(STAGES_PAGE, json=_payload())
+    _create_stage(client)
     stage = _stages(db)[0]
     cycle = _linked_cycle(client, db, stage_id=stage.id, offset=1)
 

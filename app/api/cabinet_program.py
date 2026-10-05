@@ -715,7 +715,8 @@ class PeriodPayload(BaseModel):
 
 
 class StagePayload(PeriodPayload):
-    # Период-родитель (владелец 06.10.2026). `None` — этап без периода.
+    # Период-родитель (владелец 06.10.2026: «к периоду привязывается этап»).
+    # Этапа без периода не бывает — `None` отбивает `_require_period`.
     # Поле не прислано вовсе (вкладка открыта до выкатки периодов) — привязку
     # не трогать, иначе правка дат молча отвязала бы этап от периода.
     period_id: int | None = Field(default=None, ge=1)
@@ -778,9 +779,11 @@ def _resolve_stage(db: DBSession, stage_id: int | None) -> LearningTopic | None:
     return stage
 
 
-def _resolve_period(db: DBSession, period_id: int | None) -> LearningTopic | None:
+def _require_period(db: DBSession, period_id: int | None) -> LearningTopic:
+    """Период этапа. Этап без периода не сохраняется (владелец 06.10.2026:
+    «к периоду привязывается этап»): ни при создании, ни правкой «Без периода»."""
     if period_id is None:
-        return None
+        raise HTTPException(status_code=422, detail="Выберите период этапа")
     period = get_topic(db, period_id, kinds=(TOPIC_KIND_PERIOD,))
     if period is None:
         raise HTTPException(status_code=422, detail="Период не найден")
@@ -977,7 +980,7 @@ def create_program_stage(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     opens_at, ends_at = _period_dates(payload.starts_on, payload.ends_on)
-    period = _resolve_period(db, payload.period_id)
+    period = _require_period(db, payload.period_id)
     stage = create_topic(
         db,
         title=payload.title,
@@ -989,7 +992,7 @@ def create_program_stage(
         assign_to_all=True,
         user_id=user["user_id"],
         kind=TOPIC_KIND_STAGE,
-        parent_id=period.id if period is not None else None,
+        parent_id=period.id,
     )
     if payload.is_published:
         publish_topic(stage, user_id=user["user_id"])
@@ -1011,7 +1014,7 @@ def update_program_stage(
     opens_at, ends_at = _period_dates(payload.starts_on, payload.ends_on)
     # Привязку к периоду меняет только присланное поле — см. `StagePayload`.
     set_parent = "period_id" in payload.model_fields_set
-    period = _resolve_period(db, payload.period_id) if set_parent else None
+    period = _require_period(db, payload.period_id) if set_parent else None
     update_topic(
         stage,
         title=payload.title,
