@@ -4,9 +4,9 @@
 <link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
 {% endblock %}
 {% block content %}
-{# Экран только пишет: при «Смотреть» в «Людях» формы нет
-   (шаг 2 плана тонких доступов). #}
-{% set people_edit = can(user, "people") %}
+{# Экран только пишет: без действия `people:students` формы нет
+   (шаги 2 и 4 плана тонких доступов). #}
+{% set people_edit = can(user, "people:students") %}
 <div class="su-wrap ios-sa-assign-curator">
 
     <div class="su-header">
@@ -91,7 +91,7 @@
     })();
     </script>
     {% else %}
-    <p class="bulk-sub">Раздел открыт вам только на просмотр: привязывать учеников к куратору нельзя.</p>
+    <p class="bulk-sub">Привязывать учеников к куратору вам не открыто.</p>
     {% endif %}
 
 </div>

@@ -70,8 +70,9 @@ def can_impersonate_by_rank(actor_user_id: int, actor_rank: int, target: User) -
     return actor_rank > target_rank
 
 
-def can_manage_user(actor: User, target: User) -> bool:
-    return can_manage_user_by_rank(actor.id, _role_rank(actor), target)
+def can_manage_user(actor: User, target: User, actor_rank: int | None = None) -> bool:
+    rank = _role_rank(actor) if actor_rank is None else actor_rank
+    return can_manage_user_by_rank(actor.id, rank, target)
 
 
 def can_assign_role_rank(actor_rank: int, new_role_rank: int) -> bool:
@@ -301,17 +302,23 @@ def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
         invalidate_session(s.id)
 
 
-def soft_delete_user(db: DBSession, target_user_id: int, performed_by_id: int) -> bool:
+def soft_delete_user(
+    db: DBSession, target_user_id: int, performed_by_id: int, *, actor_rank: int | None = None,
+) -> bool:
     """
     Soft-delete пользователя: выставляет deleted_at, деактивирует.
     Возвращает False если пользователь не найден или уже удалён.
     Нельзя удалить самого себя.
-    """
+
+    `actor_rank` — ранг запроса (`user["role_rank"]`): сотрудник, которому
+    суперадмин открыл действие сверх роли, работает с рангом действия, а в
+    базе у него прежняя роль. Без него ранг берётся из роли актора — так
+    зовут скрипты."""
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user or user.deleted_at is not None:
         return False
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user, actor_rank):
         return False
 
     now = datetime.now(timezone.utc)
@@ -401,7 +408,8 @@ def _foreign_actor_refs(db: DBSession, target_user_id: int, *,
 
 
 def hard_delete_user(
-    db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True
+    db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True,
+    actor_rank: int | None = None, action_granted: bool = False,
 ) -> tuple[bool, str | None]:
     """Физическое (безвозвратное) удаление ученика и всех его данных: работ,
     фото, попыток пробников, диалогов обратной связи, домашних работ,
@@ -427,14 +435,19 @@ def hard_delete_user(
 
     Возвращает `(True, None)` при успехе или `(False, "причина")` при
     отказе. Ничего не пишет в базу при отказе.
+
+    `action_granted` — роут уже проверил действие `people:hard_delete`
+    (суперадмин включил его сотруднику, шаг 4 плана тонких доступов); без
+    него удаление по-прежнему только у суперадмина. `actor_rank` — ранг
+    запроса, см. `soft_delete_user`.
     """
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user:
         return False, "Пользователь не найден"
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user, actor_rank):
         return False, "Недостаточно прав для удаления этого пользователя"
-    if _role_rank(actor) < SUPERADMIN_RANK:
+    if not action_granted and _role_rank(actor) < SUPERADMIN_RANK:
         return False, "Полное удаление доступно только суперадмину"
     if _role_rank(user) != STUDENT_RANK:
         return False, "Полное удаление доступно только для роли «ученик»"
@@ -527,7 +540,10 @@ def hard_delete_user(
     return True, None
 
 
-def archive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True) -> bool:
+def archive_user(
+    db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True,
+    actor_rank: int | None = None,
+) -> bool:
     """
     Отправляет пользователя в архив: ставит archived_at, гасит is_active,
     выкидывает из активных сессий. Данные (работы, оценки, переписки) не трогаются.
@@ -538,7 +554,7 @@ def archive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, co
     if not user or user.archived_at is not None or user.deleted_at is not None:
         return False
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user, actor_rank):
         return False
 
     user.archived_at = datetime.now(timezone.utc)
@@ -552,7 +568,10 @@ def archive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, co
     return True
 
 
-def unarchive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True) -> bool:
+def unarchive_user(
+    db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True,
+    actor_rank: int | None = None,
+) -> bool:
     """
     Возвращает пользователя из архива: снимает archived_at и включает is_active.
     Возвращает False, если пользователь не найден, не в архиве, удалён
@@ -562,7 +581,7 @@ def unarchive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, 
     if not user or user.archived_at is None or user.deleted_at is not None:
         return False
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user, actor_rank):
         return False
 
     user.archived_at = None
@@ -578,7 +597,9 @@ def unarchive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, 
     return True
 
 
-def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int) -> bool | None:
+def toggle_user_active(
+    db: DBSession, target_user_id: int, performed_by_id: int, *, actor_rank: int | None = None,
+) -> bool | None:
     """
     Блокирует или разблокирует пользователя (переключает is_active).
     Нельзя применять к удалённым пользователям и к самому себе.
@@ -593,7 +614,7 @@ def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int)
         # Возврат из архива делается unarchive_user.
         return None
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user, actor_rank):
         return None
 
     if user.is_active:

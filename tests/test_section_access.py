@@ -221,7 +221,7 @@ def test_role_matrix_stores_only_differences_from_rank(db, superadmin, curator):
 def test_every_role_has_every_section_in_matrix(db):
     matrix = section_access.role_levels(db)
     for role in section_access.CONFIGURABLE_ROLES:
-        assert set(matrix[role]) == set(section_access.SECTIONS_BY_KEY)
+        assert set(matrix[role]) == set(section_access.SECTIONS_BY_KEY) | set(section_access.ACTIONS_BY_KEY)
 
 
 # ── Живые запросы ─────────────────────────────────────────────────────────────
@@ -491,10 +491,10 @@ def test_curator_menu_shows_archive_when_granted(client, db, session_factory, cu
 
 def test_card_shows_every_section_and_marks_above_role(db, superadmin, curator):
     rules = {r["key"]: r for r in section_access.user_rules(db, curator)}
-    assert set(rules) == set(section_access.SECTIONS_BY_KEY)
+    assert set(rules) == set(section_access.SECTIONS_BY_KEY) | set(section_access.ACTIONS_BY_KEY)
     assert rules["archive"]["native"] is False
     assert rules["archive"]["state"] == "role"
-    assert rules["archive"]["role_level"] == "none"
+    assert rules["archive"]["default"] == "none"
     assert rules["archive"]["levels"] == ("none", "view")
     assert rules["students"]["native"] is True
 

@@ -37,7 +37,7 @@ from app.constants import (
 )
 from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
-from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user
+from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user, require_action
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
@@ -1912,7 +1912,7 @@ def _render_superadmin_users(
 @router.get("/superadmin/create-staff", response_class=HTMLResponse)
 def superadmin_create_staff_page(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:create"))],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     return _render_superadmin_create_staff(request, user, db)
@@ -1971,7 +1971,7 @@ def superadmin_users(
 @router.post("/superadmin/users/create-student", response_class=HTMLResponse)
 def superadmin_create_student(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:create"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     first_name: str = Form(...),
@@ -2052,7 +2052,7 @@ def superadmin_create_student(
 @router.post("/superadmin/users/create-staff", response_class=HTMLResponse)
 def superadmin_create_staff(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:create"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     first_name: str = Form(...),
@@ -2428,6 +2428,7 @@ def superadmin_user_card(
             section_access.user_rules(db, target) if user["role_rank"] >= 5 else []
         ),
         "level_titles": section_access.LEVEL_TITLES,
+        "action_titles": section_access.ACTION_TITLES,
     })
 
 
@@ -2621,7 +2622,9 @@ def superadmin_delete_user(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    ok = soft_delete_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    ok = soft_delete_user(
+        db, target_user_id=target_id, performed_by_id=user["user_id"], actor_rank=user["role_rank"],
+    )
     if not ok:
         raise HTTPException(status_code=400, detail="Невозможно удалить пользователя")
     if _wants_json_response(request):
@@ -2633,13 +2636,14 @@ def superadmin_delete_user(
 def superadmin_hard_delete_user(
     target_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:hard_delete"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     confirm_name: str = Form(""),
 ):
     """Безвозвратное удаление ученика и всех его данных (кнопка «Удалить
-    навсегда»). Только суперадмин. Клиент уже спросил подтверждение вводом
+    навсегда»). Суперадмин и тот, кому он включил действие `people:hard_delete`
+    (`require_action`). Клиент уже спросил подтверждение вводом
     имени/id в модалке — здесь та же проверка повторяется на сервере,
     потому что клиентская сверка защищает только от опечатки, не от
     прямого запроса в обход UI."""
@@ -2652,7 +2656,10 @@ def superadmin_hard_delete_user(
     if not typed or typed not in expected:
         raise HTTPException(status_code=400, detail="Подтверждение не совпадает с именем или id ученика")
 
-    ok, error = hard_delete_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    ok, error = hard_delete_user(
+        db, target_user_id=target_id, performed_by_id=user["user_id"],
+        actor_rank=user["role_rank"], action_granted=True,
+    )
     if not ok:
         raise HTTPException(status_code=400, detail=error or "Невозможно удалить пользователя")
     if _wants_json_response(request):
@@ -2668,7 +2675,9 @@ def superadmin_toggle_active(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    result = toggle_user_active(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    result = toggle_user_active(
+        db, target_user_id=target_id, performed_by_id=user["user_id"], actor_rank=user["role_rank"],
+    )
     if result is None:
         raise HTTPException(status_code=400, detail="Невозможно изменить статус пользователя")
     if _wants_json_response(request):
@@ -2680,12 +2689,14 @@ def superadmin_toggle_active(
 def superadmin_archive_user(
     target_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:archive"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     """В архив: ученик уходит из рабочих списков, данные остаются целыми."""
-    ok = archive_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    ok = archive_user(
+        db, target_user_id=target_id, performed_by_id=user["user_id"], actor_rank=user["role_rank"],
+    )
     if not ok:
         raise HTTPException(status_code=400, detail="Невозможно отправить в архив")
     if _wants_json_response(request):
@@ -2697,12 +2708,14 @@ def superadmin_archive_user(
 def superadmin_unarchive_user(
     target_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("people:archive"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     """Вернуть из архива: доступ и рабочие списки восстанавливаются."""
-    ok = unarchive_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    ok = unarchive_user(
+        db, target_user_id=target_id, performed_by_id=user["user_id"], actor_rank=user["role_rank"],
+    )
     if not ok:
         raise HTTPException(status_code=400, detail="Невозможно вернуть из архива")
     if _wants_json_response(request):

@@ -29,7 +29,8 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf, require_superadmin
+from app.dependencies import require_action, require_admin_role, require_csrf
+from app.services.section_access import can
 from app.models.guest_exam import GuestExamConfig, GuestSubmission
 from app.services import guest_exam as guest_exam_service
 from app.services import s3 as s3_service
@@ -68,9 +69,10 @@ def guest_mode_page(
 ):
     if tab not in ("tickets", "link", "works", "participants", "stats"):
         tab = "tickets"
-    # Вкладка «Участники» — только суперадмину. Гейт стоит здесь, а не только на
-    # ссылке в шапке: страница открыта рангу 4, и он может набрать ?tab= руками.
-    if tab == "participants" and user["role_rank"] < 5:
+    # Вкладка «Участники» — суперадмину и тому, кому он включил действие
+    # `guest_exam:participants`. Гейт стоит здесь, а не только на ссылке в
+    # шапке: страница открыта рангу 4, и он может набрать ?tab= руками.
+    if tab == "participants" and not can(user, "guest_exam:participants"):
         tab = "tickets"
 
     config = guest_exam_service.get_primary_config(db)
@@ -324,7 +326,7 @@ def guest_mode_cancel_upload(
 @router.post("/participants/{participant_id}/delete")
 def guest_mode_delete_participant(
     participant_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("guest_exam:participants"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):

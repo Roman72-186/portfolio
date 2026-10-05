@@ -24,7 +24,7 @@
             <span class="dlg-student-return-badge">УЧЕНИК МОЖЕТ ДОГРУЗИТЬ ЭТАПЫ</span>
         {% endif %}
         <div class="dlg-head-actions">
-            {% if viewer_role == 'superadmin' and has_staff_message and not cycle.revision_requested_at %}
+            {% if can_manage_dialogs and has_staff_message and not cycle.revision_requested_at %}
                 <button type="button" class="dlg-revision-btn" id="dlg-revision-btn"
                         data-cycle-id="{{ cycle.id }}"
                         data-csrf="{{ csrf_token(request) }}"
@@ -43,7 +43,7 @@
                     Вернуть ученику для этапов
                 </button>
             {% endif %}
-            {% if viewer_role == 'superadmin' and cycle.closed_at %}
+            {% if can_manage_dialogs and cycle.closed_at %}
                 <button type="button" class="dlg-reopen-btn" id="dlg-reopen-btn"
                         data-cycle-id="{{ cycle.id }}"
                         data-csrf="{{ csrf_token(request) }}"
@@ -52,7 +52,7 @@
                     Переоткрыть цикл
                 </button>
             {% endif %}
-            {% if viewer_role == 'superadmin' and not cycle.closed_at %}
+            {% if can_manage_dialogs and not cycle.closed_at %}
                 <button type="button" class="dlg-delete-btn" id="dlg-delete-btn"
                         data-cycle-id="{{ cycle.id }}"
                         data-works="{{ attempts | length }}"

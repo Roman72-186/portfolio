@@ -46,8 +46,10 @@ from app.dependencies import (
     require_curator,
     require_scorer,
     require_superadmin,
+    require_action,
     require_csrf,
 )
+from app.services.section_access import can
 from app.models.feedback_rating import DIALOG_MOCK_EXAM, FEEDBACK_MOCK
 from app.services.feedback_rating import (
     RatingError,
@@ -582,6 +584,9 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
+        # Удалить, переоткрыть, вернуть куратору — действие `feedback:dialogs`
+        # (суперадмину всегда, остальным — если он включил).
+        "can_manage_dialogs": can(user, "feedback:dialogs"),
         "rating_panel": _rating_panel(db, payload, viewer_role),
         "can_score": can_score(user["role_rank"]),
         "student": {"id": student.id, "name": student.name},
@@ -736,7 +741,7 @@ async def rate_mock_feedback(
 @router.post("/cabinet/superadmin/feedback/{cycle_id}/delete")
 def superadmin_delete_cycle(
     cycle_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("feedback:dialogs"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -764,7 +769,7 @@ def superadmin_delete_cycle(
 @router.post("/cabinet/superadmin/feedback/{cycle_id}/reopen")
 def superadmin_reopen_cycle(
     cycle_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("feedback:dialogs"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -811,7 +816,7 @@ def superadmin_reopen_cycle(
 @router.post("/cabinet/superadmin/feedback/{cycle_id}/return-to-curator")
 def superadmin_return_to_curator(
     cycle_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("feedback:dialogs"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):

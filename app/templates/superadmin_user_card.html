@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Карточка ученика — {{ target.last_name or '' }} {{ target.first_name or target.name }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=14">
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=15">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
-{# «Смотреть» в «Людях» — карточка без правки: поля формы неактивны, кнопок
-   сохранения, доступа и входа «глазами» нет (шаг 2 плана тонких доступов). #}
-{% set people_edit = can(user, "people") %}
+{# Кнопки карточки спрашивают свои действия (шаг 4 плана тонких доступов):
+   поля и «Сохранить» — `people:students` (без него поля неактивны), выдача
+   доступа — `people:login`, вход «глазами» — `people:impersonate`. #}
+{% set people_edit = can(user, "people:students") %}
 <div class="uc-wrap ios-uc">
     <div class="uc-head">
         <a href="/cabinet/superadmin/users" class="back-link uc-back-link">← Все ученики</a>
@@ -49,8 +50,8 @@
                     {% endif %}
                     <br>Новый пароль будет показан один раз после генерации.
                 </div>
-                {% set can_manage = people_edit and user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
-                {% set can_impersonate = people_edit and can_impersonate %}
+                {% set can_manage = can(user, "people:login") and user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% set can_impersonate = can(user, "people:impersonate") and can_impersonate %}
                 {% if can_manage or can_impersonate %}
                 <div class="uc-btn-group">
                     {% if can_manage %}
@@ -169,14 +170,17 @@
             {% endif %}
             <p class="uc-access-meta">Свой уровень сотрудника поверх правила роли. «Как у роли» – действует то, что задано на экране «Доступы».</p>
             <div class="uc-grid">
+                {# Действие раздела (шаг 4 плана) идёт сразу за своим разделом:
+                   «Как у роли», «Можно», «Нельзя». #}
                 {% for rule in section_rules %}
-                <label>
-                    {{ rule.label }}{% if not rule.native %} (сверх роли){% endif %}
+                {% set titles = action_titles if rule.is_action else level_titles %}
+                <label{% if rule.is_action %} class="uc-access-action"{% endif %}>
+                    {% if rule.is_action %}Действие: {% endif %}{{ rule.label }}{% if not rule.is_action and not rule.native %} (сверх роли){% endif %}
                     <select name="section__{{ rule.key }}" class="form-select" data-initial="{{ rule.state }}">
-                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли – {{ level_titles[rule.role_level] | lower }}</option>
+                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли – {{ titles[rule.default] | lower }}</option>
                         {% for lv in rule.levels %}
                         <option value="{{ lv }}" {% if rule.state == lv %}selected{% endif %}
-                                {% if lv in rule.risky %}data-risky data-risky-what="«{{ rule.label }}» сотруднику"{% endif %}>{{ level_titles[lv] }}</option>
+                                {% if lv in rule.risky %}data-risky data-risky-what="«{{ rule.label }}» сотруднику"{% endif %}>{{ titles[lv] }}</option>
                         {% endfor %}
                     </select>
                 </label>

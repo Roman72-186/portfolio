@@ -1,9 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Доступы к разделам{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=15">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=16">
 {% endblock %}
 {% block content %}
+{# Действия раздела галочками (шаг 4 плана): скрытое «none» и галочка «edit»
+   с одним именем. `data-follows` — действие без своего правила идёт за
+   разделом: переключили раздел — скрипт ставит галочку как у «Менять». #}
+{% macro action_list(items, col, section_key) %}
+<ul class="acc-actions">
+    {% for item in items %}
+    {% set a = item.action %}
+    {% set field = "cell__" ~ col.slug ~ "__" ~ a.key %}
+    <li>
+        <input type="hidden" name="{{ field }}" value="none">
+        <label class="acc-check">
+            <input type="checkbox" name="{{ field }}" value="edit"
+                   {% if item.level == "edit" %}checked{% endif %}
+                   data-initial="{{ item.level }}"
+                   {% if a.inherits and section_key %}data-follows="cell__{{ col.slug }}__{{ section_key }}"{% endif %}
+                   {% if item.risky %}data-risky data-risky-what="«{{ a.label }}» роли «{{ col.label }}»"{% endif %}>
+            <span>{{ a.label }}{% if a.risky %} <span class="acc-warn" title="Доступ к чужим аккаунтам" aria-label="доступ к чужим аккаунтам">⚠</span>{% endif %}</span>
+        </label>
+        {% if not a.inherits %}<span class="ss-dim-sm acc-action-note">по умолчанию только суперадмин</span>{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endmacro %}
 {# Уровни разделов для сотрудников (владелец 30.09, 03.10 и 04.10.2026). Логика —
    services/section_access.py, роуты — api/cabinet_access_admin.py. Вёрстка на
    .ss-* из superadmin_stats_ios.css, уровни — .acc-* там же.
@@ -58,8 +81,23 @@
                         </label>
                         {% endfor %}
                     </fieldset>
+                    {% if row.actions %}
+                    <details class="acc-actions-wrap">
+                        <summary>Действия в разделе ({{ row.actions | length }})</summary>
+                        {{ action_list(row.actions, col, section.key) }}
+                    </details>
+                    {% endif %}
                 </li>
                 {% endfor %}
+                {% if loose_actions[col.name] %}
+                <li class="acc-row">
+                    <div class="acc-row-text">
+                        <div class="ss-bold">Вне разделов</div>
+                        <div class="ss-dim-sm">Общие адреса, открываются из нескольких экранов</div>
+                    </div>
+                    {{ action_list(loose_actions[col.name], col, None) }}
+                </li>
+                {% endif %}
             </ul>
         </section>
         {% endfor %}
@@ -71,6 +109,8 @@
                 <li>Балл, возврат на доработку и разблокировку пересдачи даёт только роль Главного преподавателя. Уровень «Менять» их не открывает.</li>
                 <li>«Люди и доступы» сверх роли – это смена ролей, логины и пароли, вход «глазами» в чужие кабинеты. Перед сохранением экран спросит подтверждение.</li>
                 <li>Архив куратору открывается целиком, чужие действующие ученики ему по-прежнему не видны.</li>
+                <li>Действия раздела без своей галочки идут за разделом: «Менять» – можно. Действия с пометкой «по умолчанию только суперадмин» закрыты, пока их не отметили.</li>
+                <li>Роль и вход «глазами» – всегда только ниже своей роли, даже с открытым действием.</li>
                 <li>Одному сотруднику уровень меняют в его карточке, блок «Доступ к разделам».</li>
             </ul>
         </div>
@@ -93,7 +133,7 @@
                         {% if p.user.role %}<div class="ss-dim-sm">{{ p.user.role.display_name }}</div>{% endif %}
                     </td>
                     <td data-label="Свой уровень">
-                        {% for r in p.rules %}<div>{{ r.label }}: {{ level_labels[r.level] | lower }}</div>{% endfor %}
+                        {% for r in p.rules %}<div>{{ r.label }}: {{ r.level_label }}</div>{% endfor %}
                     </td>
                 </tr>
                 {% endfor %}

@@ -296,6 +296,115 @@ def section_owners(method: str, path: str, query_params) -> tuple[str, ...]:
     return ()
 
 
+# ── Действия внутри разделов (шаг 4 плана, 05.10.2026) ──────────────────────
+#
+# Действие — отдельное право поверх уровня раздела: «можно» (`edit`) или
+# «нельзя» (`none`), строка той же `section_access_rules` с ключом действия.
+# Запрос к адресу действия решает действие, а не раздел (`judge_request`).
+#
+# Без своего правила действие с `inherits=True` повторяет раздел: «Менять» в
+# разделе — можно. Так ГП после выкатки делает в «Людях» ровно то же, что
+# раньше. Действие с `inherits=False` — бывшее «только суперадмин»: без
+# правила закрыто у всех трёх ролей (владелец 04.10.2026: «добавить все
+# правила по максимуму… но отметить те, что есть сейчас»).
+#
+# Потолок «роль и вход «глазами» — только ниже своей» в настройку не входит:
+# его держат `can_assign_role_rank`, `can_manage_user_by_rank`,
+# `can_impersonate_by_rank` по рангу запроса.
+
+
+@dataclass(frozen=True)
+class Action:
+    key: str
+    label: str
+    # Раздел, под строкой которого действие стоит на экране; None — общий
+    # адрес вне разделов.
+    section: str | None
+    inherits: bool
+    # Ранг на запрос, если действие открыто сверх положенного роли.
+    min_rank: int = 4
+    # Доступ к чужим аккаунтам — экран просит подтвердить.
+    risky: bool = False
+
+
+ACTIONS: tuple[Action, ...] = (
+    Action("people:students", "Куратор, тариф, когорта и теги ученика", "people", True),
+    Action("people:block", "Заблокировать и удалить", "people", True),
+    Action("people:role", "Менять роль", "people", True, risky=True),
+    Action("people:login", "Логин и пароль, ссылки входа", "people", True, risky=True),
+    Action("people:impersonate", "Вход «глазами»", "people", True, risky=True),
+    Action("people:create", "Создавать учеников и сотрудников", "people", False, risky=True),
+    Action("people:archive", "Отправить в архив и вернуть", "people", False),
+    Action("people:hard_delete", "Удалить ученика навсегда", "people", False),
+    Action(
+        "students:portfolio_months", "Месяцы портфолио: переименовать, перенести работу",
+        "students", False,
+    ),
+    Action("program:video_delete", "Удалить видео", "program", False),
+    Action("guest_exam:participants", "Участники гостевого пробника", "guest_exam", False),
+    Action(
+        "feedback:dialogs", "Диалоги обратной связи: удалить, переоткрыть, вернуть куратору",
+        None, False,
+    ),
+)
+
+ACTIONS_BY_KEY: dict[str, Action] = {a.key: a for a in ACTIONS}
+
+ACTION_CLOSED_DETAIL = "Действие закрыто суперадмином"
+
+_USER = r"^/cabinet/superadmin/users/\d+"
+_POST = ("POST",)
+
+# Первое совпадение решает; адреса действий не пересекаются.
+_ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
+    (key, re.compile(pattern), frozenset(methods))
+    for key, pattern, methods in (
+        ("people:students", _USER + "/(tags|curator|tariff|cohort-tag)$", _POST),
+        ("people:students", _exact("/cabinet/superadmin/users/assign-curator-bulk"), _POST),
+        ("people:students", r"^/cabinet/superadmin/tags/\d+$", _POST),
+        # Поиск по списку ников — часть массовой проставки тегов, POST на чтение.
+        ("people:students", _exact("/cabinet/superadmin/tags/bulk-lookup"), _POST),
+        ("people:students", r"^/cabinet/superadmin/tags/\d+/\d+$", ("DELETE",)),
+        ("people:block", _USER + "/(toggle-active|delete)$", _POST),
+        ("people:role", _USER + "/role$", _POST),
+        ("people:login", _USER + "/(set-credentials|issue-link|issue-telegram-link)$", _POST),
+        ("people:login", _exact("/cabinet/superadmin/set-credentials"), _POST),
+        ("people:login", _exact("/cabinet/superadmin/issue-link"), _POST),
+        ("people:impersonate", r"^/cabinet/superadmin/impersonate/\d+$", _POST),
+        ("people:create", _exact("/cabinet/superadmin/create-staff"), ("GET", "HEAD")),
+        ("people:create", _exact("/cabinet/superadmin/users/create-student"), _POST),
+        ("people:create", _exact("/cabinet/superadmin/users/create-staff"), _POST),
+        ("people:archive", _USER + "/(archive|unarchive)$", _POST),
+        ("people:hard_delete", _USER + "/hard-delete$", _POST),
+        ("students:portfolio_months", _STUDENT + r"/portfolio/(month|works/\d+/move)$", ("PATCH",)),
+        ("program:video_delete", r"^/cabinet/admin/videos/\d+/delete$", _POST),
+        ("guest_exam:participants", r"^/cabinet/staff/guest-exam/participants/\d+/delete$", _POST),
+        ("feedback:dialogs", r"^/cabinet/superadmin/feedback/\d+/(delete|reopen|return-to-curator)$", _POST),
+    )
+)
+
+
+def action_of(method: str, path: str) -> Action | None:
+    """Действие, которому принадлежит запрос, или None."""
+    for key, pattern, methods in _ACTION_RULES:
+        if method in methods and pattern.match(path):
+            return ACTIONS_BY_KEY[key]
+    return None
+
+
+def inherited_action_level(action: Action, section_level: str | None) -> str:
+    """Уровень действия без своего правила: повторяет «Менять» раздела или закрыт."""
+    if action.inherits and section_level == LEVEL_EDIT:
+        return LEVEL_EDIT
+    return LEVEL_NONE
+
+
+def native_action_level(action: Action, role_name: str | None) -> str:
+    """Что действие у роли сегодня, без единой строки в базе."""
+    section = SECTIONS_BY_KEY.get(action.section) if action.section else None
+    return inherited_action_level(action, native_level(section, role_name) if section else None)
+
+
 def is_configurable_role(role_name: str | None) -> bool:
     return role_name in CONFIGURABLE_ROLES
 
@@ -347,6 +456,12 @@ def judge_request(
     правила держит ранг, как до переключателей."""
     if not levels:
         return RequestAccess()
+    action = action_of(method, path)
+    if action is not None:
+        if levels.get(action.key) != LEVEL_EDIT:
+            return RequestAccess(refusal=ACTION_CLOSED_DETAIL, refused_section=action.key)
+        raised = native_action_level(action, role_name) != LEVEL_EDIT
+        return RequestAccess(raised=raised, rank=action.min_rank if raised else 0)
     owners = section_owners(method, path, query_params)
     if not owners:
         return RequestAccess()
@@ -403,24 +518,39 @@ def _rules_for(db: DBSession, *, user_id: int | None, role_id: int | None):
 def resolve_levels(
     db: DBSession, *, user_id: int, role_id: int | None, role_name: str | None,
 ) -> dict[str, str]:
-    """{раздел: уровень} сотрудника по всем разделам каталога.
+    """{раздел или действие: уровень} сотрудника по всему каталогу.
 
-    Порядок: личное правило, затем правило роли, затем `native_level`. Ключи,
-    которых нет в `SECTIONS` (раздел переименовали или убрали), и незнакомые
-    уровни пропускаются — старая строка в базе не должна ронять вход."""
+    Порядок: личное правило, затем правило роли, затем уровень по умолчанию
+    (`native_level` у раздела, `inherited_action_level` от уже найденного
+    уровня раздела у действия). Ключи, которых нет в каталоге (раздел
+    переименовали или убрали), и незнакомые уровни пропускаются — старая
+    строка в базе не должна ронять вход."""
     by_role: dict[str, str] = {}
     by_user: dict[str, str] = {}
     for row in _rules_for(db, user_id=user_id, role_id=role_id):
-        if row.section_key not in SECTIONS_BY_KEY or row.level not in LEVELS:
+        if row.level not in LEVELS:
+            continue
+        if row.section_key not in SECTIONS_BY_KEY and row.section_key not in ACTIONS_BY_KEY:
             continue
         if row.user_id is not None:
             by_user[row.section_key] = row.level
         else:
             by_role[row.section_key] = row.level
-    return {
+    levels = {
         s.key: by_user.get(s.key, by_role.get(s.key, native_level(s, role_name)))
         for s in SECTIONS
     }
+    for a in ACTIONS:
+        levels[a.key] = _action_level(by_user.get(a.key, by_role.get(a.key)), a, levels)
+    return levels
+
+
+def _action_level(stored: str | None, action: Action, section_levels: dict[str, str]) -> str:
+    """Уровень действия: своё правило (только «можно» или «нельзя») или
+    уровень по умолчанию от раздела."""
+    if stored == LEVEL_EDIT or stored == LEVEL_NONE:
+        return stored
+    return inherited_action_level(action, section_levels.get(action.section) if action.section else None)
 
 
 def closed_sections(levels: dict[str, str], role_name: str | None) -> frozenset[str]:
@@ -479,6 +609,14 @@ def granted_nav_keys(granted: frozenset[str] | None) -> tuple[str, ...]:
 LEVEL_LABELS = {LEVEL_NONE: "нет", LEVEL_VIEW: "смотреть", LEVEL_EDIT: "менять"}
 # Подписи на экране и в карточке: кнопки-сегменты и пункты списка.
 LEVEL_TITLES = {LEVEL_NONE: "Нет", LEVEL_VIEW: "Смотреть", LEVEL_EDIT: "Менять"}
+# У действия два состояния — галочка на экране, «Можно / Нельзя» в карточке.
+ACTION_LABELS = {LEVEL_NONE: "нельзя", LEVEL_EDIT: "можно"}
+ACTION_TITLES = {LEVEL_NONE: "Нельзя", LEVEL_EDIT: "Можно"}
+ACTION_LEVELS = (LEVEL_NONE, LEVEL_EDIT)
+
+
+def _label(key: str, level: str) -> str:
+    return (ACTION_LABELS if key in ACTIONS_BY_KEY else LEVEL_LABELS)[level]
 
 # Разделы, где нет ни одного адреса на запись: «Менять» им не к чему, на экране
 # два уровня. Снимок тот же, что в миграции `639c04979ebf`; появится адрес на
@@ -533,9 +671,10 @@ def role_levels(db: DBSession) -> dict[str, dict[str, str]]:
     for name in CONFIGURABLE_ROLES:
         role = roles.get(name)
         role_rows = stored.get(role.id, {}) if role else {}
-        result[name] = {
-            s.key: role_rows.get(s.key, native_level(s, name)) for s in SECTIONS
-        }
+        levels = {s.key: role_rows.get(s.key, native_level(s, name)) for s in SECTIONS}
+        for a in ACTIONS:
+            levels[a.key] = _action_level(role_rows.get(a.key), a, levels)
+        result[name] = levels
     return result
 
 
@@ -548,44 +687,62 @@ def _audit(db: DBSession, *, action: str, actor_id: int, target_user_id: int | N
     ))
 
 
+def _put_rule(db: DBSession, *, key: str, level: str | None, actor_id: int,
+              role_id: int | None = None, user_id: int | None = None) -> None:
+    """Записать строку правила или убрать её (`level=None`)."""
+    query = db.query(SectionAccessRule).filter(SectionAccessRule.section_key == key)
+    query = query.filter(
+        SectionAccessRule.role_id == role_id if role_id is not None
+        else SectionAccessRule.user_id == user_id
+    )
+    row = query.first()
+    if level is None:
+        if row is not None:
+            db.delete(row)
+        return
+    if row is None:
+        db.add(SectionAccessRule(
+            section_key=key, role_id=role_id, user_id=user_id, level=level, updated_by_id=actor_id,
+        ))
+    elif row.level != level:
+        row.level = level
+        row.updated_by_id = actor_id
+
+
 def save_role_levels(db: DBSession, *, actor_id: int, desired: dict[str, dict[str, str]]) -> int:
-    """Сохранить таблицу «разделы × роли». Возвращает число изменений.
+    """Сохранить таблицу «разделы × роли» вместе с действиями. Возвращает
+    число изменений.
 
-    `desired` — {роль: {раздел: уровень}}; незнакомые роли, ключи и уровни
-    молча пропускаются, раздела, которого нет в `desired`, правка не касается.
+    `desired` — {роль: {раздел или действие: уровень}}; незнакомые роли,
+    ключи и уровни молча пропускаются, ключа, которого нет в `desired`,
+    правка не касается.
 
-    Строка в базе хранится, только пока уровень расходится с `native_level`:
-    вернули как положено роли — строка удаляется."""
+    Строка в базе хранится, только пока уровень расходится с уровнем по
+    умолчанию: у раздела — `native_level`, у действия — то, что даёт раздел
+    после этого же сохранения. Вернули как по умолчанию — строка удаляется."""
     roles = _configurable_roles(db)
     current = role_levels(db)
+    stored = {
+        (row.role_id, row.section_key): row.level
+        for row in db.query(SectionAccessRule).filter(SectionAccessRule.role_id.isnot(None)).all()
+    }
     changes = 0
     for name in CONFIGURABLE_ROLES:
         role = roles.get(name)
         if role is None:
             continue
-        wanted_for_role = desired.get(name, {})
-        for key, level_now in current[name].items():
-            if key not in wanted_for_role:
-                continue
-            section = SECTIONS_BY_KEY[key]
-            level = _clean_level(section, wanted_for_role[key])
+        wanted = desired.get(name, {})
+        new_levels = dict(current[name])
+        for section in SECTIONS:
+            level_now = current[name][section.key]
+            level = _clean_level(section, wanted.get(section.key))
             if level is None or level == level_now:
                 continue
-            row = (
-                db.query(SectionAccessRule)
-                .filter(SectionAccessRule.role_id == role.id, SectionAccessRule.section_key == key)
-                .first()
+            new_levels[section.key] = level
+            _put_rule(
+                db, key=section.key, role_id=role.id, actor_id=actor_id,
+                level=None if level == native_level(section, name) else level,
             )
-            if level == native_level(section, name):
-                if row is not None:
-                    db.delete(row)
-            elif row is None:
-                db.add(SectionAccessRule(
-                    section_key=key, role_id=role.id, level=level, updated_by_id=actor_id,
-                ))
-            else:
-                row.level = level
-                row.updated_by_id = actor_id
             extra = "" if is_native(section, name) else " (сверх роли)"
             _audit(
                 db, action="section_access_role", actor_id=actor_id, target_user_id=None,
@@ -595,15 +752,40 @@ def save_role_levels(db: DBSession, *, actor_id: int, desired: dict[str, dict[st
                 ),
             )
             changes += 1
+        for action in ACTIONS:
+            level_now = current[name][action.key]
+            level = wanted.get(action.key)
+            if level not in ACTION_LEVELS:
+                # Ключа нет в форме — действие остаётся, как было: своё
+                # правило не трогаем, а без него оно идёт за разделом.
+                continue
+            inherited = inherited_action_level(
+                action, new_levels.get(action.section) if action.section else None,
+            )
+            target = None if level == inherited else level
+            if stored.get((role.id, action.key)) != target:
+                _put_rule(db, key=action.key, role_id=role.id, actor_id=actor_id, level=target)
+            if level == level_now:
+                continue
+            _audit(
+                db, action="section_access_role", actor_id=actor_id, target_user_id=None,
+                details=(
+                    f"роль «{role.display_name}», действие «{action.label}»: "
+                    f"{ACTION_LABELS[level_now]} → {ACTION_LABELS[level]}"
+                ),
+            )
+            changes += 1
     db.commit()
     return changes
 
 
 def user_rules(db: DBSession, target: User) -> list[dict]:
-    """Строки блока «Доступ к разделам» в карточке сотрудника — все разделы.
+    """Строки блока «Доступ к разделам» в карточке сотрудника — все разделы и
+    действия.
 
-    `state` — `role` (как у роли) или личный уровень; `role_level` — что
-    сейчас у роли, карточка показывает его в пункте «Как у роли»."""
+    `state` — `role` (как по умолчанию) или личный уровень; `default` — что
+    сотрудник получит без личного правила, карточка показывает его в пункте
+    «Как у роли». Действие идёт сразу за своим разделом, с `is_action`."""
     role_name = target.role.name if target.role else None
     if not is_configurable_role(role_name):
         return []
@@ -616,56 +798,80 @@ def user_rules(db: DBSession, target: User) -> list[dict]:
             personal[row.section_key] = row.level
         else:
             by_role[row.section_key] = row.level
+    effective_sections = {
+        s.key: personal.get(s.key, by_role.get(s.key, native_level(s, role_name)))
+        for s in SECTIONS
+    }
+
+    def action_rows(section_key: str | None) -> list[dict]:
+        rows = []
+        for a in ACTIONS:
+            if a.section != section_key:
+                continue
+            default = _action_level(by_role.get(a.key), a, effective_sections)
+            rows.append({
+                "key": a.key,
+                "label": a.label,
+                "is_action": True,
+                "native": native_action_level(a, role_name) == LEVEL_EDIT,
+                "levels": ACTION_LEVELS,
+                "risky": [LEVEL_EDIT] if a.risky and native_action_level(a, role_name) != LEVEL_EDIT else [],
+                "default": default,
+                "state": personal.get(a.key, USER_STATE_ROLE)
+                if personal.get(a.key) in ACTION_LEVELS else USER_STATE_ROLE,
+            })
+        return rows
+
     result = []
     for s in SECTIONS:
         result.append({
             "key": s.key,
             "label": s.label,
+            "is_action": False,
             "native": is_native(s, role_name),
             "levels": levels_of(s),
             "risky": [lv for lv in levels_of(s) if is_risky(s, role_name, lv)],
-            "role_level": by_role.get(s.key, native_level(s, role_name)),
+            "default": by_role.get(s.key, native_level(s, role_name)),
             "state": personal.get(s.key, USER_STATE_ROLE),
         })
+        result.extend(action_rows(s.key))
+    result.extend(action_rows(None))
     return result
 
 
 def save_user_rules(db: DBSession, *, actor_id: int, target: User, desired: dict[str, str]) -> int:
-    """Сохранить личные правила сотрудника. `desired` — {раздел: role|none|view|edit};
-    раздел, которого в `desired` нет, и незнакомое значение не меняются."""
+    """Сохранить личные правила сотрудника. `desired` — {ключ: role|none|view|edit};
+    ключ, которого в `desired` нет, и незнакомое значение не меняются. У
+    действия — только role, none и edit."""
     role_name = target.role.name if target.role else None
     if not is_configurable_role(role_name):
         raise ValueError("Разделы настраиваются только куратору, модератору и Главному преподавателю")
 
-    def label(state: str) -> str:
-        return "как у роли" if state == USER_STATE_ROLE else LEVEL_LABELS[state]
+    def label(key: str, state: str) -> str:
+        return "как у роли" if state == USER_STATE_ROLE else _label(key, state)
 
     changes = 0
     for item in user_rules(db, target):
         key = item["key"]
         want = desired.get(key)
         if want != USER_STATE_ROLE:
-            want = _clean_level(SECTIONS_BY_KEY[key], want)
+            if item["is_action"]:
+                want = want if want in ACTION_LEVELS else None
+            else:
+                want = _clean_level(SECTIONS_BY_KEY[key], want)
         if want is None or want == item["state"]:
             continue
-        row = (
-            db.query(SectionAccessRule)
-            .filter(SectionAccessRule.user_id == target.id, SectionAccessRule.section_key == key)
-            .first()
+        _put_rule(
+            db, key=key, user_id=target.id, actor_id=actor_id,
+            level=None if want == USER_STATE_ROLE else want,
         )
-        if want == USER_STATE_ROLE:
-            if row is not None:
-                db.delete(row)
+        if item["is_action"]:
+            what = f"действие «{item['label']}»"
         else:
-            if row is None:
-                row = SectionAccessRule(section_key=key, user_id=target.id)
-                db.add(row)
-            row.level = want
-            row.updated_by_id = actor_id
-        extra = "" if item["native"] else " (сверх роли)"
+            what = f"раздел «{item['label']}»" + ("" if item["native"] else " (сверх роли)")
         _audit(
             db, action="section_access_user", actor_id=actor_id, target_user_id=target.id,
-            details=f"раздел «{item['label']}»{extra}: {label(item['state'])} → {label(want)}",
+            details=f"{what}: {label(key, item['state'])} → {label(key, want)}",
         )
         changes += 1
     db.commit()
@@ -682,14 +888,13 @@ def staff_with_personal_rules(db: DBSession) -> list[dict]:
     )
     by_user: dict[int, dict] = {}
     for rule, user in rows:
-        if rule.section_key not in SECTIONS_BY_KEY:
-            continue
-        if rule.level not in LEVELS:
+        item = SECTIONS_BY_KEY.get(rule.section_key) or ACTIONS_BY_KEY.get(rule.section_key)
+        if item is None or rule.level not in LEVELS:
             continue
         entry = by_user.setdefault(user.id, {"user": user, "rules": []})
         entry["rules"].append({
-            "label": SECTIONS_BY_KEY[rule.section_key].label,
-            "level": rule.level,
+            "label": item.label,
+            "level_label": _label(rule.section_key, rule.level),
         })
     return sorted(
         by_user.values(),

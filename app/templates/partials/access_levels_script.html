@@ -4,7 +4,8 @@
 
 1. Переключатель ролей (`[data-acc-tabs]`, только на экране «Доступы»): одна
    роль на экран. Без скрипта переключатель скрыт, видны все три списка.
-2. Подтверждение перед сохранением, если уровень открывает доступ к чужим
+2. Галочки действий раздела (`data-follows`) идут за уровнем раздела.
+3. Подтверждение перед сохранением, если уровень открывает доступ к чужим
    аккаунтам сверх положенного роли: радиокнопка или пункт списка с
    `data-risky`, выбранный не тот, что был (`data-initial`).
 #}
@@ -47,6 +48,15 @@
             });
         });
     }
+
+    // Действие без своего правила идёт за разделом: «Менять» — галочка стоит.
+    document.addEventListener('change', function (ev) {
+        var radio = ev.target;
+        if (!radio.matches || !radio.matches('input[type="radio"][name^="cell__"]')) return;
+        document.querySelectorAll('input[data-follows="' + radio.name + '"]').forEach(function (box) {
+            box.checked = radio.value === 'edit';
+        });
+    });
 
     document.querySelectorAll('[data-access-form]').forEach(function (form) {
         form.addEventListener('submit', function (ev) {

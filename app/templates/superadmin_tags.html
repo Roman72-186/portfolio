@@ -11,9 +11,9 @@
 {%- endif -%}
 {%- endmacro %}
 {% block content %}
-{# «Смотреть» в «Людях» — теги без правки и без массовой проставки
-   (шаг 2 плана тонких доступов). #}
-{% set people_edit = can(user, "people") %}
+{# Без действия `people:students` — теги без правки и без массовой проставки
+   (шаги 2 и 4 плана тонких доступов). #}
+{% set people_edit = can(user, "people:students") %}
 <div class="su-wrap ios-sa-tags">
 
     <div class="su-header">

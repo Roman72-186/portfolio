@@ -118,7 +118,7 @@ FORM: Operate, расширение существующего кабинета 
                     <button type="button" class="btn-blue" data-video-action="publish">Опубликовать</button>
                     {% endif %}
                     {% endif %}
-                    {% if user.role_rank >= 5 and not video.is_published %}
+                    {% if can(user, "program:video_delete") and not video.is_published %}
                     <button type="button" class="btn-danger" data-video-action="delete" data-video-title="{{ video.title }}">Удалить</button>
                     {% endif %}
                 </div>

@@ -327,3 +327,5 @@
 /* Форма карточки в `fieldset`: при «Смотреть» в «Людях» он `disabled` и гасит
    все поля разом. Рамку и отступы браузера по умолчанию снимаем. */
 .ios-uc .uc-fields { border:0; padding:0; margin:0; min-width:0; }
+/* Действие раздела в блоке «Доступ к разделам» — сдвинуто под свой раздел. */
+.ios-uc .uc-access-action { padding-left: 14px; border-left: 2px solid var(--ios-sep); }

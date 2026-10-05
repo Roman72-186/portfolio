@@ -262,6 +262,10 @@ def test_moderator_with_every_section_open_browses_without_writes(
         if route.path == "/cabinet/3dlab/enter" or "{" in route.path.replace("{student_id}", ""):
             continue
         path = route.path.replace("{student_id}", str(student.id))
+        # Страница действия (создание сотрудника) решается действием, а не
+        # уровнем раздела — её здесь не открывают.
+        if section_access.action_of("GET", path) is not None:
+            continue
         if set(section_access.section_owners("GET", path, {})) & set(extra):
             paths.append(path)
     assert "/cabinet/staff/program/cycles" in paths

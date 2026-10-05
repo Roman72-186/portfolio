@@ -14,7 +14,7 @@
         <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
         <a href="?tab=stats" class="gexam-tab{% if tab == 'stats' %} active{% endif %}">Статистика</a>
         <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
-        {% if user.role_rank >= 5 %}
+        {% if can(user, "guest_exam:participants") %}
         <a href="?tab=participants" class="gexam-tab{% if tab == 'participants' %} active{% endif %}">Участники</a>
         {% endif %}
     </div>

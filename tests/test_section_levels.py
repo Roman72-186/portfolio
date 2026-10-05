@@ -250,6 +250,10 @@ def test_prod_rows_keep_every_right_after_migration(db, user_factory):
         ]
         levels = resolve_levels(db, user_id=user.id, role_id=user.role_id, role_name=role_name)
         for method, path, query in _requests():
+            # Адреса действий (шаг 4) слой решает сам и отказывает раньше
+            # роута; итог тот же 403 — сверяет `test_action_defaults_repeat_todays_rights`.
+            if section_access.action_of(method, path) is not None:
+                continue
             old = _old_outcome(method, path, query, role_name, base_rank[role_name], old_rows)
             new = _new_outcome(method, path, query, role_name, base_rank[role_name], levels)
             checked += 1
@@ -277,7 +281,37 @@ def test_default_levels_repeat_the_role_matrix(db, user_factory):
     for i, (role_name, native) in enumerate(expected.items()):
         user = user_factory(vk_id=991_100 + i, name=role_name, role_name=role_name)
         levels = resolve_levels(db, user_id=user.id, role_id=user.role_id, role_name=role_name)
-        assert levels == {s.key: native.get(s.key, "none") for s in SECTIONS}, role_name
+        sections = {k: v for k, v in levels.items() if k in section_access.SECTIONS_BY_KEY}
+        assert sections == {s.key: native.get(s.key, "none") for s in SECTIONS}, role_name
+
+
+# Матрица: «Люди» целиком у ГП — пять обычных действий; бывшие «только СА»
+# ни у кого. Куратору и модератору — ничего.
+TODAY_ACTIONS = {
+    "куратор": set(),
+    "модератор": set(),
+    "админ": {"people:students", "people:block", "people:role", "people:login", "people:impersonate"},
+}
+
+
+@pytest.mark.parametrize("role_name", list(TODAY_ACTIONS))
+def test_action_defaults_repeat_todays_rights(db, user_factory, role_name):
+    """Без строк в базе действие открыто ровно тем, кому сегодня открыт его
+    адрес, и на каждом адресе действия слой решает так же."""
+    user = user_factory(vk_id=991_150 + len(role_name), name=role_name, role_name=role_name)
+    levels = resolve_levels(db, user_id=user.id, role_id=user.role_id, role_name=role_name)
+    opened = {a.key for a in section_access.ACTIONS if levels[a.key] == "edit"}
+    assert opened == TODAY_ACTIONS[role_name]
+    for key, pattern, methods in section_access._ACTION_RULES:
+        # Пример адреса из шаблона: число вместо `\d+`, первая ветка из `(a|b)`.
+        path = pattern.pattern.strip("^$").replace(r"\d+", "5")
+        path = re.sub(r"\(([^|)]*)\|[^)]*\)", r"\1", path).replace("\\", "")
+        assert pattern.match(path), path
+        method = sorted(methods)[0]
+        access = judge_request(method, path, {}, levels, role_name)
+        assert (access.refusal is None) is (key in TODAY_ACTIONS[role_name]), (role_name, key, path)
+        # Родное действие ранг не поднимает.
+        assert access.rank == 0, (role_name, key)
 
 
 # ── «Смотреть» на живых запросах ──────────────────────────────────────────────

@@ -42,7 +42,7 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score
-from app.services.section_access import can, has_grant
+from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level, student_point_a
 from app.services.review_aggregate import (
@@ -1491,8 +1491,8 @@ async def rename_portfolio_month(
     _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if user["role_rank"] < 5:
-        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+    if not can(user, "students:portfolio_months"):
+        raise HTTPException(status_code=403, detail=ACTION_CLOSED_DETAIL)
 
     import json
     try:
@@ -1546,8 +1546,8 @@ async def move_portfolio_work(
     _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if user["role_rank"] < 5:
-        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+    if not can(user, "students:portfolio_months"):
+        raise HTTPException(status_code=403, detail=ACTION_CLOSED_DETAIL)
 
     import json
     try:

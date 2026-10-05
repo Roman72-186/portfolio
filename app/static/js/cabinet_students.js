@@ -1,7 +1,7 @@
 /* Экран «Ученики» (cabinet_students.html) — весь JS страницы.
    Вынесен из шаблона 29.09.2026 (шаг 10.3 плана «Ученики с телефона»): браузер
    кэширует файл, а не качает ~1900 строк с каждой страницей. Данные от сервера
-   (CSRF_TOKEN, TARIFF_OPTIONS, CAN_SCORE, INITIAL_STUDENT_ID и др.) объявлены в
+   (CSRF_TOKEN, TARIFF_OPTIONS, CAN_SCORE, CAN_PORTFOLIO_MONTHS, INITIAL_STUDENT_ID и др.) объявлены в
    шаблоне блоком до подключения этого файла — здесь Jinja нет и быть не должно.
    Подключается обычным <script>, не модулем: обработчики onclick="…" в разметке
    зовут функции отсюда как глобальные. Правишь файл — подними ?v= в шаблоне. */
@@ -730,7 +730,7 @@ function buildPortfolio(data) {
 function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     var label = cap(g.month) + ' ' + g.year;
     var safeId = 'portfolio-' + sid + '-' + blockId + '-' + String(g.year) + '-' + String(g.month).replace(/[^a-zA-Zа-яА-Я0-9_-]/g, '');
-    var renameBtn = IS_SUPERADMIN && workType === 'after'
+    var renameBtn = CAN_PORTFOLIO_MONTHS && workType === 'after'
         ? '<button type="button" class="portfolio-rename-btn" onclick="event.stopPropagation();renamePortfolioMonth(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ')">Переименовать</button>'
         : '';
     // Удаление папки считаем по `work_total`, а не по `total`: месяц
@@ -741,7 +741,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     var delBtn = (CAN_SCORE && workType !== 'mock' && workTotal > 0)
         ? '<button type="button" class="folder-del-btn" onclick="event.stopPropagation();deleteFolderWorks(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ',' + workTotal + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
         : '';
-    var dropAttrs = IS_SUPERADMIN && workType === 'after'
+    var dropAttrs = CAN_PORTFOLIO_MONTHS && workType === 'after'
         ? ' ondragover="portfolioAllowDrop(event,this)" ondragenter="portfolioDragEnter(event,this)" ondragleave="portfolioDragLeave(event,this)" ondrop="portfolioDrop(event,this,' + sid + ',\'' + esc(g.month) + '\',' + g.year + ')"'
         : '';
     var html = '<div class="month-block portfolio-month" id="' + safeId + '"' + dropAttrs + '>';
@@ -794,7 +794,7 @@ function reloadPortfolioAfterManage(message) {
 }
 
 function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
-    if (!IS_SUPERADMIN) return;
+    if (!CAN_PORTFOLIO_MONTHS) return;
     var monthInput = prompt('Новый месяц', fromMonth);
     if (monthInput == null) return;
     var toMonth = normalizePortfolioMonth(monthInput);
@@ -833,7 +833,7 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
 }
 
 function portfolioDragStart(ev, workId) {
-    if (!IS_SUPERADMIN) return;
+    if (!CAN_PORTFOLIO_MONTHS) return;
     _portfolioDragWorkId = workId;
     ev.dataTransfer.effectAllowed = 'move';
     ev.dataTransfer.setData('text/plain', String(workId));
@@ -847,13 +847,13 @@ function portfolioDragEnd() {
 }
 
 function portfolioAllowDrop(ev, el) {
-    if (!IS_SUPERADMIN || !_portfolioDragWorkId) return;
+    if (!CAN_PORTFOLIO_MONTHS || !_portfolioDragWorkId) return;
     ev.preventDefault();
     ev.dataTransfer.dropEffect = 'move';
 }
 
 function portfolioDragEnter(ev, el) {
-    if (!IS_SUPERADMIN || !_portfolioDragWorkId) return;
+    if (!CAN_PORTFOLIO_MONTHS || !_portfolioDragWorkId) return;
     ev.preventDefault();
     el.classList.add('is-drop-target');
 }
@@ -864,7 +864,7 @@ function portfolioDragLeave(ev, el) {
 }
 
 function portfolioDrop(ev, el, sid, toMonth, toYear) {
-    if (!IS_SUPERADMIN) return;
+    if (!CAN_PORTFOLIO_MONTHS) return;
     ev.preventDefault();
     el.classList.remove('is-drop-target');
     var workId = parseInt(ev.dataTransfer.getData('text/plain') || _portfolioDragWorkId, 10);
@@ -1628,7 +1628,7 @@ function zoomPhoto(w, imgAttrs) {
 // Поэтому у не-work элементов управляющих кнопок нет вовсе.
 function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
     if (source && source !== 'work') return imgHtml;
-    if (!(IS_SUPERADMIN && workType === 'after')) {
+    if (!(CAN_PORTFOLIO_MONTHS && workType === 'after')) {
         return wrapPhoto(imgHtml, studentId, workId);
     }
     return '<div class="photo-wrap portfolio-draggable" draggable="true" ondragstart="portfolioDragStart(event,' + workId + ')" ondragend="portfolioDragEnd()">'

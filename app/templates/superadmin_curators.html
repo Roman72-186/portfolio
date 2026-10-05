@@ -4,8 +4,8 @@
 <link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
 {% endblock %}
 {% block content %}
-{# Вход «глазами» — только при «Менять» в «Людях» (шаг 2 плана тонких доступов). #}
-{% set people_edit = can(user, "people") %}
+{# Вход «глазами» — действие `people:impersonate` (шаг 4 плана тонких доступов). #}
+{% set people_edit = can(user, "people:impersonate") %}
 <div class="sc-wrap ios-sa-curators">
     <div class="sc-head">
         <a href="/cabinet" class="back-link">← Дашборд</a>

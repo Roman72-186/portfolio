@@ -22,6 +22,8 @@ from app.services.rbac import (
     is_moderator_request_allowed,
 )
 from app.services.section_access import (
+    ACTION_CLOSED_DETAIL,
+    can,
     closed_sections,
     granted_sections,
     is_configurable_role,
@@ -364,6 +366,18 @@ require_superadmin = require_role(5)
 require_scorer     = require_role(SCORE_MIN_RANK)
 # Вернуть работу на доработку — правило в `rbac.REVISION_MIN_RANK`.
 require_revision_sender = require_role(REVISION_MIN_RANK)
+
+
+def require_action(key: str) -> Callable:
+    """Действие, которое суперадмин включает сотрудникам отдельно
+    (`section_access.ACTIONS`, шаг 4 плана тонких доступов): бывшие «только
+    суперадмин». Суперадмину открыто всегда, остальным — по своему уровню
+    действия. Потолки «не выше своей роли» роут проверяет сам по рангу запроса."""
+    def _dep(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+        if user["role_rank"] < 2 or not can(user, key):
+            raise HTTPException(status_code=403, detail=ACTION_CLOSED_DETAIL)
+        return user
+    return _dep
 
 
 def require_learning_content_access(

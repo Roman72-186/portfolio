@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.config import settings
 from app.constants import TARIFFS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf_header, require_superadmin
+from app.dependencies import require_action, require_admin_role, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK
 from app.models.learning_video import LearningVideo
@@ -366,7 +366,7 @@ def unpublish_catalog_video(
 def delete_catalog_video(
     video_id: int,
     payload: DeleteVideoConfirmation,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_action("program:video_delete"))],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
