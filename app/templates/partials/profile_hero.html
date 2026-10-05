@@ -85,6 +85,14 @@
             {{ user.tariff|tariff_label }}
         </span>
         {% endif %}
+        {# Уровень программы по точке А — в одной строке с тарифом (владелец
+           05.10.2026). Приходит только у разобранного ученика, как и
+           point_a_average, см. `cabinet_tracker.py`. #}
+        {% if point_a_level is defined and point_a_level is not none %}
+        <span class="profile-tariff profile-level">
+            На данный период обучения ты осваиваешь {{ point_a_level }} уровень программы
+        </span>
+        {% endif %}
     </div>
 </div>
 <script>

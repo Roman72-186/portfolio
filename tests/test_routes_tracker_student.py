@@ -2,6 +2,8 @@
 
 from datetime import timedelta, timezone
 
+import pytest
+
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.tag import Tag, UserTag
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
@@ -632,6 +634,18 @@ def test_tracker_hero_shows_point_a_when_done(auth_client, monkeypatch):
     assert '<span class="profile-score-value">74</span>' in resp.text
 
 
+@pytest.mark.parametrize("average,level", [(65, 1), (66, 2)])
+def test_tracker_hero_shows_program_level(auth_client, monkeypatch, average, level):
+    """Плашка уровня рядом с тарифом (владелец 05.10.2026): ≤65 — уровень 1,
+    ≥66 — уровень 2."""
+    client, _ = auth_client
+    _fake_point_a(monkeypatch, is_done=True, average=average)
+
+    resp = client.get(PAGE)
+
+    assert f"ты осваиваешь {level} уровень программы" in resp.text
+
+
 def test_tracker_hero_hides_partial_point_a(auth_client, monkeypatch):
     """Пока ГП не оценил все плашки, среднее неполное — его не показываем:
     уровень ученик узнаёт уведомлением ровно в момент разбора."""
@@ -642,3 +656,4 @@ def test_tracker_hero_hides_partial_point_a(auth_client, monkeypatch):
 
     assert resp.status_code == 200
     assert 'class="profile-score-point-a"' not in resp.text
+    assert "уровень программы" not in resp.text

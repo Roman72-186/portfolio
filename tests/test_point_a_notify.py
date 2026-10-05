@@ -64,7 +64,7 @@ def test_second_call_does_not_renotify(db, student, monkeypatch):
     assert second is None
 
 
-@pytest.mark.parametrize("average,expected_level", [(70, 2), (69, 1), (100, 2), (0, 1)])
+@pytest.mark.parametrize("average,expected_level", [(66, 2), (65, 1), (100, 2), (0, 1)])
 def test_level_boundary(db, student, monkeypatch, average, expected_level):
     _patch(monkeypatch, student, is_done=True, average=average)
 

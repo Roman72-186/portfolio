@@ -69,7 +69,7 @@ from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
 )
-from app.services.point_a import student_point_a
+from app.services.point_a import point_a_level, student_point_a
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.submission_edit import (
     block_work_reason, deadline_reason, late_first_submission,
@@ -215,6 +215,7 @@ def cabinet_tracker(
     # оценкой.
     student = db.get(User, user["user_id"])
     point_a = student_point_a(db, student, with_images=False) if student is not None else None
+    point_a_average = point_a.average if point_a is not None and point_a.is_done else None
 
     return templates.TemplateResponse(request, "cabinet_tracker.html", {
         "request": request,
@@ -241,7 +242,11 @@ def cabinet_tracker(
         "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,
         "active_tab": "tracker",
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
-        "point_a_average": point_a.average if point_a is not None and point_a.is_done else None,
+        "point_a_average": point_a_average,
+        # Плашка «ты осваиваешь N уровень программы» рядом с тарифом (владелец
+        # 05.10.2026). Уровень считает та же `point_a_level`, что и уведомление,
+        # и появляется он в тот же момент — когда точка А разобрана целиком.
+        "point_a_level": point_a_level(point_a_average) if point_a_average is not None else None,
     })
 
 

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
 from app.services import feedback as fb_service, media_transcode
+from app.services.point_a import POINT_A_LEVEL_2_MIN_AVERAGE
 from app.services.point_a_level_audio import get_level_audio, upsert_level_audio
 from app.tmpl import templates
 
@@ -46,6 +47,9 @@ def point_a_audio_screen(
         "request": request,
         "user": user,
         "audios": audios,
+        # Подписи «N и ниже / N и выше» — из того же порога, что считает
+        # уровень: цифры в шаблоне разъехались бы с ним при следующем сдвиге.
+        "level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
         "nav_active": "point_a",
     })
 
