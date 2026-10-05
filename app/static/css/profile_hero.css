@@ -18,7 +18,11 @@
    мини-таблицей (`align-self: flex-start`, вне ширины имени), тариф остался
    один в нижней строке. Раньше обе плашки вместе съедали ~305 px в общем ряду
    с именем — теперь корпус мини-таблицы занимает ~90 px и не в счёт имени,
-   см. комментарий у `.profile-scores` ниже и в `profile_hero.html`. */
+   см. комментарий у `.profile-scores` ниже и в `profile_hero.html`.
+
+   05.10.2026 — вариант А по макету владельца: баллы справа на всю высоту
+   карточки, слева тариф над именем и плашка уровня программы снизу; нижняя
+   строка тарифа (`.profile-hero-meta`) убрана. */
 
 .profile-hero {
     font-family: var(--ios-font);
@@ -46,11 +50,30 @@
     background: rgba(255,255,255,0.05);
     bottom: -70px; right: 90px;
 }
+/* Вариант А (владелец 05.10.2026): две колонки. Левая — аватар, тариф над
+   именем и плашка уровня под ними; правая — баллы на всю высоту карточки.
+   `minmax(0, 1fr)` отдаёт левой колонке остаток и даёт ей сжиматься, иначе
+   длинное имя распирало бы сетку вбок. */
 .profile-hero-top {
-    display: flex;
-    align-items: center;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
     position: relative; z-index: 1;
+}
+.profile-hero-main {
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 14px;
+    min-width: 0;
+}
+.profile-hero-ident {
+    display: flex; align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.profile-hero-ident-text {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 7px;
+    min-width: 0;
 }
 .profile-avatar-wrap { position: relative; flex-shrink: 0; }
 .profile-avatar {
@@ -87,9 +110,10 @@
 /* Имя и фамилия в одну строку, на вторую переходят только если не влезли
    (13.09.2026). Жёсткие две строки остались от старой раскладки, где имени
    давали 103 px; на освободившейся ширине «Мария Орлова» в два этажа выглядит
-   обрывком. */
+   обрывком. `align-self: stretch` — на всю ширину колонки под тарифом, иначе
+   многоточие на длинной фамилии не сработало бы. */
 .profile-name-stack {
-    flex: 1 1 auto; min-width: 0;
+    align-self: stretch; min-width: 0;
     display: flex; flex-wrap: wrap; column-gap: 7px; row-gap: 1px;
 }
 .profile-name-line {
@@ -107,41 +131,34 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Тариф — своей строкой под именем (13.09.2026, баллы уехали в угол
-   18.09.2026 — см. ниже). Строка держит только одну плашку, но остаётся
-   отдельным блоком: так у тарифа фиксированный отступ от строки имени
-   независимо от того, есть тариф или нет. */
-.profile-hero-meta {
-    display: flex; align-items: center;
-    gap: 8px;
-    margin-top: 14px;
-    position: relative; z-index: 1;
-}
 /* Плашка тарифа общая — `.profile-tariff` в base.css (белый фон, надпись в
-   цвет тарифа). Здесь только запрет переноса середины надписи. */
-.profile-tariff { white-space: nowrap; flex-shrink: 0; }
-/* Уровень программы — в той же строке, что тариф (владелец 05.10.2026, про
-   телефон). Строка не переносится (`flex-wrap` снят): тариф держит свою
-   ширину, плашке уровня достаётся остаток, и фраза ломается внутри неё
-   на две строки. Скругление меньше пилюли — на двух строках пилюля
-   выглядела бы овалом. */
-.profile-level {
-    flex: 0 1 auto; min-width: 0;
+   цвет тарифа). Здесь она над именем, рядом с аватаром (05.10.2026), поэтому
+   мельче общей: «Уверенный максимум» иначе не влезает между аватаром и
+   баллами. `max-width: none` — пусть лучше заденет зазор колонок, чем
+   надпись вылезет за край плашки. */
+.profile-hero .profile-tariff {
+    white-space: nowrap;
+    max-width: none;
+    font-size: 11px; padding: 4px 10px; gap: 5px;
+}
+/* Уровень программы — под аватаром и именем на всю левую колонку (владелец
+   05.10.2026). Тот же белый фон, что у тарифа, но блоком и с переносом.
+   Скругление меньше пилюли — на трёх строках пилюля выглядела бы овалом. */
+.profile-hero .profile-level {
+    display: block;
     white-space: normal;
     border-radius: 14px;
-    padding: 5px 11px;
-    font-size: 11px; line-height: 1.25;
+    padding: 7px 12px;
+    font-size: 12px; line-height: 1.3;
 }
 
-/* Мини-таблица баллов Р/К — правый верхний угол карточки, третий ребёнок
-   `.profile-hero-top` (18.09.2026, решение владельца по скетчу). `flex: 0 0
-   auto` не даёт ей растягиваться, `align-self: flex-start` — не даёт
-   центрироваться по высоте вместе с аватаром и именем, а сидеть у верхнего
-   края, как в макете. Заняла ~90 px вместо прежних ~305 px общей строки
-   с тарифом — имени точно хватает даже на узких экранах. */
+/* Баллы — правая колонка на всю высоту карточки (05.10.2026, вариант А;
+   раньше узкая мини-таблица в правом верхнем углу). Строки Р/К, точка А и год
+   делят высоту поровну (`flex: 1 1 0`), цифры крупнее прежних. */
 .profile-scores {
-    flex: 0 0 auto;
-    align-self: flex-start;
+    align-self: stretch;
+    display: flex; flex-direction: column;
+    min-width: 88px;
     background: color-mix(in srgb, black 14%, transparent);
     backdrop-filter: blur(12px) saturate(160%);
     -webkit-backdrop-filter: blur(12px) saturate(160%);
@@ -150,45 +167,52 @@
     overflow: hidden;
     position: relative; z-index: 1;
 }
-.profile-scores-row {
-    display: flex; align-items: center;
+.profile-scores-row,
+.profile-score-point-a,
+.profile-score-year {
+    flex: 1 1 0;
+    display: flex; align-items: center; justify-content: center;
 }
 .profile-score-cell {
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
     min-width: 24px;
-    padding: 6px 8px 5px;
+    padding: 6px 8px;
 }
 .profile-score-label {
-    font-size: 9px; font-weight: 600; color: var(--on-color);
+    font-size: 11px; font-weight: 600; color: var(--on-color);
     letter-spacing: 0.02em;
 }
 .profile-score-value {
-    font-size: 14px; font-weight: 700; color: #fff; line-height: 1;
+    font-size: 22px; font-weight: 700; color: #fff; line-height: 1;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
 }
 .profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.28); }
 /* Точка А — строкой под Р/К, той же границей, что год (04.10.2026). */
 .profile-score-point-a {
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 4px 8px 5px;
+    gap: 8px;
+    padding: 5px 8px;
     border-top: 0.5px solid rgba(255,255,255,0.28);
 }
-/* Год поступления — отдельной строкой под баллами, через тонкую границу,
-   как в макете (таблица «Р/К» сверху, год снизу на всю ширину). */
+.profile-score-point-a .profile-score-value { font-size: 18px; }
+/* Год поступления — отдельной строкой под баллами, через тонкую границу. */
 .profile-score-year {
-    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.85);
-    text-align: center;
-    padding: 4px 8px 5px;
+    font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.85);
+    padding: 5px 8px;
     border-top: 0.5px solid rgba(255,255,255,0.28);
     font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 480px) {
-    .profile-hero-top { gap: 10px; }
-    .profile-score-cell { padding: 5px 7px 4px; min-width: 20px; }
-    .profile-score-year,
-    .profile-score-point-a { padding: 3px 7px 4px; }
+/* Узкий телефон (360 px): «Уверенный максимум» между аватаром и баллами
+   влезает только с меньшим аватаром и более узкой таблицей. */
+@media (max-width: 375px) {
+    .profile-avatar, .profile-avatar-placeholder { width: 50px; height: 50px; }
+    .profile-hero .profile-tariff { padding: 4px 8px; font-size: 10.5px; }
+    .profile-hero .profile-level { font-size: 12px; }
+    .profile-scores { min-width: 76px; }
+    .profile-score-cell { padding: 6px; }
+    .profile-name-line { font-size: 18px; }
 }
 @media (min-width: 1024px) {
     .profile-hero { padding: 28px 32px 30px; }

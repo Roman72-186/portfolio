@@ -1,6 +1,6 @@
 {#
-Шапка профиля ученика: сверху аватар и имя в две строки, под ними строкой —
-баллы по Рисунку/Композиции с годом поступления и плашка тарифа.
+Шапка профиля ученика: слева аватар, тариф над именем и плашка уровня
+программы, справа баллы Р/К, точка А и год поступления на всю высоту.
 Стили — app/static/css/profile_hero.css,
 подключить его в extra_styles экрана, который вставляет этот partial.
 
@@ -25,31 +25,55 @@
 но не как раньше (широкая плашка в потоке рядом с именем), а узкой мини-
 таблицей на `align-self: flex-start` вне общей ширины имени, поэтому 252 px
 у имени не отбираются. Тариф остался один в своей строке снизу.
+
+Владелец 05.10.2026 (вариант А по макету): справа баллы крупнее и на всю
+высоту карточки, слева аватар, рядом тариф над именем, под ними плашка
+«ты осваиваешь N уровень программы». Строка тарифа снизу ушла.
 #}
 <div class="profile-hero">
     <div class="profile-hero-top">
-        <div class="profile-avatar-wrap" data-csrf="{{ csrf_token(request) }}" data-upload-url="/cabinet/avatar">
-            {% set avatar_src = user.custom_avatar_url or user.photo_url %}
-            {% if avatar_src %}
-            <img src="{{ avatar_src }}" alt="Фото профиля" class="profile-avatar" width="60" height="60">
-            {% else %}
-            <div class="profile-avatar-placeholder" aria-hidden="true">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
+        <div class="profile-hero-main">
+            <div class="profile-hero-ident">
+                <div class="profile-avatar-wrap" data-csrf="{{ csrf_token(request) }}" data-upload-url="/cabinet/avatar">
+                    {% set avatar_src = user.custom_avatar_url or user.photo_url %}
+                    {% if avatar_src %}
+                    <img src="{{ avatar_src }}" alt="Фото профиля" class="profile-avatar" width="60" height="60">
+                    {% else %}
+                    <div class="profile-avatar-placeholder" aria-hidden="true">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <label class="profile-avatar-upload" aria-label="{{ 'Изменить фото профиля' if user.custom_avatar_url else 'Загрузить фото профиля' }}">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14"/>
+                        </svg>
+                        <input type="file" accept="image/*" class="profile-avatar-input">
+                    </label>
+                </div>
+
+                <div class="profile-hero-ident-text">
+                    {% if user.tariff %}
+                    <span class="profile-tariff profile-tariff--{{ user.tariff|tariff_slug }}">
+                        <span class="profile-tariff-dot"></span>
+                        {{ user.tariff|tariff_label }}
+                    </span>
+                    {% endif %}
+                    <div class="profile-name-stack">
+                        <div class="profile-name-line">{{ user.first_name }}</div>
+                        <div class="profile-name-line">{{ user.last_name }}</div>
+                    </div>
+                </div>
+            </div>
+            {# Уровень программы по точке А (владелец 05.10.2026). Приходит
+               только у разобранного ученика, как и point_a_average, см.
+               `cabinet_tracker.py`. #}
+            {% if point_a_level is defined and point_a_level is not none %}
+            <div class="profile-tariff profile-level">
+                На данный период обучения ты осваиваешь {{ point_a_level }} уровень программы
             </div>
             {% endif %}
-            <label class="profile-avatar-upload" aria-label="{{ 'Изменить фото профиля' if user.custom_avatar_url else 'Загрузить фото профиля' }}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 5v14M5 12h14"/>
-                </svg>
-                <input type="file" accept="image/*" class="profile-avatar-input">
-            </label>
-        </div>
-
-        <div class="profile-name-stack">
-            <div class="profile-name-line">{{ user.first_name }}</div>
-            <div class="profile-name-line">{{ user.last_name }}</div>
         </div>
 
         <div class="profile-scores">
@@ -76,23 +100,6 @@
             <div class="profile-score-year" title="Год поступления">{{ user.university_year }}</div>
             {% endif %}
         </div>
-    </div>
-
-    <div class="profile-hero-meta">
-        {% if user.tariff %}
-        <span class="profile-tariff profile-tariff--{{ user.tariff|tariff_slug }}">
-            <span class="profile-tariff-dot"></span>
-            {{ user.tariff|tariff_label }}
-        </span>
-        {% endif %}
-        {# Уровень программы по точке А — в одной строке с тарифом (владелец
-           05.10.2026). Приходит только у разобранного ученика, как и
-           point_a_average, см. `cabinet_tracker.py`. #}
-        {% if point_a_level is defined and point_a_level is not none %}
-        <span class="profile-tariff profile-level">
-            На данный период обучения ты осваиваешь {{ point_a_level }} уровень программы
-        </span>
-        {% endif %}
     </div>
 </div>
 <script>
