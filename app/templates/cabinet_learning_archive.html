@@ -3,74 +3,49 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=86">
 <link rel="stylesheet" href="/static/css/video_rows.css?v=1">
-<link rel="stylesheet" href="/static/css/learning_archive.css?v=2">
+<link rel="stylesheet" href="/static/css/learning_archive.css?v=3">
 {% endblock %}
 {% block content %}
 {#
-Архив ученика (владелец 04.10.2026): видео прошедших этапов, циклов и
-заданий, этап → месяц → цикл. Полоса циклов на экране обучения показывает
-только текущий этап, и со сменой этапа прошлые ролики пропадали из виду.
-С 05.10.2026 у пройденного цикла кнопка «Открыть цикл целиком» — его лента
-`/cabinet/learning?cycle=`: задания, свои работы, ответы преподавателя
-(служба заботы: «должна быть полная архивация периода»).
-Сборка — `cycle_feed.archive_for_student`, своих правил видимости у экрана
-нет. Ролик открывается обычным плеером `/cabinet/videos/{id}`, строка и
-отметка просмотра — те же, что в каталоге (`video_rows.css`,
-`video_progress.view_state`).
+Архив ученика (владелец 05.10.2026): пройденные циклы, период → этап → цикл.
+Цикл открывается тут же, в архиве (`/cabinet/learning/archive/{id}`), целиком:
+задания, свои работы, ответы преподавателя, видео. Сборка —
+`cycle_feed.archive_for_student`, своих правил видимости у экрана нет.
+
+До 05.10.2026 здесь был список видео (04.10.2026); служба заботы попросила
+«полную архивацию периода со всеми заданиями, видео, голосовыми, работами
+ребенка». Строка цикла — общая `.video-row` из `video_rows.css`, своей копии
+строки-ссылки нет.
 #}
-{% macro video_rows(items) -%}
-<div class="lrn-archive-videos">
-    {% for item in items %}
-    <a class="video-row" href="/cabinet/videos/{{ item.video.id }}" data-video-id="{{ item.video.id }}">
-        <div>
-            <h4 class="video-row-title">{{ item.video.title }}</h4>
-            {% if item.task_title and item.task_title != item.video.title %}
-            <p class="video-row-description">{{ item.task_title }}</p>
-            {% endif %}
-        </div>
-        {% if item.state == 'completed' %}
-        <span class="video-row-state video-row-state--completed">Просмотрено</span>
-        {% elif item.state == 'started' %}
-        <span class="video-row-state video-row-state--started">Продолжить</span>
-        {% else %}
-        <span class="video-row-state video-row-state--new">Смотреть</span>
-        {% endif %}
-    </a>
-    {% endfor %}
-</div>
-{%- endmacro %}
 <div class="lrn-page ios-learning">
     <div class="lrn-hero">
         <h1>Архив</h1>
-        <p>Прошлые циклы целиком: задания, твои работы, ответы преподавателя и видео. Плеер помнит, где ты остановился.</p>
+        <p>Пройденные циклы целиком: задания, твои работы, ответы преподавателя и видео.</p>
     </div>
 
     {% if periods %}
     <div class="lrn-archive">
         {% for period in periods %}
         <section class="lrn-card lrn-archive-period"
-                 {% if period.stage %}data-stage-id="{{ period.stage.id }}"{% endif %}>
-            <h2 class="lrn-card-title">{{ period.label if period.stage else 'Ранние циклы' }}</h2>
-            {% if period.stage_videos %}
-            <h3 class="lrn-archive-cycle">Задания этапа</h3>
-            {{ video_rows(period.stage_videos) }}
-            {% endif %}
-            {% for month in period.months %}
-            <p class="lrn-archive-month">{{ month.label }}</p>
-            {% for cycle in month.cycles %}
-            <h3 class="lrn-archive-cycle" data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</h3>
-            {% if cycle.can_open %}
-            <a class="lrn-card-cta lrn-archive-open" href="/cabinet/learning?cycle={{ cycle.id }}">Открыть цикл целиком</a>
-            {% endif %}
-            {% if cycle.videos %}{{ video_rows(cycle.videos) }}{% endif %}
-            {% endfor %}
+                 {% if period.topic %}data-period-id="{{ period.topic.id }}"{% endif %}>
+            <h2 class="lrn-card-title">{{ period.title }}</h2>
+            {% for stage in period.stages %}
+            {% if stage.title %}<h3 class="lrn-archive-stage">{{ stage.title }}</h3>{% endif %}
+            <div class="lrn-archive-cycles">
+                {% for cycle in stage.cycles %}
+                <a class="video-row" href="/cabinet/learning/archive/{{ cycle.id }}" data-cycle-id="{{ cycle.id }}">
+                    <h4 class="video-row-title">{{ cycle.title }}</h4>
+                    <span class="video-row-state video-row-state--new">Открыть</span>
+                </a>
+                {% endfor %}
+            </div>
             {% endfor %}
         </section>
         {% endfor %}
     </div>
     {% else %}
     <div class="lrn-empty">
-        <p>Цикл попадёт сюда, когда закончится или когда ты его выполнишь. Сюда же уйдёт видео задания, у которого прошёл срок.</p>
+        <p>Цикл попадёт сюда, когда закончится или когда ты его выполнишь.</p>
         <a class="lrn-card-cta" href="/cabinet/learning">Открыть текущие задания</a>
     </div>
     {% endif %}

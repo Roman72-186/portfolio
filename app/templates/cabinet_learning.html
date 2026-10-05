@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Актуальное образовательное пространство{% endblock %}
+{% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=86">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
@@ -29,7 +29,7 @@
 
     <div class="lrn-hero">
         <h1>{{ feed.topic.title if feed.topic else 'Актуальное образовательное пространство' }}
-            {{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}
+            {% if not archive_view %}{{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}{% endif %}
         </h1>
         {% if feed.topic and feed.topic.description %}
         <p>{{ feed.topic.description | rich_text | safe }}</p>
@@ -47,7 +47,10 @@
        принципе не будет»). В предобучении до 29 сентября деления нет вовсе. #}
     {# Пройденные циклы: вернуться и перечитать свои ответы (владелец
        03.09.2026). Показываем, только когда есть куда возвращаться. #}
-    {% if feed.pinned_tasks or feed.cycles|length > 1 %}
+    {# Экран цикла в архиве (`archive_view`, владелец 05.10.2026) — та же
+       лента без карусели и плашки долга: ученик пришёл из списка архива и
+       туда же возвращается, а не прыгает по текущим циклам. #}
+    {% if not archive_view and (feed.pinned_tasks or feed.cycles|length > 1) %}
     <div class="lrn-cycles" aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
         {# «Портфолио» — задание прямо на этапе, ведёт на сам этап (владелец
            24.09.2026: «просто открываем все задания, которые есть», не
@@ -73,7 +76,7 @@
 
     {# Долг запирает следующие циклы (владелец 30.09.2026: «не пускать вперёд
        обязательно и показывать долги»). Считает `tracker.cycle_debt`. #}
-    {% if feed.debt %}
+    {% if feed.debt and not archive_view %}
     <div class="lrn-card lrn-waiting" data-role="cycle-debt">
         <div class="lrn-card-title">Сначала закрой «{{ feed.debt.label }}»</div>
         <p class="lrn-card-note">
@@ -84,7 +87,11 @@
     </div>
     {% endif %}
 
-    {% if feed.is_archive %}
+    {% if archive_view %}
+    <p class="lrn-card-note lrn-archive-note">
+        <a href="/cabinet/learning/archive">← Весь архив</a>
+    </p>
+    {% elif feed.is_archive %}
     <p class="lrn-card-note lrn-archive-note">
         Пройденный цикл — можно перечитать свои ответы, изменить их нельзя.
         <a href="/cabinet/learning">Вернуться к текущему</a>
@@ -342,7 +349,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 {# Нижняя навигация и лайтбокс — общие для экранов ученика. #}
-{% set active_tab = "learning" %}
+{% set active_tab = "archive" if archive_view else "learning" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
 {% include "partials/student_onboarding_guide.html" %}

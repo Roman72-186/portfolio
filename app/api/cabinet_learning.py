@@ -33,15 +33,42 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
-from app.services.cycle_feed import archive_for_student, feed_for_student
+from app.services.cycle_feed import archive_cycle_ids, archive_for_student, feed_for_student
 from app.services.program import item_details
 from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
-from app.services.video_progress import get_video_progress, view_state
 from app.constants import SUPPORT_URL
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
+
+
+def _completion_state(db: DBSession, user: dict, feed: dict) -> tuple[dict, set]:
+    """Почему «Завершить задание» пока нельзя нажать — то же правило, по
+    которому откажет сама кнопка (`task_blocks.completion_blocker`). Только у
+    незакрытых заданий с блоками: у задания без блоков вопросов нет.
+
+    Задание, которое закроется само, кнопку не получает вовсе (владелец
+    01.10.2026, `task_blocks.completion_button_needed`); «Задание выполнено»
+    у закрытого остаётся."""
+    completion_blockers = {}
+    completion_hidden = set()
+    for step in feed["steps"]:
+        task_id = step["task"].id
+        if (
+            not step.get("block") or step["entry"]["status"] == "done"
+            or task_id in completion_blockers or task_id in completion_hidden
+        ):
+            continue
+        if not completion_button_needed(
+            db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
+        ):
+            completion_hidden.add(task_id)
+            continue
+        completion_blockers[task_id] = completion_blocker(
+            db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
+        )
+    return completion_blockers, completion_hidden
 
 
 @router.get("/learning", response_class=HTMLResponse)
@@ -91,30 +118,7 @@ def cabinet_learning(
             # Пустая строка — вкладка «Общее»: задание без предмета.
             focus_subject = target["subject"] or ""
 
-    # Почему «Завершить задание» пока нельзя нажать — то же правило, по которому
-    # откажет сама кнопка (`task_blocks.completion_blocker`). Только у незакрытых
-    # заданий с блоками: у задания без блоков вопросов нет.
-    #
-    # Задание, которое закроется само, кнопку не получает вовсе (владелец
-    # 01.10.2026, `task_blocks.completion_button_needed`); «Задание выполнено»
-    # у закрытого остаётся.
-    completion_blockers = {}
-    completion_hidden = set()
-    for step in feed["steps"]:
-        task_id = step["task"].id
-        if (
-            not step.get("block") or step["entry"]["status"] == "done"
-            or task_id in completion_blockers or task_id in completion_hidden
-        ):
-            continue
-        if not completion_button_needed(
-            db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
-        ):
-            completion_hidden.add(task_id)
-            continue
-        completion_blockers[task_id] = completion_blocker(
-            db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
-        )
+    completion_blockers, completion_hidden = _completion_state(db, user, feed)
 
     return templates.TemplateResponse(request, "cabinet_learning.html", {
         "request": request,
@@ -140,26 +144,64 @@ def cabinet_learning_archive(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Архив: видео прошедших этапов, циклов и заданий (владелец 04.10.2026).
-    Сборка — `cycle_feed.archive_for_student`, ролик открывается обычным
-    плеером `/cabinet/videos/{id}`, отметка просмотра — та же, что в каталоге."""
+    """Архив: пройденные циклы, период → этап → цикл (владелец 05.10.2026).
+    Сборка — `cycle_feed.archive_for_student`, цикл открывается тут же, в
+    архиве (`/cabinet/learning/archive/{id}`), а не в ленте обучения."""
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
     periods = archive_for_student(
         db, user_id=user["user_id"], user_tariff=user.get("tariff"), today=today_msk(),
     )
-    for period in periods:
-        items = period["stage_videos"] + [
-            item for month in period["months"] for cycle in month["cycles"]
-            for item in cycle["videos"]
-        ]
-        for item in items:
-            item["state"] = view_state(get_video_progress(
-                db, user_id=user["user_id"], video_id=item["video"].bunny_video_id,
-            ))
     return templates.TemplateResponse(request, "cabinet_learning_archive.html", {
         "request": request,
         "user": user,
         "periods": periods,
         "active_tab": "archive",
+    })
+
+
+@router.get("/learning/archive/{cycle_id}", response_class=HTMLResponse)
+def cabinet_learning_archive_cycle(
+    cycle_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Пройденный цикл целиком внутри архива (владелец 05.10.2026: «при
+    открытии цикла не нужно перекидывать в АОП, а открывать здесь же весь
+    цикл»). Та же лента, что `/cabinet/learning?cycle=`, — задания, свои
+    работы, ответы преподавателя, — но без карусели циклов и плашки долга,
+    под вкладкой «Архив» и без кнопки «Завершить задание».
+
+    Открывается только цикл из списка архива (`archive_cycle_ids`): иначе
+    подобранный в адресной строке номер открыл бы текущий цикл под видом
+    архива или запертый долгом."""
+    if needs_profile_setup(user):
+        return RedirectResponse("/cabinet/profile", status_code=302)
+    today = today_msk()
+    if cycle_id not in archive_cycle_ids(
+        db, user_id=user["user_id"], user_tariff=user.get("tariff"), today=today,
+    ):
+        return RedirectResponse("/cabinet/learning/archive", status_code=302)
+    feed = feed_for_student(
+        db, user_id=user["user_id"], user_tariff=user.get("tariff"), today=today,
+        cycle_id=cycle_id,
+    )
+    # Архив — только просмотр, и у выполненного идущего цикла тоже: кнопку
+    # «Завершить задание» шаблон прячет по этому флагу.
+    feed["is_archive"] = True
+    return templates.TemplateResponse(request, "cabinet_learning.html", {
+        "request": request,
+        "user": user,
+        "feed": feed,
+        "archive_view": True,
+        "focus_task_id": None,
+        "focus_subject": None,
+        "details": item_details(db, [step["task"] for step in feed["steps"]]),
+        "completion_blockers": {},
+        "completion_hidden": set(),
+        "onboarding_auto_open": False,
+        "onboarding_on_learning": False,
+        "onboarding_access_until_text": msk_text(user.get("access_until")),
+        "support_url": SUPPORT_URL,
     })

@@ -1,29 +1,24 @@
-/* Архив ученика (`cabinet_learning_archive.html`, владелец 04.10.2026):
-   видео прошедших этапов, циклов и заданий. Карточка этапа — общая
-   `.lrn-card` из tracker.css, строка ролика — `.video-row` из
+/* Архив ученика (`cabinet_learning_archive.html`, владелец 05.10.2026):
+   пройденные циклы, период → этап → цикл. Карточка периода — общая
+   `.lrn-card` из tracker.css, строка цикла — `.video-row` из
    video_rows.css; здесь только раскладка. Отдельный файл, а не правка
    tracker.css: версия того одна на десять шаблонов
    (`test_block_assets_are_included_at_one_version`). */
 
 .lrn-archive { display: flex; flex-direction: column; gap: 14px; }
 
-/* Карточка этапа — не ссылка, подсветку наведения у неё снимаем. */
+/* Карточка периода — не ссылка, подсветку наведения у неё снимаем. */
 .lrn-archive-period:hover { border-color: var(--line); }
 
-.lrn-archive-month {
-    margin: 16px 0 0;
+.lrn-archive-stage {
+    margin: 14px 0 8px;
     font-size: 12px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
     color: var(--dim);
 }
 
-.lrn-archive-cycle {
-    margin: 10px 0 8px;
-    font-size: 14px; font-weight: 800;
-}
+.lrn-archive-cycles { display: grid; gap: 10px; }
 
-.lrn-archive-videos { display: grid; gap: 10px; }
-
-/* «Открыть цикл целиком» (05.10.2026) — ссылка `.lrn-card-cta` из tracker.css
-   между названием цикла и его роликами. */
-.lrn-archive-open { margin: 0 0 10px; }
+/* В строке цикла нет описания под названием — нижний отступ заголовка
+   строки сместил бы его вверх относительно «Открыть». */
+.lrn-archive-cycles .video-row-title { margin: 0; }
