@@ -735,17 +735,27 @@ def _mark_watched(db, *, user_id, bunny_video_id):
 
 @pytest.fixture
 def watch_control_on(monkeypatch):
-    """Контроль просмотра выключен владельцем 19.09.2026
-    (`VIDEO_WATCH_CONTROL_ENABLED`). Тесты правила включают его на время
-    прогона: если контроль вернут, правило должно работать как раньше."""
+    """Явно включённый контроль просмотра (`VIDEO_WATCH_CONTROL_ENABLED`):
+    тесты правила не должны зависеть от того, что стоит в коде по умолчанию."""
     monkeypatch.setattr("app.api.cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED", True)
 
 
+def test_video_watch_control_enabled_by_default():
+    """С 19.09 по 05.10.2026 флаг стоял False, хотя причину отключения сняли
+    мостом уже 21.09 — кружок поставили без досмотра 1173 раза из 1884.
+    Выключить контроль снова — осознанная правка этого теста, а не тихая
+    смена константы."""
+    from app.api import cabinet_tracker
+
+    assert cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED is True
+
+
 def test_required_video_block_closes_without_watch_when_control_off(
-    client, db, user_factory, session_factory
+    client, db, user_factory, session_factory, monkeypatch
 ):
-    """Владелец 19.09.2026: «отключи полностью контроль просмотра видео».
-    Обязательный блок закрывается кружком без единой секунды просмотра."""
+    """Аварийный выключатель: с выключенным контролем обязательный блок
+    закрывается кружком без единой секунды просмотра (так было 19.09–05.10)."""
+    monkeypatch.setattr("app.api.cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED", False)
     staff = user_factory(vk_id=550_327, name="Стафф", is_admin=True, role_name="админ")
     task, block, _video = _video_task_with_block(db, staff.id)
     _student_client(client, user_factory, session_factory)
