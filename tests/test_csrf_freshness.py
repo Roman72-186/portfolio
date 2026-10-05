@@ -204,3 +204,71 @@ def test_shared_program_modules_send_fresh_token():
     assert "result.body.error || result.body.detail" in trainer, (
         "отказ CSRF кладёт причину в detail — без него человек не видит «обнови страницу»"
     )
+
+
+DIGEST_SCREENS = (
+    "cabinet_digest_admin.html",
+    "cabinet_digest_events.html",
+    "cabinet_digest_types.html",
+)
+
+
+def test_digest_screens_send_fresh_token_and_explain_refusals():
+    """Дайджест сохраняет со свежим ключом и называет причину отказа (05.10.2026).
+
+    Прецедент 04.10.2026: модератор с АОП на просмотр девять раз сохраняла
+    событие и девять раз читала «Не удалось сохранить событие. Попробуйте ещё
+    раз» — экран показывал текст сервера только на 422. Причину отказа по
+    коду ответа собирает общий `csrfFailure`, своей копии у экранов нет.
+    """
+    for name in DIGEST_SCREENS:
+        source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert "window.csrfFetch" in source, f"{name}: мутации не через csrfFetch"
+        assert not re.search(r"'X-CSRF-Token'\s*:\s*csrfToken", source), (
+            f"{name}: ключ из разметки вшит в заголовок запроса"
+        )
+        assert "window.csrfFailure" in source, f"{name}: отказ не объясняется по коду ответа"
+        assert "error.status === 422" not in source, (
+            f"{name}: своя разводка по кодам вместо csrfFailure"
+        )
+
+
+def test_csrf_failure_names_the_reason_by_status():
+    """`csrfFailure` в деле: 401 — войти заново, 403 и 422 — текст сервера,
+    сеть и 5xx — заглушка с «попробуйте ещё раз». Без Node тест пропускается."""
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node не установлен")
+    helper = (STATIC / "csrf.js").read_text(encoding="utf-8")
+    cases = [
+        [401, {"detail": "Сессия истекла"}],
+        [403, {"detail": "Раздел открыт только на просмотр"}],
+        [403, {"detail": "Неверный CSRF-токен. Обнови страницу и попробуй снова."}],
+        [422, {"detail": "Этот тип скрыт — выберите другой"}],
+        [422, {"detail": [{"msg": "field required"}]}],
+        [500, {"detail": "Internal server error"}],
+        [None, None],
+    ]
+    script = (
+        "var window = {};\n" + helper + "\n"
+        "var cases = " + json.dumps(cases) + ";\n"
+        "console.log(JSON.stringify(cases.map(function (c) {"
+        " return window.csrfFailure(c[0], c[1], 'FALLBACK'); })));"
+    )
+    run = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8")
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == [
+        "Сессия закончилась. Обновите страницу и войдите заново.",
+        "Раздел открыт только на просмотр",
+        "Неверный CSRF-токен. Обнови страницу и попробуй снова.",
+        "Этот тип скрыт — выберите другой",
+        "FALLBACK",
+        "FALLBACK",
+        "FALLBACK",
+    ]

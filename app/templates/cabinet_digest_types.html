@@ -105,19 +105,21 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
 
 <script>
 (function () {
-    var csrfToken = {{ csrf_token(request)|tojson }};
     var base = '/cabinet/staff/digest/types';
 
+    // Ключ свежий на каждый запрос (`window.csrfFetch`, `static/js/csrf.js`),
+    // текст отказа по коду ответа — `csrfFailure` там же.
     function api(path, body) {
-        return fetch(path, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+        return window.csrfFetch(path, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body || {})
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 if (!response.ok) {
-                    var error = new Error(data.error || (typeof data.detail === 'string' ? data.detail : '') || 'request_failed');
+                    var error = new Error(data.error || 'request_failed');
                     error.status = response.status;
+                    error.body = data;
                     throw error;
                 }
                 return data;
@@ -156,7 +158,7 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
 
     function explain(error, fallback) {
         if (error.message === 'type_in_use') return 'Тип стоит у событий — его можно только скрыть.';
-        return error.status === 422 && error.message !== 'request_failed' ? error.message : fallback;
+        return window.csrfFailure(error.status, error.body, fallback);
     }
 
     document.addEventListener('change', function (event) {
@@ -186,7 +188,10 @@ FORM: Operate. Владелец 04.10.2026: «выбираю тип этого �
             api(base + '/' + scopeOf(moveButton).dataset.id + '/move', {
                 direction: Number(moveButton.dataset.typeMove)
             }).then(function () { window.location.reload(); })
-              .catch(function () { moveButton.disabled = false; });
+              .catch(function (error) {
+                  moveButton.disabled = false;
+                  setMessage(scopeOf(moveButton), explain(error, 'Не удалось переставить тип. Попробуйте ещё раз.'));
+              });
             return;
         }
 

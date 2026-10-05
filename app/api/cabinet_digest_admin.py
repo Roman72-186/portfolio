@@ -586,15 +586,41 @@ def _event_of_digest_or_404(db: DBSession, digest_id: int, event_id: int):
     return event
 
 
-def _check_event_type(db: DBSession, type_id: int, *, keep_type_id: int | None = None) -> None:
+def _check_event_type(db: DBSession, type_id: int, *, keep_type_id: int | None = None):
     """Тип должен существовать и не быть скрытым. Скрытый пропускается только
     у события, которое уже на нём стоит и тип не меняет: правка названия
-    старого события не должна заставлять его перекрашивать."""
+    старого события не должна заставлять его перекрашивать. Возвращает тип —
+    его имя уходит в журнал."""
     event_type = get_type(db, type_id)
     if event_type is None:
         raise HTTPException(status_code=422, detail="Такого типа события нет")
     if event_type.archived_at is not None and type_id != keep_type_id:
         raise HTTPException(status_code=422, detail="Этот тип скрыт — выберите другой")
+    return event_type
+
+
+def _audit_event(db: DBSession, *, action: str, user_id: int, event, type_name: str) -> None:
+    """След события дайджеста в журнале. До 05.10.2026 его не было: двадцать
+    событий, заведённых 04.10, восстанавливали по `created_at` и логам
+    запросов, а у события нет ни автора, ни времени правки. Даты — как их
+    видит ученик, тип — словом: id типа в журнале ничего не скажет."""
+    db.add(
+        AuditLog(
+            action=action,
+            performed_by_id=user_id,
+            details=json.dumps(
+                {
+                    "digest_id": event.digest_id,
+                    "event_id": event.id,
+                    "title": event.title[:200],
+                    "starts_on": event.starts_on.isoformat(),
+                    "ends_on": event.ends_on.isoformat(),
+                    "type": type_name,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
 
 
 @router.post("/{digest_id}/events", response_class=JSONResponse)
@@ -606,7 +632,7 @@ def create_digest_event(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     _get_digest_or_404(db, digest_id)
-    _check_event_type(db, payload.type_id)
+    event_type = _check_event_type(db, payload.type_id)
     event = create_event(
         db,
         digest_id,
@@ -619,6 +645,10 @@ def create_digest_event(
         sort_order=payload.sort_order,
     )
     set_event_tariffs(db, event, payload.tariffs)
+    _audit_event(
+        db, action="digest_event_create", user_id=user["user_id"], event=event,
+        type_name=event_type.name,
+    )
     db.commit()
     return JSONResponse({"ok": True, "event_id": event.id})
 
@@ -634,7 +664,7 @@ def update_digest_event(
 ):
     _get_digest_or_404(db, digest_id)
     event = _event_of_digest_or_404(db, digest_id, event_id)
-    _check_event_type(db, payload.type_id, keep_type_id=event.type_id)
+    event_type = _check_event_type(db, payload.type_id, keep_type_id=event.type_id)
     update_event(
         event,
         type_id=payload.type_id,
@@ -646,6 +676,10 @@ def update_digest_event(
         sort_order=payload.sort_order,
     )
     set_event_tariffs(db, event, payload.tariffs)
+    _audit_event(
+        db, action="digest_event_update", user_id=user["user_id"], event=event,
+        type_name=event_type.name,
+    )
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -660,6 +694,10 @@ def delete_digest_event(
 ):
     _get_digest_or_404(db, digest_id)
     event = _event_of_digest_or_404(db, digest_id, event_id)
+    _audit_event(
+        db, action="digest_event_delete", user_id=user["user_id"], event=event,
+        type_name=event.type.name,
+    )
     delete_event(db, event)
     db.commit()
     return JSONResponse({"ok": True})

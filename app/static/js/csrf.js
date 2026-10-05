@@ -15,6 +15,8 @@
     window.csrfFetch(url, {method: 'POST', body: formData})
     window.csrfFresh().then(function (token) { ... })   // для XHR с прогрессом
     window.csrfMessage(body, 'Не удалось загрузить.')   // текст ошибки сервера
+    window.csrfFailure(status, body, 'Не удалось сохранить. Попробуйте ещё раз.')
+                                                        // текст отказа по коду ответа
 
 `csrfFetch` сам ставит `Accept: application/json` — без него обработчик 403 в
 `app/main.py` отдаёт HTML-страницу «Нет доступа», разбор ответа падает, и до
@@ -100,7 +102,27 @@
         return body.error || body.detail || fallback;
     }
 
+    // Что сказать сотруднику об отказе, по коду ответа. «Попробуйте ещё раз»
+    // честно только для сети и 5xx: на 401 и 403 повтор ничего не меняет.
+    // Прецедент 04.10.2026: модератор с АОП на просмотр девять раз сохраняла
+    // событие дайджеста и девять раз читала «Не удалось сохранить событие.
+    // Попробуйте ещё раз», хотя сервер отвечал «Раздел открыт только на
+    // просмотр». На 403 и 422 у сервера своя причина словами — её и
+    // показываем; у 422 от проверки полей `detail` бывает списком, тогда
+    // заглушка. Машинные коды вроде `type_in_use` экран разбирает сам до
+    // вызова. Голос «вы»: помощник ходит по экранам персонала, у ученика свои
+    // тексты (`task-blocks-render.js`).
+    function csrfFailure(status, body, fallback) {
+        if (status === 401) return 'Сессия закончилась. Обновите страницу и войдите заново.';
+        if (status === 403 || status === 422) {
+            var reason = csrfMessage(body, '');
+            if (typeof reason === 'string' && reason) return reason;
+        }
+        return fallback;
+    }
+
     window.csrfFresh = fresh;
     window.csrfFetch = csrfFetch;
     window.csrfMessage = csrfMessage;
+    window.csrfFailure = csrfFailure;
 })();

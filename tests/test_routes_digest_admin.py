@@ -464,3 +464,62 @@ def test_digest_scripts_call_only_defined_functions_and_parse(client, db, user_f
                     path.write_text(raw, encoding="utf-8")
                     check = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
                     assert check.returncode == 0, check.stderr
+
+
+def test_event_create_update_delete_leave_audit_trail(client, db, user_factory, session_factory):
+    """Событие дайджеста оставляет след в журнале (05.10.2026). До этого
+    двадцать событий 04.10 восстанавливали по `created_at` и логам запросов:
+    у события нет ни автора, ни времени правки. Записи видны в «Журнале
+    изменений» «Статистики активности» и подписаны словами, а не ключом."""
+    import json
+
+    from app.models.audit_log import AuditLog
+    from app.services.activity_stats import get_audit_feed
+
+    staff = _staff_client(client, user_factory, session_factory)
+    lesson = _type(db, "Занятие", "violet", "fill")
+    digest_id = _digest_id(client)
+
+    event_id = client.post(
+        f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id, title="тренировка РИСУНОК")
+    ).json()["event_id"]
+    assert client.post(
+        f"{PAGE}/{digest_id}/events/{event_id}",
+        json=_event_body(lesson.id, title="Тренировка: рисунок", starts_on="2026-10-08", ends_on="2026-10-09"),
+    ).status_code == 200
+    assert client.post(f"{PAGE}/{digest_id}/events/{event_id}/delete").status_code == 200
+
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.action.like("digest_event_%"))
+        .order_by(AuditLog.id)
+        .all()
+    )
+    assert [row.action for row in rows] == [
+        "digest_event_create", "digest_event_update", "digest_event_delete",
+    ]
+    assert all(row.performed_by_id == staff.id for row in rows)
+    assert json.loads(rows[0].details) == {
+        "digest_id": digest_id, "event_id": event_id, "title": "тренировка РИСУНОК",
+        "starts_on": "2026-10-07", "ends_on": "2026-10-07", "type": "Занятие",
+    }
+    updated = json.loads(rows[1].details)
+    assert (updated["title"], updated["starts_on"], updated["ends_on"]) == (
+        "Тренировка: рисунок", "2026-10-08", "2026-10-09",
+    )
+    assert json.loads(rows[2].details)["event_id"] == event_id
+
+    labels = {item["action"]: item["action_label"] for item in get_audit_feed(db)}
+    assert labels["digest_event_create"] == "Событие дайджеста: создано"
+    assert labels["digest_event_delete"] == "Событие дайджеста: удалено"
+    assert labels["digest_create"] == "Дайджест: создан"
+
+
+def test_refused_event_save_leaves_no_audit_row(client, db, user_factory, session_factory):
+    """Отказ по типу (422) в журнал не пишется: запись — только о сделанном."""
+    from app.models.audit_log import AuditLog
+
+    _staff_client(client, user_factory, session_factory)
+    digest_id = _digest_id(client)
+    assert client.post(f"{PAGE}/{digest_id}/events", json=_event_body(999_999)).status_code == 422
+    assert db.query(AuditLog).filter(AuditLog.action.like("digest_event_%")).count() == 0

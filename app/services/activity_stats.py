@@ -642,6 +642,21 @@ _AUDIT_LABELS = {
     "user_delete": "Удаление",
     "user_block": "Блокировка",
     "user_unblock": "Разблокировка",
+    # Дайджест месяца (`api/cabinet_digest_admin.py`): сам дайджест, его
+    # события и типы событий. Без подписи строка показывала бы ключ.
+    "digest_create": "Дайджест: создан",
+    "digest_update": "Дайджест: изменён",
+    "digest_publish": "Дайджест: опубликован",
+    "digest_unpublish": "Дайджест: скрыт",
+    "digest_delete": "Дайджест: удалён",
+    "digest_event_create": "Событие дайджеста: создано",
+    "digest_event_update": "Событие дайджеста: изменено",
+    "digest_event_delete": "Событие дайджеста: удалено",
+    "event_type_create": "Тип события: создан",
+    "event_type_update": "Тип события: изменён",
+    "event_type_archive": "Тип события: скрыт",
+    "event_type_restore": "Тип события: возвращён",
+    "event_type_delete": "Тип события: удалён",
 }
 
 

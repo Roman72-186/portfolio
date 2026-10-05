@@ -242,7 +242,7 @@
     {# Свежий CSRF-ключ перед мутацией — общий слой на все экраны. Подключён в
        base.html, а не на страницах загрузки: ключ старится у любой долго
        открытой вкладки, а не только у формы с фото (разбор — в самом файле). #}
-    <script src="/static/js/csrf.js?v=1"></script>
+    <script src="/static/js/csrf.js?v=2"></script>
     {% include "_includes/impersonation_banner.html" %}
     {% if user is defined and user %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">

@@ -33,7 +33,6 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
 <script type="application/json" id="digestEventsData">{{ events_payload|tojson }}</script>
 <script>
 (function () {
-    var csrfToken = {{ csrf_token(request)|tojson }};
     var base = '/cabinet/staff/digest/{{ digest.id }}/events';
     var events = JSON.parse(document.getElementById('digestEventsData').textContent || '[]');
     var calendar = document.querySelector('[data-digest-cal]');
@@ -63,17 +62,20 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         message.classList.toggle('is-error', !!isError);
     }
 
+    // Ключ свежий на каждый запрос (`window.csrfFetch`, `static/js/csrf.js`):
+    // редактор держат открытым часами, ключ из разметки к тому времени стар.
+    // Отказ несёт код и тело ответа — текст человеку собирает `csrfFailure`.
     function api(path, body) {
-        return fetch(path, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+        return window.csrfFetch(path, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body || {})
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 if (!response.ok) {
-                    var reason = data.error || (typeof data.detail === 'string' ? data.detail : '') || 'request_failed';
-                    var error = new Error(reason);
+                    var error = new Error(data.error || 'request_failed');
                     error.status = response.status;
+                    error.body = data;
                     throw error;
                 }
                 return data;
@@ -257,8 +259,8 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
             reloadOnDay(startsOn);
         }).catch(function (error) {
             button.disabled = false;
-            var explained = error.status === 422 && error.message !== 'request_failed';
-            setMessage(explained ? error.message : 'Не удалось сохранить событие. Попробуйте ещё раз.', true);
+            setMessage(window.csrfFailure(error.status, error.body,
+                'Не удалось сохранить событие. Попробуйте ещё раз.'), true);
         });
     }
 
@@ -268,9 +270,10 @@ FORM: Operate. Владелец 04.10.2026: «нажимаю на нужную �
         button.disabled = true;
         api(base + '/' + item.id + '/delete').then(function () {
             reloadOnDay(selectedDay);
-        }).catch(function () {
+        }).catch(function (error) {
             button.disabled = false;
-            setMessage('Не удалось удалить событие. Попробуйте ещё раз.', true);
+            setMessage(window.csrfFailure(error.status, error.body,
+                'Не удалось удалить событие. Попробуйте ещё раз.'), true);
         });
     }
 
