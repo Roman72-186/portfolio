@@ -43,14 +43,14 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
-from app.services.rbac import can_score as role_can_score
+from app.services.rbac import can_score as role_can_score, can_send_to_revision
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
 from app.services.activity_stats import student_activity
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK, DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
-    student_review_items,
+    student_review_items, unreviewed_counts_by_student,
 )
 from app.models.role import Role
 from app.models.upload_log import UploadLog
@@ -72,7 +72,7 @@ from app.services.user_management import (
     tariff_change_clears_access,
 )
 from app.services.works import WorkHasFeedbackError, delete_works_with_dependents, upload_work_thumb
-from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local, today_msk
+from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, msk_text, parse_msk_local, today_msk
 from app.services.utils import compress_image, study_duration_text, has_case_growth
 from app.tmpl import format_rich_text, tariff_label, tariff_slug, templates
 
@@ -121,8 +121,8 @@ def _get_accessible_students(
 
     Фильтров «Непроверенные пробники» и «Сдавал в текущий период» больше нет
     (владелец 29.09.2026): оба требовали активного окна `FeaturePeriod`, без
-    него отдавали пустой список, а непроверенное по всем заданиям живёт на
-    экране «Проверка по ученику».
+    него отдавали пустой список, а непроверенное по всем заданиям считает
+    счётчик в списке (`unreviewed_counts_by_student`).
 
     По умолчанию скрыты студенты, не заполнившие анкету (profile_completed=False).
     Суперадмин может раскрыть их через show_hidden=True.
@@ -439,6 +439,19 @@ def _render_students_panel(
         for uid, ws in works_by_uid.items():
             has_case_by_user[uid] = has_case_growth(ws)
 
+    # Очередь «кого проверять» (владелец 05.10.2026): экран «Проверка по
+    # ученику» снят, его счётчик живёт здесь — по всем видам сдач и у всех,
+    # кому открыт список, а не только пробники у ГП, как было раньше. Тот же
+    # расчёт, что «Не проверено» в карточке, и та же область куратора.
+    if students and not archived_b:
+        counts = unreviewed_counts_by_student(
+            db,
+            curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
+            role_rank=user["role_rank"],
+        )
+        visible_ids = {s.id for s in students}
+        unchecked_by_user = {uid: n for uid, n in counts.items() if uid in visible_ids}
+
     can_score = role_can_score(user["role_rank"]) and not archived_b
     if students and can_score:
         _ids = [s.id for s in students]
@@ -453,19 +466,6 @@ def _render_students_panel(
             .all()
         )
         mock_counts_by_user = {r.user_id: r.cnt for r in mock_count_rows}
-
-        unchecked_rows = (
-            db.query(Work.user_id, func.count(Work.id).label("cnt"))
-            .filter(
-                Work.user_id.in_(_ids),
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.status == "success",
-                Work.score.is_(None),
-            )
-            .group_by(Work.user_id)
-            .all()
-        )
-        unchecked_by_user = {r.user_id: r.cnt for r in unchecked_rows}
 
         scored_subj_rows = (
             db.query(Work.user_id, Work.subject)
@@ -631,16 +631,17 @@ def get_student_profile(
     # (админ/суперадмин) — куратор (rank=2) их больше не получает в ответе.
     can_see_contacts = user["role_rank"] >= 4
 
-    # «Учёба сейчас» (владелец 29.09.2026): карточка показывает то, с чем ученик
-    # работает в ленте, а проверка остаётся на одном экране (правило 12).
-    # Счётчик — по всем доменам экрана проверки и за всё время, поэтому ссылка
-    # ведёт на неделю самой старой непроверенной сдачи: экран показывает одну
-    # неделю, и без неё «Не проверено: 3» открыл бы пустую текущую.
+    # «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
+    # Счётчик — по всем видам сдач и за всё время. Проверяют с 05.10.2026 здесь
+    # же, в карточке (правило 12): «Проверить» открывает вкладку «Задания», а
+    # если непроверенное только по пробникам — «Пробники».
     pending = [i for i in _review_items_all_time(db, user, student_id) if not i.is_reviewed]
-    oldest = min((i.submitted_at for i in pending if i.submitted_at), default=None)
     study_now = {
         "unreviewed": len(pending),
-        "review_week": msk_input_value(oldest)[:10] if oldest else "",
+        "review_tab": (
+            "tasks" if any(i.domain in _TASK_DOMAINS for i in pending) or not pending
+            else "mock-exams"
+        ),
     }
     # Шапка как у ученика в «Трекере» (владелец 05.10.2026): средний балл
     # точки А и уровень программы — у разобранного ученика, тем же расчётом,
@@ -754,10 +755,10 @@ _TASK_DOMAINS = (DOMAIN_TASK_BLOCK, DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK)
 
 
 def _review_items_all_time(db: DBSession, user: dict, student_id: int) -> list:
-    """Сдачи ученика по всем доменам экрана проверки, без недельного окна.
+    """Сдачи ученика по всем доменам проверки, без недельного окна.
 
-    Та же функция, что кормит `/cabinet/staff/students-review/{id}` (правило 12),
-    с той же областью видимости куратора — своей выборки карточка не держит."""
+    Общий агрегатор проверки (`review_aggregate.student_review_items`, правило
+    12) с областью видимости куратора — своей выборки карточка не держит."""
     return student_review_items(
         db,
         student_id=student_id,
@@ -773,16 +774,20 @@ def _task_item_json(item) -> dict:
         "id": item.item_id,
         "title": item.title,
         "subject": item.subject,
-        "date_label": msk_input_value(submitted)[:10] if submitted else "",
+        "submitted_label": msk_text(submitted) if submitted else "",
         "is_reviewed": item.is_reviewed,
         "needs_revision": item.needs_revision,
         "question": item.question,
         "chosen": item.chosen or [],
+        "correct": item.correct or [],
         "text": item.text,
         "images": item.images or [],
+        "compare_steps": item.compare_steps or [],
+        "compare_pick_url": item.compare_pick_url,
         "review_comment": item.review_comment,
-        # У ответа на блок своего экрана нет — его проверяют на экране
-        # «Проверка по ученику», на неделе сдачи.
+        "score": item.score,
+        # Экран сдачи: оценка и диалог у работы в задании, у домашки — её
+        # страница. У ответа на вопрос своего экрана нет, его отмечают здесь.
         "review_url": item.review_url if item.domain != DOMAIN_TASK_BLOCK else "",
     }
 
@@ -793,9 +798,17 @@ def get_student_tasks(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Вкладка «Задания»: только чтение, ссылки ведут на существующие экраны
-    проверки. Своей очереди и своих кнопок «проверено» у вкладки нет."""
+    """Вкладка «Задания» — место проверки ученика (владелец 05.10.2026, экран
+    «Проверка по ученику» снят): ответы и сдачи за всё время, непроверенные
+    сверху, отметки «просмотрено», ссылка на оценку и возврат на доработку.
+
+    Кнопки спрашивают то же, что сервер: отметки — раздел «Проверка заданий»
+    (`students_review`, его адреса), возврат — `rbac.REVISION_MIN_RANK`, балл —
+    `rbac.SCORE_MIN_RANK`. Архивный ученик открывается только на чтение."""
     student = _check_access(student_id, user, db, read_archive=True)
+    # Модератору раздел не положен (`section_access.SECTIONS`), поэтому и
+    # возврат, которого его ранг 4 формально хватает, ему не рисуется.
+    can_review = student.archived_at is None and can(user, "students_review")
     enrolled_at = student.enrolled_at or student.created_at
     items = [
         i for i in _review_items_all_time(db, user, student_id)
@@ -812,6 +825,9 @@ def get_student_tasks(
             "cohort_tag": student.cohort_tag,
         },
         "items": [_task_item_json(i) for i in items],
+        "can_review": can_review,
+        "can_score": can_review and role_can_score(user["role_rank"]),
+        "can_send_revision": can_review and can_send_to_revision(user["role_rank"]),
     })
 
 

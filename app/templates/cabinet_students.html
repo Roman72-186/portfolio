@@ -107,6 +107,12 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <button class="tariff-pill" data-tariff="__newcomer__" onclick="selectTariff(this)">Новенький</button>
         </div>
         <div class="sidebar-filters">
+            {% if not is_archive_view %}
+            <select class="sidebar-select" id="filter-unreviewed" aria-label="Фильтр по проверке" onchange="filterSidebar()">
+                <option value="">Все ученики</option>
+                <option value="1">Есть непроверенное</option>
+            </select>
+            {% endif %}
             {% if show_curator_filter and curators %}
             <select class="sidebar-select" id="filter-curator" aria-label="Фильтр по куратору" onchange="filterSidebar()">
                 <option value="">Все кураторы</option>
@@ -128,7 +134,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})"
-                 data-tariff="{% if not s.tariff %}__newcomer__{% else %}{{ s.tariff }}{% endif %}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}"
+                 data-tariff="{% if not s.tariff %}__newcomer__{% else %}{{ s.tariff }}{% endif %}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}" data-unreviewed="{{ s.unchecked }}"
                  data-tg-username="{{ s.tg_username }}" aria-label="{{ s.name }}">
                 <span class="avatar-wrap">
                     {% if s.photo_url %}
@@ -151,7 +157,14 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                         {% if s.study_mode == 'offline' %}<span class="student-info-pill">ОЧНО</span>{% elif s.study_mode == 'online' %}<span class="student-info-pill">ОНЛАЙН</span>{% endif %}
                     </div>
                 </div>
-                {% if can_score %}
+                {# Очередь «кого проверять» (владелец 05.10.2026): непроверенное по
+                   всем видам сдач, у всех, кому открыт список. Значок есть всегда,
+                   ноль прячет `hidden` — после отметки в карточке JS правит число
+                   на месте (`bumpSidebarPending`). #}
+                {% if not is_archive_view %}
+                <span class="pending-badge" data-pending-badge title="Не проверено: {{ s.unchecked }}"{% if not s.unchecked %} hidden{% endif %}>{{ s.unchecked }}</span>
+                {% endif %}
+                {% if can_score and not s.unchecked %}
                     {% set ss = s.scored_subjects %}
                     {% if ss | length >= 2 %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
@@ -159,8 +172,6 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Рисунок</span>
                     {% elif 'Композиция' in ss %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Композиция</span>
-                    {% elif s.unchecked %}
-                    <span class="pending-badge">{{ s.unchecked }}</span>
                     {% endif %}
                 {% endif %}
             </button>
@@ -312,5 +323,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=9"></script>
+<script src="/static/js/cabinet_students.js?v=10"></script>
 {% endblock %}

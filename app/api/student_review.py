@@ -1,26 +1,26 @@
-"""Единый экран проверки: куратор открывает ученика и разбирает всё, что тот
-сдал, за один заход — вместо очереди «по одному типу задания сразу через
-весь список учеников» (созвон 01.09.2026,
-`plans/2026-09-01-apparchi-student-centric-review.md`).
+"""Действия проверки по ученику: «просмотрено», отметки ответов и сдач, балл
+точки А.
 
-Решения владельца: экран полный уже для куратора (rank 2) — права на балл
-Work/ExamCycle расширены отдельно (`cabinet_students_shared.py::score_work`,
-`feedback.py::close_cycle_route`); канонический список учеников —
-`_accessible_students` (тот же приём, что `_get_accessible_students`); период
-— календарная неделя; диалог — только ссылка на существующий UI, здесь не
-встраивается; сводного балла на этом экране нет (отдельная стройка).
+Экраны этого роутера — список учеников с непроверенным и недельная лента
+ученика — сняты 05.10.2026 (владелец: «собрать всё, что касается ученика, в
+одно место»). Проверка живёт во вкладке «Задания» карточки «Учеников»
+(`cabinet_students_shared.py::get_student_tasks`, `cabinet_students.js::buildTasks`),
+очередь «кого проверять» — счётчиком в списке «Учеников». Старые адреса
+экранов уводят туда же: на них ведут уведомления и закладки.
+
+Сами действия остались на своих адресах: их зовут карточка, экран оценки
+работы в задании (`task_block_feedback_detail.html`) и экран точки А.
 """
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MOCK_SUBJECTS, tariffs_for_data
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
@@ -28,29 +28,16 @@ from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockS
 from app.models.user import User
 from app.models.work import Work
 from app.services.notify import notify
-from app.services.rbac import can_score, can_send_to_revision
 from app.services.point_a import maybe_notify_point_a_level
-from app.services.review_aggregate import (
-    FULL_ACCESS_RANK,
-    NEWCOMER_TARIFF,
-    NO_CURATOR,
-    REVIEW_STATUS_CHECKED,
-    REVIEW_STATUS_UNCHECKED,
-    aggregate_student_review_counts,
-    filter_review_rows,
-    review_curator_options,
-    student_review_items,
-    week_bounds,
-)
+from app.services.review_aggregate import FULL_ACCESS_RANK
 from app.services.task_blocks import set_reviewed, set_submission_reviewed
-from app.services.tz import today_msk
-from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
 
 
-def _curator_scope(user: dict) -> int | None:
-    return None if user.get("role_rank", 0) >= FULL_ACCESS_RANK else user["user_id"]
+def student_tasks_url(student_id: int) -> str:
+    """Где теперь проверяют ученика — вкладка «Задания» его карточки."""
+    return f"/cabinet/students?student={student_id}&tab=tasks"
 
 
 def _check_student_access(
@@ -68,112 +55,16 @@ def _check_student_access(
     return student
 
 
-def _parse_week(week: str | None) -> date:
-    if not week:
-        return today_msk()
-    try:
-        return datetime.strptime(week, "%Y-%m-%d").date()
-    except ValueError:
-        return today_msk()
+@router.get("")
+def students_review_list(user: Annotated[dict, Depends(require_curator)]):
+    return RedirectResponse("/cabinet/students", status_code=302)
 
 
-@router.get("", response_class=HTMLResponse)
-def students_review_list(
-    request: Request,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-    q: str = "",
-    status: str = "",
-    tariff: str = "",
-    curator: str = "",
-):
-    all_rows = aggregate_student_review_counts(db, user)
-    # Фильтр по куратору и поиск по контактам — только с ГП (rank по
-    # `effective_role_rank`, модератор сюда тоже попадает): у куратора в списке
-    # и так одни свои ученики, а контакты ему не показывают и на «Учениках».
-    full_access = user["role_rank"] >= FULL_ACCESS_RANK
-    if not full_access:
-        curator = ""
-    rows = filter_review_rows(
-        all_rows, q=q, status=status, tariff=tariff, curator=curator,
-        search_contacts=full_access,
-    )
-    return templates.TemplateResponse(request, "staff_students_review.html", {
-        "request": request,
-        "user": user,
-        "rows": rows,
-        "total": len(all_rows),
-        "filters": {"q": q, "status": status, "tariff": tariff, "curator": curator},
-        "is_filtered": bool(q.strip() or status or tariff or curator),
-        # Фильтр по тарифу — по ученикам этого списка (`tariffs_for_data`,
-        # инвариант students.md): действующие всегда, старый — только если
-        # стоит у кого-то из них. `tariffs_in_use` считал по всей базе с
-        # архивом и сотрудниками, и куратор видел «МАКСИМУМ»/«УВЕРЕННЫЙ»
-        # (владелец 30.09.2026).
-        "tariffs": tariffs_for_data(row["student"].tariff for row in all_rows),
-        "full_access": full_access,
-        "curators": review_curator_options(db, all_rows) if full_access else [],
-        "status_unchecked": REVIEW_STATUS_UNCHECKED,
-        "status_checked": REVIEW_STATUS_CHECKED,
-        "newcomer_tariff": NEWCOMER_TARIFF,
-        "no_curator": NO_CURATOR,
-        "nav_active": "students_review",
-    })
-
-
-@router.get("/{student_id}", response_class=HTMLResponse)
-def student_review_detail(
-    student_id: int,
-    request: Request,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-    week: str | None = None,
-    subject: str | None = None,
-    tariff: str | None = None,
-):
-    student = _check_student_access(
-        db, user, student_id,
-        not_found_detail="Ученик не найден",
-        forbidden_detail="Нет доступа к этому ученику",
-    )
-    anchor = _parse_week(week)
-    week_start, week_end = week_bounds(anchor)
-    prev_week = (week_start.date() - (week_end.date() - week_start.date()))
-    next_week = week_end.date()
-
-    items = student_review_items(
-        db,
-        student_id=student_id,
-        curator_id=_curator_scope(user),
-        week_start=week_start,
-        week_end=week_end,
-        subject=subject or None,
-        tariff=tariff or None,
-        role_rank=user["role_rank"],
-    )
-    return templates.TemplateResponse(request, "staff_student_review_detail.html", {
-        "request": request,
-        "user": user,
-        "student": student,
-        "items": items,
-        "week_start": week_start.date(),
-        "week_end": week_end.date(),
-        "prev_week": prev_week.isoformat(),
-        "next_week": next_week.isoformat(),
-        "subject": subject or "",
-        "tariff": tariff or "",
-        "subjects": MOCK_SUBJECTS,
-        # Фильтр по тарифу — действующие плюс старый, только если он стоит у
-        # этого ученика (`tariffs_for_data`, инвариант students.md). Раньше шёл
-        # `tariffs_in_use` по всей базе с архивом — куратор видел отработавшие
-        # «МАКСИМУМ»/«УВЕРЕННЫЙ» (владелец 30.09.2026).
-        "tariffs": tariffs_for_data([student.tariff]),
-        "can_score": can_score(user["role_rank"]),
-        # Вернуть на доработку — только ГП и выше (`rbac.REVISION_MIN_RANK`,
-        # 04.10.2026): кнопка спрашивает то же правило, что и сервер.
-        "can_send_revision": can_send_to_revision(user["role_rank"]),
-        "nav_active": "students_review",
-    })
+@router.get("/{student_id}")
+def student_review_detail(student_id: int, user: Annotated[dict, Depends(require_curator)]):
+    # Своего ли ученика открывают, решает карточка (`_check_access`) — здесь
+    # только переадресация, без чтения базы.
+    return RedirectResponse(student_tasks_url(student_id), status_code=302)
 
 
 # ── Действия прямо с экрана (этап 6) ────────────────────────────────────────

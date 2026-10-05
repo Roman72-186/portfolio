@@ -15,8 +15,9 @@ from app.services.review_aggregate import (
     DOMAIN_TASK_BLOCK,
     DOMAIN_WORK,
     ReviewItem,
-    aggregate_student_review_counts,
+    _accessible_students,
     student_review_items,
+    unreviewed_counts_by_student,
     week_bounds,
     _exam_cycle_items,
     _homework_items,
@@ -363,10 +364,12 @@ def test_exam_cycle_items_on_revision_is_unreviewed_even_if_closed(db, user_fact
     assert _exam_cycle_items(db)[0].is_reviewed is False
 
 
-# --- aggregate_student_review_counts (этап 4) --------------------------------
+# --- счётчик «кого проверять» и круг учеников --------------------------------
+# С 05.10.2026 счётчик живёт в списке «Учеников» (экран «Проверка по ученику»
+# снят); круг учеников `_accessible_students` держит экран точки А.
 
 
-def test_student_with_zero_unchecked_is_not_above_student_with_some(db, user_factory):
+def test_counts_only_students_with_unreviewed(db, user_factory):
     curator = user_factory(vk_id=840_100, name="Куратор", role_name="куратор")
     quiet = user_factory(vk_id=840_101, name="Аня Тихая")
     quiet.curator_id = curator.id
@@ -375,16 +378,13 @@ def test_student_with_zero_unchecked_is_not_above_student_with_some(db, user_fac
     db.commit()
     _work(db, busy.id, score=None)  # непроверенная работа только у busy
 
-    rows = aggregate_student_review_counts(db, {"user_id": curator.id, "role_rank": 2})
+    counts = unreviewed_counts_by_student(db, curator_id=curator.id, role_rank=2)
 
-    by_id = {row["student"].id: row["unchecked"] for row in rows}
-    assert by_id[busy.id] == 1
-    assert by_id[quiet.id] == 0
-    order = [row["student"].id for row in rows]
-    assert order.index(busy.id) < order.index(quiet.id)
+    assert counts.get(busy.id) == 1
+    assert quiet.id not in counts
 
 
-def test_aggregate_counts_respects_curator_scope(db, user_factory):
+def test_counts_respect_curator_scope(db, user_factory):
     own_curator = user_factory(vk_id=840_103, name="Куратор своя", role_name="куратор")
     own_student = user_factory(vk_id=840_104, name="Свой ученик")
     own_student.curator_id = own_curator.id
@@ -393,22 +393,22 @@ def test_aggregate_counts_respects_curator_scope(db, user_factory):
     _work(db, own_student.id, score=None)
     _work(db, foreign_student.id, score=None)
 
-    rows = aggregate_student_review_counts(db, {"user_id": own_curator.id, "role_rank": 2})
+    counts = unreviewed_counts_by_student(db, curator_id=own_curator.id, role_rank=2)
 
-    assert [row["student"].id for row in rows] == [own_student.id]
+    assert set(counts) == {own_student.id}
 
 
-def test_aggregate_counts_admin_sees_all_active_students(db, user_factory):
+def test_admin_sees_all_active_students(db, user_factory):
     admin = user_factory(vk_id=840_106, name="Админ", role_name="админ")
     unassigned = user_factory(vk_id=840_107, name="Ученик без куратора")
     db.commit()
 
-    rows = aggregate_student_review_counts(db, {"user_id": admin.id, "role_rank": 4})
+    students = _accessible_students(db, {"user_id": admin.id, "role_rank": 4})
 
-    assert unassigned.id in {row["student"].id for row in rows}
+    assert unassigned.id in {s.id for s in students}
 
 
-def test_aggregate_counts_moderator_scoped_same_as_curator(db, user_factory):
+def test_moderator_scoped_same_as_curator(db, user_factory):
     """Advisor-ревью 01.09.2026: до фикса `_accessible_students` (rank != 2 →
     видно всех) и счётчик (rank < 4 → скоуп по curator_id) расходились на
     ранге 3 — модератор видел всю школу с вечным «всё проверено»."""
@@ -418,9 +418,9 @@ def test_aggregate_counts_moderator_scoped_same_as_curator(db, user_factory):
     foreign_student = user_factory(vk_id=840_110, name="Чужой ученик")
     db.commit()
 
-    rows = aggregate_student_review_counts(db, {"user_id": moderator.id, "role_rank": 3})
+    students = _accessible_students(db, {"user_id": moderator.id, "role_rank": 3})
 
-    assert [row["student"].id for row in rows] == [own_student.id]
+    assert [s.id for s in students] == [own_student.id]
 
 
 # --- week_bounds / student_review_items (этап 5) -----------------------------

@@ -536,7 +536,7 @@ def test_review_queue_shows_work_numbers_and_steps(auth_client, db):
     assert all(s["left_label"] == "Работа №1" and s["winner_url"] == WORKS[0] for s in steps)
 
 
-def test_review_screen_shows_the_pairs(auth_client, db, user_factory, session_factory):
+def test_student_card_shows_the_pairs(auth_client, db, user_factory, session_factory):
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
@@ -544,12 +544,15 @@ def test_review_screen_shows_the_pairs(auth_client, db, user_factory, session_fa
     _play(client, task.id, block.id, PICK)
     _staff(client, user_factory, session_factory)
 
-    html = client.get(f"/cabinet/staff/students-review/{user.id}").text
+    # С 05.10.2026 проверяют в карточке ученика: ход выбора отдаёт вкладка
+    # «Задания», рисует его `cabinet_students.js::buildCompareSteps`.
+    items = client.get(f"/cabinet/students/{user.id}/tasks").json()["items"]
+    item = next(i for i in items if i["compare_steps"])
 
-    assert "Ход выбора: 4 пары" in html
-    assert html.count('class="cmp-step-work is-winner"') == 4
-    assert "выбор преподавателя" in html
-    assert WORKS[4] in html
+    assert len(item["compare_steps"]) == 4
+    assert all(s["winner_url"] in (s["left_url"], s["right_url"]) for s in item["compare_steps"])
+    assert item["compare_pick_url"] == PICK
+    assert WORKS[4] in {s["right_url"] for s in item["compare_steps"]}
 
 
 def test_old_answer_without_steps(auth_client, db, user_factory, session_factory):
@@ -563,10 +566,11 @@ def test_old_answer_without_steps(auth_client, db, user_factory, session_factory
     _staff(client, user_factory, session_factory)
 
     row = next(r for r in review_queue(db, student_id=user.id) if r["task_id"] == task.id)
-    html = client.get(f"/cabinet/staff/students-review/{user.id}").text
+    items = client.get(f"/cabinet/students/{user.id}/tasks").json()["items"]
 
     assert row["compare_steps"] == []
-    assert "Ход выбора по этому ответу не сохранился" in html
+    assert [i["compare_steps"] for i in items] == [[]]
+    assert items[0]["compare_pick_url"]
 
 
 def test_review_queue_survives_removed_work(auth_client, db):

@@ -3,8 +3,8 @@
 Снято: отработки (у ученика к ним нет входа с мая 2026), VK, фильтры по окну
 сдачи пробника, отдельная вкладка «Цикл пробника» (слита с «Пробниками»).
 Добавлено: блок «Учёба сейчас» в профиле и вкладка «Задания» — ответы и сдачи
-из ленты. Проверка по-прежнему одна, на экране «Проверка по ученику»
-(правило 12): вкладка только читает и ведёт туда.
+из ленты. С 05.10.2026 проверяют во вкладке «Задания» (экран «Проверка по
+ученику» снят) — её кнопки сторожит `test_routes_student_review.py`.
 """
 
 import pathlib
@@ -20,7 +20,6 @@ from app.models.task_block import BLOCK_QUESTION, BLOCK_UPLOAD, TaskBlock, TaskB
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
 from app.services.task_blocks import save_response, sync_blocks
-from app.services.tz import MSK_TZ
 from app.services.user_management import archive_user
 
 
@@ -97,7 +96,7 @@ def test_tasks_tab_lists_answers_and_block_works_but_not_mock(
     assert answer["question"] == "Что было главным?"
     assert answer["text"] == "Тон"
     assert answer["is_reviewed"] is False
-    # Своего экрана у ответа нет — ссылку на неделю сдачи собирает страница.
+    # Своего экрана у ответа нет — его отмечают прямо во вкладке.
     assert answer["review_url"] == ""
     work = next(i for i in items if i["domain"] == "block_work")
     assert work["review_url"].startswith("/cabinet/staff/task-block-submissions/")
@@ -152,9 +151,11 @@ def test_profile_drops_vk_retake_and_cycle_fields(client, db, user_factory, sess
     assert data["study_now"]["unreviewed"] == 0
 
 
-def test_profile_study_now_links_to_week_of_oldest_unreviewed(
+def test_profile_study_now_counts_all_time_and_opens_tasks(
     client, db, user_factory, session_factory
 ):
+    """Счётчик — за всё время, а не за неделю; «Проверить» ведёт на вкладку
+    «Задания», раз непроверенное есть и там (05.10.2026)."""
     chief = _chief(user_factory)
     student = user_factory(vk_id=950_601, name="Ученик")
     old = datetime.now(timezone.utc) - timedelta(days=20)
@@ -165,7 +166,7 @@ def test_profile_study_now_links_to_week_of_oldest_unreviewed(
     study_now = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["study_now"]
 
     assert study_now["unreviewed"] == 2
-    assert study_now["review_week"] == old.astimezone(MSK_TZ).date().isoformat()
+    assert study_now["review_tab"] == "tasks"
     assert "point_a" in study_now
 
 

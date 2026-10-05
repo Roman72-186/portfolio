@@ -7,7 +7,6 @@ def test_curator_nav_items_keep_current_contract():
     assert [(item.key, item.href, item.label) for item in items] == [
         ("dashboard", "/cabinet/curator", "Кабинет"),
         ("students", "/cabinet/students", "Ученики"),
-        ("students_review", "/cabinet/staff/students-review", "Проверка"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
         # Добавлен 25.09.2026: владелец открыл кураторам 3D-лабораторию.
@@ -75,14 +74,6 @@ def test_staff_nav_items_keep_admin_contract():
         ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         (
-            "students_review",
-            "/cabinet/staff/students-review",
-            "Проверка по ученику",
-            "По ученику",
-            "Проверка по ученику",
-            "Открыть ученика и разобрать всё, что он сдал, за один заход",
-        ),
-        (
             "point_a",
             "/cabinet/staff/point-a",
             "Оценка точки А",
@@ -127,16 +118,14 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
         "dashboard",
         "students",
         "mock_check",
-        "students_review",
         "3dlab",
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
-    # Проверка по ученику видна с ранга куратора (решение владельца
-    # 01.09.2026): у куратора экран полный, а в «Учебные программы» его не
-    # пускают (там ранг 4).
-    assert "students_review" in [item.key for item in rank_3_items]
-    assert "students_review" in [item.key for item in rank_4_items]
+    # Пункта «Проверка по ученику» нет ни у кого с 05.10.2026: проверка
+    # переехала во вкладку «Задания» карточки «Учеников».
+    for items in (rank_3_items, rank_4_items, rank_5_items):
+        assert "students_review" not in [item.key for item in items]
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]

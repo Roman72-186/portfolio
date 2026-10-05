@@ -345,10 +345,11 @@ function buildProfileActions(s) {
         + '</div>';
 }
 
-// «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ленте ученика.
-// Проверка остаётся на одном экране (правило 12) — здесь счётчик и переход туда.
-// Экраны проверки и точки А открывают только действующих учеников, поэтому
-// в архиве переходов нет, остаются цифры.
+// «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
+// Проверяют здесь же, в карточке (правило 12, с 05.10.2026): «Проверить»
+// открывает вкладку, которую назвал сервер, — «Задания» или «Пробники».
+// Экран точки А открывает только действующих учеников, поэтому в архиве
+// переходов нет, остаются цифры.
 function buildStudyNow(s) {
     var sn = s.study_now;
     if (!sn) return '';
@@ -356,8 +357,8 @@ function buildStudyNow(s) {
     if (sn.unreviewed) {
         html += '<span class="profile-badge no">Не проверено: ' + sn.unreviewed + '</span>';
         if (!IS_ARCHIVE_VIEW) {
-            html += '<a class="btn-outline" href="/cabinet/staff/students-review/' + s.id
-                + (sn.review_week ? '?week=' + esc(sn.review_week) : '') + '">Проверить</a>';
+            var reviewTab = sn.review_tab === 'mock-exams' ? 'mock-exams' : 'tasks';
+            html += '<button type="button" class="btn-outline" onclick="openReview(\'' + reviewTab + '\')">Проверить</button>';
         }
     } else {
         html += '<span class="profile-badge ok">Всё проверено</span>';
@@ -381,50 +382,204 @@ function buildStudyNow(s) {
         + '<div class="profile-status-badges">' + html + '</div></div>';
 }
 
-// ── Задания из ленты ─────────────────────────────────────────────────────────
-// Только чтение: что ученик ответил и сдал в заданиях. Проверяют на экране
-// «Проверка по ученику» (правило 12) и в диалогах сдач — туда ведут ссылки.
+// ── Задания: проверка ученика ────────────────────────────────────────────────
+// С 05.10.2026 здесь проверяют (владелец: «собрать всё, что касается ученика,
+// в одно место»): экран «Проверка по ученику» снят. Сдачи за всё время,
+// непроверенные сверху — порядок даёт сервер (`student_review_items`). Кнопки
+// рисуются по флагам ответа `can_review` / `can_score` / `can_send_revision`,
+// сервер на своих адресах спрашивает то же самое.
+var _tasksFilter = 'pending';  // 'pending' — только непроверенное, 'all' — всё
+
+function openReview(tabName) {
+    _tasksFilter = 'pending';
+    openTab(tabName);
+}
+
+function setTasksFilter(value) {
+    _tasksFilter = value;
+    var data = _tabCache[_currentStudentId] && _tabCache[_currentStudentId].tasks;
+    if (data) renderTab('tasks', data);
+}
+
 function buildTasks(data) {
     var items = data.items || [];
-    var sid = data.student.id;
     var html = '<div class="section-title">Задания из ленты</div>';
     if (!items.length) {
         return html + '<div class="no-works">В заданиях ученик пока ничего не сдал и не ответил</div>';
     }
-    items.forEach(function(it, idx) {
-        var badge = it.needs_revision ? '<span class="profile-badge no">На доработке</span>'
-            : (it.is_reviewed ? '<span class="profile-badge ok">Проверено</span>'
-                              : '<span class="profile-badge no">Не проверено</span>');
-        var meta = [it.subject, it.date_label ? formatMockDate(it.date_label) : '']
-            .filter(Boolean).join(' · ');
-        html += '<div class="profile-details">'
-            + '<div class="profile-status-badges">'
-            +   '<span class="profile-field-value">' + esc(it.title) + '</span>' + badge
-            + '</div>'
-            + (meta ? '<div class="profile-field-label">' + esc(meta) + '</div>' : '');
-        if (it.question) html += '<div class="profile-field-value">' + esc(it.question) + '</div>';
-        if (it.chosen && it.chosen.length) html += '<div class="profile-about">' + esc(it.chosen.join(', ')) + '</div>';
-        if (it.text) html += '<div class="profile-about">' + esc(it.text) + '</div>';
-        if (it.images && it.images.length) {
-            html += '<div class="month-grid" data-gallery="task-' + sid + '-' + idx + '">';
-            it.images.forEach(function(url) {
-                html += '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
-                    + '<img src="' + esc(url) + '" alt="' + esc(it.title) + '" loading="lazy"></button>';
-            });
-            html += '</div>';
-        }
-        if (it.review_comment) {
-            html += '<div class="profile-field-label">Комментарий преподавателя</div>'
-                + '<div class="profile-about">' + esc(it.review_comment) + '</div>';
-        }
-        if (!IS_ARCHIVE_VIEW) {
-            var url = it.review_url
-                || ('/cabinet/staff/students-review/' + sid + (it.date_label ? '?week=' + esc(it.date_label) : ''));
-            html += '<a class="btn-outline" href="' + esc(url) + '">Открыть</a>';
-        }
-        html += '</div>';
-    });
+    var pending = items.filter(function(it) { return !it.is_reviewed; });
+    var showAll = _tasksFilter === 'all';
+    function pill(value, label, active) {
+        return '<button type="button" class="nav-pill-item' + (active ? ' active' : '') + '"'
+            + ' aria-pressed="' + (active ? 'true' : 'false') + '"'
+            + ' onclick="setTasksFilter(\'' + value + '\')">' + label + '</button>';
+    }
+    html += '<div class="nav-pill" role="group" aria-label="Какие сдачи показать">'
+        + pill('pending', 'На проверку: ' + pending.length, !showAll)
+        + pill('all', 'Все: ' + items.length, showAll)
+        + '</div>';
+    var list = showAll ? items : pending;
+    if (!list.length) {
+        return html + '<div class="no-works">Всё проверено. Прошлые сдачи — во вкладке «Все».</div>';
+    }
+    list.forEach(function(it) { html += buildTaskItem(it, data); });
     return html;
+}
+
+function buildTaskItem(it, data) {
+    var badge = it.needs_revision ? '<span class="profile-badge no">На доработке</span>'
+        : (it.is_reviewed ? '<span class="profile-badge ok">Проверено</span>'
+                          : '<span class="profile-badge no">Не проверено</span>');
+    if (it.score != null) badge += '<span class="profile-badge">' + it.score + ' / 100</span>';
+    var meta = [it.subject, it.submitted_label].filter(Boolean).join(' · ');
+    var html = '<div class="profile-details" data-task-item data-domain="' + esc(it.domain) + '" data-id="' + it.id + '"'
+        + ' data-reviewed="' + (it.is_reviewed ? 'true' : 'false') + '">'
+        + '<div class="profile-status-badges">'
+        +   '<span class="profile-field-value">' + esc(it.title) + '</span>' + badge
+        + '</div>'
+        + (meta ? '<div class="profile-field-label">' + esc(meta) + '</div>' : '');
+    if (it.question) html += '<div class="profile-field-value">' + esc(it.question) + '</div>';
+    if (it.chosen && it.chosen.length) {
+        html += '<div class="profile-about"><strong>Выбрал:</strong> ' + esc(it.chosen.join(', ')) + '</div>';
+        if (it.correct && it.correct.length) {
+            html += '<div class="profile-field-label">Верно: ' + esc(it.correct.join(', ')) + '</div>';
+        }
+    }
+    if (it.text) html += '<div class="profile-about">' + esc(it.text) + '</div>';
+    html += buildCompareSteps(it);
+    if (it.images && it.images.length) {
+        html += '<div class="month-grid" data-gallery="task-' + esc(it.domain) + '-' + it.id + '">';
+        it.images.forEach(function(url) {
+            html += '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
+                + '<img src="' + esc(url) + '" alt="' + esc(it.title) + '" loading="lazy"></button>';
+        });
+        html += '</div>';
+    }
+    if (it.review_comment) {
+        html += '<div class="profile-field-label">Комментарий преподавателя</div>'
+            + '<div class="profile-about">' + esc(it.review_comment) + '</div>';
+    }
+    return html + buildTaskActions(it, data) + '</div>';
+}
+
+// «Сравнение работ»: ход выбора по парам (владелец 28.09.2026). Ученику не
+// показывается — только проверяющим. Классы `cmp-*` общие, из base.css.
+function buildCompareSteps(it) {
+    var steps = it.compare_steps || [];
+    if (!steps.length) {
+        return it.compare_pick_url
+            ? '<div class="profile-field-label">Ход выбора по этому ответу не сохранился: ученик ответил раньше, чем его начали записывать.</div>'
+            : '';
+    }
+    var html = '<details class="cmp-steps"><summary>Ход выбора: '
+        + pluralLabel(steps.length, 'пара', 'пары', 'пар') + '</summary>'
+        + '<ol class="cmp-steps-list" data-gallery="cmp-' + it.id + '">';
+    steps.forEach(function(s) {
+        html += '<li class="cmp-step"><span class="cmp-step-num">Пара ' + esc(s.step) + '</span>';
+        [[s.left_url, s.left_label], [s.right_url, s.right_label]].forEach(function(work) {
+            var url = work[0], label = work[1] || '';
+            var won = url === s.winner_url;
+            html += '<figure class="cmp-step-work' + (won ? ' is-winner' : '') + '">'
+                + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть ' + esc(label.toLowerCase()) + '">'
+                +   '<img src="' + esc(url) + '" alt="' + esc(label) + '" loading="lazy"></button>'
+                + '<figcaption>' + esc(label)
+                +   (won ? ' <strong>выбрал</strong>' : '')
+                +   (url === it.compare_pick_url ? ' <span class="chip">выбор преподавателя</span>' : '')
+                + '</figcaption></figure>';
+        });
+        html += '</li>';
+    });
+    return html + '</ol></details>';
+}
+
+// Кнопки сдачи. Оценка и диалог по работе живут на её экране (`review_url`),
+// у домашки — своя страница; ответ на вопрос отмечается прямо здесь.
+function buildTaskActions(it, data) {
+    if (IS_ARCHIVE_VIEW) return '';
+    var html = '';
+    if (it.domain === 'block_work' && it.review_url) {
+        html += '<a class="btn-blue" href="' + esc(it.review_url) + '">'
+            + (data.can_score && !it.needs_revision ? 'Оценить и ответить' : 'Ответить') + '</a>';
+    } else if (it.domain === 'homework' && it.review_url) {
+        html += '<a class="btn-outline" href="' + esc(it.review_url) + '">Открыть</a>';
+    }
+    if (data.can_review && !it.needs_revision && it.domain !== 'homework') {
+        html += '<button type="button" class="btn-outline" onclick="toggleTaskReviewed(this)">'
+            + (it.is_reviewed ? 'Вернуть в очередь' : 'Просмотрено') + '</button>';
+    }
+    if (data.can_send_revision && !it.needs_revision
+            && (it.domain === 'block_work' || it.domain === 'homework')) {
+        html += '<button type="button" class="btn-outline" onclick="returnTaskToRevision(this)">Вернуть на доработку</button>';
+    }
+    return html ? '<div class="profile-status-badges">' + html + '</div>' : '';
+}
+
+// После отметки перечитываем вкладку и профиль («Не проверено: N» в «Учёбе
+// сейчас»), а счётчик в списке учеников правим на месте.
+function afterTaskReview(row, nowReviewed, message) {
+    var sid = _currentStudentId;
+    var wasReviewed = row.dataset.reviewed === 'true';
+    if (wasReviewed !== nowReviewed) bumpSidebarPending(sid, nowReviewed ? -1 : 1);
+    if (_tabCache[sid]) {
+        delete _tabCache[sid].tasks;
+        delete _tabCache[sid].profile;
+    }
+    switchTab('tasks');
+    if (message) showToast(message);
+}
+
+function toggleTaskReviewed(btn) {
+    var row = btn.closest('[data-task-item]');
+    var next = row.dataset.reviewed !== 'true';
+    // Ответы на вопросы и сданные файлы — разные сущности со своими отметками.
+    var path = row.dataset.domain === 'block_work'
+        ? '/cabinet/staff/students-review/block-work/'
+        : '/cabinet/staff/students-review/task-block/';
+    btn.disabled = true;
+    window.csrfFetch(path + row.dataset.id + '/reviewed', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reviewed: next}),
+    }).then(readJsonOrThrow).then(function(body) {
+        afterTaskReview(row, !!body.reviewed, body.reviewed ? 'Отмечено: просмотрено' : 'Вернули в очередь');
+    }).catch(function(err) {
+        btn.disabled = false;
+        alert(err.serverMessage || 'Не удалось сохранить отметку. Попробуйте ещё раз.');
+    });
+}
+
+function returnTaskToRevision(btn) {
+    var row = btn.closest('[data-task-item]');
+    var comment = prompt('Что нужно исправить? Сообщение получит ученик.', 'Загрузи правильное фото работы.');
+    if (comment === null) return;
+    var url = row.dataset.domain === 'block_work'
+        ? '/cabinet/staff/task-block-submissions/' + row.dataset.id + '/revision'
+        : '/cabinet/staff/homework/submissions/' + row.dataset.id + '/revision';
+    var body = new FormData();
+    body.append('comment', comment);
+    btn.disabled = true;
+    window.csrfFetch(url, {method: 'POST', body: body})
+        .then(readJsonOrThrow)
+        .then(function() { afterTaskReview(row, false, 'Работа возвращена на доработку'); })
+        .catch(function(err) {
+            btn.disabled = false;
+            alert(err.serverMessage || 'Не удалось вернуть работу. Попробуйте ещё раз.');
+        });
+}
+
+// Счётчик непроверенного в строке списка — очередь «кого проверять».
+function bumpSidebarPending(sid, delta) {
+    var row = document.getElementById('srow-' + sid);
+    if (!row || !delta) return;
+    var n = Math.max(0, (+row.dataset.unreviewed || 0) + delta);
+    row.dataset.unreviewed = String(n);
+    var badge = row.querySelector('[data-pending-badge]');
+    if (badge) {
+        badge.textContent = n;
+        badge.title = 'Не проверено: ' + n;
+        badge.hidden = !n;
+    }
+    filterSidebar();
 }
 
 function profileField(label, value, fullWidth) {
@@ -1463,6 +1618,7 @@ function filterSidebar() {
     var q = normalizeStudentSearch(document.getElementById('student-search').value);
     var curator = (document.getElementById('filter-curator') || {}).value || '';
     var year = (document.getElementById('filter-year') || {}).value || '';
+    var onlyUnreviewed = !!(document.getElementById('filter-unreviewed') || {}).value;
     var queryTokens = q.split(' ').map(function(token) {
         return token.replace(/^@/, '');
     }).filter(Boolean);
@@ -1479,7 +1635,8 @@ function filterSidebar() {
         var matchT = !_activeTariff || row.dataset.tariff === _activeTariff;
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;
-        var shown = matchQ && matchT && matchC && matchY;
+        var matchR = !onlyUnreviewed || +(row.dataset.unreviewed || 0) > 0;
+        var shown = matchQ && matchT && matchC && matchY && matchR;
         row.style.display = shown ? '' : 'none';
         if (shown) anyShown = true;
     });

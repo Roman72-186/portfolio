@@ -1,9 +1,13 @@
-"""Единый экран проверки: список учеников + карточка ученика по всем доменам.
+"""Проверка по ученику: вкладка «Задания» карточки, счётчик в списке и адреса
+действий.
 
-`plans/2026-09-01-apparchi-student-centric-review.md`, этап 5. Тесты на
+До 05.10.2026 это был отдельный экран `/cabinet/staff/students-review`
+(`plans/2026-09-01-apparchi-student-centric-review.md`); владелец перенёс
+проверку в карточку «Учеников» (`docs/invariants/cabinet.md`, «Проверка
+ученика — во вкладке «Задания»»). Адреса действий остались прежними. Тесты на
 ответы блоков заданий (`task-block/.../reviewed`) перенесены сюда со сноса
-отдельного экрана `/cabinet/staff/review` 02.09.2026 — контракт («куратор не
-видит и не трогает чужих учеников») тот же, что был у `test_routes_review_queue.py`.
+экрана `/cabinet/staff/review` 02.09.2026 — контракт «куратор не видит и не
+трогает чужих учеников» тот же.
 """
 from datetime import date, datetime, timezone
 
@@ -53,76 +57,138 @@ def _work(db, user_id, *, score=None, created_at=None):
     return w
 
 
-def test_student_list_shows_own_students_with_counts(auth_client, db, user_factory, session_factory):
+def _row(html, student_id):
+    return html.split(f'id="srow-{student_id}"', 1)[1].split("</button>", 1)[0]
+
+
+def _badge_tag(row):
+    return row.split("data-pending-badge", 1)[1].split(">", 1)[0]
+
+
+def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_factory, session_factory):
+    """Очередь «кого проверять» — счётчик в списке «Учеников», и куратору
+    тоже: раньше значок считал только пробники и только у ГП."""
     curator = user_factory(vk_id=860_101, name="Куратор", role_name="куратор")
     _, student = auth_client
     student.curator_id = curator.id
     db.commit()
     _work(db, student.id, score=None)
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Свет и тень")
 
     client, _ = auth_client
     client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get("/cabinet/staff/students-review")
+    html = client.get("/cabinet/students").text
 
-    assert resp.status_code == 200
-    assert student.name in resp.text
-    assert "1 непроверено" in resp.text
-
-
-def test_student_list_excludes_foreign_students(db, user_factory, session_factory, client):
-    own_curator = user_factory(vk_id=860_102, name="Куратор своя", role_name="куратор")
-    own_student = user_factory(vk_id=860_103, name="Свой ученик")
-    own_student.curator_id = own_curator.id
-    foreign_student = user_factory(vk_id=860_104, name="Чужой ученик")
-    db.commit()
-
-    client.cookies.set("session_id", session_factory(own_curator).id)
-    resp = client.get("/cabinet/staff/students-review")
-
-    assert own_student.name in resp.text
-    assert foreign_student.name not in resp.text
+    row = _row(html, student.id)
+    assert 'data-unreviewed="2"' in row
+    assert "hidden" not in _badge_tag(row)
+    assert 'id="filter-unreviewed"' in html
 
 
-def test_student_detail_shows_items_across_domains(db, user_factory, session_factory, client):
-    curator = user_factory(vk_id=860_105, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=860_106, name="Ученик Всё Сдал")
+def test_students_list_hides_zero_counter(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=860_102, name="Куратор своя", role_name="куратор")
+    student = user_factory(vk_id=860_103, name="Свой ученик")
     student.curator_id = curator.id
-    db.commit()
-    _work(db, student.id, score=None)
-    cycle = ExamCycle(
-        user_id=student.id, subject="Композиция", started_at=date.today(),
-    )
-    db.add(cycle)
     db.commit()
 
     client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+    row = _row(client.get("/cabinet/students").text, student.id)
 
-    assert resp.status_code == 200
-    assert "Пробник" in resp.text
-    assert "Композиция" in resp.text
-    # Возврат на доработку — только ГП и выше (04.10.2026): куратор кнопки не видит.
-    assert 'data-return-revision>Вернуть' not in resp.text
+    assert 'data-unreviewed="0"' in row
+    assert "hidden" in _badge_tag(row)
 
 
-def test_chief_teacher_sees_probnik_revision_on_student_review(
-    db, user_factory, session_factory, client,
-):
+def test_old_review_addresses_lead_to_student_card(db, user_factory, session_factory, client):
+    """Экран снят 05.10.2026; на его адреса ведут уведомления и закладки."""
+    curator = user_factory(vk_id=860_104, name="Куратор", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    listing = client.get("/cabinet/staff/students-review", follow_redirects=False)
+    detail = client.get("/cabinet/staff/students-review/42?week=2026-09-03", follow_redirects=False)
+
+    assert listing.status_code == 302
+    assert listing.headers["location"] == "/cabinet/students"
+    assert detail.status_code == 302
+    assert detail.headers["location"] == "/cabinet/students?student=42&tab=tasks"
+
+
+def test_review_menu_item_is_gone(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=860_105, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=860_106, name="Главный", role_name="админ")
+    for staff in (curator, chief):
+        client.cookies.set("session_id", session_factory(staff).id)
+        html = client.get("/cabinet/students").text
+        assert 'href="/cabinet/staff/students-review"' not in html
+        assert "Проверка по ученику" not in html
+
+
+def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client):
+    """Куратор отмечает «просмотрено», но не возвращает и не ставит балл."""
+    curator = user_factory(vk_id=860_107, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_108, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Свет и тень")
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    data = client.get(f"/cabinet/students/{student.id}/tasks").json()
+
+    assert data["can_review"] is True
+    assert data["can_send_revision"] is False
+    assert data["can_score"] is False
+    item = data["items"][0]
+    assert item["question"] == "Как прошло?"
+    assert item["text"] == "Свет и тень"
+    assert item["is_reviewed"] is False
+    assert item["submitted_label"]
+
+
+def test_tasks_tab_buttons_for_chief(db, user_factory, session_factory, client):
     chief = user_factory(vk_id=860_116, name="Главный", role_name="админ")
     student = user_factory(vk_id=860_117, name="Ученик")
-    work = _work(db, student.id)
     client.cookies.set("session_id", session_factory(chief).id)
 
-    page = client.get(f"/cabinet/staff/students-review/{student.id}")
+    data = client.get(f"/cabinet/students/{student.id}/tasks").json()
 
-    assert page.status_code == 200
-    assert 'data-return-revision>Вернуть' in page.text
-    assert f"/cabinet/students/{student.id}/mock-exams/" in page.text
-    work.needs_revision = True
+    assert data["can_review"] is True
+    assert data["can_send_revision"] is True
+    assert data["can_score"] is True
+
+
+def test_moderator_tasks_tab_has_no_buttons(db, user_factory, session_factory, client):
+    """Модератор — наблюдатель: рангу 4 возврат формально положен, но раздела
+    проверки у него нет, и кнопок тоже нет — сервер ответил бы 403."""
+    moderator = user_factory(vk_id=860_118, name="Модератор", role_name="модератор")
+    student = user_factory(vk_id=860_119, name="Ученик")
+    client.cookies.set("session_id", session_factory(moderator).id)
+
+    data = client.get(f"/cabinet/students/{student.id}/tasks").json()
+
+    assert data["can_review"] is False
+    assert data["can_send_revision"] is False
+
+
+def test_study_now_points_to_the_tab_with_pending(db, user_factory, session_factory, client):
+    """«Проверить» открывает «Задания», а если непроверенное только по
+    пробникам — «Пробники»."""
+    chief = user_factory(vk_id=860_122, name="Главный", role_name="админ")
+    student = user_factory(vk_id=860_123, name="Ученик")
+    _work(db, student.id, score=None)
+    client.cookies.set("session_id", session_factory(chief).id)
+
+    def study_now():
+        return client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["study_now"]
+
+    first = study_now()
+    assert (first["unreviewed"], first["review_tab"]) == (1, "mock-exams")
+    task, block = _task_with_question(db)
     db.commit()
-    page = client.get(f"/cabinet/staff/students-review/{student.id}")
-    assert 'data-return-revision>Вернуть' not in page.text
-    assert "На доработке" in page.text
+    _answer(db, task, block, student, "Ответ")
+    second = study_now()
+    assert (second["unreviewed"], second["review_tab"]) == (2, "tasks")
 
 
 def test_chief_returns_mock_and_nobody_reviews_until_resubmission(
@@ -168,38 +234,17 @@ def test_curator_cannot_return_foreign_mock(db, user_factory, session_factory, c
     assert work.needs_revision is False
 
 
-def test_closed_mock_cycle_has_no_return_button(db, user_factory, session_factory, client):
-    chief = user_factory(vk_id=860_145, name="Главный", role_name="админ")
-    student = user_factory(vk_id=860_146, name="Ученик")
-    cycle = ExamCycle(
-        user_id=student.id, subject="Рисунок", started_at=date.today(),
-        closed_at=datetime.now(timezone.utc),
-    )
-    db.add(cycle)
-    db.commit()
-    work = _work(db, student.id, score=80)
-    work.cycle_id = cycle.id
-    db.commit()
-    client.cookies.set("session_id", session_factory(chief).id)
-
-    page = client.get(f"/cabinet/staff/students-review/{student.id}")
-
-    assert page.status_code == 200
-    work_row = page.text.split(f'data-domain="work" data-id="{work.id}"', 1)[1].split("</article>", 1)[0]
-    assert "data-return-revision" not in work_row
-
-
-def test_curator_cannot_open_foreign_student_review(db, user_factory, session_factory, client):
-    owner = user_factory(vk_id=860_107, name="Куратор своя", role_name="куратор")
-    other = user_factory(vk_id=860_108, name="Куратор чужая", role_name="куратор")
+def test_curator_cannot_open_foreign_student_tasks(db, user_factory, session_factory, client):
+    owner = user_factory(vk_id=860_150, name="Куратор своя", role_name="куратор")
+    other = user_factory(vk_id=860_151, name="Куратор чужая", role_name="куратор")
     student = user_factory(vk_id=860_109, name="Ученик")
     student.curator_id = owner.id
     db.commit()
 
     client.cookies.set("session_id", session_factory(other).id)
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+    resp = client.get(f"/cabinet/students/{student.id}/tasks")
 
-    assert resp.status_code == 403
+    assert resp.status_code in (403, 404)
 
 
 def test_moderator_cannot_open_student_review(db, user_factory, session_factory, client):
@@ -284,12 +329,10 @@ def test_curator_can_mark_cycle_viewed_without_closing(db, user_factory, session
     assert cycle.closed_at is None  # «просмотрено» не закрывает цикл
 
 
-def test_task_without_due_date_still_visible_this_week(db, user_factory, session_factory, client):
-    """Регрессия 02.09.2026: фильтр недели раньше шёл по `TrackerTask.due_at`,
-    а не по дате сдачи ответа. У задания без дедлайна due_at — NULL, и
-    `NULL >= week_start` в SQL ложно, поэтому ответ не находился ни в одной
-    неделе. Решение владельца 01.09.2026 (вопрос 3) требовало фильтр по дате
-    сдачи/создания записи — починено в `task_blocks.py::review_queue`."""
+def test_task_without_due_date_is_in_the_card(db, user_factory, session_factory, client):
+    """Регрессия 02.09.2026: фильтр недели шёл по `TrackerTask.due_at`, и ответ
+    на задание без дедлайна не находился ни в одной неделе. Недель в карточке
+    нет, но ответ без дедлайна по-прежнему должен быть виден."""
     curator = user_factory(vk_id=860_132, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=860_133, name="Ученик")
     student.curator_id = curator.id
@@ -299,26 +342,9 @@ def test_task_without_due_date_still_visible_this_week(db, user_factory, session
     _answer(db, task, block, student, "Ответ без дедлайна")
 
     client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+    items = client.get(f"/cabinet/students/{student.id}/tasks").json()["items"]
 
-    assert resp.status_code == 200
-    assert "Ответ без дедлайна" in resp.text
-
-
-def test_detail_page_shows_task_block_question_and_answer(db, user_factory, session_factory, client):
-    curator = user_factory(vk_id=860_120, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=860_121, name="Ученик")
-    student.curator_id = curator.id
-    task, block = _task_with_question(db)
-    db.commit()
-    _answer(db, task, block, student, "Свет и тень")
-
-    client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
-
-    assert resp.status_code == 200
-    assert "Как прошло?" in resp.text
-    assert "Свет и тень" in resp.text
+    assert [i["text"] for i in items] == ["Ответ без дедлайна"]
 
 
 def test_curator_can_toggle_task_block_answer_reviewed(db, user_factory, session_factory, client):
@@ -394,20 +420,6 @@ def test_head_teacher_can_toggle_any_task_block_answer(db, user_factory, session
     assert resp.status_code == 200
 
 
-def test_week_filter_excludes_items_outside_range(db, user_factory, session_factory, client):
-    curator = user_factory(vk_id=860_110, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=860_111, name="Ученик")
-    student.curator_id = curator.id
-    db.commit()
-    _work(db, student.id, score=None, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-
-    client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}?week=2026-09-03")
-
-    assert resp.status_code == 200
-    assert "За эту неделю по фильтрам ничего не сдано" in resp.text
-
-
 # ── точка А сюда больше не входит ───────────────────────────────────────────
 
 
@@ -422,7 +434,7 @@ def _before_work(db, user_id):
     return work
 
 
-def test_point_a_card_left_the_review_screen(
+def test_point_a_is_not_in_tasks_tab(
     client, db, user_factory, session_factory
 ):
     """Карточка «Портфолио «До» — точка А» снята отсюда 15.09.2026.
@@ -438,8 +450,7 @@ def test_point_a_card_left_the_review_screen(
     _before_work(db, student.id)
     client.cookies.set("session_id", session_factory(admin).id)
 
-    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+    resp = client.get(f"/cabinet/students/{student.id}/tasks")
 
     assert resp.status_code == 200
-    assert 'data-domain="portfolio_before"' not in resp.text
-    assert "data-point-a-score" not in resp.text
+    assert resp.json()["items"] == []

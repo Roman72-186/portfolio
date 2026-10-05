@@ -359,28 +359,3 @@ def test_stats_export_has_no_sheets_for_unused_legacy_tariffs(superadmin_client)
     for legacy in TARIFFS_LEGACY:
         assert legacy not in sheets
         assert f"Не сдали — {legacy}"[:31] not in sheets
-
-
-def test_curator_review_filter_hides_legacy_tariffs_of_archive_and_staff(
-    client, db, user_factory, session_factory
-):
-    """Владелец 30.09.2026: у куратора в «Проверке по ученику» висели
-    «МАКСИМУМ» и «УВЕРЕННЫЙ». Фильтр считался по всей базе
-    (`tariffs_in_use`) — с архивом и сотрудниками, у которых ORM-дефолт
-    «УВЕРЕННЫЙ». Теперь он строится по ученикам самого списка."""
-    curator = user_factory(vk_id=910_101, name="Куратор", role_name="куратор", tariff="УВЕРЕННЫЙ")
-    student = user_factory(vk_id=910_102, name="Свой Ученик", tariff="Я САМ")
-    student.curator_id = curator.id
-    archived = user_factory(vk_id=910_103, name="Прошлый Поток", tariff="МАКСИМУМ")
-    archived.curator_id = curator.id
-    archived.archived_at = datetime.now(timezone.utc)
-    archived.is_active = False
-    db.commit()
-    client.cookies.set("session_id", session_factory(curator).id)
-
-    for url in ("/cabinet/staff/students-review", f"/cabinet/staff/students-review/{student.id}"):
-        page = client.get(url).text
-        for tariff in TARIFFS_CURRENT:
-            assert f'<option value="{tariff}"' in page, url
-        for legacy in TARIFFS_LEGACY:
-            assert f'<option value="{legacy}"' not in page, url

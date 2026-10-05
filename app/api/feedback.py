@@ -257,7 +257,7 @@ def student_feedback_list(
     user: Annotated[dict, Depends(get_current_user)],
 ):
     if user["role_rank"] != 1:
-        return RedirectResponse("/cabinet/staff/students-review", status_code=302)
+        return RedirectResponse("/cabinet/students", status_code=302)
     return RedirectResponse("/cabinet/cycle?tab=feedback", status_code=302)
 
 
@@ -598,8 +598,8 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "rating_panel": _rating_panel(db, payload, viewer_role),
         "can_score": can_score(user["role_rank"]),
         "student": {"id": student.id, "name": student.name},
-        "back_url": f"/cabinet/staff/students-review/{student.id}",
-        "back_label": "К проверке ученика",
+        "back_url": f"/cabinet/students?student={student.id}&tab=mock-exams",
+        "back_label": "К карточке ученика",
     })
 
 

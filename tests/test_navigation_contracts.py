@@ -125,7 +125,8 @@ def test_curator_reports_use_curator_nav_not_admin_staff_nav(
     # набором пунктов из curator_nav_items() — это не admin staff_nav.
     assert 'class="staff-aside"' in resp.text
     assert 'href="/cabinet/students"' in resp.text
-    assert 'href="/cabinet/staff/students-review"' in resp.text
+    # «Проверка по ученику» снята 05.10.2026 — проверяют в карточке ученика.
+    assert 'href="/cabinet/staff/students-review"' not in resp.text
     assert 'href="/cabinet/curator/reports"' in resp.text
     assert 'href="/cabinet/students?tab=statistics"' in resp.text
 
@@ -162,7 +163,7 @@ def test_admin_and_superadmin_keep_staff_nav_contract(
 
     assert 'class="staff-aside"' in staff_nav
     assert 'href="/cabinet/students"' in staff_nav
-    assert 'href="/cabinet/staff/students-review"' in staff_nav
+    assert 'href="/cabinet/staff/students-review"' not in staff_nav
     assert 'href="/3dlab"' in staff_nav
     assert 'href="/cabinet/curator/reports"' in staff_nav
 

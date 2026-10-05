@@ -146,7 +146,7 @@ def _render(
     db.commit()
     invalidate_unread(user["user_id"])
     back_url = (
-        f"/cabinet/staff/students-review/{submission.user_id}"
+        f"/cabinet/students?student={submission.user_id}&tab=tasks"
         if viewer_role != "student" else "/cabinet/learning"
     )
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
