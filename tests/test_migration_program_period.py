@@ -1,4 +1,8 @@
-"""Миграция `c5f2a8d1e7b3`: период «Предобучение» над этапом «Предобучение».
+"""Миграции `c5f2a8d1e7b3` и `d8a3b6e2f1c4`: период «Предобучение» над этапом.
+
+Первая искала этап ровно «Предобучение», на проде он «Предобучение
+2026-2027» — прошла впустую; вторая ищет по началу названия и берёт название
+этапа целиком (владелец: «взять название из АОП»).
 
 Владелец 06.10.2026 выбрал завести структуру миграцией при выкатке. Тест
 гоняет настоящие `upgrade()`/`downgrade()` на SQLite, подменив `op`
@@ -13,16 +17,15 @@ import sqlalchemy as sa
 
 from app.db.database import Base
 
-MIGRATION = (
-    Path(__file__).resolve().parent.parent
-    / "alembic" / "versions" / "c5f2a8d1e7b3_program_period_preobuchenie.py"
-)
+VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
+MIGRATION = VERSIONS / "c5f2a8d1e7b3_program_period_preobuchenie.py"
+FIX = VERSIONS / "d8a3b6e2f1c4_program_period_preobuchenie_title.py"
 OPENS = datetime(2026, 9, 1, tzinfo=timezone.utc)
 ENDS = datetime(2026, 10, 4, 20, 59, tzinfo=timezone.utc)
 
 
-def _load_migration():
-    spec = importlib.util.spec_from_file_location("migration_c5f2a8d1e7b3", MIGRATION)
+def _load_migration(path=MIGRATION):
+    spec = importlib.util.spec_from_file_location(f"migration_{path.stem[:12]}", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -66,8 +69,8 @@ def _rows(conn):
     }
 
 
-def _run(conn, step):
-    module = _load_migration()
+def _run(conn, step, path=MIGRATION):
+    module = _load_migration(path)
     module.op = _FakeOp(conn)
     getattr(module, step)()
 
@@ -129,6 +132,44 @@ def test_downgrade_unlinks_and_removes_period():
         stage = _topic(conn, title="Предобучение", kind="stage")
         _run(conn, "upgrade")
         _run(conn, "downgrade")
+        rows = _rows(conn)
+        assert all(r.kind != "period" for r in rows.values())
+        assert rows[stage].parent_id is None
+
+
+def test_fix_takes_full_title_from_aop_like_on_prod():
+    """Прод 06.10.2026: этап «Предобучение 2026-2027». Первая миграция его не
+    видит, вторая заводит период с названием этапа целиком."""
+    with _engine().begin() as conn:
+        stage = _topic(conn, title="Предобучение 2026-2027", kind="stage")
+        semester = _topic(conn, title="1 семестр_годовой курс 2026-2027", kind="stage")
+        _run(conn, "upgrade")
+        assert all(r.kind != "period" for r in _rows(conn).values())
+
+        _run(conn, "upgrade", FIX)
+        _run(conn, "upgrade", FIX)
+        rows = _rows(conn)
+        periods = [r for r in rows.values() if r.kind == "period"]
+        assert [p.title for p in periods] == ["Предобучение 2026-2027"]
+        assert rows[stage].parent_id == periods[0].id
+        assert rows[semester].parent_id is None
+
+
+def test_fix_skips_stage_already_linked_by_first_migration():
+    with _engine().begin() as conn:
+        stage = _topic(conn, title="Предобучение", kind="stage")
+        _run(conn, "upgrade")
+        _run(conn, "upgrade", FIX)
+        rows = _rows(conn)
+        assert len([r for r in rows.values() if r.kind == "period"]) == 1
+        assert rows[stage].parent_id is not None
+
+
+def test_fix_downgrade_unlinks_and_removes_period():
+    with _engine().begin() as conn:
+        stage = _topic(conn, title="Предобучение 2026-2027", kind="stage")
+        _run(conn, "upgrade", FIX)
+        _run(conn, "downgrade", FIX)
         rows = _rows(conn)
         assert all(r.kind != "period" for r in rows.values())
         assert rows[stage].parent_id is None
