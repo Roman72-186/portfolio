@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_session, invalidate_unread
 from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
+from app.constants import EXAM_SUBJECT_HINTS, STUDY_MODES, STUDY_MODE_LABELS, tariff_choices
+from app.config import settings
 from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
@@ -44,7 +46,8 @@ from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
-from app.services.point_a import maybe_notify_point_a_level, student_point_a
+from app.services.activity_stats import student_activity
+from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK, DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
     student_review_items,
@@ -61,11 +64,17 @@ from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
-from app.services.user_management import apply_tariff_change, tariff_change_clears_access
+from app.services.user_management import (
+    apply_access_until,
+    apply_tariff_change,
+    can_impersonate_by_rank,
+    can_manage_user_by_rank,
+    tariff_change_clears_access,
+)
 from app.services.works import WorkHasFeedbackError, delete_works_with_dependents, upload_work_thumb
-from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
+from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local, today_msk
 from app.services.utils import compress_image, study_duration_text, has_case_growth
-from app.tmpl import format_rich_text, templates
+from app.tmpl import format_rich_text, tariff_label, tariff_slug, templates
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +194,76 @@ def _get_accessible_students(
 
 def _parse_bool(s: str) -> bool:
     return s.lower() in ("1", "true", "yes", "on")
+
+
+def _curator_options(db: DBSession) -> list[dict]:
+    """Действующие кураторы: фильтр списка учеников и выбор куратора в блоке
+    «Управление» карточки. Назначить можно только того, кого пропустит
+    `user_management.get_curator_for_assignment`."""
+    curator_role = db.query(Role).filter(Role.rank == 2).first()
+    if not curator_role:
+        return []
+    curator_users = (
+        db.query(User)
+        .filter(
+            User.role_id == curator_role.id,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+        )
+        .order_by(User.last_name, User.first_name)
+        .all()
+    )
+    return [
+        {"id": c.id, "name": f"{c.last_name or ''} {c.first_name or c.name}".strip()}
+        for c in curator_users
+    ]
+
+
+def _manage_block(db: DBSession, user: dict, student: User) -> dict | None:
+    """Блок «Управление» в карточке ученика (владелец 05.10.2026): куратор,
+    тариф, доступ, учебные метки, вход в кабинет, логин, блок и архив.
+
+    Сами действия живут на адресах «Людей» (`cabinet_superadmin.py`) и
+    закрываются там же действиями `people:*` (`section_access._ACTION_RULES`).
+    Флаги здесь спрашивают ровно то же, что сервер, — кнопка без права на
+    своё действие не рисуется («кнопка = сервер», шаг 2 плана тонких
+    доступов). Ниже Главного преподавателя блока нет.
+    """
+    if user["role_rank"] < 4:
+        return None
+    archived = student.archived_at is not None
+    below_me = can_manage_user_by_rank(user["user_id"], user["role_rank"], student)
+    editable = below_me and not archived
+    return {
+        "can_edit": can(user, "people:students") and editable,
+        "can_login": can(user, "people:login") and editable and student.is_active,
+        "can_telegram_link": (
+            can(user, "people:login") and editable and student.is_active
+            and bool(settings.telegram_bot_username)
+        ),
+        "can_impersonate": (
+            can(user, "people:impersonate") and not archived
+            and student.is_active and student.deleted_at is None
+            and not user.get("impersonated_by_id")
+            and can_impersonate_by_rank(user["user_id"], user["role_rank"], student)
+        ),
+        "can_block": can(user, "people:block") and editable,
+        "can_archive": can(user, "people:archive") and below_me,
+        "is_archived": archived,
+        "staff_login": student.staff_login,
+        "has_telegram": bool(student.telegram_chat_id),
+        "curator_id": student.curator_id,
+        "curators": _curator_options(db),
+        "tariff": student.tariff or "",
+        "tariff_choices": tariff_choices(student.tariff),
+        "exam_dates": student.exam_dates or "",
+        "exam_subjects": student.exam_subjects or "",
+        "exam_subject_hints": list(EXAM_SUBJECT_HINTS),
+        "study_mode": student.study_mode or "",
+        "study_modes": [[m, STUDY_MODE_LABELS[m]] for m in STUDY_MODES],
+        "is_publishable": bool(student.is_publishable),
+        "about": student.about or "",
+    }
 
 
 def _check_access(student_id: int, user: dict, db: DBSession, *, read_archive: bool = False) -> User:
@@ -457,7 +536,7 @@ def _render_students_panel(
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     if archived_b:
         sidebar_title = "Архив учеников"
-    valid_tabs = ("portfolio", "tasks", "mock-exams", "statistics")
+    valid_tabs = ("portfolio", "tasks", "mock-exams", "statistics", "activity")
     # «Цикл пробника» слит с «Пробниками» 29.09.2026: старые закладки и
     # уведомления с `tab=cycles` открывают то же самое, а не «Портфолио».
     if tab == "cycles":
@@ -465,20 +544,7 @@ def _render_students_panel(
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
-    curators: list[dict] = []
-    if show_curator_filter:
-        curator_role = db.query(Role).filter(Role.rank == 2).first()
-        if curator_role:
-            curator_users = (
-                db.query(User)
-                .filter(User.role_id == curator_role.id, User.is_active == True)
-                .order_by(User.last_name, User.first_name)
-                .all()
-            )
-            curators = [
-                {"id": c.id, "name": f"{c.last_name or ''} {c.first_name or c.name}".strip()}
-                for c in curator_users
-            ]
+    curators = _curator_options(db) if show_curator_filter else []
 
     # Distinct enrollment years
     enrollment_years = sorted(
@@ -576,9 +642,19 @@ def get_student_profile(
         "unreviewed": len(pending),
         "review_week": msk_input_value(oldest)[:10] if oldest else "",
     }
-    # Точка А — только ГП и суперадмину: её экран закрыт `require_admin_role`.
+    # Шапка как у ученика в «Трекере» (владелец 05.10.2026): средний балл
+    # точки А и уровень программы — у разобранного ученика, тем же расчётом,
+    # что `cabinet_tracker.py`. Видят все, кому открыта карточка, включая
+    # куратора: число в шапке, но не экран точки А.
+    point_a = student_point_a(db, student, with_images=False)
+    point_a_average = point_a.average if point_a.is_done else None
+    hero = {
+        "point_a_average": point_a_average,
+        "point_a_level": point_a_level(point_a_average) if point_a_average is not None else None,
+    }
+    # Подробности точки А — «оценено не всё, пока N» и ссылка на её экран —
+    # только ГП и суперадмину: экран закрыт `require_admin_role`.
     if user["role_rank"] >= 4:
-        point_a = student_point_a(db, student, with_images=False)
         study_now["point_a"] = {
             "has_plates": bool(point_a.plates),
             "average": point_a.average,
@@ -612,6 +688,8 @@ def get_student_profile(
             "about": student.about,
             "about_html": format_rich_text(student.about) if student.about else None,
             "tariff": student.tariff or "—",
+            "tariff_label": tariff_label(student.tariff),
+            "tariff_slug": tariff_slug(student.tariff),
             "past_tariffs": student.past_tariffs,
             "study_mode": student.study_mode,
             "has_case": has_case_growth(works),
@@ -632,7 +710,38 @@ def get_student_profile(
             "mock_exam_count": len(mock_works),
             "legacy_photo_count": legacy_photo_count,
             "study_now": study_now,
+            "hero": hero,
+            "manage": _manage_block(db, user, student),
         },
+    })
+
+
+# ── AJAX: активность ─────────────────────────────────────────────────────────
+
+@router.get("/students/{student_id}/activity")
+def get_activity(
+    student_id: int,
+    user: Annotated[dict, Depends(_require_student_panel)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Вкладка «Активность» (владелец 05.10.2026): входы и загрузки, видео,
+    задания со сроками и лента событий. Действия сотрудников над учеником в
+    ленте — только с ранга 4: куратору не нужны имена тех, кто его правил."""
+    student = _check_access(student_id, user, db, read_archive=True)
+    enrolled_at = student.enrolled_at or student.created_at
+    return JSONResponse({
+        "student": {
+            "id": student.id,
+            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
+            "tariff": student.tariff or "—",
+            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
+            "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
+        },
+        "activity": student_activity(
+            db, student, today=today_msk(), with_staff_actions=user["role_rank"] >= 4,
+        ),
     })
 
 
@@ -1131,6 +1240,13 @@ def edit_student_profile(
     university_year: str = Form(""),
     cohort_tag: str = Form(""),
     access_until: str = Form(""),
+    # Тариф, метку набора и срок доступа с 05.10.2026 правят в блоке
+    # «Управление» карточки (адреса «Людей», под действием `people:students`),
+    # и форма анкеты шлёт `anketa_only=1`: эти три поля тогда не трогаются.
+    # Отличить «не прислали» от «прислали пустым» по самим полям нельзя —
+    # FastAPI подставляет вместо пустой строки значение по умолчанию, а пустое
+    # «Доступ до» как раз значит «снять срок».
+    anketa_only: str = Form(""),
 ):
     student = _check_access(student_id, user, db)
 
@@ -1140,11 +1256,12 @@ def edit_student_profile(
     phone = phone.strip()
     parent_phone = parent_phone.strip()
     tg_username = tg_username.strip().lstrip("@")
-    tariff = tariff.strip().upper()
+    manage_fields = not _parse_bool(anketa_only)
+    tariff = tariff.strip().upper() if manage_fields else ""
     clear_tariff = tariff == "__NONE__"
     if clear_tariff:
         tariff = ""
-    cohort_tag = cohort_tag.strip().lower()
+    cohort_tag_v = cohort_tag.strip().lower() if manage_fields else None
 
     if not first_name:
         errors.append("Имя обязательно")
@@ -1154,7 +1271,7 @@ def edit_student_profile(
         errors.append("Телефон обязателен")
     if tariff and tariff not in TARIFFS:
         errors.append("Неверный тариф")
-    if cohort_tag and cohort_tag not in COHORT_TAGS:
+    if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
         errors.append("Неверная метка набора")
 
     # Срок доступа: пусто — снять ограничение (так оплативший возвращается к
@@ -1162,7 +1279,7 @@ def edit_student_profile(
     # отличаем от пустого явно: `parse_msk_local` на оба случая отвечает None,
     # и молчаливое «не разобрали — значит сняли» открыло бы доступ тому, кому
     # его как раз ограничивают.
-    access_until_raw = access_until.strip()
+    access_until_raw = access_until.strip() if manage_fields else ""
     parsed_access_until = parse_msk_local(access_until_raw) if access_until_raw else None
     if access_until_raw and parsed_access_until is None:
         errors.append("Неверная дата срока доступа")
@@ -1211,34 +1328,23 @@ def edit_student_profile(
         student.enrollment_year = parsed_enrollment_year
     if parsed_university_year is not None:
         student.university_year = parsed_university_year
-    student.cohort_tag = cohort_tag or None
-    # Срок появился у человека с незаполненной анкетой — это новичок пробного
-    # набора, которого куратор пометил руками (тот, кто вошёл напрямую с
-    # apparchi.ru, минуя ссылку `/proba`). Тариф ему снимаем по тому же
-    # правилу, что и на входе по ссылке: анкета шаг «Тариф обучения» ему уже не
-    # покажет, и без этой строки он молча остался бы на «УВЕРЕННЫЙ» из дефолта
-    # при создании аккаунта. Заполненную анкету не трогаем: там тариф человек
-    # выбрал сам, а срок куратор мог поставить оплатившему по своей причине.
-    # Явно выбранный в этой же форме тариф выигрывает — он записан выше.
-    if (
-        parsed_access_until is not None
-        and student.access_until is None
-        and not student.profile_completed
-        and not tariff
-    ):
-        student.tariff = ""
-    # Поле «Доступ до» в карточке предзаполнено текущей датой ученика, поэтому
-    # форма всегда присылает её обратно. Смену тарифа с «новенького» нельзя
-    # оставлять наедине с этим полем: прилетевшая дата вернула бы только что
-    # снятый срок, и владелец видел бы блокировку после смены тарифа (прод,
-    # 28.09.2026: ученице проставили «Я С ВАМИ», кабинет остался закрытым).
-    #
-    # Обнуляем только нетронутое поле — то, которое пришло ровно таким, каким
-    # его отрисовали. Дата, вписанная в этой же форме руками, главнее правила:
-    # она значит «оплатил, доступ до такого-то числа», и молча её терять нельзя.
-    if tariff_cleared_access and access_until_raw == access_until_prefilled:
-        parsed_access_until = None
-    student.access_until = parsed_access_until
+    if cohort_tag_v is not None:
+        student.cohort_tag = cohort_tag_v or None
+    if manage_fields:
+        # Поле «Доступ до» в карточке предзаполнено текущей датой ученика, поэтому
+        # форма всегда присылает её обратно. Смену тарифа с «новенького» нельзя
+        # оставлять наедине с этим полем: прилетевшая дата вернула бы только что
+        # снятый срок, и владелец видел бы блокировку после смены тарифа (прод,
+        # 28.09.2026: ученице проставили «Я С ВАМИ», кабинет остался закрытым).
+        #
+        # Обнуляем только нетронутое поле — то, которое пришло ровно таким, каким
+        # его отрисовали. Дата, вписанная в этой же форме руками, главнее правила:
+        # она значит «оплатил, доступ до такого-то числа», и молча её терять нельзя.
+        if tariff_cleared_access and access_until_raw == access_until_prefilled:
+            parsed_access_until = None
+        apply_access_until(
+            db, user["user_id"], student, parsed_access_until, tariff_chosen=bool(tariff),
+        )
     db.commit()
 
     # Invalidate all cached sessions for this student

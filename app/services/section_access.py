@@ -238,7 +238,7 @@ _RULES: tuple[_Rule, ...] = (
     # Карточка ученика: её вкладки грузит и список учеников, и архив.
     _rule(
         ("students", "archive"),
-        _STUDENT + "/(profile|tasks|portfolio|statistics|legacy-portfolio)$", _GET,
+        _STUDENT + "/(profile|tasks|portfolio|statistics|activity|legacy-portfolio)$", _GET,
     ),
     # Пробники ученика читает ещё и экран «Проверка пробников».
     _rule(("students", "archive", "mock_check"), _STUDENT + "/mock-exams$", _GET),
@@ -359,7 +359,9 @@ _POST = ("POST",)
 _ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
     (key, re.compile(pattern), frozenset(methods))
     for key, pattern, methods in (
-        ("people:students", _USER + "/(tags|curator|tariff|cohort-tag)$", _POST),
+        # `labels` и `access-until` — блок «Управление» в карточке «Учеников»
+        # (05.10.2026): та же правка ученика, что в форме «Людей».
+        ("people:students", _USER + "/(tags|curator|tariff|cohort-tag|labels|access-until)$", _POST),
         ("people:students", _exact("/cabinet/superadmin/users/assign-curator-bulk"), _POST),
         ("people:students", r"^/cabinet/superadmin/tags/\d+$", _POST),
         # Поиск по списку ников — часть массовой проставки тегов, POST на чтение.

@@ -1553,6 +1553,7 @@ def superadmin_stats_export(
 
 from app.services.contacts import find_student_by_tg_username
 from app.services.user_management import (
+    apply_access_until,
     apply_tariff_change,
     archive_user,
     can_assign_role_rank,
@@ -2115,6 +2116,11 @@ def superadmin_user_set_credentials(
 
     issued_creds = _issue_login_password(db, target)
     db.commit()
+    # Карточка ученика на экране «Ученики» показывает пароль у себя в окне,
+    # а не уводит на список «Людей» (владелец 05.10.2026: всё про ученика —
+    # в его карточке). Форма «Людей» по-прежнему получает страницу.
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, **issued_creds})
     return _render_superadmin_users(request, user, db, issued_creds=issued_creds)
 
 
@@ -2126,30 +2132,22 @@ def superadmin_user_issue_link(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
+    wants_json = _wants_json_response(request)
+
+    def _refuse(message: str, status_code: int = 400):
+        if wants_json:
+            raise HTTPException(status_code=status_code, detail=message)
+        return _render_superadmin_users(request, user, db, page_error=message)
+
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
-        return _render_superadmin_users(request, user, db, page_error="Пользователь не найден.")
+        return _refuse("Пользователь не найден.", 404)
     if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
-        return _render_superadmin_users(
-            request,
-            user,
-            db,
-            page_error="Нельзя выпустить ссылку для роли равной или выше своей.",
-        )
+        return _refuse("Нельзя выпустить ссылку для роли равной или выше своей.", 403)
     if not target.is_active:
-        return _render_superadmin_users(
-            request,
-            user,
-            db,
-            page_error="Нельзя выпустить ссылку для неактивного пользователя.",
-        )
+        return _refuse("Нельзя выпустить ссылку для неактивного пользователя.")
     if not target.role_id and not target.is_group_member and not target.is_admin:
-        return _render_superadmin_users(
-            request,
-            user,
-            db,
-            page_error="Одноразовая ссылка доступна только пользователям с назначенной ролью.",
-        )
+        return _refuse("Одноразовая ссылка доступна только пользователям с назначенной ролью.")
 
     base_url = f"https://{settings.domain}" if settings.domain else str(request.base_url).rstrip("/")
     issued_link, login_token = issue_one_time_login_link(
@@ -2158,6 +2156,13 @@ def superadmin_user_issue_link(
         base_url=base_url,
         issued_by=f"superadmin:{user['user_id']}",
     )
+    if wants_json:
+        return JSONResponse({
+            "ok": True,
+            "name": _display_user_name(target),
+            "link": issued_link,
+            "expires_at": msk_text(login_token.expires_at),
+        })
     return _render_superadmin_users(
         request,
         user,
@@ -2180,26 +2185,23 @@ def superadmin_user_issue_telegram_link(
     """Ссылка-приглашение для действующего ученика привязать Telegram к его
     текущему аккаунту вместо создания нового при переходе с VK-входа —
     портфолио и оценки остаются на месте (см. auth.py::_handle_telegram_link_start)."""
+    wants_json = _wants_json_response(request)
+
+    def _refuse(message: str, status_code: int = 400):
+        if wants_json:
+            raise HTTPException(status_code=status_code, detail=message)
+        return _render_superadmin_users(request, user, db, page_error=message)
+
     if not settings.telegram_bot_username:
-        return _render_superadmin_users(request, user, db, page_error="Telegram-бот ещё не настроен.")
+        return _refuse("Telegram-бот ещё не настроен.", 503)
 
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
-        return _render_superadmin_users(request, user, db, page_error="Пользователь не найден.")
+        return _refuse("Пользователь не найден.", 404)
     if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
-        return _render_superadmin_users(
-            request,
-            user,
-            db,
-            page_error="Нельзя выпустить ссылку для роли равной или выше своей.",
-        )
+        return _refuse("Нельзя выпустить ссылку для роли равной или выше своей.", 403)
     if not target.is_active:
-        return _render_superadmin_users(
-            request,
-            user,
-            db,
-            page_error="Нельзя выпустить ссылку для неактивного пользователя.",
-        )
+        return _refuse("Нельзя выпустить ссылку для неактивного пользователя.")
 
     raw_token, link_token = issue_telegram_link_token(
         db,
@@ -2207,6 +2209,13 @@ def superadmin_user_issue_telegram_link(
         issued_by=f"superadmin:{user['user_id']}",
     )
     deep_link = f"https://t.me/{settings.telegram_bot_username}?start={raw_token}"
+    if wants_json:
+        return JSONResponse({
+            "ok": True,
+            "name": _display_user_name(target),
+            "link": deep_link,
+            "expires_at": msk_text(link_token.expires_at),
+        })
     return _render_superadmin_users(
         request,
         user,
@@ -2383,6 +2392,28 @@ def _require_profile_editable(user: dict, target: User) -> None:
     _refuse_archived(target)
 
 
+def _student_card_url(user: dict, target: User) -> str | None:
+    """Куда вести из «Людей» по ученику: в его карточку на экране «Ученики».
+
+    Владелец 05.10.2026: всё про ученика — куратор, тариф, доступ, вход в
+    кабинет, блок и архив — собрано в одной карточке «Учеников», вторая
+    карточка в «Людях» для ученика больше не открывается. Сотрудник остаётся
+    здесь. Заблокированного и удалённого карточка «Учеников» не открывает
+    (`student_access.get_student_for_staff_access`), архивного — только в
+    режиме архива; для них, как и для того, кому раздел закрыт, старая
+    карточка остаётся.
+    """
+    if not target.role or target.role.rank != 1 or target.deleted_at is not None:
+        return None
+    if target.archived_at is not None:
+        if section_access.can(user, "archive", section_access.LEVEL_VIEW):
+            return f"/cabinet/archive?student={target.id}"
+        return None
+    if not target.is_active or not section_access.can(user, "students", section_access.LEVEL_VIEW):
+        return None
+    return f"/cabinet/students?student={target.id}"
+
+
 @router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
 def superadmin_user_card(
     target_id: int,
@@ -2398,6 +2429,10 @@ def superadmin_user_card(
     )
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    student_card = _student_card_url(user, target)
+    if student_card:
+        return RedirectResponse(student_card, status_code=302)
 
     curator = None
     if target.curator_id:
@@ -2432,6 +2467,87 @@ def superadmin_user_card(
     })
 
 
+def _parse_student_labels(
+    exam_dates: str, exam_subjects: str, study_mode: str, is_publishable: str, about: str,
+) -> dict:
+    """Учебные метки ученика: период и предметы экзаменов, формат обучения,
+    публикация, заметка. Одна проверка на два адреса — форму карточки
+    пользователя (`/tags`) и блок «Управление» в карточке «Учеников» (`/labels`)."""
+    study_mode_v = study_mode.strip().lower() or None
+    if study_mode_v and study_mode_v not in STUDY_MODES:
+        raise HTTPException(status_code=400, detail="Неверный режим обучения")
+    return {
+        "exam_dates": exam_dates.strip()[:30] or None,
+        "exam_subjects": exam_subjects.strip()[:20] or None,
+        "study_mode": study_mode_v,
+        "is_publishable": is_publishable.strip() in ("1", "true", "on", "yes"),
+        "about": about.strip()[:500] or None,
+    }
+
+
+def _require_student_target(db: DBSession, user: dict, target_id: int) -> User:
+    """Ученик для правки из блока «Управление»: только ученик, ниже своего
+    ранга, не в архиве (`_require_profile_editable`)."""
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not target.role or target.role.rank != 1:
+        raise HTTPException(status_code=400, detail="Это поле есть только у ученика")
+    _require_profile_editable(user, target)
+    return target
+
+
+@router.post("/superadmin/users/{target_id}/labels")
+def superadmin_user_set_labels(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    exam_dates: str = Form(""),
+    exam_subjects: str = Form(""),
+    study_mode: str = Form(""),
+    is_publishable: str = Form(""),
+    about: str = Form(""),
+):
+    """Учебные метки из карточки ученика (JSON). Форма шлёт все пять полей:
+    пустое значит «снять». Право — действие `people:students`."""
+    target = _require_student_target(db, user, target_id)
+    labels = _parse_student_labels(exam_dates, exam_subjects, study_mode, is_publishable, about)
+    for field, value in labels.items():
+        setattr(target, field, value)
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+    return JSONResponse({"ok": True, "user_id": target.id, **labels})
+
+
+@router.post("/superadmin/users/{target_id}/access-until")
+def superadmin_user_set_access_until(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    access_until: str = Form(""),
+):
+    """Срок доступа ученика из карточки (JSON): пусто — снять ограничение,
+    дата по Москве — закрыть кабинет в этот момент. Право — `people:students`."""
+    target = _require_student_target(db, user, target_id)
+    raw = access_until.strip()
+    parsed = parse_msk_local(raw) if raw else None
+    # Мусор не равен пустому: молчаливое «не разобрали — значит сняли» открыло
+    # бы доступ тому, кому его как раз ограничивают.
+    if raw and parsed is None:
+        raise HTTPException(status_code=400, detail="Неверная дата срока доступа")
+    apply_access_until(db, user["user_id"], target, parsed)
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+    return JSONResponse({
+        "ok": True,
+        "user_id": target.id,
+        "access_until": msk_input_value(target.access_until),
+        "tariff": target.tariff or "",
+    })
+
+
 @router.post("/superadmin/users/{target_id}/tags")
 def superadmin_user_save_tags(
     target_id: int,
@@ -2453,12 +2569,7 @@ def superadmin_user_save_tags(
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     _require_profile_editable(user, target)
 
-    exam_dates_v = exam_dates.strip()[:30] or None
-    exam_subjects_v = exam_subjects.strip()[:20] or None
-    study_mode_v = study_mode.strip().lower() or None
-    if study_mode_v and study_mode_v not in STUDY_MODES:
-        raise HTTPException(status_code=400, detail="Неверный режим обучения")
-    is_publishable_v = is_publishable.strip() in ("1", "true", "on", "yes")
+    labels = _parse_student_labels(exam_dates, exam_subjects, study_mode, is_publishable, about)
 
     curator_id_v: int | None
     curator_id_clean = curator_id.strip()
@@ -2481,8 +2592,6 @@ def superadmin_user_save_tags(
     if tariff_v and tariff_v not in TARIFFS:
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
-    about_v = about.strip()[:500] or None
-
     cohort_tag_v = cohort_tag.strip().lower()
     if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
         raise HTTPException(status_code=400, detail="Неверная метка группы")
@@ -2490,15 +2599,12 @@ def superadmin_user_save_tags(
 
     log_curator_change(db, user["user_id"], target.id, target.curator_id, curator_id_v)
 
-    target.exam_dates = exam_dates_v
-    target.exam_subjects = exam_subjects_v
-    target.study_mode = study_mode_v
-    target.is_publishable = is_publishable_v
+    for field, value in labels.items():
+        setattr(target, field, value)
     target.curator_id = curator_id_v
     target.curator_tag = curator_tag_v
     if tariff_v or clear_tariff:
         apply_tariff_change(db, user["user_id"], target, tariff_v)
-    target.about = about_v
     target.cohort_tag = cohort_tag_v
     db.commit()
 

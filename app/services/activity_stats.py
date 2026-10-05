@@ -39,6 +39,8 @@ from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
+from app.services.program import day_bounds, week_start
+from app.services.tracker import accessible_task_entries, effective_week_start
 from app.services.tz import MSK_TZ, msk_midnight
 
 # Дата деплоя миграций — раньше неё новых таймстемпов не существует
@@ -643,6 +645,12 @@ _AUDIT_LABELS = {
     "user_delete": "Удаление",
     "user_block": "Блокировка",
     "user_unblock": "Разблокировка",
+    # Действия над учеником — лента в его карточке (`student_activity`).
+    "access_until_change": "Смена срока доступа",
+    "user_archive": "В архив",
+    "user_unarchive": "Из архива",
+    "impersonate_start": "Вход в кабинет ученика",
+    "impersonate_stop": "Выход из кабинета ученика",
     # Дайджест месяца (`api/cabinet_digest_admin.py`): сам дайджест, его
     # события и типы событий. Без подписи строка показывала бы ключ.
     "digest_create": "Дайджест: создан",
@@ -1331,3 +1339,186 @@ def get_audit_feed(db: DBSession, limit: int = 50) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# ── Активность одного ученика (вкладка «Активность» в карточке «Учеников») ──
+#
+# Владелец 05.10.2026: всё про ученика — в его карточке, включая активность.
+# Те же журналы, что у сводных карточек выше (`StudentActivityEvent`,
+# `VideoProgress`, `VideoViewLog`, `AuditLog`), но с фильтром по одному
+# человеку. Число запросов не зависит от объёма его истории: лента берёт
+# по `FEED_LIMIT` строк из каждого журнала, остальное — агрегаты.
+
+FEED_LIMIT = 20
+
+_STUDENT_EVENT_FEED_LABELS = {
+    "login": "Вошёл в кабинет",
+    "portfolio_upload": "Загрузил работы в портфолио",
+    "work_upload": "Загрузил работы",
+}
+
+# Действия сотрудников над учеником, которые попадают в его ленту. Остальные
+# записи аудита (дайджест, программа) к одному ученику не относятся.
+_STUDENT_AUDIT_ACTIONS = (
+    "curator_assign", "tariff_change", "access_until_change",
+    "user_block", "user_unblock", "user_archive", "user_unarchive",
+    "impersonate_start", "impersonate_stop",
+)
+
+
+def _curator_change_text(details: str | None, names: dict[int, str]) -> str | None:
+    """«curator: 12 → 15» из журнала — в имена кураторов."""
+    if not details or not details.startswith("curator:"):
+        return details
+
+    def _name(raw: str) -> str:
+        raw = raw.strip()
+        if not raw.isdigit():
+            return "без куратора"
+        return names.get(int(raw), f"id={raw}")
+
+    old, _, new = details.removeprefix("curator:").partition("→")
+    return f"{_name(old)} → {_name(new)}"
+
+
+def student_activity(
+    db: DBSession,
+    student: User,
+    *,
+    today,
+    days: int = RECENT_DAYS,
+    with_staff_actions: bool = False,
+) -> dict:
+    """Входы и загрузки, видео, задания со сроками и лента событий одного
+    ученика.
+
+    `with_staff_actions` — показывать ли в ленте действия сотрудников (смена
+    тарифа и куратора, блок, архив, вход «глазами») с их именами. Только для
+    ранга 4 и выше: куратор видит, что делал ученик, а не кто из сотрудников
+    его правил.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Входы и загрузки за `days` дней.
+    counts = dict(
+        db.query(StudentActivityEvent.event_type, func.count(StudentActivityEvent.id))
+        .filter(
+            StudentActivityEvent.user_id == student.id,
+            StudentActivityEvent.created_at >= since,
+        )
+        .group_by(StudentActivityEvent.event_type)
+        .all()
+    )
+
+    # Видео: строка `VideoProgress` на каждый начатый ролик, открытия плеера —
+    # в `VideoViewLog`.
+    started, completed = (
+        db.query(
+            func.count(VideoProgress.video_id),
+            func.count(VideoProgress.completed_at),
+        )
+        .filter(VideoProgress.user_id == student.id)
+        .one()
+    )
+    opens, last_opened = (
+        db.query(func.count(VideoViewLog.id), func.max(VideoViewLog.opened_at))
+        .filter(VideoViewLog.user_id == student.id, VideoViewLog.opened_at >= since)
+        .one()
+    )
+    if last_opened is None:
+        last_opened = (
+            db.query(func.max(VideoViewLog.opened_at))
+            .filter(VideoViewLog.user_id == student.id)
+            .scalar()
+        )
+
+    # Задания — тот же расчёт, что «Личный трекер» ученика (`cabinet_tracker.py`):
+    # долг копится с начала, впереди — до конца этой недели.
+    monday = week_start(today)
+    _, week_end = day_bounds(monday + timedelta(days=6))
+    entries = accessible_task_entries(
+        db, student.id, start=None, end=week_end, include_undated=True,
+    )
+    by_status: dict[str, int] = defaultdict(int)
+    for entry in entries:
+        by_status[entry["status"]] += 1
+
+    # Лента: последние события ученика и, для старших, действия над ним.
+    feed: list[dict] = [
+        {
+            "at": _utc(e.created_at),
+            "kind": "student",
+            "label": _STUDENT_EVENT_FEED_LABELS.get(e.event_type, e.event_type),
+            "details": e.details if e.event_type != "login" else None,
+        }
+        for e in (
+            db.query(StudentActivityEvent)
+            .filter(StudentActivityEvent.user_id == student.id)
+            .order_by(StudentActivityEvent.created_at.desc())
+            .limit(FEED_LIMIT)
+            .all()
+        )
+    ]
+    if with_staff_actions:
+        audit_rows = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.target_user_id == student.id,
+                AuditLog.action.in_(_STUDENT_AUDIT_ACTIONS),
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(FEED_LIMIT)
+            .all()
+        )
+        curator_ids = set()
+        for r in audit_rows:
+            if r.action == "curator_assign" and r.details:
+                curator_ids.update(
+                    int(x) for x in r.details.removeprefix("curator:").replace("→", " ").split()
+                    if x.isdigit()
+                )
+        names = _names_by_id(db, {r.performed_by_id for r in audit_rows} | curator_ids)
+        for r in audit_rows:
+            details = r.details
+            if r.action == "curator_assign":
+                details = _curator_change_text(details, names)
+            elif r.action.startswith("impersonate_"):
+                details = None  # там номер служебной сессии
+            feed.append({
+                "at": _utc(r.created_at),
+                "kind": "staff",
+                "label": _AUDIT_LABELS.get(r.action, r.action),
+                "details": details,
+                "by": names.get(r.performed_by_id, f"id={r.performed_by_id}"),
+            })
+    feed.sort(key=lambda item: item["at"] or ACTIVITY_STATS_START, reverse=True)
+    feed = feed[:FEED_LIMIT]
+    for item in feed:
+        item["at"] = _msk(item["at"]).strftime("%d.%m.%Y %H:%M") if item["at"] else ""
+
+    def _when(value) -> str:
+        value = _msk(_utc(value))
+        return value.strftime("%d.%m.%Y %H:%M") if value else ""
+
+    return {
+        "days": days,
+        "last_login": _when(student.last_login_at),
+        "logins": counts.get("login", 0),
+        "uploads": counts.get("portfolio_upload", 0) + counts.get("work_upload", 0),
+        "video": {
+            "started": started or 0,
+            "completed": completed or 0,
+            "opens": opens or 0,
+            "last_opened": _when(last_opened),
+        },
+        "tasks": {
+            "done": by_status.get("done", 0),
+            "overdue": by_status.get("overdue", 0),
+            "upcoming": by_status.get("upcoming", 0),
+            "total": len(entries),
+            # Красное «отстаёт» в трекере ученика (решение владельца 23.08):
+            # первая незакрытая неделя раньше текущей.
+            "behind": effective_week_start(db, student.id, today) < monday,
+        },
+        "feed": feed,
+    }

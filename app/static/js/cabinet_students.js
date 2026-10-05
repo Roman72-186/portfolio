@@ -29,7 +29,7 @@ var _navDefaultTab = (function() {
     try {
         var t = new URLSearchParams(location.search).get('tab');
         if (t === 'cycles') t = 'mock-exams';  // «Цикл пробника» слит с «Пробниками» 29.09.2026
-        var valid = ['portfolio', 'tasks', 'mock-exams', 'statistics'];
+        var valid = ['portfolio', 'tasks', 'mock-exams', 'statistics', 'activity'];
         return (t && valid.indexOf(t) !== -1) ? t : null;
     } catch (e) { return null; }
 })();
@@ -151,6 +151,7 @@ function selectStudent(id, forceTab) {
             '<div id="student-hero-container"></div>' +
             '<div id="tab-content"><div class="tab-loading">Загружаем…</div></div>';
         switchTab(_currentTab);
+        prefetchProfile(id);
         return;
     }
 
@@ -177,6 +178,25 @@ function selectStudent(id, forceTab) {
             document.getElementById('main-panel').innerHTML =
                 '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Не удалось открыть ученика. Проверьте интернет и выберите его ещё раз.</div></div>';
         });
+}
+
+// Точку А и уровень для шапки отдаёт только профиль (`/profile`, поле hero):
+// вкладки их не считают. Вкладку открыли ссылкой, минуя профиль, — дотягиваем
+// его в фоне и перерисовываем шапку.
+function prefetchProfile(id) {
+    if (_tabCache[id] && _tabCache[id].profile) return;
+    fetch('/cabinet/students/' + id + '/profile')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!_tabCache[id]) _tabCache[id] = {};
+            _tabCache[id].profile = data;
+            var heroEl = document.getElementById('student-hero-container');
+            var tabData = _tabCache[id][_currentTab];
+            if (heroEl && id === _currentStudentId && _viewMode === 'tab' && tabData && tabData.student) {
+                heroEl.innerHTML = buildHero(tabData.student, tabData.student.avg_score_by_subject || null);
+            }
+        })
+        .catch(function() {});
 }
 
 function openTab(tabName) {
@@ -236,8 +256,11 @@ function renderProfile(data) {
         html += profileField('Часовой пояс', s.timezone);
         html += profileField('Адрес СДЭК', s.sdek_address);
     }
-    html += profileField('Тариф', s.tariff);
-    html += profileField('Куратор', s.curator_name);
+    // Тариф, куратор и срок доступа у ГП и суперадмина стоят в «Управлении».
+    if (!s.manage) {
+        html += profileField('Тариф', s.tariff_label || s.tariff);
+        html += profileField('Куратор', s.curator_name);
+    }
     html += profileField('Начало обучения', s.enrollment_year);
     html += profileField('Год поступления в вуз', s.university_year);
     if (s.past_tariffs) {
@@ -245,7 +268,7 @@ function renderProfile(data) {
     }
     // Строку показываем только тем, у кого срок задан: у большинства учеников
     // доступ бессрочный, и пустое «Доступ до» в каждой карточке было бы шумом.
-    if (s.access_until) {
+    if (s.access_until && !s.manage) {
         html += profileField('Доступ до', s.access_until.replace('T', ' '));
     }
     if (s.about) {
@@ -268,6 +291,8 @@ function renderProfile(data) {
     if (CAN_SCORE) {
         html += '<button class="profile-edit-btn" onclick="startEditProfile()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg> Редактировать анкету</button>';
     }
+    // Управление — под анкетой: сначала то, что про ученика известно, потом действия.
+    html += buildManage(s);
 
     var mainPanel = document.getElementById('main-panel');
     mainPanel.innerHTML = html;
@@ -295,6 +320,11 @@ function buildProfileActions(s) {
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="19 9 13 15 9 11 5 15"/></svg></div>'
         +   '<div class="profile-action-label">Статистика</div>'
         +   '<div class="profile-action-count">динамика баллов</div>'
+        + '</button>'
+        + '<button class="profile-action-btn" onclick="openTab(\'activity\')">'
+        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>'
+        +   '<div class="profile-action-label">Активность</div>'
+        +   '<div class="profile-action-count">входы и видео</div>'
         + '</button>'
         + (IS_ARCHIVE_VIEW ? (
             // Для архивного ученика «Архив» — единая страница со всеми фото
@@ -413,7 +443,7 @@ function switchTab(tabName) {
     _currentTab = tabName;
     if (_viewMode === 'tab' && _currentStudentId) navCommit(false);
 
-    ['portfolio', 'tasks', 'mock-exams', 'statistics'].forEach(function(t) {
+    ['portfolio', 'tasks', 'mock-exams', 'statistics', 'activity'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
         if (btn) btn.classList.toggle('active', t === tabName);
     });
@@ -473,6 +503,7 @@ function renderTab(tabName, data) {
     if (tabName === 'tasks')      { tc.innerHTML = backBtn + buildTasks(data);      }
     if (tabName === 'mock-exams') { tc.innerHTML = backBtn + buildMockExams(data);  }
     if (tabName === 'statistics') { tc.innerHTML = backBtn + buildStatistics(data); }
+    if (tabName === 'activity')   { tc.innerHTML = backBtn + buildActivity(data);   }
 }
 
 // ── Statistics: динамика баллов по пробникам (инлайн-SVG) ────────────────────
@@ -629,15 +660,19 @@ function cohortBadgeHtml(tag) {
 }
 
 function buildHero(s, bySubj) {
+    // Точка А и уровень — из профиля (`hero`), вкладки их не отдают.
+    var cached = _tabCache[s.id] && _tabCache[s.id].profile;
+    var hero = s.hero || (cached && cached.student && cached.student.hero) || {};
     var avatar = s.photo_url
         ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="" width="56" height="56">'
         : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
     avatar = '<span class="avatar-wrap">' + avatar + cohortBadgeHtml(s.cohort_tag) + '</span>';
     var scoreHtml = '';
     var hasSubjScores = bySubj && MOCK_SUBJECTS.some(function(subj) { return bySubj[subj] != null; });
-    if (hasSubjScores) {
+    var hasPointA = hero.point_a_average != null;
+    if (hasSubjScores || hasPointA) {
         scoreHtml = '<div class="student-hero-score subj-scores">';
-        MOCK_SUBJECTS.forEach(function(subj) {
+        if (hasSubjScores) MOCK_SUBJECTS.forEach(function(subj) {
             var sc = bySubj[subj];
             if (sc != null) {
                 scoreHtml += '<div class="subj-score-item">'
@@ -646,6 +681,13 @@ function buildHero(s, bySubj) {
                     + '</div>';
             }
         });
+        // Точка А — рядом с Р/К, как у ученика в «Трекере» (владелец 05.10.2026).
+        if (hasPointA) {
+            scoreHtml += '<div class="subj-score-item" title="Точка А – средний балл входной оценки">'
+                + '<div class="score-big">' + hero.point_a_average + '</div>'
+                + '<div class="score-label">Точка А</div>'
+                + '</div>';
+        }
         scoreHtml += '</div>';
     }
     var uploadBtn = '';
@@ -670,7 +712,8 @@ function buildHero(s, bySubj) {
         + '<div class="student-hero-info">'
         +   '<h2 class="student-hero-name">' + esc(s.name) + '</h2>'
         +   '<div class="student-hero-pills">'
-        +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
+        +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(TARIFF_LABELS[s.tariff] || s.tariff) + '</span>' : '')
+        +     (hero.point_a_level != null ? '<span class="student-hero-pill">Осваивает ' + hero.point_a_level + ' уровень программы</span>' : '')
         +     periodPills
         +     (s.lessons_count ? '<span class="student-hero-pill student-hero-pill--' + lessonsCls + '">' + esc(s.lessons_count) + '</span>' : '')
         +     (s.has_case ? '<span class="student-hero-pill">КЕЙС</span>' : '')
@@ -1480,40 +1523,10 @@ function startEditProfile() {
     html += editField('Телефон', 'phone', s.phone || '');
     html += editField('Телефон родителя', 'parent_phone', s.parent_phone || '');
     html += editField('Telegram', 'tg_username', s.tg_username || '');
-    // Профиль отдаёт «—» вместо пустого тарифа, поэтому прочерк здесь значит
-    // «без тарифа», а не значение для списка.
-    var tariffValue = (s.tariff && s.tariff !== '—') ? s.tariff : '';
-    var tariffOptions = TARIFF_OPTIONS.slice();
-    if (tariffValue && tariffOptions.indexOf(tariffValue) === -1) {
-        // Отработавший тариф ученика остаётся в его карточке: без своего пункта
-        // список открылся бы на чужом значении, и сохранение карточки молча
-        // перевело бы человека на другой тариф.
-        tariffOptions.push(tariffValue);
-    }
-    html += '<div class="profile-field"><div class="profile-field-label">Тариф</div>'
-        + '<select class="profile-edit-select" id="edit-tariff">'
-        + '<option value="__NONE__"' + (!tariffValue ? ' selected' : '') + '>Новенький (без тарифа)</option>'
-        + tariffOptions.map(function (t) {
-            return '<option value="' + esc(t) + '"' + (tariffValue === t ? ' selected' : '')
-                + '>' + esc(TARIFF_LABELS[t] || t) + '</option>';
-        }).join('')
-        + '</select></div>';
+    // Тариф, метка набора и «Доступ до» с 05.10.2026 живут в блоке
+    // «Управление»: там у каждого своё право (`people:students`) и свой адрес.
     html += editField('Начало обучения', 'enrollment_year', s.enrollment_year || '');
     html += editField('Год поступления в вуз', 'university_year', s.university_year || '');
-    html += '<div class="profile-field"><div class="profile-field-label">Метка набора</div>'
-        + '<select class="profile-edit-select" id="edit-cohort_tag">'
-        + '<option value="">— нет —</option>'
-        + Object.keys(COHORT_TAG_LABELS).map(function(key) {
-            return '<option value="' + key + '"' + (s.cohort_tag === key ? ' selected' : '') + '>' + COHORT_TAG_LABELS[key] + '</option>';
-        }).join('')
-        + '</select></div>';
-    // Срок доступа. Пусто — учится без ограничения, так живут все действующие
-    // ученики; дата — в этот момент кабинет закроется и останется одна «Личная
-    // информация». Очистить поле = вернуть доступ оплатившему.
-    html += '<div class="profile-field"><div class="profile-field-label">Доступ до</div>'
-        + '<input type="datetime-local" class="profile-edit-input" id="edit-access_until" value="' + esc(s.access_until || '') + '">'
-        + '<div class="field-hint">Пусто — доступ без ограничения</div>'
-        + '</div>';
     html += '<div class="profile-edit-actions form-actions">'
         + '<button class="profile-cancel-btn" onclick="cancelEditProfile()">Отмена</button>'
         + '<button class="btn-blue btn-save" onclick="saveProfile()">Сохранить</button>'
@@ -1546,11 +1559,10 @@ function saveProfile() {
     body.append('phone', document.getElementById('edit-phone').value);
     body.append('parent_phone', document.getElementById('edit-parent_phone').value);
     body.append('tg_username', document.getElementById('edit-tg_username').value);
-    body.append('tariff', document.getElementById('edit-tariff').value);
     body.append('enrollment_year', document.getElementById('edit-enrollment_year').value);
     body.append('university_year', document.getElementById('edit-university_year').value);
-    body.append('cohort_tag', document.getElementById('edit-cohort_tag').value);
-    body.append('access_until', document.getElementById('edit-access_until').value);
+    // Тариф, метку и срок форма не шлёт — сервер их не трогает.
+    body.append('anketa_only', '1');
 
     window.csrfFetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
         .then(function(r) { return r.json().catch(function() { return {}; }).then(function(d) { return {ok: r.ok, data: d}; }); })
@@ -1566,6 +1578,360 @@ function saveProfile() {
             }
         })
         .catch(function() { alert(NET_ERROR); });
+}
+
+// ── Управление (владелец 05.10.2026) ────────────────────────────────────────
+// Всё, что раньше жило только в карточке «Людей»: куратор, тариф, срок
+// доступа, учебные метки, вход в кабинет, логин, блок и архив. Запросы идут
+// на адреса «Людей» (`/cabinet/superadmin/users/{id}/…`) — права на них держат
+// действия `people:*`, а сервер отдаёт в `manage` флаги тех же проверок.
+
+function manageUrl(path) {
+    return '/cabinet/superadmin/users/' + _currentStudentId + '/' + path;
+}
+
+function manageOptions(items, value) {
+    return items.map(function(item) {
+        return '<option value="' + esc(String(item[0])) + '"' + (String(item[0]) === String(value) ? ' selected' : '') + '>'
+            + esc(item[1]) + '</option>';
+    }).join('');
+}
+
+function manageField(label, control, fullWidth, hint) {
+    return '<div class="profile-field' + (fullWidth ? ' full-width' : '') + '">'
+        + '<div class="profile-field-label">' + esc(label) + '</div>'
+        + control
+        + (hint ? '<div class="field-hint">' + esc(hint) + '</div>' : '')
+        + '</div>';
+}
+
+function buildManage(s) {
+    var m = s.manage;
+    if (!m) return '';
+    var dis = m.can_edit ? '' : ' disabled';
+
+    var curators = [['', 'Без куратора']].concat(m.curators.map(function(c) { return [c.id, c.name]; }));
+    var tariffs = [['__NONE__', 'Новенький (без тарифа)']].concat(m.tariff_choices.map(function(t) {
+        return [t, TARIFF_LABELS[t] || t];
+    }));
+    var cohorts = [['', 'Нет']].concat(Object.keys(COHORT_TAG_LABELS).map(function(k) { return [k, COHORT_TAG_LABELS[k]]; }));
+    var modes = [['', 'Не указан']].concat(m.study_modes);
+
+    var html = '<div class="profile-details manage-block">';
+
+    // Кто ведёт и за что платит
+    html += '<div class="manage-group"><div class="section-title">Управление</div><div class="profile-grid">';
+    html += manageField('Куратор',
+        '<select class="profile-edit-select" id="manage-curator" onchange="saveCurator(this)"' + dis + '>'
+        + manageOptions(curators, m.curator_id || '') + '</select>');
+    html += manageField('Тариф',
+        '<select class="profile-edit-select" id="manage-tariff" onchange="saveTariff(this)"' + dis + '>'
+        + manageOptions(tariffs, m.tariff || '__NONE__') + '</select>');
+    html += manageField('Метка набора',
+        '<select class="profile-edit-select" id="manage-cohort" onchange="saveCohort(this)"' + dis + '>'
+        + manageOptions(cohorts, s.cohort_tag || '') + '</select>');
+    html += manageField('Доступ до',
+        '<input type="datetime-local" class="profile-edit-input" id="manage-access-until" value="' + esc(s.access_until || '') + '"' + dis + '>'
+        + (m.can_edit ? '<div class="profile-status-badges"><button type="button" class="btn-outline" onclick="saveAccessUntil()">Сохранить срок</button></div>' : ''),
+        false, 'Пусто – доступ без ограничения');
+    html += '</div></div>';
+
+    // Учебные метки
+    html += '<div class="manage-group"><div class="section-title">Учёба</div><div class="profile-grid">';
+    html += manageField('Формат обучения',
+        '<select class="profile-edit-select" id="manage-study-mode"' + dis + '>' + manageOptions(modes, m.study_mode) + '</select>');
+    html += manageField('Период экзаменов',
+        '<input class="profile-edit-input" id="manage-exam-dates" maxlength="30" placeholder="15-20 июня" value="' + esc(m.exam_dates) + '"' + dis + '>');
+    html += manageField('Предметы экзаменов',
+        '<input class="profile-edit-input" id="manage-exam-subjects" maxlength="20" placeholder="Р + К" list="manage-exam-hints" value="' + esc(m.exam_subjects) + '"' + dis + '>'
+        + '<datalist id="manage-exam-hints">' + m.exam_subject_hints.map(function(h) { return '<option value="' + esc(h) + '">'; }).join('') + '</datalist>');
+    html += manageField('Публикация',
+        '<label class="manage-check"><input type="checkbox" id="manage-publishable"' + (m.is_publishable ? ' checked' : '') + dis + '>'
+        + '<span>Работы можно показывать в соцсетях и портфолио школы</span></label>');
+    // Редактор заметки не смотрит на disabled, поэтому без права правки её
+    // здесь нет вовсе — прочитать её можно в анкете, строка «О себе».
+    if (m.can_edit) {
+        html += manageField('Заметка о ребёнке',
+            '<textarea data-rich-text class="profile-edit-input" id="manage-about" maxlength="500" placeholder="Видят Главный преподаватель и куратор">' + esc(m.about) + '</textarea>',
+            true);
+        html += '<div class="profile-edit-actions form-actions"><button type="button" class="btn-blue btn-save" onclick="saveLabels()">Сохранить</button></div>';
+    }
+    html += '</div></div>';
+
+    // Вход в кабинет
+    var loginButtons = '';
+    if (m.can_impersonate) {
+        loginButtons += '<button type="button" class="btn-blue" onclick="impersonateStudent()">Войти в кабинет ученика</button>';
+    }
+    if (m.can_login) {
+        loginButtons += '<button type="button" class="btn-outline" onclick="issueCredentials()">'
+            + (m.staff_login ? 'Новый пароль' : 'Выдать логин и пароль') + '</button>'
+            + '<button type="button" class="btn-outline" onclick="issueLoginLink()">Ссылка для входа</button>';
+    }
+    if (m.can_telegram_link) {
+        loginButtons += '<button type="button" class="btn-outline" onclick="issueTelegramLink()">'
+            + (m.has_telegram ? 'Перепривязать Telegram' : 'Привязать Telegram') + '</button>';
+    }
+    html += '<div class="manage-group"><div class="section-title">Вход в кабинет</div>'
+        + '<div class="profile-status-badges">'
+        + '<span class="profile-badge ' + (m.staff_login ? 'ok' : '') + '">'
+        + (m.staff_login ? 'Логин: ' + esc(m.staff_login) : 'Логин и пароль не выдавались') + '</span>'
+        + '<span class="profile-badge ' + (m.has_telegram ? 'ok' : '') + '">'
+        + (m.has_telegram ? 'Telegram привязан' : 'Telegram не привязан') + '</span>'
+        + '</div>'
+        + (loginButtons ? '<div class="profile-status-badges manage-buttons">' + loginButtons + '</div>' : '')
+        + (m.can_impersonate ? '<div class="field-hint">Кабинет откроется таким, каким его видит ученик. '
+            + 'Всё, что нажмёте там, сохранится от его имени. Вернуться к себе – кнопкой в плашке сверху.</div>' : '')
+        + '</div>';
+
+    // Блок и архив
+    var stateButtons = '';
+    if (m.is_archived) {
+        if (m.can_archive) stateButtons += '<button type="button" class="btn-outline" onclick="unarchiveStudent()">Вернуть из архива</button>';
+    } else {
+        if (m.can_block) stateButtons += '<button type="button" class="btn-danger" onclick="blockStudent()">Заблокировать</button>';
+        if (m.can_archive) stateButtons += '<button type="button" class="btn-warn" onclick="archiveStudent()">В архив</button>';
+    }
+    if (stateButtons) {
+        html += '<div class="manage-group"><div class="section-title">Доступ к школе</div>'
+            + '<div class="profile-status-badges manage-buttons">' + stateButtons + '</div></div>';
+    }
+
+    return html + '</div>';
+}
+
+function managePost(path, fields) {
+    var body = new FormData();
+    Object.keys(fields || {}).forEach(function(k) { body.append(k, fields[k]); });
+    return window.csrfFetch(manageUrl(path), {method: 'POST', body: body})
+        .then(function(r) {
+            return r.json().catch(function() { return {}; }).then(function(d) { return {ok: r.ok, data: d}; });
+        });
+}
+
+// Профиль перечитываем целиком: от тарифа зависит срок, от срока — тариф,
+// от куратора — шапка вкладок.
+function reloadProfile(message) {
+    var id = _currentStudentId;
+    _tabCache[id] = {};
+    selectStudent(id, 'profile');
+    if (message) showToast(message);
+}
+
+function manageSave(path, fields, message, failText, after) {
+    managePost(path, fields)
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) {
+                alert(window.csrfMessage(res.data, failText));
+                reloadProfile();
+                return;
+            }
+            if (after) after(res.data);
+            reloadProfile(message);
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function saveCurator(sel) {
+    manageSave('curator', {curator_id: sel.value}, 'Куратор сохранён', 'Не удалось сменить куратора', function(d) {
+        var row = document.getElementById('srow-' + _currentStudentId);
+        if (row) row.setAttribute('data-curator', d.curator_id || 0);
+    });
+}
+
+function saveTariff(sel) {
+    manageSave('tariff', {tariff: sel.value}, 'Тариф сохранён', 'Не удалось сменить тариф', function(d) {
+        var row = document.getElementById('srow-' + _currentStudentId);
+        if (row) row.setAttribute('data-tariff', d.tariff || '__newcomer__');
+    });
+}
+
+function saveCohort(sel) {
+    manageSave('cohort-tag', {cohort_tag: sel.value}, 'Метка сохранена', 'Не удалось сменить метку набора');
+}
+
+function saveAccessUntil() {
+    var value = document.getElementById('manage-access-until').value;
+    manageSave('access-until', {access_until: value},
+        value ? 'Срок доступа сохранён' : 'Срок снят, доступ без ограничения',
+        'Не удалось сохранить срок доступа');
+}
+
+function saveLabels() {
+    manageSave('labels', {
+        study_mode: document.getElementById('manage-study-mode').value,
+        exam_dates: document.getElementById('manage-exam-dates').value,
+        exam_subjects: document.getElementById('manage-exam-subjects').value,
+        is_publishable: document.getElementById('manage-publishable').checked ? '1' : '',
+        about: document.getElementById('manage-about').value
+    }, 'Сохранено', 'Не удалось сохранить');
+}
+
+// ── Вход и доступ ──
+
+var _accessCopyText = '';
+
+function openAccessModal(title, rows, hint) {
+    _accessCopyText = rows.map(function(r) { return r[0] + ': ' + r[1]; }).join('\n');
+    document.getElementById('access-modal-title').textContent = title;
+    document.getElementById('access-modal-body').innerHTML =
+        '<div class="profile-grid">'
+        + rows.map(function(r) { return profileField(r[0], r[1], true); }).join('')
+        + '</div>'
+        + (hint ? '<div class="field-hint">' + esc(hint) + '</div>' : '')
+        + '<div class="modal-actions">'
+        + '<button type="button" class="btn-outline" onclick="closeAccessModal()">Закрыть</button>'
+        + '<button type="button" class="btn-blue" onclick="copyAccessText(this)">Скопировать</button>'
+        + '</div>';
+    document.getElementById('access-modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeAccessModal() {
+    document.getElementById('access-modal').classList.remove('open');
+    document.body.style.overflow = '';
+    _accessCopyText = '';
+}
+
+function copyAccessText(btn) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(_accessCopyText).then(function() { btn.textContent = 'Скопировано'; });
+}
+
+function issueCredentials() {
+    var m = _tabCache[_currentStudentId].profile.student.manage;
+    if (m.staff_login && !confirm('Старый пароль перестанет работать. Выдать новый?')) return;
+    managePost('set-credentials', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось выдать пароль')); return; }
+            var d = res.data;
+            openAccessModal('Логин и пароль',
+                [['Ученик', d.name], ['Логин', d.login], ['Пароль', d.password], ['Где входить', d.url]],
+                'Пароль показываем один раз. Перешлите его ученику сейчас.');
+            _tabCache[_currentStudentId] = {};
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function issueLoginLink() {
+    managePost('issue-link', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось выпустить ссылку')); return; }
+            openAccessModal('Ссылка для входа', [['Ссылка', res.data.link], ['Действует до', res.data.expires_at]],
+                'Ссылка открывает кабинет один раз.');
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function issueTelegramLink() {
+    managePost('issue-telegram-link', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось выпустить ссылку')); return; }
+            openAccessModal('Привязка Telegram', [['Ссылка', res.data.link], ['Действует до', res.data.expires_at]],
+                'Ученик открывает ссылку в Telegram, и бот привязывается к этому аккаунту. Работы и баллы остаются на месте.');
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function impersonateStudent() {
+    if (!confirm('Открыть кабинет ученика? Всё, что нажмёте там, сохранится от его имени.')) return;
+    var form = document.getElementById('impersonate-form');
+    form.action = '/cabinet/superadmin/impersonate/' + _currentStudentId;
+    var fresh = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
+    fresh.then(function(token) {
+        form.querySelector('[name="csrf_token"]').value = token || CSRF_TOKEN;
+        form.submit();
+    });
+}
+
+// Заблокированный и архивный в списке действующих не живут — после действия
+// ученик уходит из списка, а карточка закрывается.
+function leaveStudent(message) {
+    var row = document.getElementById('srow-' + _currentStudentId);
+    if (row) row.remove();
+    delete _tabCache[_currentStudentId];
+    navShowList();
+    navCommit(false);
+    showToast(message);
+}
+
+function blockStudent() {
+    if (!confirm('Заблокировать ученика? Он не сможет войти и пропадёт из списка. Разблокировать можно в «Людях».')) return;
+    managePost('toggle-active', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось заблокировать')); return; }
+            leaveStudent('Ученик заблокирован');
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function archiveStudent() {
+    if (!confirm('Отправить ученика в архив? Работы и баллы сохранятся, войти он не сможет. Вернуть можно из архива.')) return;
+    managePost('archive', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось отправить в архив')); return; }
+            leaveStudent('Ученик в архиве');
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+function unarchiveStudent() {
+    managePost('unarchive', {})
+        .then(function(res) {
+            if (!res.ok || !res.data.ok) { alert(window.csrfMessage(res.data, 'Не удалось вернуть из архива')); return; }
+            leaveStudent('Ученик снова среди действующих');
+        })
+        .catch(function() { alert(NET_ERROR); });
+}
+
+// ── Активность ───────────────────────────────────────────────────────────────
+
+function activityTile(label, value, isDate) {
+    return '<div class="stat-tile"><div class="stat-tile-head">' + esc(label) + '</div>'
+        + '<div class="stat-tile-value' + (isDate ? ' activity-when' : '') + '">' + esc(String(value)) + '</div></div>';
+}
+
+function buildActivity(data) {
+    var a = data.activity || {};
+    var v = a.video || {};
+    var t = a.tasks || {};
+    var html = '';
+
+    html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
+        + activityTile('Последний вход', a.last_login || 'Не входил', true)
+        + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
+        + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
+        + '</div>';
+
+    html += '<div class="section-title">Видео</div><div class="activity-tiles">'
+        + activityTile('Начал смотреть', v.started || 0)
+        + activityTile('Досмотрел', v.completed || 0)
+        + activityTile('Открывал за ' + a.days + ' дней', v.opens || 0)
+        + activityTile('Последний просмотр', v.last_opened || 'Не смотрел', true)
+        + '</div>';
+
+    html += '<div class="section-title">Задания</div>';
+    if (t.behind) {
+        html += '<div class="profile-status-badges activity-note"><span class="profile-badge no">Отстаёт от графика: прошлая неделя не закрыта</span></div>';
+    }
+    html += '<div class="activity-tiles">'
+        + activityTile('Сделано', t.done || 0)
+        + activityTile('Просрочено', t.overdue || 0)
+        + activityTile('Впереди на этой неделе', t.upcoming || 0)
+        + '</div>';
+
+    html += '<div class="section-title">Последние события</div>';
+    var feed = a.feed || [];
+    if (!feed.length) return html + '<div class="no-works">Событий пока нет.</div>';
+    html += '<ul class="activity-feed">' + feed.map(function(e) {
+        return '<li class="activity-feed-item' + (e.kind === 'staff' ? ' activity-feed-item--staff' : '') + '">'
+            + '<span class="activity-feed-time">' + esc(e.at) + '</span>'
+            + '<span class="activity-feed-text"><b>' + esc(e.label) + '</b>'
+            + (e.details ? ' · ' + esc(e.details) : '')
+            + (e.by ? ' · ' + esc(e.by) : '')
+            + '</span></li>';
+    }).join('') + '</ul>';
+    return html;
 }
 
 // ── Delete work (photo) ─────────────────────────────────────────────────────

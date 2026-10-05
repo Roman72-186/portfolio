@@ -218,7 +218,8 @@ def test_phone_sees_text_hidden_in_tooltips():
 def test_errors_tell_what_to_do_and_empty_search_says_so():
     source = _page()
     assert "'Ошибка сети'" not in source
-    assert source.count("alert(NET_ERROR)") == 6
+    # 13 с 05.10.2026: семь кнопок блока «Управление» говорят то же, что остальные.
+    assert source.count("alert(NET_ERROR)") == 13
     assert "Ошибка загрузки" not in source
     # Поиск или тариф, не нашедшие никого, раньше оставляли список пустым без слов.
     assert 'id="student-list-empty" hidden' in source
@@ -306,8 +307,9 @@ def test_profile_sections_come_before_the_form():
     assert "buildHero(s, s.avg_score_by_subject || null) + buildProfileActions(s)" in render
     assert render.index("buildProfileActions(s)") < render.index('<div class="profile-details">')
     assert "'<div class=\"profile-actions\">'" not in render, "кнопки разделов собираются в двух местах"
-    # На компьютере — одним рядом, а не 3 + 1.
-    assert "repeat(auto-fit, minmax(150px, 1fr))" in _css_rule(_styles(), ".profile-actions")
+    # На компьютере — одним рядом, а не 3 + 1. С пятой плиткой «Активность»
+    # (05.10.2026) в ряд 730px влезают только плитки от 130px.
+    assert "repeat(auto-fit, minmax(130px, 1fr))" in _css_rule(_styles(), ".profile-actions")
 
 
 # ── Шаг 8: стили экрана — в файле ────────────────────────────────────────────

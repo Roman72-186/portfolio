@@ -147,10 +147,14 @@ def test_people_write_buttons_follow_level(
     assert ('class="role-form"' in _markup(users)) is editable
     assert ("data-user-actions=" in _markup(users)) is editable
 
-    card = client.get(f"/cabinet/superadmin/users/{student.id}")
-    assert card.status_code == 200
-    assert ('class="uc-fields" disabled' in _markup(card)) is (not editable)
-    assert ('form="studentAccessForm"' in _markup(card)) is editable
+    # Карточка ученика в «Людях» уводит в «Учеников» (05.10.2026), кнопки
+    # правки там — блок «Управление» с флагами тех же действий `people:*`.
+    card = client.get(f"/cabinet/superadmin/users/{student.id}", follow_redirects=False)
+    assert card.status_code == 302
+    assert card.headers["location"] == f"/cabinet/students?student={student.id}"
+    manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
+    assert manage["can_edit"] is editable
+    assert manage["can_login"] is editable
 
     tags = client.get("/cabinet/superadmin/tags")
     assert tags.status_code == 200

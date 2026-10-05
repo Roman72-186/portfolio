@@ -87,8 +87,12 @@ def test_new_tariffs_make_safe_file_names():
 
 # ── карточка ученика: что предлагает выпадающий список ──────────────────────
 
-def _card(client, target):
-    return client.get(f"/cabinet/superadmin/users/{target.id}")
+def _manage(client, target) -> dict:
+    """Выбор тарифа ученика с 05.10.2026 — в блоке «Управление» карточки
+    «Учеников» (`/profile`, поле `manage`), карточка «Людей» туда уводит."""
+    resp = client.get(f"/cabinet/students/{target.id}/profile")
+    assert resp.status_code == 200, resp.text
+    return resp.json()["student"]["manage"]
 
 
 def test_card_offers_only_the_current_lineup(superadmin_client, db, user_factory):
@@ -97,12 +101,12 @@ def test_card_offers_only_the_current_lineup(superadmin_client, db, user_factory
     db.commit()
     client, _ = superadmin_client
 
-    page = _card(client, student).text
+    choices = _manage(client, student)["tariff_choices"]
 
     for tariff in TARIFFS_CURRENT:
-        assert f'<option value="{tariff}"' in page
+        assert tariff in choices
     for legacy in TARIFFS_LEGACY:
-        assert f'<option value="{legacy}"' not in page
+        assert legacy not in choices
 
 
 def test_card_of_a_legacy_student_keeps_his_own_tariff(superadmin_client, db, user_factory):
@@ -112,12 +116,12 @@ def test_card_of_a_legacy_student_keeps_his_own_tariff(superadmin_client, db, us
     db.commit()
     client, _ = superadmin_client
 
-    page = _card(client, student).text
+    manage = _manage(client, student)
 
-    assert '<option value="МАКСИМУМ"' in page
-    assert 'value="МАКСИМУМ" selected' in page.replace("  ", " ")
+    assert "МАКСИМУМ" in manage["tariff_choices"]
+    assert manage["tariff"] == "МАКСИМУМ"
     # Второй отработавший тариф не подмешивается — только собственный.
-    assert '<option value="УВЕРЕННЫЙ"' not in page
+    assert "УВЕРЕННЫЙ" not in manage["tariff_choices"]
 
 
 def test_legacy_value_still_saves(superadmin_client, db, user_factory):

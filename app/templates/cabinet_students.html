@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=15">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=16">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -195,6 +195,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <button class="tab-btn" id="tab-tasks"      onclick="switchTab('tasks')">Задания</button>
             <button class="tab-btn" id="tab-mock-exams" onclick="switchTab('mock-exams')">Пробники</button>
             <button class="tab-btn" id="tab-statistics" onclick="switchTab('statistics')">Статистика</button>
+            <button class="tab-btn" id="tab-activity"   onclick="switchTab('activity')">Активность</button>
         </div>
 
         <div class="split-main-scroll" id="main-panel">
@@ -215,6 +216,21 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
 
 <!-- Toast -->
 <div class="save-toast" id="save-toast">Балл сохранён</div>
+
+{# Пароль и ссылки входа из блока «Управление» показываются здесь один раз
+   (владелец 05.10.2026: всё про ученика — в его карточке, без ухода в «Люди»). #}
+<div class="upload-modal-overlay" id="access-modal" onclick="if(event.target===this)closeAccessModal()">
+    <div class="upload-modal" role="dialog" aria-modal="true" aria-labelledby="access-modal-title">
+        <button class="upload-modal-close" type="button" onclick="closeAccessModal()" aria-label="Закрыть">&times;</button>
+        <div class="upload-modal-title" id="access-modal-title"></div>
+        <div id="access-modal-body"></div>
+    </div>
+</div>
+
+{# Вход в кабинет ученика — обычная форма: сервер ставит куки и уводит в кабинет. #}
+<form id="impersonate-form" method="post" action="" hidden>
+    <input type="hidden" name="csrf_token" value="">
+</form>
 
 <!-- Upload modal -->
 <div class="upload-modal-overlay" id="upload-modal" onclick="if(event.target===this)closeUploadModal()">
@@ -296,5 +312,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=8"></script>
+<script src="/static/js/cabinet_students.js?v=9"></script>
 {% endblock %}

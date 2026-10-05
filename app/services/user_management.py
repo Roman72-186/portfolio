@@ -30,6 +30,7 @@ from app.models.telegram_link_token import TelegramLinkToken
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work
+from app.services.tz import msk_text
 
 STUDENT_RANK = 1
 SUPERADMIN_RANK = 5
@@ -287,6 +288,52 @@ def apply_tariff_change(
         # Пробный доступ кончился оплатой: программа открыта с сегодня, а
         # не с того дня, когда он зашёл по пробной ссылке.
         open_program_from_now(student)
+    return True
+
+
+def apply_access_until(
+    db: DBSession,
+    performed_by_id: int,
+    student: User,
+    new_value: datetime | None,
+    *,
+    tariff_chosen: bool = False,
+) -> bool:
+    """Ставит или снимает срок доступа ученику (`User.access_until`).
+
+    Пусто — учится без ограничения, дата — в этот момент кабинет закроется и
+    останется одна «Личная информация» (`AGENTS.md`, правило 8). Зовут форма
+    анкеты на экране «Ученики» и поле «Доступ до» в блоке «Управление» той же
+    карточки: правило про новичка ниже живёт здесь, чтобы не отстать в одном
+    из двух.
+
+    Срок появился у человека с незаполненной анкетой — это новичок пробного
+    набора, которого пометили руками (вошёл с apparchi.ru, минуя ссылку
+    `/proba`). Тариф ему снимаем по тому же правилу, что и на входе по ссылке:
+    шаг анкеты «Тариф обучения» ему уже не покажут, и без этого он остался бы
+    на «УВЕРЕННЫЙ» из дефолта при создании аккаунта. Заполненную анкету не
+    трогаем: там тариф человек выбрал сам. `tariff_chosen` — тариф выбран в
+    этом же сохранении, он главнее.
+
+    Возвращает True, если срок изменился. Не коммитит.
+    """
+    old_value = student.access_until
+    if old_value == new_value:
+        return False
+    if (
+        new_value is not None
+        and old_value is None
+        and not student.profile_completed
+        and not tariff_chosen
+        and student.tariff
+    ):
+        _log(db, "tariff_change", performed_by_id, student.id,
+             f"tariff: {student.tariff} → — (пробный доступ)")
+        student.tariff = ""
+    _log(db, "access_until_change", performed_by_id, student.id,
+         f"Доступ до: {msk_text(old_value) or 'без срока'}"
+         f" → {msk_text(new_value) or 'без срока'}")
+    student.access_until = new_value
     return True
 
 
