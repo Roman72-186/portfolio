@@ -746,6 +746,40 @@ def test_opening_stage_by_id_shows_all_its_own_tasks(db, regular_user):
     assert all(not c["is_current"] for c in feed["cycles"])
 
 
+def test_stage_button_is_gone_once_the_stage_is_over(db, regular_user):
+    """Закончившийся этап своих кнопок не показывает (владелец 05.10.2026:
+    «нужно скрыть, если что добавим вручную»). Прецедент: должник
+    «Предобучения» стоял в его цикле, который идёт дольше самого этапа, и
+    «Портфолио» прошлого этапа висело рядом с циклами «1 семестра». Цикл
+    должнику открыт по-прежнему, ни кнопки, ни входа в этап по id нет."""
+    stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=20), ends_on=TODAY - timedelta(days=1))
+    portfolio = create_task(
+        db, title="Портфолио", user_id=regular_user.id, kind="material",
+        topic_id=stage.id, assign_to_all=True, is_required=False,
+    )
+    portfolio.is_published = True
+    db.commit()
+
+    late_cycle = _cycle(
+        db, regular_user, title="Подготовка к годовому курсу",
+        starts_on=TODAY - timedelta(days=3), ends_on=TODAY + timedelta(days=5),
+    )
+    late_cycle.parent_id = stage.id
+    _task(db, regular_user, title="Материал цикла", due_on=TODAY, is_required=False)
+    db.commit()
+
+    feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
+
+    assert feed["topic"].id == late_cycle.id
+    assert feed["pinned_tasks"] == []
+    assert portfolio.id not in current_feed_task_ids(db, user_id=regular_user.id, today=TODAY)
+
+    by_id = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY, cycle_id=stage.id,
+    )
+    assert by_id["topic"].id == late_cycle.id
+
+
 def test_opening_foreign_stage_by_id_is_ignored(db, regular_user):
     """Id в адресной строке не подобрать чужой этап — только тот, к
     которому реально принадлежит текущий цикл ученика."""

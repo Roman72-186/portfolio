@@ -139,7 +139,9 @@ def current_feed_task_ids(db: Session, *, user_id: int, today: date) -> set[int]
     task_ids = {entry["task"].id for entry in entries}
     stage = _stage_of(db, topic)
     if stage is not None:
-        task_ids |= {entry["task"].id for entry in stage_task_entries(db, user_id, stage)}
+        task_ids |= {
+            entry["task"].id for entry in stage_task_entries(db, user_id, stage, today)
+        }
     return task_ids
 
 
@@ -157,7 +159,9 @@ def _stage_of(db: Session, topic: LearningTopic | None) -> LearningTopic | None:
     return stage
 
 
-def stage_task_entries(db: Session, user_id: int, stage: LearningTopic) -> list[dict]:
+def stage_task_entries(
+    db: Session, user_id: int, stage: LearningTopic, today: date
+) -> list[dict]:
     """Доступные ученику задания, заведённые прямо на этапе («Портфолио»).
 
     Только чтение: ленту этапа не строит и окон портфолио не запускает — окно
@@ -165,7 +169,14 @@ def stage_task_entries(db: Session, user_id: int, stage: LearningTopic) -> list[
     потому, что `accessible_task_entries(topic_id=...)` сужает лишь бездатную
     ветку, а датные задания циклов этапа попали бы в широкое окно этапа по
     совпадению дат.
+
+    Закончившийся этап заданий не отдаёт (владелец 05.10.2026: «нужно скрыть,
+    если что добавим вручную»). Должник «Предобучения» стоит в его цикле и
+    после 04.10, и «Портфолио» прошлого этапа висело кнопкой рядом с циклами
+    «1 семестра». Его циклы должнику по-прежнему открыты, кнопка — нет.
     """
+    if _cycle_is_over(stage, today):
+        return []
     first, last = cycle_bounds(stage)
     window_start, _ = day_bounds(first)
     _, window_end = day_bounds(last)
@@ -881,10 +892,13 @@ def feed_for_student(
         candidate_stage_id = current_topic.parent_id if current_topic is not None else None
         if candidate_stage_id == cycle_id:
             stage_candidate = db.get(LearningTopic, cycle_id)
+            # Закончившийся этап по прямой ссылке не открывается: его кнопка
+            # уже снята (`stage_task_entries`), старая ссылка вела бы туда же.
             if (
                 stage_candidate is not None
                 and stage_candidate.kind == TOPIC_KIND_STAGE
                 and stage_candidate.deleted_at is None
+                and not _cycle_is_over(stage_candidate, today)
             ):
                 chosen_stage = stage_candidate
     if chosen is not None:
@@ -918,7 +932,7 @@ def feed_for_student(
             "is_current": viewing_stage_directly,
         }
         for entry in (
-            stage_task_entries(db, user_id, stage_of_topic)
+            stage_task_entries(db, user_id, stage_of_topic, today)
             if stage_of_topic is not None else []
         )
     ]
