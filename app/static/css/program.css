@@ -105,7 +105,7 @@
 .dgst-cal {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
     column-gap: 0; row-gap: 4px; max-width: 420px;
-    padding-bottom: 4px; /* точки последней строки висят ниже клетки */
+    padding-bottom: 4px; /* запас под обводку выбранного дня в последней строке */
 }
 .dgst-cal-dow {
     padding: 4px 0 6px; text-align: center; color: var(--muted);
@@ -139,24 +139,25 @@
 .dgst-cal-day.has-fill .dgst-cal-num { color: var(--dgst-ink); }
 .dgst-cal-num.has-dot.is-fill { color: var(--dgst-ink); background: var(--dgst-soft); box-shadow: inset 0 0 0 1.5px var(--dgst-color); }
 .dgst-cal-num.has-dot.is-ring { box-shadow: inset 0 0 0 2px var(--dgst-color); background: var(--surface); }
-/* Точки под числом — остальные события дня, по точке на событие
-   (digest_calendar → `extra`), как в календаре айфона: знак «здесь не одно»,
-   а что именно — в окне по тапу. Висят ниже клетки, в зазоре между строками
-   (row-gap 4px): внутри клетки они легли бы на контур периода, который
-   доходит до её нижнего края. */
-.dgst-cal-dots {
-    position: absolute; left: 0; right: 0; bottom: -4px;
-    display: flex; justify-content: center; gap: 3px; pointer-events: none;
+/* Кольцо вокруг кружка — цвет следующего события дня (digest_calendar →
+   `halo`; владелец 05.10.2026: «основной цвет первого события, вокруг
+   окантовка следующего»). Знак «здесь не одно», что именно — в окне по тапу.
+   Зазор 3px между кружком и кольцом, чтобы цвета не сливались. */
+.dgst-cal-halo {
+    position: absolute; inset: -5px; border-radius: 50%; pointer-events: none;
+    box-shadow: inset 0 0 0 2px var(--dgst-color);
 }
-.dgst-cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dgst-color); }
 
 /* День с событиями у ученика — кнопка, тап открывает окно дня
-   (static/js/digest-day-pop.js). Открытый день обведён, как выбранный в
-   редакторе. */
+   (static/js/digest-day-pop.js). Открытый тапом день не обводится: окно и
+   так стоит под ним, а обводка с кольцом читалась бы двойным кольцом.
+   Обводка — только для клавиатуры. */
 .dgst-cal-day[data-day-pop] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .dgst-cal-day[data-day-pop]:focus-visible { outline: none; }
-.dgst-cal-day[data-day-pop]:focus-visible .dgst-cal-num,
-.dgst-cal-day[data-day-pop].is-open .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+.dgst-cal-day[data-day-pop]:focus-visible .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* У дня с кольцом обводка легла бы на кольцо — отодвигаем её наружу (и у
+   ученика, и в редакторе ниже). */
+.dgst-cal-day[data-day-pop]:focus-visible .dgst-cal-num.has-halo { outline-offset: 6px; }
 
 /* Окно дня — общий .hint-pop из base.css (fixed, тень, крестик), внутри
    список событий: цвет типа, название, «тип · время». */
@@ -183,6 +184,8 @@
 .dgst-cal--edit .dgst-cal-day:focus-visible { outline: none; }
 .dgst-cal--edit .dgst-cal-day:focus-visible .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
 .dgst-cal--edit .dgst-cal-day.is-selected .dgst-cal-num { outline: 2px solid var(--blue); outline-offset: 2px; }
+.dgst-cal--edit .dgst-cal-day:focus-visible .dgst-cal-num.has-halo,
+.dgst-cal--edit .dgst-cal-day.is-selected .dgst-cal-num.has-halo { outline-offset: 6px; }
 /* Период, который сейчас набирается в форме: пунктир, пока не сохранён. */
 .dgst-cal-day.is-preview::before {
     content: ""; position: absolute; inset: 2px 0; pointer-events: none;

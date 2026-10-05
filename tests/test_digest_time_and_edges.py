@@ -309,8 +309,8 @@ def test_split_title_takes_time_out_of_the_title():
 def test_student_day_with_events_opens_a_popup(client, db, user_factory, session_factory):
     """Владелец 05.10.2026: «будем показывать что не одно событие и при
     нажатии показывать небольшое всплывающее окно». День с событиями у
-    ученика — кнопка, под числом точки остальных событий, данные окна —
-    все события дня с типом и временем, по времени."""
+    ученика — кнопка, вокруг кружка кольцо цвета следующего события, данные
+    окна — все события дня с типом и временем, по времени."""
     student = _student(client, user_factory, session_factory, vk_id=440_103)
     today = today_msk()
     digest = create_digest(db, title="Месяц", year=today.year, month=today.month,
@@ -330,7 +330,8 @@ def test_student_day_with_events_opens_a_popup(client, db, user_factory, session
     html = client.get("/cabinet/tracker").text
     cell = html.split(f'data-day="{today.isoformat()}"', 1)[1].split("</button>", 1)[0]
     assert 'data-day-pop aria-haspopup="dialog" aria-expanded="false"' in cell
-    assert cell.count("dgst-cal-dot dgst-color--") == 2
+    assert "has-dot is-fill dgst-color--sky has-halo" in cell
+    assert '<span class="dgst-cal-halo dgst-color--violet"></span>' in cell
     assert 'id="dgstDayPop"' in html and "/static/js/digest-day-pop.js" in html
 
     raw = re.search(r'id="digestDayEvents">(.*?)</script>', html, re.S).group(1)

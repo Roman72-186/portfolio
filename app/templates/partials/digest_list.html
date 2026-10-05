@@ -7,8 +7,8 @@
   расписано». Однодневное событие — кружок вокруг числа, период — таблетка
   через дни; заливка или контур и цвет берутся от типа события
   (`ScheduleEventType`), их настраивает Главный преподаватель. Слои клетки
-  (`fill`, `ring`, `dot`, `extra` — точки под числом, по одной на каждое
-  событие дня сверх нарисованных) раскладывает
+  (`fill`, `ring`, `dot`, `halo` — кольцо вокруг кружка цветом следующего
+  события, знак «в этот день не одно») раскладывает
   services/tracker.py::digest_calendar, сетка — .dgst-cal в program.css.
 
   Цвет не единственный носитель смысла: в списке рядом с плашкой дат стоит
@@ -59,8 +59,7 @@
             {% if day_pop and day.events %}data-day-pop aria-haspopup="dialog" aria-expanded="false" aria-controls="dgstDayPop"{% endif %}>
             {% if day.fill %}<span class="dgst-band dgst-band--fill dgst-band--{{ day.fill.pos }}" aria-hidden="true"></span>{% endif %}
             {% if day.ring %}<span class="dgst-band dgst-band--ring dgst-band--{{ day.ring.pos }} dgst-color--{{ day.ring.color }}" aria-hidden="true"></span>{% endif %}
-            <span class="dgst-cal-num{% if day.dot %} has-dot is-{{ day.dot.style }} dgst-color--{{ day.dot.color }}{% endif %}" aria-hidden="true">{{ day.number }}</span>
-            {% if day.extra %}<span class="dgst-cal-dots" aria-hidden="true">{% for extra in day.extra %}<span class="dgst-cal-dot dgst-color--{{ extra.color }}"></span>{% endfor %}</span>{% endif %}
+            <span class="dgst-cal-num{% if day.dot %} has-dot is-{{ day.dot.style }} dgst-color--{{ day.dot.color }}{% endif %}{% if day.halo %} has-halo{% endif %}" aria-hidden="true">{% if day.halo %}<span class="dgst-cal-halo dgst-color--{{ day.halo.color }}"></span>{% endif %}{{ day.number }}</span>
         {% if is_button %}</button>{% else %}</div>{% endif %}
         {% endfor %}
     </div>

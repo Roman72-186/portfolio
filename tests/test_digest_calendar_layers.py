@@ -64,7 +64,8 @@ def test_single_day_is_a_dot_on_top_of_a_period(db, user_factory):
 
     assert day["dot"] == {"color": "violet", "style": "fill"}
     assert day["ring"] == {"color": "pink", "pos": "mid"}
-    assert day["extra"] == []
+    # Оба события уже видны — кольцу сказать нечего.
+    assert day["halo"] is None
 
 
 def test_ring_style_single_day_is_an_outlined_dot(db, user_factory):
@@ -97,18 +98,18 @@ def test_shorter_period_wins_the_layer_and_day_is_flagged(db, user_factory):
     days = _days(db, digest)
 
     assert days["2026-04-14"]["fill"]["color"] == "sky"
-    # Спрятанный длинный период — точка его цвета под числом.
-    assert days["2026-04-14"]["extra"] == [{"color": "gray"}]
+    # Спрятанный длинный период — кольцо его цвета.
+    assert days["2026-04-14"]["halo"] == {"color": "gray"}
     assert days["2026-04-20"]["fill"]["color"] == "gray"
-    assert days["2026-04-20"]["extra"] == []
+    assert days["2026-04-20"]["halo"] is None
 
 
-def test_each_other_event_of_the_day_is_a_dot(db, user_factory):
+def test_next_event_of_another_colour_rings_the_circle(db, user_factory):
     """Служба заботы 04.10.2026: «если в один день несколько событий, то
     ребёнку нужно видеть это в календаре, а то у него только один цвет».
-    Прод, 11.10: публикация и три занятия. Владелец 05.10.2026: показывать,
-    что событие не одно, как в календаре айфона, а что именно — в окне по
-    тапу. Точка — на событие: три занятия — три точки."""
+    Прод, 11.10: публикация и три занятия. Владелец 05.10.2026: «основной
+    цвет первого события, вокруг окантовка следующего и при нажатии
+    открывается окно» — голубой кружок в фиолетовом кольце."""
     digest, types = _setup(db, user_factory)
     publish = create_type(db, name="Публикация", color="sky", style="fill")
     _add(db, digest, publish, "2 неделя", date(2026, 4, 11))
@@ -118,11 +119,11 @@ def test_each_other_event_of_the_day_is_a_dot(db, user_factory):
     day = _days(db, digest)["2026-04-11"]
 
     assert day["dot"]["color"] == "sky"
-    assert day["extra"] == [{"color": "violet"}] * 3
+    assert day["halo"] == {"color": "violet"}
 
 
-def test_same_type_second_event_is_a_dot_too(db, user_factory):
-    """Два занятия одного типа — кружок и точка того же цвета: событий два."""
+def test_same_type_second_event_rings_in_the_same_colour(db, user_factory):
+    """Два занятия одного типа — кольцо того же цвета: событий всё равно два."""
     digest, types = _setup(db, user_factory)
     for title in ("Композиция", "Рисунок"):
         _add(db, digest, types["lesson"], title, date(2026, 4, 18))
@@ -130,11 +131,12 @@ def test_same_type_second_event_is_a_dot_too(db, user_factory):
     day = _days(db, digest)["2026-04-18"]
 
     assert day["dot"]["color"] == "violet"
-    assert day["extra"] == [{"color": "violet"}]
+    assert day["halo"] == {"color": "violet"}
 
 
-def test_dots_are_capped_at_three(db, user_factory):
-    """Больше трёх точек под числом не помещается; все события дня — в окне."""
+def test_ring_prefers_a_colour_not_yet_drawn(db, user_factory):
+    """Пять типов в день: кружок — первый, кольцо — следующий другого цвета;
+    остальное ученик читает в окне по тапу."""
     digest, types = _setup(db, user_factory)
     colours = ("sky", "pink", "mint", "teal", "coral")
     for index, colour in enumerate(colours):
@@ -144,7 +146,7 @@ def test_dots_are_capped_at_three(db, user_factory):
     day = _days(db, digest)["2026-04-22"]
 
     assert day["dot"]["color"] == "sky"
-    assert [extra["color"] for extra in day["extra"]] == ["pink", "mint", "teal"]
+    assert day["halo"] == {"color": "pink"}
 
 
 def test_one_day_period_is_solo(db, user_factory):
