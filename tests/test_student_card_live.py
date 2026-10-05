@@ -243,14 +243,17 @@ def test_retake_routes_are_gone(client, db, user_factory, session_factory):
     ).status_code in (404, 405)
 
 
-def test_staff_upload_refuses_retake(client, db, user_factory, session_factory):
+@pytest.mark.parametrize("work_type", ["retake", "mock_exam"])
+def test_staff_upload_refuses_retake_and_mock(client, db, user_factory, session_factory, work_type):
+    """Отработки нет с 29.09.2026, пробника в «+ Загрузить» — с 06.10.2026:
+    вкладки «Пробники» в карточке нет, загруженный пробник было бы не найти."""
     chief = _chief(user_factory)
     student = user_factory(vk_id=951_101, name="Ученик")
     _login(client, session_factory, chief)
 
     resp = client.post(
         f"/cabinet/students/{student.id}/upload",
-        data={"work_type": "retake", "month": "сентябрь", "year": "2026", "subject": "Рисунок"},
+        data={"work_type": work_type, "month": "сентябрь", "year": "2026", "subject": "Рисунок"},
         files={"photos": ("a.jpg", b"\xff\xd8\xff", "image/jpeg")},
     )
 

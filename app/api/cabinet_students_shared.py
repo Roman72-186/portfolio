@@ -72,7 +72,7 @@ from app.services.user_management import (
     tariff_change_clears_access,
 )
 from app.services.works import WorkHasFeedbackError, delete_works_with_dependents, upload_work_thumb
-from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, msk_text, parse_msk_local, today_msk
+from app.services.tz import MSK_TZ, msk_input_value, msk_text, parse_msk_local, today_msk
 from app.services.utils import compress_image, study_duration_text, has_case_growth
 from app.tmpl import format_rich_text, tariff_label, tariff_slug, templates
 
@@ -1401,9 +1401,6 @@ async def admin_upload_works(
     work_type: str = Form(...),
     month: str = Form(""),
     year: int | None = Form(None),
-    subject: str = Form(""),
-    mock_date: str = Form(""),
-    score: str = Form(""),
 ):
     student = _check_access(student_id, user, db)
 
@@ -1411,8 +1408,9 @@ async def admin_upload_works(
     # загрузка за него создавала бы работы, которых он не увидит как задачу.
     # Проверки «У ученика нет VK ID» тоже нет: колонка обязательная, у
     # Telegram-учеников в ней служебный номер, путь в S3 по-прежнему строится
-    # от него.
-    valid_types = {WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM}
+    # от него. Пробника нет с 06.10.2026 (владелец): вкладку «Пробники» сняли
+    # с карточки, и загруженный отсюда пробник в ней было бы не найти.
+    valid_types = {WORK_TYPE_BEFORE, WORK_TYPE_AFTER}
     if work_type not in valid_types:
         return JSONResponse({"ok": False, "error": "Неверный тип работы"}, status_code=400)
     if not student.tariff:
@@ -1423,30 +1421,10 @@ async def admin_upload_works(
     if len(photos) > MAX_FILES:
         return JSONResponse({"ok": False, "error": f"Максимум {MAX_FILES} фото"}, status_code=400)
 
-    work_score = None
-    work_created_at = None
-    if work_type == WORK_TYPE_MOCK_EXAM:
-        if subject not in MOCK_SUBJECTS:
-            return JSONResponse({"ok": False, "error": "Укажите предмет для пробника"}, status_code=400)
-        try:
-            parsed_date = datetime.strptime(mock_date, "%Y-%m-%d").date()
-        except (TypeError, ValueError):
-            return JSONResponse({"ok": False, "error": "Укажите дату пробника"}, status_code=400)
-        try:
-            score_value = float(score)
-        except (TypeError, ValueError):
-            return JSONResponse({"ok": False, "error": "Укажите балл за пробник"}, status_code=400)
-        if not (0 <= score_value <= 100):
-            return JSONResponse({"ok": False, "error": "Балл должен быть от 0 до 100"}, status_code=400)
-        month = MONTHS[parsed_date.month - 1]
-        year = parsed_date.year
-        work_score = int(round(score_value))
-        work_created_at = msk_midnight(parsed_date)
-    else:
-        if month not in MONTHS:
-            return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
-        if year is None:
-            return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
+    if month not in MONTHS:
+        return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
+    if year is None:
+        return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
 
     # Read and validate files
     files_data = []
@@ -1464,8 +1442,6 @@ async def admin_upload_works(
     def _build_s3_path(filename: str) -> str:
         if work_type == WORK_TYPE_BEFORE:
             return s3_service.s3_path_before(vk_id, tariff, filename)
-        if work_type == WORK_TYPE_MOCK_EXAM:
-            return s3_service.s3_path_mock_exam(vk_id, tariff, filename)
         return s3_service.s3_path_after(vk_id, tariff, filename)
 
     success_count = 0
@@ -1477,19 +1453,6 @@ async def admin_upload_works(
         url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
         thumb_url = upload_work_thumb(path, compressed) if url else None
         return url, thumb_url
-
-    # Цикл Пробника: получить/создать для пробника
-    cycle_id: int | None = None
-    attempt_no: int | None = None
-    if work_type == WORK_TYPE_MOCK_EXAM and subject:
-        from app.services import exam_cycle as cycle_service
-        cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
-            db, user_id=student_id, subject=subject, ticket_id=None,
-        )
-        cycle_id = cycle.id
-        attempt_no = cycle_service.next_attempt_number(
-            db, cycle_id=cycle_id, work_type=work_type,
-        )
 
     for fname, raw_bytes in files_data:
         s3_path = _build_s3_path(fname)
@@ -1507,18 +1470,11 @@ async def admin_upload_works(
                 s3_url=s3_url,
                 s3_path=s3_path,
                 thumb_s3_url=thumb_url,
-                subject=subject if work_type == WORK_TYPE_MOCK_EXAM else None,
                 tariff=tariff,
-                score=work_score,
-                scored_at=datetime.now(timezone.utc) if work_score is not None else None,
-                scored_by_id=user["user_id"] if work_score is not None else None,
                 status="success",
                 drive_status="s3_only",
                 uploaded_by_id=user["user_id"],
-                created_at=work_created_at or datetime.now(timezone.utc),
-                cycle_id=cycle_id,
-                is_final=True if cycle_id else None,
-                attempt_number=attempt_no,
+                created_at=datetime.now(timezone.utc),
             )
             db.add(work)
             db.add(UploadLog(

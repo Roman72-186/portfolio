@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=16">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=17">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -251,18 +251,9 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <input type="hidden" name="csrf_token" value="">
             <div class="upload-field">
                 <label class="upload-field-label" for="upload-work-type">Тип работы</label>
-                <select class="upload-select" name="work_type" id="upload-work-type" onchange="toggleSubjectField()" required>
+                <select class="upload-select" name="work_type" id="upload-work-type" required>
                     <option value="before">До обучения</option>
                     <option value="after" selected>В процессе обучения</option>
-                    <option value="mock_exam">Пробник</option>
-                </select>
-            </div>
-            <div class="upload-field" id="upload-subject-field" style="display:none">
-                <label class="upload-field-label" for="upload-subject">Предмет</label>
-                <select class="upload-select" name="subject" id="upload-subject">
-                    {% for subj in mock_subjects %}
-                    <option value="{{ subj }}">{{ subj }}</option>
-                    {% endfor %}
                 </select>
             </div>
             <div class="upload-field" id="upload-month-field">
@@ -280,14 +271,6 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                     <option value="{{ current_year }}" selected>{{ current_year }}</option>
                     <option value="{{ current_year + 1 }}">{{ current_year + 1 }}</option>
                 </select>
-            </div>
-            <div class="upload-field" id="upload-mock-date-field" style="display:none">
-                <label class="upload-field-label" for="upload-mock-date">Дата пробника</label>
-                <input type="date" class="upload-select" name="mock_date" id="upload-mock-date" disabled>
-            </div>
-            <div class="upload-field" id="upload-score-field" style="display:none">
-                <label class="upload-field-label" for="upload-score">Балл за пробник</label>
-                <input type="number" class="upload-select" name="score" id="upload-score" min="0" max="100" step="1" placeholder="0–100" disabled>
             </div>
             <div class="upload-field">
                 <label class="upload-field-label" id="upload-photo-label" for="upload-photo-input">Фотографии (до 10)</label>
@@ -322,5 +305,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=11"></script>
+<script src="/static/js/cabinet_students.js?v=12"></script>
 {% endblock %}

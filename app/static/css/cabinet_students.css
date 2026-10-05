@@ -818,9 +818,8 @@
     font-family: inherit; transition: opacity 0.15s;
 }
 .admin-upload-btn:hover { opacity: 0.85; }
-/* На шапке ученика заливка фиолетовым сливалась бы с её фоном. */
-.hero-upload-wrap { position: relative; z-index: 1; flex-shrink: 0; margin-left: auto; }
-.student-hero .admin-upload-btn { background: var(--on-color); color: var(--blue-deep); }
+/* Над разделами «Портфолио», справа (06.10.2026; до того — на шапке ученика). */
+.portfolio-upload-row { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 
 /* ── Ссылка на обратную связь под работой ── */
 .work-fb-link {

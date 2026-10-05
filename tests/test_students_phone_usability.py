@@ -99,14 +99,26 @@ def _phone_block(source: str) -> str:
     return source[start:end]
 
 
-def test_hero_wraps_so_upload_button_fits_on_phone():
+def test_upload_button_lives_in_portfolio_not_on_hero():
+    """«+ Загрузить» — над разделами «Портфолио», не на шапке ученика
+    (владелец 06.10.2026): загружают только «До» и «В процессе обучения»."""
     source = _script()
+    hero = source[source.index("function buildHero("):]
+    hero = hero[:hero.index("\nfunction ")]
+    assert "openUploadModal()" not in hero
+    portfolio = source[source.index("function buildPortfolio("):]
+    portfolio = portfolio[:portfolio.index("\nfunction ")]
+    assert "<div class=\"portfolio-upload-row\">'" in portfolio
+    assert "openUploadModal()\">+ Загрузить" in portfolio
+    assert "justify-content: flex-end" in _css_rule(_styles(), ".portfolio-upload-row")
     mobile = _mobile_block(_styles())
-    assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile), (
-        "шапка в одну строку с overflow:hidden — «+ Загрузить» обрезана на 320–390"
-    )
-    assert "margin-left: auto" in _css_rule(_styles(), ".hero-upload-wrap")
-    assert "<div class=\"hero-upload-wrap\">'" in source and "openUploadModal()\">+ Загрузить" in source
+    assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile)
+
+
+def test_upload_modal_has_no_mock_exam():
+    page = _source()
+    assert '<option value="mock_exam">' not in page
+    assert 'id="upload-mock-date"' not in page and 'id="upload-score"' not in page
 
 
 def test_back_gesture_walks_screen_history():
@@ -531,10 +543,7 @@ def test_student_hero_text_is_readable_everywhere():
     # Светлая подложка плашки поднимала фон под белым текстом — теперь затемнение.
     assert "rgba(255,255,255" not in _css_rule(css, ".student-hero-pill").split("border")[0]
     assert "color: var(--on-color)" in _css_rule(css, ".student-hero-avatar-ph"), "тёмный значок на тёмной шапке"
-    # «+ Загрузить» на шапке: заливка --blue-deep (11.2) слилась бы с фоном.
-    button = _css_rule(css, ".student-hero .admin-upload-btn")
-    assert "background: var(--on-color)" in button and "color: var(--blue-deep)" in button
-    assert _contrast(_theme_tokens(base, ":root {")["blue-deep"], "#FFFFFF") >= 4.5
+    # «+ Загрузить» на шапке нет с 06.10.2026 — он над разделами «Портфолио».
 
 
 def _token_color(css: str, opener: str, name: str) -> str:

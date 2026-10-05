@@ -830,12 +830,6 @@ function buildHero(s, bySubj) {
         }
         scoreHtml += '</div>';
     }
-    var uploadBtn = '';
-    if (CAN_SCORE && _viewMode === 'tab') {
-        uploadBtn = '<div class="hero-upload-wrap">'
-            + '<button class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
-            + '</div>';
-    }
     var periodPills = '';
     if (s.course_periods) {
         s.course_periods.split(',').forEach(function(p) {
@@ -863,7 +857,6 @@ function buildHero(s, bySubj) {
         +   '</div>'
         + '</div>'
         + scoreHtml
-        + uploadBtn
         + '</div>';
 }
 
@@ -873,6 +866,14 @@ function buildPortfolio(data) {
     var html = '';
 
     var sid = data.student.id;
+
+    // «+ Загрузить» живёт здесь, а не на шапке ученика (владелец 06.10.2026):
+    // загружают только «До» и «В процессе обучения» — разделы этой вкладки.
+    if (CAN_SCORE) {
+        html += '<div class="portfolio-upload-row">'
+            + '<button type="button" class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
+            + '</div>';
+    }
 
     // «До» — одна плоская сетка без месяцев (владелец 09.09.2026: «в До
     // добавляется не по месяцам»). `.month-grid` вне `.portfolio-month` видна
@@ -1703,7 +1704,6 @@ function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
 function openUploadModal() {
     if (!_currentStudentId) return;
     document.querySelector('#upload-form [name="csrf_token"]').value = CSRF_TOKEN;
-    toggleSubjectField();
     document.getElementById('upload-modal').classList.add('open');
     document.body.style.overflow = 'hidden';
 }
@@ -1711,49 +1711,6 @@ function openUploadModal() {
 function closeUploadModal() {
     document.getElementById('upload-modal').classList.remove('open');
     document.body.style.overflow = '';
-}
-
-function toggleSubjectField() {
-    var wt = document.getElementById('upload-work-type').value;
-    var isMock = wt === 'mock_exam';
-    var needsSubject = isMock;
-    var subjectField = document.getElementById('upload-subject-field');
-    var subjectInput = document.getElementById('upload-subject');
-    var monthField = document.getElementById('upload-month-field');
-    var yearField = document.getElementById('upload-year-field');
-    var dateField = document.getElementById('upload-mock-date-field');
-    var scoreField = document.getElementById('upload-score-field');
-    var monthInput = document.getElementById('upload-month');
-    var yearInput = document.getElementById('upload-year');
-    var dateInput = document.getElementById('upload-mock-date');
-    var scoreInput = document.getElementById('upload-score');
-    var photoInput = document.getElementById('upload-photo-input');
-    var photoLabel = document.getElementById('upload-photo-label');
-    var hint = document.getElementById('upload-dz-hint');
-
-    subjectField.style.display = needsSubject ? '' : 'none';
-    subjectInput.required = needsSubject;
-    monthField.style.display = isMock ? 'none' : '';
-    yearField.style.display = isMock ? 'none' : '';
-    dateField.style.display = isMock ? '' : 'none';
-    scoreField.style.display = isMock ? '' : 'none';
-
-    monthInput.disabled = isMock;
-    yearInput.disabled = isMock;
-    dateInput.disabled = !isMock;
-    scoreInput.disabled = !isMock;
-    dateInput.required = isMock;
-    scoreInput.required = isMock;
-    photoInput.multiple = true;
-    photoLabel.textContent = isMock ? 'Работы пробника (до 10)' : 'Фотографии (до 10)';
-    hint.textContent = isMock ? 'До 10 МБ · до 10 работ' : 'До 10 МБ · до 10 штук';
-
-    if (isMock && !dateInput.value) {
-        var today = new Date();
-        var month = String(today.getMonth() + 1).padStart(2, '0');
-        var day = String(today.getDate()).padStart(2, '0');
-        dateInput.value = today.getFullYear() + '-' + month + '-' + day;
-    }
 }
 
 // ── Upload DnD/preview state ────────────────────────────────────────────────
@@ -1826,26 +1783,12 @@ function _uploadResetAll() {
     document.getElementById('upload-photo-input').value = '';
     _uploadRenderPreviews();
     document.getElementById('upload-form').reset();
-    toggleSubjectField();
 }
 
 function submitUpload(e) {
     e.preventDefault();
     if (!_currentStudentId) return false;
     if (!_uploadFiles.length) return false;
-    var workType = document.getElementById('upload-work-type').value;
-    if (workType === 'mock_exam') {
-        var subjectVal = document.getElementById('upload-subject').value;
-        if (!subjectVal) { alert('Укажите предмет: Рисунок или Композиция'); return false; }
-    }
-    if (workType === 'mock_exam') {
-        var mockDate = document.getElementById('upload-mock-date').value;
-        var score = document.getElementById('upload-score').value;
-        if (!mockDate) { alert('Укажите дату пробника'); return false; }
-        if (score === '' || isNaN(parseFloat(score))) { alert('Укажите балл за пробник'); return false; }
-        var scoreNum = parseFloat(score);
-        if (scoreNum < 0 || scoreNum > 100) { alert('Балл должен быть от 0 до 100'); return false; }
-    }
     _uploadSyncInput();
 
     var form = document.getElementById('upload-form');
