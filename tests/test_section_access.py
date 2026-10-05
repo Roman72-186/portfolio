@@ -525,7 +525,7 @@ def test_curator_with_program_works_in_it_as_head(client, db, session_factory, s
     assert page.status_code == 200
     # Меню — своё, кураторское, с пунктом открытого раздела, без меню ГП.
     assert 'aria-label="Меню куратора"' in page.text
-    assert 'href="/cabinet/staff/program/cycles"' in page.text
+    assert 'href="/cabinet/staff/program/periods"' in page.text
     assert 'href="/cabinet/staff/point-a"' not in page.text
     # Соседние разделы ГП остаются закрыты рангом.
     assert client.get("/cabinet/staff/point-a", follow_redirects=False).status_code == 403
@@ -591,7 +591,7 @@ def test_moderator_home_falls_back_to_granted_section(client, db, session_factor
     _login(client, session_factory, moderator)
     resp = client.get("/cabinet", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/cabinet/staff/program/cycles"
+    assert resp.headers["location"] == "/cabinet/staff/program/periods"
 
 
 def test_curator_menu_lists_granted_sections_in_catalog_order():

@@ -239,14 +239,14 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     ),
     StaffNavItem(
         key="program",
-        # Вход сразу на циклы (10.09.2026): календарь убран из вкладок раздела
-        # (`program_tabs.html`), но точку входа из бокового меню забыли
-        # переключить вместе с ним — она вела на старый календарь.
-        href="/cabinet/staff/program/cycles",
+        # Вход на периоды (владелец 06.10.2026: «по дефолту открывать
+        # Периоды»): вкладки идут от крупного к мелкому, Периоды → Этапы →
+        # Циклы. До этого — циклы (10.09.2026, когда убрали календарь).
+        href="/cabinet/staff/program/periods",
         sidebar_label=LEARNING_SPACE_LABEL,
         pill_label="Программы",
         aria_label=LEARNING_SPACE_LABEL,
-        tooltip="Циклы учебных программ",
+        tooltip="Периоды, этапы и циклы учебных программ",
         icon="program",
         min_rank=4,
     ),
@@ -309,7 +309,7 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 CURATOR_GRANTED_NAV_ITEMS: dict[str, NavItem] = {
     "mock_check": NavItem(key="mock_check", href="/cabinet/admin/mock-check", label="Пробники", icon="⭐"),
     "point_a": NavItem(key="point_a", href="/cabinet/staff/point-a", label="Точка А", icon="🎯"),
-    "program": NavItem(key="program", href="/cabinet/staff/program/cycles", label="Программы", icon="📅"),
+    "program": NavItem(key="program", href="/cabinet/staff/program/periods", label="Программы", icon="📅"),
     "archive": NavItem(key="archive", href="/cabinet/archive", label="Архив", icon="🗄️"),
     "guest_exam": NavItem(key="guest_exam", href="/cabinet/staff/guest-exam", label="Гостевой пробник", icon="🎟️"),
     "exams": NavItem(key="exams", href="/cabinet/exam-assignments", label="Билеты и периоды", icon="📝"),

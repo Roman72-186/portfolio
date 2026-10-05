@@ -194,7 +194,7 @@ def test_moderator_lands_on_students_and_sees_observer_menu(
     assert 'href="/cabinet/superadmin/activity"' in staff_nav
     assert 'href="/cabinet"' not in staff_nav
     assert 'href="/cabinet/staff/students-review"' not in staff_nav
-    assert 'href="/cabinet/staff/program/cycles"' not in staff_nav
+    assert 'href="/cabinet/staff/program/periods"' not in staff_nav
 
 
 # ── Фаза 3 (2026-07-05): cabinet_feedback_detail.html / cabinet_cycle_calendar.html
