@@ -21,15 +21,17 @@ var _currentStudentId = null;
 var _currentTab = 'portfolio';
 var _tabCache = {};   // { studentId: { tabName: data } }
 var _viewMode = 'profile'; // 'profile' or 'tab'
-var _mockCalendarState = {};
 var _portfolioDragWorkId = null;
 // Раздел дашборда из URL (?tab=…) без выбранного ученика: при клике на ученика
 // открывать сразу эту вкладку, а не профиль (используется навбаром «Статистика»).
 var _navDefaultTab = (function() {
     try {
         var t = new URLSearchParams(location.search).get('tab');
-        if (t === 'cycles') t = 'mock-exams';  // «Цикл пробника» слит с «Пробниками» 29.09.2026
-        var valid = ['portfolio', 'tasks', 'mock-exams', 'statistics', 'activity'];
+        // Вкладки «Пробники» нет с 06.10.2026 (владелец): старые закладки,
+        // уведомления и «назад» с экранов пробника открывают «Портфолио» —
+        // там раздел «Пробные экзамены». Сервер делает то же (`tab` в списке).
+        if (t === 'cycles' || t === 'mock-exams') t = 'portfolio';
+        var valid = ['portfolio', 'tasks', 'statistics', 'activity'];
         return (t && valid.indexOf(t) !== -1) ? t : null;
     } catch (e) { return null; }
 })();
@@ -95,11 +97,6 @@ window.addEventListener('popstate', function(ev) {
         navCommit(false);
         return;
     }
-    if (!guardUnsavedScore()) {
-        // Балл не сохранён — остаёмся: возвращаем в историю запись, с которой ушли
-        history.pushState(_navState, '', navUrl(_navState));
-        return;
-    }
     _navState = st;
     _navRestoring = true;
     try {
@@ -116,7 +113,6 @@ window.addEventListener('popstate', function(ev) {
 // ── Student selection ────────────────────────────────────────────────────────
 
 function mobileBackToList() {
-    if (!guardUnsavedScore()) return;
     var d = (_navState && _navState.d) || 0;
     if (d > 0) { _navToList = true; history.go(-d); return; }
     navShowList();
@@ -126,7 +122,6 @@ function mobileBackToList() {
 // forceTab: имя вкладки — открыть её сразу; 'profile' — профиль, даже если
 // навбар задал вкладку по умолчанию (перерисовка профиля, «назад» к профилю).
 function selectStudent(id, forceTab) {
-    if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
     var navPush = !_currentStudentId;  // из списка — новая запись истории, между учениками — замена
     if (navPush) _listScrollY = window.scrollY;
     _currentStudentId = id;
@@ -200,7 +195,6 @@ function prefetchProfile(id) {
 }
 
 function openTab(tabName) {
-    if (_viewMode === 'tab' && tabName !== _currentTab && !guardUnsavedScore()) return;
     var navPush = _viewMode === 'profile';  // из профиля — новая запись, между вкладками — замена
     _viewMode = 'tab';
     _currentTab = tabName;
@@ -224,7 +218,6 @@ function showProfile() {
 
 function backToProfile() {
     if (!_currentStudentId) return;
-    if (!guardUnsavedScore()) return;
     // Вкладку открыли из профиля — «← К профилю» и есть шаг назад по истории
     if (_navState && _navState.v === 'tab' && _navState.up === 'profile') { history.back(); return; }
     showProfile();
@@ -311,11 +304,6 @@ function buildProfileActions(s) {
         +   '<div class="profile-action-label">Задания</div>'
         +   '<div class="profile-action-count">ответы и сдачи</div>'
         + '</button>'
-        + '<button class="profile-action-btn" onclick="openTab(\'mock-exams\')">'
-        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>'
-        +   '<div class="profile-action-label">Пробники</div>'
-        +   '<div class="profile-action-count">' + workCountLabel(s.mock_exam_count || 0) + '</div>'
-        + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'statistics\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="19 9 13 15 9 11 5 15"/></svg></div>'
         +   '<div class="profile-action-label">Статистика</div>'
@@ -347,7 +335,7 @@ function buildProfileActions(s) {
 
 // «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
 // Проверяют здесь же, в карточке (правило 12, с 05.10.2026): «Проверить»
-// открывает вкладку, которую назвал сервер, — «Задания» или «Пробники».
+// открывает вкладку «Задания» — пробники с 06.10.2026 в счёт не идут.
 // Экран точки А открывает только действующих учеников, поэтому в архиве
 // переходов нет, остаются цифры.
 function buildStudyNow(s) {
@@ -357,8 +345,7 @@ function buildStudyNow(s) {
     if (sn.unreviewed) {
         html += '<span class="profile-badge no">Не проверено: ' + sn.unreviewed + '</span>';
         if (!IS_ARCHIVE_VIEW) {
-            var reviewTab = sn.review_tab === 'mock-exams' ? 'mock-exams' : 'tasks';
-            html += '<button type="button" class="btn-outline" onclick="openReview(\'' + reviewTab + '\')">Проверить</button>';
+            html += '<button type="button" class="btn-outline" onclick="openReview(\'tasks\')">Проверить</button>';
         }
     } else {
         html += '<span class="profile-badge ok">Всё проверено</span>';
@@ -594,11 +581,10 @@ function profileField(label, value, fullWidth) {
 // ── Tab switching ────────────────────────────────────────────────────────────
 
 function switchTab(tabName) {
-    if (_currentTab && tabName !== _currentTab && !guardUnsavedScore()) return;
     _currentTab = tabName;
     if (_viewMode === 'tab' && _currentStudentId) navCommit(false);
 
-    ['portfolio', 'tasks', 'mock-exams', 'statistics', 'activity'].forEach(function(t) {
+    ['portfolio', 'tasks', 'statistics', 'activity'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
         if (btn) btn.classList.toggle('active', t === tabName);
     });
@@ -656,7 +642,6 @@ function renderTab(tabName, data) {
         }
     }
     if (tabName === 'tasks')      { tc.innerHTML = backBtn + buildTasks(data);      }
-    if (tabName === 'mock-exams') { tc.innerHTML = backBtn + buildMockExams(data);  }
     if (tabName === 'statistics') { tc.innerHTML = backBtn + buildStatistics(data); }
     if (tabName === 'activity')   { tc.innerHTML = backBtn + buildActivity(data);   }
 }
@@ -1085,440 +1070,23 @@ function portfolioDrop(ev, el, sid, toMonth, toYear) {
     .finally(function() { portfolioDragEnd(); });
 }
 
-// ── Mock exams tab ───────────────────────────────────────────────────────────
-
-function buildMockExams(data) {
-    var html = '';
-    html += '<div class="subjects-grid">';
-    MOCK_SUBJECTS.forEach(function(subject, idx) {
-        html += buildSubjectCard(subject, data, idx);
-    });
-    html += '</div>';
-    html += buildLegacyArchive(data.legacy_by_month || []);
-    return html;
-}
-
-function buildLegacyArchive(groups) {
-    if (!groups.length) return '';
-    var html = '<div class="legacy-archive">'
-        + '<div class="section-label">'
-        + 'Архив (импорт из старого чат-бота)</div>';
-    groups.forEach(function(g, i) {
-        html += '<div class="legacy-month">'
-            + '<div class="legacy-month-title">'
-            + esc(g.year + ' — ' + g.month) + ' <span class="legacy-month-count">' + g.total + ' фото</span></div>'
-            + '<div class="legacy-grid">';
-        g.photos.forEach(function(p) {
-            if (!p.s3_url) return;
-            html += '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
-                + '<img src="' + esc(p.s3_url) + '" alt="' + esc(p.filename) + '" loading="lazy" '
-                + 'class="legacy-photo"></button>';
-        });
-        html += '</div></div>';
-    });
-    html += '</div>';
-    return html;
-}
-
-function buildSubjectCard(subject, data, subjectIndex) {
-    var works    = (data.mock_works || {})[subject] || [];
-    var lock     = (data.mock_locks || {})[subject] || {};
-    var isLocked = lock.is_locked === true;
-    var sid      = data.student.id;
-    var isScored = works.some(function(w) { return w.score != null; });
-    var grouped  = groupMockWorksByDate(works);
-    var state    = getMockCalendarState(sid, subjectIndex, grouped);
-
-    // Header: subject title + lock status
-    var lockBadge = isLocked
-        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Повторная сдача закрыта</span>'
-        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Повторная сдача открыта</span>';
-
-    var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
-        + '<div class="subject-card-header">'
-        +   '<span class="subject-title">' + esc(subject) + '</span>'
-        +   lockBadge
-        + '</div>'
-        + '<div class="subject-card-body">';
-
-    // Unlock button (allow retry) — only for admin/superadmin, only when locked
-    if (CAN_SCORE && isLocked) {
-        html += '<div class="unlock-wrap">'
-            + '<form method="post" action="/cabinet/students/' + sid + '/mock-exams/unlock" class="unlock-form" onsubmit="return submitWithFreshToken(this)">'
-            + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
-            + '<input type="hidden" name="subject" value="' + esc(subject) + '">'
-            + '<button type="submit" class="unlock-btn" title="Ученик сможет заново загрузить пробник по этому предмету"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Разрешить пересдачу</button>'
-            + '</form></div>';
-    }
-
-    if (works.length) {
-        html += '<div class="mock-calendar-layout">'
-            + buildMockCalendarSide(sid, subjectIndex, grouped, state)
-            + buildMockDayPanel(sid, subject, grouped, state)
-            + '</div>';
-    } else {
-        html += '<div class="no-works">Нет загруженных работ</div>';
-    }
-
-    html += '</div></div>';
-    return html;
-}
-
-function mockStateKey(sid, subjectIndex) {
-    return sid + ':' + subjectIndex;
-}
-
-function getMockWorkDate(w) {
-    if (w.work_date) return w.work_date;
-    if (!w.created_at) return '';
-    try { return new Date(w.created_at).toISOString().slice(0, 10); }
-    catch (e) { return ''; }
-}
-
-function groupMockWorksByDate(works) {
-    var grouped = {};
-    works.forEach(function(w) {
-        var dateStr = getMockWorkDate(w);
-        if (!dateStr) return;
-        if (!grouped[dateStr]) grouped[dateStr] = [];
-        grouped[dateStr].push(w);
-    });
-    return grouped;
-}
-
-function findLatestMockDate(grouped, year, month) {
-    return Object.keys(grouped).filter(function(dateStr) {
-        var parts = dateStr.split('-');
-        if (parseInt(parts[0], 10) !== year) return false;
-        if (month != null && parseInt(parts[1], 10) !== month + 1) return false;
-        return true;
-    }).sort().reverse()[0] || '';
-}
-
-function getMockCalendarState(sid, subjectIndex, grouped) {
-    var key = mockStateKey(sid, subjectIndex);
-    var now = new Date();
-    if (!_mockCalendarState[key]) {
-        var latestThisYear = findLatestMockDate(grouped, CURRENT_YEAR, null);
-        _mockCalendarState[key] = {
-            year: CURRENT_YEAR,
-            month: latestThisYear ? parseInt(latestThisYear.split('-')[1], 10) - 1 : now.getMonth(),
-            selectedDate: latestThisYear || ''
-        };
-    }
-    var state = _mockCalendarState[key];
-    if (state.selectedDate && !grouped[state.selectedDate]) {
-        state.selectedDate = findLatestMockDate(grouped, state.year, state.month) || findLatestMockDate(grouped, state.year, null);
-        if (state.selectedDate) state.month = parseInt(state.selectedDate.split('-')[1], 10) - 1;
-    }
-    return state;
-}
-
-function rerenderMockTab() {
-    if (_currentTab === 'mock-exams') {
-        var data = _tabCache[_currentStudentId] && _tabCache[_currentStudentId]['mock-exams'];
-        if (data) renderTab('mock-exams', data);
-    }
-}
-
-function setMockCalendarYear(sid, subjectIndex, delta) {
-    if (!guardUnsavedScore()) return;
-    var key = mockStateKey(sid, subjectIndex);
-    var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: new Date().getMonth(), selectedDate: '' };
-    state.year += delta;
-    state.selectedDate = '';
-    _mockCalendarState[key] = state;
-    rerenderMockTab();
-}
-
-function setMockCalendarMonth(sid, subjectIndex, month) {
-    if (!guardUnsavedScore()) return;
-    var key = mockStateKey(sid, subjectIndex);
-    var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: month, selectedDate: '' };
-    state.month = month;
-    state.selectedDate = '';
-    _mockCalendarState[key] = state;
-    rerenderMockTab();
-}
-
-function selectMockDay(sid, subjectIndex, dateStr) {
-    if (!guardUnsavedScore()) return;
-    var parts = dateStr.split('-');
-    _mockCalendarState[mockStateKey(sid, subjectIndex)] = {
-        year: parseInt(parts[0], 10),
-        month: parseInt(parts[1], 10) - 1,
-        selectedDate: dateStr
-    };
-    rerenderMockTab();
-}
-
 // Телефон: работа стоит над календарём, а день выбирают под ней. После выбора дня
-// подводим экран к работе — в «Пробниках» и в календаре «Портфолио»
-// (partials/cycle_calendar_lib.html). Оба календаря перерисовываются целиком,
-// поэтому какой из них нажат, запоминаем до перерисовки — в фазе перехвата.
+// подводим экран к работе — в календаре «Портфолио» (partials/cycle_calendar_lib.html).
+// Календарей несколько, и каждый перерисовывается целиком, поэтому какой из них
+// нажат, запоминаем до перерисовки — в фазе перехвата.
 document.getElementById('main-panel').addEventListener('click', function(ev) {
-    var day = ev.target.closest('.mock-day.has-works, .cal-day.has-works');
+    var day = ev.target.closest('.cal-day.has-works');
     if (!day || !window.matchMedia('(max-width: 768px)').matches) return;
-    var sel = '.mock-calendar-layout, .cal-layout';
+    var sel = '.cal-layout';
     var idx = Array.prototype.indexOf.call(this.querySelectorAll(sel), day.closest(sel));
     var panel = this;
     setTimeout(function() {
         var layout = panel.querySelectorAll(sel)[idx];
-        var card = layout && layout.querySelector('.mock-day-card, .cal-detail');
+        var card = layout && layout.querySelector('.cal-detail');
         var top = card ? card.getBoundingClientRect().top : 0;
         if (top < 0) window.scrollBy(0, top - 12);
     }, 0);
 }, true);
-
-function buildMockCalendarSide(sid, subjectIndex, grouped, state) {
-    var html = '<div class="mock-calendar-side">';
-    html += '<div class="mock-year-row">'
-        + '<button type="button" class="mock-year-btn" aria-label="Предыдущий год" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',-1)">‹</button>'
-        + '<div class="mock-year-label">' + state.year + '</div>'
-        + '<button type="button" class="mock-year-btn" aria-label="Следующий год" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',1)">›</button>'
-        + '</div>';
-
-    html += '<div class="mock-month-list">';
-    MONTHS_LIST.forEach(function(monthName, idx) {
-        html += '<button type="button" class="mock-month-btn' + (idx === state.month ? ' active' : '') + '" onclick="setMockCalendarMonth(' + sid + ',' + subjectIndex + ',' + idx + ')">' + esc(cap(monthName).slice(0, 3)) + '</button>';
-    });
-    html += '</div>';
-
-    html += '<div class="mock-calendar-grid">';
-    ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(day) {
-        html += '<div class="mock-weekday">' + day + '</div>';
-    });
-    var first = new Date(state.year, state.month, 1);
-    var offset = (first.getDay() + 6) % 7;
-    var daysInMonth = new Date(state.year, state.month + 1, 0).getDate();
-    for (var i = 0; i < offset; i++) html += '<div class="mock-day is-empty"></div>';
-    for (var d = 1; d <= daysInMonth; d++) {
-        var dateStr = state.year + '-' + String(state.month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-        var hasWorks = !!grouped[dateStr];
-        var cls = 'mock-day' + (hasWorks ? ' has-works' : '') + (state.selectedDate === dateStr ? ' is-selected' : '');
-        var click = hasWorks ? ' onclick="selectMockDay(' + sid + ',' + subjectIndex + ',\'' + dateStr + '\')"' : '';
-        html += '<button type="button" class="' + cls + '"' + click + '>' + d + '</button>';
-    }
-    html += '</div></div>';
-    return html;
-}
-
-function formatMockDate(dateStr) {
-    if (!dateStr) return '';
-    var parts = dateStr.split('-');
-    return parts[2] + '.' + parts[1] + '.' + parts[0];
-}
-
-function scoreBadgeClass(score) {
-    if (score == null) return 'score-none';
-    var s = parseFloat(score);
-    if (s <= 30) return 'score-red';
-    if (s <= 60) return 'score-orange';
-    if (s <= 74) return 'score-lime';
-    return 'score-green';
-}
-
-function buildMockDayPanel(sid, subject, grouped, state) {
-    var selected = state.selectedDate && grouped[state.selectedDate] ? state.selectedDate : findLatestMockDate(grouped, state.year, state.month);
-    var works = selected ? grouped[selected] || [] : [];
-    var html = '<div class="mock-day-card">';
-    if (!works.length) {
-        return html + '<div class="mock-calendar-empty">В этом месяце пока нет загруженных работ</div></div>';
-    }
-    html += '<div class="mock-day-head">'
-        + '<div class="mock-day-title">' + formatMockDate(selected) + '</div>'
-        + '<div class="mock-day-count">' + workCountLabel(works.length) + '</div>'
-        + '</div>';
-    // Primary = оцененная работа (если есть), иначе первая
-    var primary = works.find(function(w){ return w.score != null; }) || works[0];
-    var rest = works.filter(function(w){ return w !== primary; });
-    var gallery = 'mock-' + sid + '-' + esc(subject) + '-' + esc(selected);
-
-    function photoWrap(w, hero) {
-        if (!w.s3_url) return '';
-        var bc = scoreBadgeClass(w.score);
-        var bt = w.score != null ? Math.round(w.score) + '/100' : '—';
-        var imgStyle = hero
-            ? 'class="mock-photo-hero"'
-            : 'class="mock-photo-thumb"';
-        // Большой снимок дня — на всю ширину, ему нужно само фото.
-        var img = zoomPhoto(hero ? {s3_url: w.s3_url, filename: w.filename} : w, imgStyle);
-        var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
-        // Справа сверху стоит бейдж балла, поэтому крестик — в левом углу.
-        var delBtn = CAN_SCORE
-            ? '<button type="button" class="photo-del photo-del--left" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
-            : '';
-        return '<div class="photo-wrap photo-wrap--block">' + img + badge + delBtn + '</div>';
-    }
-
-    if (rest.length === 0) {
-        // Одна работа
-        html += '<div data-gallery="' + gallery + '" class="mock-single">';
-        html += photoWrap(primary, true);
-        html += '</div>';
-    } else {
-        // Несколько работ — hero + thumbnails (все в одном data-gallery)
-        html += '<div data-gallery="' + gallery + '">';
-        html += '<div class="mock-hero-layout">';
-        html += '<div class="mock-hero-photo">' + photoWrap(primary, true) + '</div>';
-        html += '<div class="mock-thumbnails">';
-        rest.forEach(function(w) { html += photoWrap(w, false); });
-        html += '</div>';
-        html += '</div>'; // .mock-hero-layout
-        html += '</div>'; // data-gallery wrapper
-    }
-
-    // Пробник с заданным числом этапных: финал приняли и при нехватке
-    // (владелец 02.10.2026), ГП видит её перед оценкой.
-    var shortfall = (works.find(function(w){ return w.stage_shortfall; }) || {}).stage_shortfall;
-    if (shortfall) {
-        html += '<p class="alert alert-error">Этапных фото ' + shortfall.existing + ' из '
-            + shortfall.required + ' – ученик сдал меньше, чем нужно.</p>';
-    }
-
-    // Комментарий куратора — только по primary
-    if (primary.comment_html) {
-        html += '<div class="mock-comment">' + primary.comment_html + '</div>';
-    }
-    if (CAN_SCORE) {
-        html += buildScoreFormOrEditButton(sid, primary.id, 'mock-exams', primary.score, primary.comment);
-    }
-    html += buildFeedbackButton(primary);
-
-    html += '</div>';
-    return html;
-}
-
-function buildFeedbackButton(w) {
-    if (!w || !w.cycle_id) return '';
-    var role = (typeof USER_ROLE_RANK !== 'undefined') ? USER_ROLE_RANK : 0;
-    if (role < 2) return '';
-    var prefix = role >= 5 ? '/cabinet/superadmin/feedback/'
-              : role >= 4 ? '/cabinet/admin/feedback/'
-              : '/cabinet/curator/feedback/';
-    var hasFb = !!w.has_feedback;
-    var lbl = hasFb ? 'Открыть обратную связь' : 'Дать обратную связь';
-    return '<a href="' + prefix + w.cycle_id + '#work-' + w.id + '" '
-         + 'class="work-fb-link' + (hasFb ? ' work-fb-link--done' : '') + '">'
-         + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-         + '<span>' + lbl + '</span>'
-         + '</a>';
-}
-
-// ── Scoring form builder ─────────────────────────────────────────────────────
-
-function scoreFormValue(root, selector) {
-    var el = root ? root.querySelector(selector) : null;
-    return el ? String(el.value || '').trim() : '';
-}
-
-function getDirtyScoreForm() {
-    var forms = document.querySelectorAll('.score-form');
-    for (var i = 0; i < forms.length; i++) {
-        var root = forms[i];
-        if (root.dataset.saving === '1') continue;
-        var score = scoreFormValue(root, 'input[name="score"]');
-        var comment = scoreFormValue(root, 'textarea[name="comment"]');
-        var initialScore = root.dataset.initialScore || '';
-        var initialComment = root.dataset.initialComment || '';
-        if (score !== initialScore || comment !== initialComment) return root;
-    }
-    return null;
-}
-
-function guardUnsavedScore() {
-    var dirty = getDirtyScoreForm();
-    if (!dirty) return true;
-    alert('Сначала сохраните балл, потом переходите к другой работе.');
-    var input = dirty.querySelector('input[name="score"]');
-    if (input) input.focus();
-    return false;
-}
-
-window.addEventListener('beforeunload', function(ev) {
-    if (!getDirtyScoreForm()) return;
-    ev.preventDefault();
-    ev.returnValue = '';
-});
-
-function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
-    var formId = 'score-form-' + tab + '-' + workId;
-    var isScoringTab = (tab === 'mock-exams');
-    var saveLabel = isScoringTab ? 'Сохранить балл' : 'Сохранить';
-    var formLabel = isScoringTab ? 'Балл и комментарий' : (currentScore != null ? 'Изменить балл' : 'Поставить балл');
-    var initialScore = currentScore != null ? String(Math.round(currentScore)) : '';
-    var initialComment = currentComment ? esc(currentComment) : '';
-    return '<div class="score-form" data-initial-score="' + esc(initialScore) + '" data-initial-comment="' + initialComment + '">'
-        + '<div class="score-form-label">' + formLabel + '</div>'
-        + '<form id="' + formId + '" method="post" action="/cabinet/students/' + sid + '/works/' + workId + '/score" onsubmit="return submitWithFreshToken(this)">'
-        + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
-        + '<input type="hidden" name="tab" value="' + esc(tab) + '">'
-        + '<div class="score-form-row">'
-        + '<input type="number" name="score" class="score-input" min="0" max="100" step="1"'
-        + (currentScore != null ? ' value="' + Math.round(currentScore) + '"' : '')
-        + ' placeholder="0–100" aria-label="Балл из 100" required>'
-        + '<span class="score-of">/ 100</span>'
-        + '</div>'
-        + '<textarea data-rich-text name="comment" class="comment-input" placeholder="Комментарий (необязательно)" maxlength="500">'
-        + (currentComment ? esc(currentComment) : '')
-        + '</textarea>'
-        + '<div class="score-form-actions">'
-        + '<button type="submit" class="btn-blue btn-save"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
-        + (tab === 'mock-exams'
-            ? (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Вернуть на доработку</button>' : '')
-            : '')
-        + '</div>'
-        + '</form>'
-        + '</div>';
-}
-
-// Балл и разблокировка пересдачи уходят обычной формой с перезагрузкой
-// страницы. Ключ в скрытом поле печатается при рендере и старится вместе с
-// вкладкой, которую куратор держит открытой весь день, — перед отправкой
-// подменяем его свежим (`static/js/csrf.js`). `form.submit()` событие submit
-// не вызывает, поэтому повторного входа сюда нет; кнопка гаснет от двойного нажатия.
-function submitWithFreshToken(form) {
-    var btn = form.querySelector('[type="submit"]');
-    var scoreForm = form.closest('.score-form');
-    if (scoreForm) scoreForm.dataset.saving = '1';
-    if (btn) {
-        btn.disabled = true;
-        if (scoreForm) btn.textContent = 'Сохраняем…';
-    }
-    var fresh = window.csrfFresh ? window.csrfFresh() : Promise.resolve('');
-    fresh.catch(function() { return ''; }).then(function(token) {
-        if (token) form.querySelector('[name="csrf_token"]').value = token;
-        form.submit();
-    });
-    return false;
-}
-
-function buildScoreFormOrEditButton(sid, workId, tab, score, comment) {
-    // Для пробников: если балл уже выставлен — показываем только «Изменить балл»,
-    // форма раскрывается по клику. Для остальных вкладок поведение прежнее.
-    if (tab === 'mock-exams' && score != null) {
-        return '<div id="form-wrap-' + workId + '" class="edit-score-wrap">'
-            + '<button type="button" class="btn-edit-score"'
-            +   ' data-sid="' + sid + '" data-wid="' + workId + '" data-tab="' + esc(tab) + '"'
-            +   ' data-score="' + Math.round(score) + '" data-comment="' + esc(comment || '') + '"'
-            +   ' onclick="showMockScoreForm(this)">'
-            +   '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true">'
-            +   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
-            +   '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
-            +   ' Изменить балл</button>'
-            + '</div>';
-    }
-    return buildScoreForm(sid, workId, tab, score, comment);
-}
-
-function showMockScoreForm(btn) {
-    var wrap = btn.closest('.edit-score-wrap');
-    if (!wrap) return;
-    var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
-    var parent = wrap.parentNode;
-    wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, btn.dataset.tab || 'mock-exams', score, btn.dataset.comment || '');
-    window.RichTextField.enhanceAll(parent);
-}
 
 // ── Toggle edit form (scored works) ──────────────────────────────────────────
 
@@ -1530,27 +1098,6 @@ function readJsonOrThrow(r) {
         var err = new Error('bad status');
         err.serverMessage = window.csrfMessage(body, '');
         throw err;
-    });
-}
-
-function submitMockRevision(sid, workId, formId) {
-    if (!confirm('Вернуть пробник на доработку? Ученик загрузит фото заново, балл не ставится.')) return;
-    var fd = new FormData();
-    var form = document.getElementById(formId);
-    if (form) form.closest('.score-form').dataset.saving = '1';
-
-    window.csrfFetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
-        method: 'POST',
-        body: fd,
-    }).then(readJsonOrThrow).then(function() {
-        showToast('Пробник отправлен на доработку');
-        if (_tabCache[sid]) {
-            delete _tabCache[sid]['mock-exams'];
-        }
-        switchTab('mock-exams');
-    }).catch(function(err) {
-        if (form) form.closest('.score-form').dataset.saving = '0';
-        alert(err.serverMessage || 'Не удалось вернуть на доработку');
     });
 }
 
@@ -2105,18 +1652,11 @@ function deleteWork(studentId, workId, el) {
             // Clear tab caches for this student
             if (_tabCache[studentId]) {
                 delete _tabCache[studentId].portfolio;
-                delete _tabCache[studentId]['mock-exams'];
                 delete _tabCache[studentId].profile;
             }
-            // В пробниках от удалённого фото зависят главная работа дня и форма
-            // оценки — убрать одну картинку мало, вкладку перечитываем. В
-            // портфолио убираем только фото, чтобы не схлопнуть открытые месяцы.
-            if (_currentTab === 'mock-exams' && el.closest('.mock-day-card')) {
-                switchTab('mock-exams');
-            } else {
-                var wrap = el.closest('.photo-wrap');
-                if (wrap) wrap.remove();
-            }
+            // Убираем только фото, чтобы не схлопнуть открытые месяцы портфолио.
+            var wrap = el.closest('.photo-wrap');
+            if (wrap) wrap.remove();
             showToast('Работа удалена');
         } else {
             alert(window.csrfMessage(data, 'Не удалось удалить'));
@@ -2344,7 +1884,6 @@ function submitUpload(e) {
             closeUploadModal();
             if (_tabCache[_currentStudentId]) {
                 delete _tabCache[_currentStudentId].portfolio;
-                delete _tabCache[_currentStudentId]['mock-exams'];
                 delete _tabCache[_currentStudentId].profile;
             }
             if (_viewMode === 'tab') { switchTab(_currentTab); } else { selectStudent(_currentStudentId, 'profile'); }
@@ -2385,7 +1924,6 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
             // Clear caches and reload tab
             if (_tabCache[studentId]) {
                 delete _tabCache[studentId].portfolio;
-                delete _tabCache[studentId]['mock-exams'];
                 delete _tabCache[studentId].profile;
             }
             switchTab(_currentTab);

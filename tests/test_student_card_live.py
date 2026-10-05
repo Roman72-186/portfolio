@@ -154,8 +154,9 @@ def test_profile_drops_vk_retake_and_cycle_fields(client, db, user_factory, sess
 def test_profile_study_now_counts_all_time_and_opens_tasks(
     client, db, user_factory, session_factory
 ):
-    """Счётчик — за всё время, а не за неделю; «Проверить» ведёт на вкладку
-    «Задания», раз непроверенное есть и там (05.10.2026)."""
+    """Счётчик — за всё время, а не за неделю, и только по сдачам вкладки
+    «Задания»: пробник первой версии в счёт не идёт с 06.10.2026 — его вкладки
+    в карточке нет, и «Проверить» вело бы в пустоту."""
     chief = _chief(user_factory)
     student = user_factory(vk_id=950_601, name="Ученик")
     old = datetime.now(timezone.utc) - timedelta(days=20)
@@ -165,8 +166,7 @@ def test_profile_study_now_counts_all_time_and_opens_tasks(
 
     study_now = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["study_now"]
 
-    assert study_now["unreviewed"] == 2
-    assert study_now["review_tab"] == "tasks"
+    assert study_now["unreviewed"] == 1
     assert "point_a" in study_now
 
 
@@ -195,6 +195,7 @@ def test_students_page_has_tasks_tab_and_no_retired_mechanics(
 
     assert 'id="tab-tasks"' in page
     assert 'id="tab-cycles"' not in page
+    assert 'id="tab-mock-exams"' not in page
     assert '<option value="retake">' not in page
     assert "has_unchecked_mocks" not in page
     assert "mock_period_submitted" not in page
@@ -202,14 +203,28 @@ def test_students_page_has_tasks_tab_and_no_retired_mechanics(
     assert "data-vk-id" not in page
 
 
-def test_old_cycles_tab_link_opens_mock_exams(client, db, user_factory, session_factory):
+@pytest.mark.parametrize("old_tab", ["cycles", "mock-exams"])
+def test_old_mock_tab_links_open_portfolio(client, db, user_factory, session_factory, old_tab):
+    """Вкладки «Пробники» нет с 06.10.2026, а на неё ведут «назад» с диалога
+    пробника, возврат после балла и старые уведомления — открывается
+    «Портфолио» с разделом «Пробные экзамены», а не пустой экран."""
     chief = _chief(user_factory)
     student = user_factory(vk_id=950_901, name="Ученик")
     _login(client, session_factory, chief)
 
-    page = client.get(f"/cabinet/students?student={student.id}&tab=cycles").text
+    page = client.get(f"/cabinet/students?student={student.id}&tab={old_tab}").text
 
-    assert 'const INITIAL_TAB    = "mock-exams";' in page
+    assert 'const INITIAL_TAB    = "portfolio";' in page
+
+
+def test_card_script_has_no_mock_exams_tab():
+    """Скрипт карточки сам разбирает `?tab=` (`_navDefaultTab`) — старые адреса
+    вкладки «Пробники» он тоже уводит в «Портфолио», а плитки нет."""
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+
+    assert "openTab(\\'mock-exams\\')" not in source
+    assert "buildMockExams" not in source
+    assert "if (t === 'cycles' || t === 'mock-exams') t = 'portfolio';" in source
 
 
 # ── Отработки сняты ──────────────────────────────────────────────────────────

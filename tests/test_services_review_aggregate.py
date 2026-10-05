@@ -376,7 +376,7 @@ def test_counts_only_students_with_unreviewed(db, user_factory):
     busy = user_factory(vk_id=840_102, name="Боря Занятой")
     busy.curator_id = curator.id
     db.commit()
-    _work(db, busy.id, score=None)  # непроверенная работа только у busy
+    _homework_submission(db, busy.id)  # непроверенная сдача только у busy
 
     counts = unreviewed_counts_by_student(db, curator_id=curator.id, role_rank=2)
 
@@ -390,12 +390,24 @@ def test_counts_respect_curator_scope(db, user_factory):
     own_student.curator_id = own_curator.id
     foreign_student = user_factory(vk_id=840_105, name="Чужой ученик")
     db.commit()
-    _work(db, own_student.id, score=None)
-    _work(db, foreign_student.id, score=None)
+    _homework_submission(db, own_student.id)
+    _homework_submission(db, foreign_student.id)
 
     counts = unreviewed_counts_by_student(db, curator_id=own_curator.id, role_rank=2)
 
     assert set(counts) == {own_student.id}
+
+
+def test_counts_skip_first_version_mock(db, user_factory):
+    """Пробник первой версии в счётчик не идёт (06.10.2026): вкладки
+    «Пробники» в карточке нет, и число вело бы к работам, которые негде
+    открыть. Адаптеры пробника живы — их зовёт полный `student_review_items`."""
+    student = user_factory(vk_id=840_106, name="Ученик с пробником")
+    _work(db, student.id, score=None)
+    _cycle(db, student.id)
+
+    assert unreviewed_counts_by_student(db, curator_id=None, role_rank=5) == {}
+    assert len(_work_items(db)) == 1
 
 
 def test_admin_sees_all_active_students(db, user_factory):

@@ -202,8 +202,9 @@ def test_tiles_load_thumb_and_lightbox_opens_full_photo():
     source = (TEMPLATE.parent.parent / "static" / "js" / "cabinet_students.js").read_text(encoding="utf-8")
     assert "esc(w.thumb_url || w.s3_url)" in source
     assert 'data-full="\' + esc(w.s3_url)' in source
-    # Все три сетки — «До», «После», пробники дня — идут через одну функцию.
-    assert source.count("zoomPhoto(") == 4
+    # Обе сетки — «До» и «После» — идут через одну функцию (пробники дня ушли
+    # вместе с вкладкой «Пробники» 06.10.2026).
+    assert source.count("zoomPhoto(") == 3
     assert '<img src="\' + esc(w.s3_url)' not in source
 
 

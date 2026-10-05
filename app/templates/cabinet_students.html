@@ -204,7 +204,6 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         <div class="tab-bar" id="tab-bar">
             <button class="tab-btn" id="tab-portfolio"  onclick="switchTab('portfolio')">Портфолио</button>
             <button class="tab-btn" id="tab-tasks"      onclick="switchTab('tasks')">Задания</button>
-            <button class="tab-btn" id="tab-mock-exams" onclick="switchTab('mock-exams')">Пробники</button>
             <button class="tab-btn" id="tab-statistics" onclick="switchTab('statistics')">Статистика</button>
             <button class="tab-btn" id="tab-activity"   onclick="switchTab('activity')">Активность</button>
         </div>
@@ -323,5 +322,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=10"></script>
+<script src="/static/js/cabinet_students.js?v=11"></script>
 {% endblock %}

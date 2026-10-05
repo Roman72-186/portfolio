@@ -73,29 +73,20 @@ def test_delete_cross_is_visible_without_hover():
     )
 
 
-def test_mock_photo_delete_uses_shared_wrapper_and_rerenders():
-    source = _script()
-    assert "'<div style=\"position:relative;display:block\">' + img + badge + delBtn" not in source
-    assert "'<div class=\"photo-wrap photo-wrap--block\">' + img + badge + delBtn" in source
-    assert "_currentTab === 'mock-exams' && el.closest('.mock-day-card')" in source, (
-        "удалённое фото пробника остаётся на экране вместе с формой оценки"
-    )
-
-
 def test_student_screen_mutations_send_fresh_token():
     source = _page()
     assert "append('csrf_token', CSRF_TOKEN)" not in source, "ключ из разметки вшит в поле запроса"
     for url_part in (
         "'/profile', { method: 'POST'",
-        "'/revision', {",
         "'/works/bulk', {",
         "'/portfolio/month', {",
         "'/move', {",
     ):
         line = next((ln for ln in source.splitlines() if url_part in ln), "")
         assert "window.csrfFetch(" in line, f"мутация {url_part} уходит без свежего ключа"
-    # Обычные формы (балл, разблокировка пересдачи) подменяют ключ перед отправкой.
-    assert source.count('onsubmit="return submitWithFreshToken(this)"') == 2
+    # Обычных форм с перезагрузкой страницы нет с 06.10.2026: балл и разблокировка
+    # пересдачи ушли вместе с вкладкой «Пробники», всё остальное — через csrfFetch.
+    assert 'method="post"' not in _script()
     assert "this.form.submit()" not in source, "отправка в обход свежего ключа и проверки поля"
 
 
@@ -122,10 +113,8 @@ def test_back_gesture_walks_screen_history():
     source = _script()
     assert "window.addEventListener('popstate'" in source
     assert "history[push ? 'pushState' : 'replaceState']" in source
-    # Выбор ученика и открытие вкладки пишут историю, «назад» проверяет несохранённый балл.
+    # Выбор ученика и открытие вкладки пишут историю.
     assert "navCommit(navPush, 'list')" in source and "navCommit(navPush, 'profile')" in source
-    popstate = source[source.index("window.addEventListener('popstate'"):]
-    assert "guardUnsavedScore()" in popstate[:1200]
     # Замена адреса с null стёрла бы запись навигации экрана.
     assert "history.replaceState(null" not in source
 
@@ -181,11 +170,11 @@ def test_phone_calendar_keeps_work_above_calendar():
     assert re.search(r"\.mock-calendar-side, #main-panel \.cal-side \{[^}]*order: 2", mobile)
     assert re.search(r"\.mock-month-list, #main-panel \.cal-month-list \{[^}]*repeat\(6", mobile)
     source = _script()
-    # День выбирают под работой — после выбора экран подводится к ней, в обоих календарях.
+    # День выбирают под работой — после выбора экран подводится к ней (календарь «Портфолио»).
     handler = source[source.index("document.getElementById('main-panel').addEventListener('click'"):]
     handler = handler[:handler.index("}, true);")]
-    assert "'.mock-day.has-works, .cal-day.has-works'" in handler
-    assert "'.mock-day-card, .cal-detail'" in handler
+    assert "'.cal-day.has-works'" in handler
+    assert "'.cal-detail'" in handler
     assert "matchMedia('(max-width: 768px)')" in handler
 
 
@@ -788,21 +777,6 @@ def test_attempt_score_in_feedback_dialog_uses_the_score_fills():
     assert "background: var(--dim-fill)" in _css_rule(feedback, ".ios-feedback .dlg-attempt-score.no-score")
 
 
-def test_feedback_link_reads_on_its_plate():
-    # 11.7: «Открыть обратную связь» — `--success` на своей 12 % подложке, 4.39; «Дать обратную
-    # связь» — голый `--blue` на `--blue-soft`, 3.35. Оба собирались встроенным стилем в JS,
-    # и сторожа файла стилей их не видели. Теперь — классы с текстом «токен с 18 % --text»
-    # и `--blue-text`.
-    script = _script()
-    build = script[script.index("function buildFeedbackButton(w) {"):]
-    build = build[:build.index("\n}\n")]
-    assert "style=" not in build, "стиль кнопки — в cabinet_students.css"
-    assert "work-fb-link" in build and "work-fb-link--done" in build
-    styles = _styles()
-    assert "color: var(--blue-text)" in _css_rule(styles, ".work-fb-link")
-    assert "color: color-mix(in srgb, var(--success) 82%, var(--text))" in _css_rule(styles, ".work-fb-link--done")
-
-
 def _rule_with(block: str, selector: str) -> str:
     """Тела всех правил блока, в списке селекторов которых есть `selector`, — подряд."""
     block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)  # комментарий над правилом склеился бы с селектором
@@ -986,13 +960,6 @@ def test_ios_text_tokens_are_readable(opener, names):
 
 
 # ── Итоговый аудит 30.09.2026 ────────────────────────────────────────────────
-
-
-def test_score_input_has_accessible_name():
-    # Форма оценки пробника: «Балл и комментарий» — div, не <label>; дерево доступности давало `spinbutton`
-    # без имени (WCAG 1.3.1, 4.1.2). Подсказка «0–100» у числового поля именем не считается.
-    field = re.search(r"<input type=\"number\" name=\"score\"[^>]*>", _script().replace("' + ", "").replace("'", ""))
-    assert field and 'aria-label="Балл из 100"' in field.group(0), field and field.group(0)
 
 
 def test_filter_selects_show_keyboard_focus_ring():

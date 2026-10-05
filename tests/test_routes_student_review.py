@@ -15,6 +15,7 @@ from app.models.exam_cycle import ExamCycle
 from app.models.task_block import BLOCK_QUESTION, QUESTION_TEXT, TaskBlock, TaskBlockAnswer
 from app.models.tracker import TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services.review_aggregate import unreviewed_counts_by_student
 from app.services.task_blocks import save_response
 
 
@@ -67,7 +68,8 @@ def _badge_tag(row):
 
 def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_factory, session_factory):
     """Очередь «кого проверять» — счётчик в списке «Учеников», и куратору
-    тоже: раньше значок считал только пробники и только у ГП."""
+    тоже. Пробник первой версии в счёт не идёт с 06.10.2026 — его вкладки в
+    карточке нет."""
     curator = user_factory(vk_id=860_101, name="Куратор", role_name="куратор")
     _, student = auth_client
     student.curator_id = curator.id
@@ -82,7 +84,7 @@ def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_facto
     html = client.get("/cabinet/students").text
 
     row = _row(html, student.id)
-    assert 'data-unreviewed="2"' in row
+    assert 'data-unreviewed="1"' in row
     assert "hidden" not in _badge_tag(row)
     assert 'id="filter-unreviewed"' in html
 
@@ -171,9 +173,9 @@ def test_moderator_tasks_tab_has_no_buttons(db, user_factory, session_factory, c
     assert data["can_send_revision"] is False
 
 
-def test_study_now_points_to_the_tab_with_pending(db, user_factory, session_factory, client):
-    """«Проверить» открывает «Задания», а если непроверенное только по
-    пробникам — «Пробники»."""
+def test_mock_is_not_counted_in_card_or_list(db, user_factory, session_factory, client):
+    """Пробник первой версии не входит ни в «Учёбу сейчас», ни в счётчик списка
+    (06.10.2026): вкладки «Пробники» в карточке нет, открыть его оттуда негде."""
     chief = user_factory(vk_id=860_122, name="Главный", role_name="админ")
     student = user_factory(vk_id=860_123, name="Ученик")
     _work(db, student.id, score=None)
@@ -183,12 +185,14 @@ def test_study_now_points_to_the_tab_with_pending(db, user_factory, session_fact
         return client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["study_now"]
 
     first = study_now()
-    assert (first["unreviewed"], first["review_tab"]) == (1, "mock-exams")
+    assert first["unreviewed"] == 0
+    assert "review_tab" not in first
+    assert unreviewed_counts_by_student(db, curator_id=None, role_rank=5).get(student.id) is None
     task, block = _task_with_question(db)
     db.commit()
     _answer(db, task, block, student, "Ответ")
-    second = study_now()
-    assert (second["unreviewed"], second["review_tab"]) == (2, "tasks")
+    assert study_now()["unreviewed"] == 1
+    assert unreviewed_counts_by_student(db, curator_id=None, role_rank=5)[student.id] == 1
 
 
 def test_chief_returns_mock_and_nobody_reviews_until_resubmission(

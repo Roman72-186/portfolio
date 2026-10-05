@@ -49,7 +49,7 @@ from app.services.notify import notify
 from app.services.activity_stats import student_activity
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
-    DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK, DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
+    DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
     student_review_items, unreviewed_counts_by_student,
 )
 from app.models.role import Role
@@ -536,11 +536,14 @@ def _render_students_panel(
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     if archived_b:
         sidebar_title = "Архив учеников"
-    valid_tabs = ("portfolio", "tasks", "mock-exams", "statistics", "activity")
-    # «Цикл пробника» слит с «Пробниками» 29.09.2026: старые закладки и
-    # уведомления с `tab=cycles` открывают то же самое, а не «Портфолио».
-    if tab == "cycles":
-        tab = "mock-exams"
+    valid_tabs = ("portfolio", "tasks", "statistics", "activity")
+    # Вкладки «Пробники» нет с 06.10.2026 (владелец), «Цикла пробника» — с
+    # 29.09.2026. На них по-прежнему ведут «назад» с диалога пробника и экрана
+    # «Пробники», возврат после балла и старые уведомления — все открывают
+    # «Портфолио», где лежит раздел «Пробные экзамены». Ссылки не правим по
+    # одной: адрес разбирается здесь и в `_navDefaultTab` скрипта карточки.
+    if tab in ("cycles", "mock-exams"):
+        tab = "portfolio"
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
@@ -632,15 +635,11 @@ def get_student_profile(
     can_see_contacts = user["role_rank"] >= 4
 
     # «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
-    # Счётчик — по всем видам сдач и за всё время. Проверяют с 05.10.2026 здесь
-    # же, в карточке (правило 12): «Проверить» открывает вкладку «Задания», а
-    # если непроверенное только по пробникам — «Пробники».
-    pending = [i for i in _review_items_all_time(db, user, student_id) if not i.is_reviewed]
+    # Счётчик — по сдачам вкладки «Задания» за всё время, туда и ведёт
+    # «Проверить» (правило 12). Пробник первой версии не считается с 06.10.2026.
     study_now = {
-        "unreviewed": len(pending),
-        "review_tab": (
-            "tasks" if any(i.domain in _TASK_DOMAINS for i in pending) or not pending
-            else "mock-exams"
+        "unreviewed": sum(
+            1 for i in _task_items_all_time(db, user, student_id) if not i.is_reviewed
         ),
     }
     # Шапка как у ученика в «Трекере» (владелец 05.10.2026): средний балл
@@ -708,7 +707,6 @@ def get_student_profile(
             "avg_score": avg_score,
             "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "portfolio_count": portfolio_count,
-            "mock_exam_count": len(mock_works),
             "legacy_photo_count": legacy_photo_count,
             "study_now": study_now,
             "hero": hero,
@@ -748,22 +746,20 @@ def get_activity(
 
 # ── AJAX: задания из ленты ────────────────────────────────────────────────────
 
-# Что ученик делает в ленте `/cabinet/learning`: ответы на блоки, работы, сданные
-# внутри задания, и домашка старого образца. Пробник (`work`, `exam_cycle`) сюда
-# не входит — у него своя вкладка «Пробники», второй его копии здесь не нужно.
-_TASK_DOMAINS = (DOMAIN_TASK_BLOCK, DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK)
-
-
-def _review_items_all_time(db: DBSession, user: dict, student_id: int) -> list:
-    """Сдачи ученика по всем доменам проверки, без недельного окна.
+def _task_items_all_time(db: DBSession, user: dict, student_id: int) -> list:
+    """Что ученик сдал в ленте `/cabinet/learning` за всё время: ответы на
+    блоки, работы в заданиях и домашка старого образца.
 
     Общий агрегатор проверки (`review_aggregate.student_review_items`, правило
-    12) с областью видимости куратора — своей выборки карточка не держит."""
+    12) с областью видимости куратора — своей выборки карточка не держит.
+    Пробника первой версии здесь нет с 06.10.2026 (`card_only`): вкладку
+    «Пробники» владелец убрал из карточки."""
     return student_review_items(
         db,
         student_id=student_id,
         curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
         role_rank=user["role_rank"],
+        card_only=True,
     )
 
 
@@ -810,10 +806,7 @@ def get_student_tasks(
     # возврат, которого его ранг 4 формально хватает, ему не рисуется.
     can_review = student.archived_at is None and can(user, "students_review")
     enrolled_at = student.enrolled_at or student.created_at
-    items = [
-        i for i in _review_items_all_time(db, user, student_id)
-        if i.domain in _TASK_DOMAINS
-    ]
+    items = _task_items_all_time(db, user, student_id)
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -918,6 +911,8 @@ def get_mock_exams(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    """Пробники ученика JSON-ом. Вкладки «Пробники» в карточке нет с
+    06.10.2026 — адрес читает экран «Пробники» (`cabinet_admin_mock_check.html`)."""
     student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
