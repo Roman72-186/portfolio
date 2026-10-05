@@ -20,6 +20,7 @@
 {% set prg_edit = can(user, "program") %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
+    {% include "partials/program_path.html" %}
 
     <div class="prg-head">
         <div>
@@ -34,13 +35,6 @@
         {% endif %}
     </div>
 
-    {% if stage_filter %}
-    {# Пришли кнопкой «Циклы этапа» со вкладки «Этапы» — список сужен до этапа. #}
-    <p class="prg-hint">
-        Циклы этапа «{{ stage_filter.label }}».
-        <a href="/cabinet/staff/program/cycles">Показать все циклы</a>
-    </p>
-    {% endif %}
 
     {# Форма свёрнута, пока её не открыли кнопкой «Новый цикл» или «Название и
        даты» (аудит 29.09.2026): чаще всего сюда заходят открыть уже заведённый
@@ -153,6 +147,8 @@
         {% endfor %}
         {% elif stage_filter %}
         <p class="prg-hint">В этом этапе пока нет циклов.</p>
+        {% elif period_filter %}
+        <p class="prg-hint">В этом периоде пока нет циклов.</p>
         {% else %}
         <p class="prg-hint">Пока ни одного цикла. Пока цикла нет, ученик видит задания текущей календарной недели.</p>
         {% endif %}

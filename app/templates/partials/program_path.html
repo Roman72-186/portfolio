@@ -1,0 +1,17 @@
+{#
+Путь вглубь программы: Периоды › период › этап › цикл (владелец 06.10.2026:
+«проваливаемся в периоды — показываем только этапы этого периода, в этапы —
+только его циклы, в цикл — только его задания»). Данные — `_program_path` в
+`app/api/cabinet_program.py`, звено ведёт на свой уровень, уже суженный.
+Последнее звено — текущая страница, без ссылки. На общих списках (вкладка без
+периода и этапа) пути нет — там и проваливаться неоткуда.
+#}
+{% if prg_path and prg_path.crumbs|length > 1 %}
+<nav aria-label="Где вы в программе">
+    <p class="prg-hint" data-program-path>
+        {% for crumb in prg_path.crumbs %}
+        {% if loop.last %}<span aria-current="page">{{ crumb.label }}</span>{% else %}<a href="{{ crumb.href }}">{{ crumb.label }}</a> › {% endif %}
+        {% endfor %}
+    </p>
+</nav>
+{% endif %}

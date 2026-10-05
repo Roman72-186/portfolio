@@ -42,6 +42,7 @@
 {% set prg_edit = can(user, "program") %}
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
+    {% include "partials/program_path.html" %}
 
     <div class="prg-head">
         <div class="prg-head-copy">
@@ -52,10 +53,12 @@
                    не дана, не придумывать самостоятельно (10.09.2026). #}
             </p>
         </div>
+        {# На уровень выше в том же периоде и этапе, а не в общий список
+           (владелец 06.10.2026). #}
         {% if is_stage %}
-        <a class="btn-outline" href="/cabinet/staff/program/stages">К этапам</a>
+        <a class="btn-outline" href="/cabinet/staff/program/stages{{ '?period=%s' % prg_path.period_id if prg_path.period_id }}">К этапам</a>
         {% else %}
-        <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
+        <a class="btn-outline" href="/cabinet/staff/program/cycles{{ '?stage=%s' % stage_id if stage_id }}">К циклам</a>
         {% endif %}
     </div>
 
@@ -69,11 +72,9 @@
     {# С 29.09.2026 тот же экран показывает задания самого этапа («Портфолио»):
        с цикла туда ведёт название этапа, с этапа плашки ведут в его циклы. #}
     {% if cycle_tiles|length > 1 or (is_stage and cycle_tiles) %}
-    {% if is_stage %}
+    {# Ссылка «Этап «…» – задания этапа» снята 06.10.2026: из цикла — только в
+       соседние циклы того же этапа, сам этап — звено пути сверху. #}
     <p class="prg-hint">Циклы этапа</p>
-    {% else %}
-    <p class="prg-hint">Этап «<a href="/cabinet/staff/program/cycles/{{ stage_id }}">{{ stage_label }}</a>» – задания этапа</p>
-    {% endif %}
     <div class="prg-cycle-switch">
         {% for tile in cycle_tiles %}
         <a class="prg-cycle-pill{{ ' is-active' if tile.is_current }}"

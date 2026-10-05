@@ -156,7 +156,8 @@ def test_stage_button_opens_only_its_cycles(client, db, user_factory, session_fa
     filtered = client.get(f"{CYCLES_PAGE}?stage={stage.id}").text
     assert f'href="{CYCLES_PAGE}/{inside}"' in filtered
     assert f'href="{CYCLES_PAGE}/{outside}"' not in filtered
-    assert "Показать все циклы" in filtered
+    # Путь сверху вместо «Показать все циклы» (владелец 06.10.2026).
+    assert "data-program-path" in filtered
     # Новый цикл по умолчанию заводится в тот же этап.
     assert re.search(rf'<option value="{stage.id}" selected>', filtered)
 
@@ -170,7 +171,7 @@ def test_unknown_stage_filter_shows_all_cycles(client, db, user_factory, session
 
     assert f'href="{CYCLES_PAGE}/{first}"' in page
     assert f'href="{CYCLES_PAGE}/{second}"' in page
-    assert "Показать все циклы" not in page
+    assert "data-program-path" not in page
 
 
 def test_stage_cycle_count_is_declined(client, db, user_factory, session_factory):

@@ -811,6 +811,7 @@ def program_cycles(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     stage: int | None = None,
+    period: int | None = None,
 ):
     stage_topics = list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
     stage_titles = {stage_topic.id: cycle_label(db, stage_topic) for stage_topic in stage_topics}
@@ -820,6 +821,19 @@ def program_cycles(
     # человек увидит весь список, а не пустую страницу.
     stage_filter = (
         {"id": stage, "label": stage_titles[stage]} if stage in stage_titles else None
+    )
+    # `?period=<id>` — вкладка «Циклы» внутри периода (`_program_path`): циклы
+    # всех его этапов. Этап главнее периода — он уже сам внутри периода.
+    period_topic = (
+        get_topic(db, period, kinds=(TOPIC_KIND_PERIOD,))
+        if period is not None and stage_filter is None else None
+    )
+    period_stage_ids = (
+        {t.id for t in stage_topics if t.parent_id == period_topic.id}
+        if period_topic is not None else None
+    )
+    stage_topic = (
+        next(t for t in stage_topics if t.id == stage_filter["id"]) if stage_filter else None
     )
     cycles = [
         {
@@ -839,15 +853,26 @@ def program_cycles(
             "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
         }
         for topic in list_week_topics(db)
-        if stage_filter is None or topic.parent_id == stage_filter["id"]
+        if (stage_filter is None or topic.parent_id == stage_filter["id"])
+        and (period_stage_ids is None or topic.parent_id in period_stage_ids)
     ]
     stages = [
-        {"id": stage_topic.id, "label": stage_titles[stage_topic.id]}
-        for stage_topic in stage_topics
+        {"id": t.id, "label": stage_titles[t.id]}
+        for t in stage_topics
+        # Внутри периода в выборе этапа — только его этапы.
+        if period_stage_ids is None or t.id in period_stage_ids
     ]
+    in_context = stage_topic is not None or period_topic is not None
     return templates.TemplateResponse(request, "cabinet_program_cycles.html",
         {"request": request, "user": user, "cycles": cycles, "stages": stages,
-         "stage_filter": stage_filter},
+         "stage_filter": stage_filter,
+         "period_filter": (
+             {"id": period_topic.id, "label": cycle_label(db, period_topic)}
+             if period_topic is not None else None
+         ),
+         "prg_path": (
+             _program_path(db, period=period_topic, stage=stage_topic) if in_context else None
+         )},
     )
 
 
@@ -861,6 +886,41 @@ def _frame_row(db: DBSession, topic: LearningTopic) -> dict:
         "starts_on": msk_date(topic.opens_at).isoformat(),
         "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
         "is_published": topic.is_published,
+    }
+
+
+def _program_path(
+    db: DBSession,
+    *,
+    period: LearningTopic | None = None,
+    stage: LearningTopic | None = None,
+    cycle: LearningTopic | None = None,
+) -> dict:
+    """Путь вглубь программы: Периоды › период › этап › цикл.
+
+    Владелец 06.10.2026: «проваливаемся в периоды — показываем только этапы
+    этого периода, в этапы — только его циклы, в цикл — только его задания».
+    Одна функция на три экрана: путь сверху страницы (`partials/program_path.html`)
+    и вкладки «Этапы»/«Циклы» (`partials/program_tabs.html`) — они ведут
+    внутрь того же периода и этапа, а не в общий список. Недостающие уровни
+    достраиваются по `parent_id`; звено — ссылка на свой уровень, уже суженный.
+    """
+    if cycle is not None and stage is None and cycle.parent_id is not None:
+        stage = get_topic(db, cycle.parent_id, kinds=(TOPIC_KIND_STAGE,))
+    if stage is not None and period is None and stage.parent_id is not None:
+        period = get_topic(db, stage.parent_id, kinds=(TOPIC_KIND_PERIOD,))
+    base = "/cabinet/staff/program"
+    crumbs = [{"label": "Периоды", "href": f"{base}/periods"}]
+    if period is not None:
+        crumbs.append({"label": cycle_label(db, period), "href": f"{base}/stages?period={period.id}"})
+    if stage is not None:
+        crumbs.append({"label": cycle_label(db, stage), "href": f"{base}/cycles?stage={stage.id}"})
+    if cycle is not None:
+        crumbs.append({"label": cycle_label(db, cycle), "href": f"{base}/cycles/{cycle.id}"})
+    return {
+        "crumbs": crumbs,
+        "period_id": period.id if period is not None else None,
+        "stage_id": stage.id if stage is not None else None,
     }
 
 
@@ -970,7 +1030,11 @@ def program_stages(
     ]
     return templates.TemplateResponse(request, "cabinet_program_stages.html",
         {"request": request, "user": user, "level": "stage", "stages": stages,
-         "periods": periods, "period_filter": period_filter},
+         "periods": periods, "period_filter": period_filter,
+         "prg_path": (
+             _program_path(db, period=get_topic(db, period_filter["id"], kinds=(TOPIC_KIND_PERIOD,)))
+             if period_filter else None
+         )},
     )
 
 
@@ -1792,6 +1856,9 @@ def program_cycle_items(
             "stage_id": stage.id if stage is not None else None,
             "is_stage": is_stage,
             "cycle_tiles": cycle_tiles,
+            "prg_path": (
+                _program_path(db, stage=topic) if is_stage else _program_path(db, cycle=topic)
+            ),
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
             "kind_labels": ITEM_KIND_LABELS,

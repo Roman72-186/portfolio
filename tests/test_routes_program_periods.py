@@ -229,7 +229,9 @@ def test_stages_filter_by_period(admin_client, db):
     assert resp.status_code == 200
     assert f'data-stage-id="{inside.id}"' in resp.text
     assert f'data-stage-id="{outside.id}"' not in resp.text
-    assert "Этапы периода «Предобучение»" in resp.text
+    # Путь сверху: «Периоды › Предобучение», текущий уровень без ссылки.
+    assert f'<a href="{PERIODS_PAGE}">Периоды</a> ›' in resp.text
+    assert '<span aria-current="page">Предобучение</span>' in resp.text
 
     # Чужой номер — весь список, а не пустая страница.
     resp = client.get(f"{STAGES_PAGE}?period={inside.id}")
@@ -398,3 +400,69 @@ def test_delete_button_only_on_empty_cards(admin_client, db):
     stages = client.get(STAGES_PAGE).text
     assert "data-stage-delete" not in card(stages, stage.id)
     assert "data-stage-delete" in card(stages, lonely.id)
+
+
+# ── проваливание вглубь (владелец 06.10.2026) ────────────────────────────────
+# «Проваливаемся в периоды — показываем только этапы этого периода, в этапы —
+# только его циклы, в цикл — только его задания.»
+
+def _tab_href(html, label):
+    import re
+    match = re.search(rf'<a class="prg-tab[^"]*"\s+href="([^"]+)"[^>]*>{label}</a>', html)
+    return match.group(1) if match else None
+
+
+def test_tabs_inside_period_lead_into_period(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db)
+    stage = _stage(client, db, period_id=period.id, title="Этап А")
+    other = _stage(client, db, title="Чужой этап")
+    inside = _cycle(client, db, stage_id=stage.id, offset=1)
+    outside = _cycle(client, db, stage_id=other.id, offset=10)
+
+    page = client.get(f"{STAGES_PAGE}?period={period.id}").text
+    assert _tab_href(page, "Этапы") == f"{STAGES_PAGE}?period={period.id}"
+    assert _tab_href(page, "Циклы") == f"{CYCLES_PAGE}?period={period.id}"
+
+    cycles = client.get(f"{CYCLES_PAGE}?period={period.id}").text
+    assert f'data-cycle-id="{inside.id}"' in cycles
+    assert f'data-cycle-id="{outside.id}"' not in cycles
+    # В выборе этапа нового цикла — только этапы периода.
+    assert f'<option value="{stage.id}"' in cycles
+    assert f'<option value="{other.id}"' not in cycles
+
+
+def test_tabs_inside_stage_lead_into_stage(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db)
+    stage = _stage(client, db, period_id=period.id, title="Этап А")
+    cycle = _cycle(client, db, stage_id=stage.id, offset=1)
+
+    for url in (f"{CYCLES_PAGE}?stage={stage.id}", f"{CYCLES_PAGE}/{cycle.id}"):
+        page = client.get(url).text
+        assert _tab_href(page, "Этапы") == f"{STAGES_PAGE}?period={period.id}", url
+        assert _tab_href(page, "Циклы") == f"{CYCLES_PAGE}?stage={stage.id}", url
+
+
+def test_cycle_page_shows_full_path(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db, title="1 семестр")
+    stage = _stage(client, db, period_id=period.id, title="Октябрь")
+    cycle = _cycle(client, db, stage_id=stage.id, offset=1)
+
+    page = client.get(f"{CYCLES_PAGE}/{cycle.id}").text
+    assert (
+        f'<a href="{PERIODS_PAGE}">Периоды</a> ›'
+        f' <a href="{STAGES_PAGE}?period={period.id}">1 семестр</a> ›'
+        f' <a href="{CYCLES_PAGE}?stage={stage.id}">Октябрь</a> ›'
+    ) in " ".join(page.split())
+    assert '<span aria-current="page">Цикл 1</span>' in page
+
+
+def test_flat_tabs_without_context_stay_flat(admin_client, db):
+    client, _ = admin_client
+    _stage(client, db)
+    page = client.get(STAGES_PAGE).text
+    assert _tab_href(page, "Этапы") == STAGES_PAGE
+    assert _tab_href(page, "Циклы") == CYCLES_PAGE
+    assert "data-program-path" not in page

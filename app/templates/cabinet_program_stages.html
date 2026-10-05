@@ -27,6 +27,7 @@
 {% set noun = 'период' if is_period else 'этап' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
+    {% include "partials/program_path.html" %}
 
     <div class="prg-head">
         <div>
@@ -50,13 +51,6 @@
         {% endif %}
     </div>
 
-    {% if period_filter %}
-    {# Пришли кнопкой «Этапы периода» со вкладки «Периоды» — список сужен. #}
-    <p class="prg-hint">
-        Этапы периода «{{ period_filter.label }}».
-        <a href="/cabinet/staff/program/stages">Показать все этапы</a>
-    </p>
-    {% endif %}
 
     {# Форма свёрнута до кнопки «Новый этап» или «Название и даты» — тот же
        приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
@@ -143,10 +137,11 @@
                 {% else %}
                 {# Со списком, суженным до этого этапа (аудит 29.09.2026: ссылка вела на
                    все циклы подряд). #}
+                {# Заданий прямо на этапе больше не заводят (владелец 06.10.2026:
+                   «задания будут только внутри циклов», «проваливаемся в этап —
+                   показываем только циклы»), кнопка «Задания этапа» снята; на
+                   проде их ноль. Экран `/cycles/{stage_id}` жив для старых ссылок. #}
                 <a class="btn-blue" href="/cabinet/staff/program/cycles?stage={{ stage.id }}">Циклы этапа</a>
-                {# Задания прямо на этапе («Портфолио») — с 29.09.2026, до этого
-                   у персонала на них не было входа. #}
-                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ stage.id }}">Задания этапа ({{ stage.items_count }})</a>
                 {% endif %}
                 {% if prg_edit %}
                 <button type="button" class="btn-outline" data-stage-edit
