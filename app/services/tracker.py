@@ -1106,8 +1106,12 @@ def count_completed(db: Session, task_id: int) -> int:
 
 
 def publish_task(task: TrackerTask, *, user_id: int) -> None:
+    """Повторная публикация не сдвигает `published_at` — по ней планировщик
+    решает, что задание новое (см. `video_topics.publish_topic`)."""
     if task.deleted_at is not None:
         raise ValueError("Task is deleted")
+    if task.is_published:
+        return
     task.is_published = True
     task.published_at = datetime.now(timezone.utc)
     task.published_by_id = user_id

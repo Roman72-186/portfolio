@@ -217,6 +217,30 @@ def test_create_update_and_publication_cycle(db, admin_user):
     assert topic.published_at is None
 
 
+def test_republishing_keeps_publication_moment(db, admin_user, user_factory):
+    """Сохранение формы опубликованного этапа снова зовёт `publish_topic` —
+    момент публикации не сдвигается, иначе планировщик заново объявит
+    ученикам всё содержимое темы (прод 05.10.2026)."""
+    other = user_factory(vk_id=300_009, name="Второй админ", is_admin=True)
+    topic = create_topic(
+        db, title="Этап", opens_at=now_msk(), user_id=admin_user.id, assign_to_all=True
+    )
+    publish_topic(topic, user_id=admin_user.id)
+    db.commit()
+    first = topic.published_at
+
+    publish_topic(topic, user_id=other.id)
+    db.commit()
+    assert topic.published_at == first
+    assert topic.published_by_id == admin_user.id
+
+    # Старые записи: опубликованы, но без даты — дата не появляется.
+    topic.published_at = None
+    db.commit()
+    publish_topic(topic, user_id=other.id)
+    assert topic.published_at is None
+
+
 def test_setting_tags_and_assignees_replaces_previous(db, admin_user, user_factory):
     topic = _topic(db, admin_user)
     first = _tag(db, "Первый")

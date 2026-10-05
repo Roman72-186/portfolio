@@ -14,7 +14,8 @@ from app.models.notification import Notification
 from app.models.task_block import TaskBlock, TaskBlockState, TaskBlockTariff
 from app.models.tracker import ITEM_HOMEWORK, ITEM_MOCK_EXAM, SOURCE_HOMEWORK
 from app.services.student_reminders import run_student_reminders
-from app.services.tracker import create_homework, create_task
+from app.services.tracker import create_homework, create_task, publish_task
+from app.services.video_topics import publish_topic
 
 NOW = datetime.now(timezone.utc)
 
@@ -182,6 +183,25 @@ def test_old_task_is_silent(db, user_factory):
     student = user_factory(vk_id=800_004, name="Вера")
     _old_task(db, owner)
 
+    _run(db)
+
+    assert _notes(db, student) == []
+
+
+def test_resaving_published_topic_does_not_reannounce(db, user_factory):
+    """Прод 05.10.2026: правка опубликованного этапа звала `publish_topic`,
+    та сдвигала `published_at`, и 90 учеников получили «Новый видеоурок»
+    про задание, открытое три недели назад."""
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=800_015, name="Глеб")
+    task = _old_task(db, owner)
+    _block(db, task, "video", video_id=_video(db).id,
+           created_at=NOW - timedelta(days=2))
+    topic = db.get(LearningTopic, task.topic_id)
+
+    publish_topic(topic, user_id=owner.id)
+    publish_task(task, user_id=owner.id)
+    db.commit()
     _run(db)
 
     assert _notes(db, student) == []

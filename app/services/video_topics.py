@@ -440,8 +440,15 @@ def count_topic_audience(
 
 
 def publish_topic(topic: LearningTopic, *, user_id: int) -> None:
+    """Повторная публикация уже опубликованной темы ничего не меняет. Формы
+    этапа и цикла шлют `is_published` при каждом сохранении, и новая
+    `published_at` выдавала тему за только что открытую: 05.10.2026 правка
+    этапа «Предобучение» разослала 90 ученикам «Новый видеоурок» про
+    задание, открытое с 16.09 (`student_reminders._task_opened_at`)."""
     if topic.deleted_at is not None:
         raise ValueError("Topic is deleted")
+    if topic.is_published:
+        return
     topic.is_published = True
     topic.published_at = datetime.now(timezone.utc)
     topic.published_by_id = user_id
