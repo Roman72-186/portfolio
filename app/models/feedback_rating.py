@@ -49,7 +49,8 @@ class FeedbackRating(Base):
     student_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    # Кто нажал «Завершить ОС» — его и оценивают (план, фаза 2). Аккаунт
+    # Автор ОС — `curator_id` диалога, сотрудник, который его начал; кто нажал
+    # «Завершить ОС», не важно (владелец 05.10.2026). Аккаунт
     # куратора не передаётся другому человеку (О20), иначе средняя смешала бы
     # двух людей.
     curator_id: Mapped[int | None] = mapped_column(

@@ -195,9 +195,9 @@ def test_rating_needs_score_in_range_and_comment(
     assert db.query(FeedbackRating).count() == 0
 
 
-def test_rating_is_final_and_goes_to_closer(db, user_factory, session_factory, client):
-    """О14, О24: одна оценка на диалог, изменить нельзя. Оценивают того, кто
-    нажал «Завершить ОС», вид ОС — из типа блока (О16)."""
+def test_rating_is_final_and_goes_to_author(db, user_factory, session_factory, client):
+    """О14, О24: одна оценка на диалог, изменить нельзя. Оценивают автора ОС,
+    вид ОС — из типа блока (О16)."""
     curator, student, task, submission = _setup_block(
         db, user_factory, base=991_041, block_type=BLOCK_TIMED,
     )
@@ -215,6 +215,23 @@ def test_rating_is_final_and_goes_to_closer(db, user_factory, session_factory, c
     assert rating.curator_id == curator.id
     assert rating.feedback_type == FEEDBACK_CONTROL
     assert rating.task_id == task.id
+
+
+def test_rating_goes_to_author_when_admin_closes(db, user_factory, session_factory, client):
+    """Владелец 05.10.2026: «Завершить ОС» могут нажать ГП и суперадмин за
+    куратора, а оценка всё равно ложится на автора ОС. Иначе всё, что закрыла
+    команда, ушло бы в среднюю закрывшего, а у куратора осталось бы пусто."""
+    curator, student, _task, submission = _setup_block(db, user_factory, base=991_046)
+    admin = user_factory(vk_id=991_048, name="Суперадмин Оценка", role_name="суперадмин")
+    _staff_says(client, session_factory, curator, submission)
+
+    assert _close(client, session_factory, admin, submission).json()["closed_now"] is True
+    assert _rate(client, session_factory, student, submission).status_code == 200
+
+    feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
+    db.refresh(feedback)
+    assert feedback.feedback_closed_by_id == admin.id
+    assert db.query(FeedbackRating).one().curator_id == curator.id
 
 
 def test_rating_takes_up_to_three_screenshots(db, user_factory, session_factory, client):

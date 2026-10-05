@@ -229,7 +229,10 @@ async def create_rating(
         dialog_kind=dialog_kind,
         dialog_id=dialog.id,
         student_id=student_id,
-        curator_id=dialog.feedback_closed_by_id,
+        # Оценивают автора ОС — того, кто начал диалог, а не того, кто нажал
+        # «Завершить ОС»: закрывать могут ГП и суперадмин за куратора
+        # (владелец 05.10.2026). То же поле считает «дал ОС» в статистике.
+        curator_id=dialog.curator_id,
         feedback_type=feedback_type,
         task_id=task_id,
         task_title=(task_title or None) and task_title[:300],
