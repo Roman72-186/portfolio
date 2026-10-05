@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_unread
 from app.db.database import get_db
 from app.dependencies import (
+    require_admin_role,
     require_csrf,
     require_csrf_header,
     require_curator,
@@ -23,7 +24,7 @@ from app.dependencies import (
 from app.models.feedback_rating import DIALOG_TASK_BLOCK
 from app.models.notification import Notification
 from app.models.task_block import TaskBlock, TaskBlockSubmission
-from app.models.task_block_feedback import TaskBlockFeedback
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
 from app.models.user import User
 from app.services.feedback import (  # общие проверки вложений, не завязаны на Work
@@ -40,6 +41,17 @@ from app.services.feedback_rating import (
     read_rating_form,
     rating_panel,
     send_rating_to_care_topic,
+)
+from app.services.feedback_edit import (
+    EditError,
+    apply_edit,
+    edited_feedback_notification,
+    editable_task_block_message_ids,
+    finish_task_block_revision,
+    request_task_block_revision,
+    revision_request_notification,
+    task_block_edit_refusal,
+    task_block_return_refusal,
 )
 from app.services.notify import notify
 from app.services.rbac import can_score
@@ -105,6 +117,20 @@ def _mark_notifications_read(db: DBSession, user_id: int, submission_id: int) ->
     )
 
 
+def _revision_state(db: DBSession, feedback: TaskBlockFeedback | None, user: dict) -> dict:
+    """Возврат завершённой ОС автору на правку: что показать сотруднику.
+    Вернуть могут ГП и суперадмин, завершить правку — автор или они же."""
+    if feedback is None:
+        return {"on": False, "can_return": False, "can_finish": False}
+    on = feedback.is_on_revision
+    is_head = user.get("role_rank", 1) >= 4
+    return {
+        "on": on,
+        "can_return": is_head and task_block_return_refusal(db, feedback) is None,
+        "can_finish": on and (is_head or feedback.curator_id == user["user_id"]),
+    }
+
+
 def _render(
     request: Request, db: DBSession, *, submission: TaskBlockSubmission,
     user: dict, viewer_role: str, student: User | None,
@@ -135,6 +161,12 @@ def _render(
         "block": block,
         "task": task,
         "messages": serialize_messages(messages, names),
+        # Правка своей ОС (05.10.2026) — одно правило на роут и экран.
+        "editable_message_ids": (
+            editable_task_block_message_ids(db, feedback, user["user_id"])
+            if viewer_role != "student" else set()
+        ),
+        "revision": _revision_state(db, feedback, user) if viewer_role != "student" else None,
         # Может ли ученик ответить — одно правило на роут и экран (01.10.2026).
         "reply": student_can_reply(db, submission, feedback),
         # ОС, фаза 2: «Завершить ОС» и оценка ученика (О10–О26).
@@ -410,6 +442,115 @@ def close_feedback(
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "closed_now": closed_now})
+
+
+def _error(status_code: int, message: str) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+
+
+@router.post(
+    "/staff/task-block-submissions/{submission_id}/messages/{message_id}/edit",
+    response_class=JSONResponse,
+)
+def edit_staff_message(
+    submission_id: int,
+    message_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    text: str = Form(default=""),
+    remove: list[str] = Form(default=[]),
+):
+    """Сотрудник правит своё сообщение ОС: текст и «убрать вложение»
+    (владелец 05.10.2026). Кто и когда — `feedback_edit.task_block_edit_refusal`.
+    Правка на возврате (ОС уже завершена) — ученику уведомление; пока ОС
+    открыта, хватает пометки «изменено»."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    feedback = _feedback(db, submission.id)
+    message = db.get(TaskBlockFeedbackMessage, message_id)
+    if feedback is None or message is None or message.feedback_id != feedback.id:
+        return _error(404, "Сообщение не найдено.")
+    refusal = task_block_edit_refusal(db, feedback, message, user["user_id"])
+    if refusal:
+        return _error(403, refusal)
+    try:
+        changed = apply_edit(message, text=text, remove=set(remove))
+    except EditError as exc:
+        return _error(exc.status_code, exc.message)
+    notification = None
+    if changed and feedback.feedback_closed_at is not None:
+        _block, task = _context(db, submission)
+        notification = edited_feedback_notification(
+            db, student_id=submission.user_id, subject=f"«{task.title}»",
+            link_path=_student_link(submission.id), task_block_submission_id=submission.id,
+        )
+    db.commit()
+    if notification is not None:
+        background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
+
+
+@router.post(
+    "/staff/task-block-submissions/{submission_id}/return-to-author",
+    response_class=JSONResponse,
+)
+def return_feedback_to_author(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """ГП или суперадмин возвращает завершённую ОС автору на правку
+    (владелец 05.10.2026). Диалог остаётся закрытым, автор только правит
+    свои сообщения. Оценённую ОС не возвращают — её уже не правят."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    _block, task = _context(db, submission)
+    feedback = db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).with_for_update().first()
+    refusal = task_block_return_refusal(db, feedback)
+    if refusal:
+        return _error(409, refusal)
+    request_task_block_revision(feedback)
+    notification = None
+    if feedback.curator_id != user["user_id"]:
+        notification = revision_request_notification(
+            db, author_id=feedback.curator_id, subject=f"«{task.title}»",
+            link_path=f"/cabinet/staff/task-block-submissions/{submission.id}/feedback",
+            task_block_submission_id=submission.id,
+        )
+    db.commit()
+    if notification is not None:
+        background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
+
+
+@router.post(
+    "/staff/task-block-submissions/{submission_id}/revision-done",
+    response_class=JSONResponse,
+)
+def finish_feedback_revision(
+    submission_id: int,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Завершить правку»: автор ОС, ГП или суперадмин снимает возврат."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    feedback = _feedback(db, submission.id)
+    if feedback is None:
+        return _error(404, "Обратная связь не найдена.")
+    if feedback.curator_id != user["user_id"] and user.get("role_rank", 1) < 4:
+        return _error(403, "Завершить правку может автор обратной связи.")
+    if not finish_task_block_revision(feedback):
+        return _error(409, "Обратная связь не на правке.")
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/task-block-submissions/{submission_id}/rating", response_class=JSONResponse)

@@ -139,6 +139,13 @@
 /* Кружок преподавателя (владелец 25.09.2026) — видео в круге, как в Telegram. */
 .ios-homework .msg-video-note { display: block; width: 220px; max-width: 100%; aspect-ratio: 1; height: auto; object-fit: cover; border-radius: 50%; background: var(--ink); }
 .ios-homework .hw-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
+/* «Изменить» под своим сообщением ОС (05.10.2026): тихая ссылка у края
+   пузыря — `.btn-outline` тянулся на всю ширину и ставил крупную плашку
+   под каждым сообщением сотрудника. 44px — цель нажатия на телефоне. */
+.ios-homework .hw-msg-edit {
+    align-self: flex-start; min-height: 44px; padding: 0; border: none; background: none;
+    color: var(--blue-text); font: 600 13px/1.3 var(--ios-font); cursor: pointer;
+}
 @media (max-width: 480px) {
     .ios-homework.prg-page { padding: 16px 14px 100px; }
     .ios-homework .hw-msg { max-width: 96%; }

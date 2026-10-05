@@ -41,6 +41,20 @@ class TaskBlockFeedback(Base):
     feedback_closed_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # ГП или суперадмин вернул завершённую ОС автору на правку (05.10.2026) —
+    # та же пара, что у `ExamCycle` в пробнике. «Завершить правку» ставит
+    # `revision_done_at`, `requested_at` остаётся историей. Диалог при этом
+    # закрыт как был: писать новые сообщения нельзя, только править свои.
+    revision_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revision_done_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    @property
+    def is_on_revision(self) -> bool:
+        return self.revision_requested_at is not None and self.revision_done_at is None
 
     messages: Mapped[list["TaskBlockFeedbackMessage"]] = relationship(
         "TaskBlockFeedbackMessage", back_populates="feedback", cascade="all, delete-orphan",
@@ -79,6 +93,8 @@ class TaskBlockFeedbackMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
+    # Сотрудник поправил сообщение (`services/feedback_edit.py`, 05.10.2026).
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     feedback: Mapped["TaskBlockFeedback"] = relationship(
         "TaskBlockFeedback", back_populates="messages"

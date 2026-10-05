@@ -110,6 +110,9 @@ class FeedbackMessage(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    # Сотрудник поправил сообщение (`services/feedback_edit.py`): экран
+    # ставит «изменено», чтобы правка не прошла незаметно (05.10.2026).
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     feedback: Mapped["Feedback"] = relationship("Feedback", back_populates="messages")
 

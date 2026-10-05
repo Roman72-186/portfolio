@@ -2,7 +2,7 @@
 {% block title %}Обратная связь – {{ task.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=9">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=10">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
@@ -91,7 +91,31 @@
                     {% if message.video_s3_url %}<video class="{{ 'msg-video-note' if message.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
                     {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
                     {% if message.audio_s3_url %}<audio class="hw-msg-audio" controls preload="metadata" src="{{ message.audio_s3_url }}"></audio>{% endif %}
-                    <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}</div>
+                    <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}{% if message.edited %} · изменено{% endif %}</div>
+                    {# Правка своей ОС — `services/feedback_edit.py::task_block_edit_refusal`
+                       (05.10.2026): текст и «убрать вложение», новое вложение — новым сообщением. #}
+                    {% if message.id in editable_message_ids %}
+                    <button type="button" class="hw-msg-edit" data-edit-toggle>✎ Изменить</button>
+                    <form class="prg-form" data-edit-form hidden
+                          action="/cabinet/staff/task-block-submissions/{{ submission.id }}/messages/{{ message.id }}/edit">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label class="form-label" for="edit-text-{{ message.id }}">Текст</label>
+                        <textarea data-rich-text id="edit-text-{{ message.id }}" class="field-input" name="text" rows="3">{{ message.text or '' }}</textarea>
+                        {% for key, url, label in [
+                            ('photo', message.photo_s3_url, 'Убрать фото'),
+                            ('video', message.video_s3_url, 'Убрать видео'),
+                            ('audio', message.audio_s3_url, 'Убрать голосовое'),
+                            ('video_link', message.video_url, 'Убрать ссылку на видео'),
+                        ] if url %}
+                        <label class="prg-field prg-field--row"><input type="checkbox" name="remove" value="{{ key }}"> {{ label }}</label>
+                        {% endfor %}
+                        <div class="prg-actions">
+                            <button type="button" class="btn-outline" data-edit-cancel>Отмена</button>
+                            <button type="submit" class="btn-blue">Сохранить</button>
+                        </div>
+                        <p class="prg-message" aria-live="polite"></p>
+                    </form>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
@@ -135,6 +159,24 @@
     </section>
 
     {% include "partials/feedback_rating.html" %}
+
+    {# Возврат завершённой ОС автору на правку (05.10.2026): вернуть — ГП и
+       суперадмин, завершить правку — автор или они же. Ученик блока не видит. #}
+    {% if revision and (revision.on or revision.can_return) %}
+    <section class="card">
+        <h2 class="section-label">Правка обратной связи</h2>
+        {% if revision.on %}
+        <p class="card-desc">Обратная связь возвращена на правку. Автор правит свои сообщения кнопкой «Изменить», новые сообщения в диалог не пишутся. Ученику приходит уведомление о каждой правке.</p>
+        {% if revision.can_finish %}
+        <div class="prg-actions hw-hint"><button type="button" class="btn-outline" data-revision-action="/cabinet/staff/task-block-submissions/{{ submission.id }}/revision-done">Завершить правку</button></div>
+        {% endif %}
+        {% else %}
+        <p class="card-desc">Если в завершённой обратной связи ошибка, верни её автору: он поправит свои сообщения. После оценки ученика править уже нельзя.</p>
+        <div class="prg-actions hw-hint"><button type="button" class="btn-outline" data-revision-action="/cabinet/staff/task-block-submissions/{{ submission.id }}/return-to-author">Вернуть автору на правку</button></div>
+        {% endif %}
+        <p class="prg-message" data-revision-status aria-live="polite"></p>
+    </section>
+    {% endif %}
 </div>
 
 {% include "partials/lightbox.html" %}
@@ -184,6 +226,59 @@
             status.classList.add('is-error');
             status.textContent = error.message;
         }).finally(function () { reviewButton.disabled = false; });
+    });
+
+    function showError(target, text) {
+        target.classList.add('is-error');
+        target.textContent = text;
+    }
+
+    document.querySelectorAll('[data-edit-toggle]').forEach(function (toggle) {
+        var form = toggle.nextElementSibling;
+        toggle.addEventListener('click', function () {
+            form.hidden = false;
+            toggle.hidden = true;
+        });
+        // Без form.reset(): витрина rich-text-field о сбросе textarea не узнает.
+        form.querySelector('[data-edit-cancel]').addEventListener('click', function () {
+            form.hidden = true;
+            toggle.hidden = false;
+        });
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var button = form.querySelector('button[type=submit]');
+            var status = form.querySelector('.prg-message');
+            button.disabled = true;
+            fetch(form.action, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrfToken}, body: new FormData(form)
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) throw new Error(data.error || 'Не получилось сохранить правку.');
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                showError(status, error.message);
+            });
+        });
+    });
+
+    document.querySelectorAll('[data-revision-action]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var status = document.querySelector('[data-revision-status]');
+            button.disabled = true;
+            fetch(button.dataset.revisionAction, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'X-CSRF-Token': csrfToken}
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) throw new Error(data.error || 'Не получилось.');
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                showError(status, error.message);
+            });
+        });
     });
 
     document.querySelectorAll('.hw-async-form').forEach(function (form) {

@@ -61,6 +61,12 @@ from app.services.feedback_rating import (
     read_rating_form,
     send_rating_to_care_topic,
 )
+from app.services.feedback_edit import (
+    apply_edit,
+    editable_mock_exam_message_ids,
+    mock_exam_cycle_fully_rated,
+    mock_exam_edit_refusal,
+)
 from app.services.notify import notify
 from app.services.rbac import can_score
 from app.models.exam_cycle import ExamCycle
@@ -587,6 +593,8 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         # Удалить, переоткрыть, вернуть куратору — действие `feedback:dialogs`
         # (суперадмину всегда, остальным — если он включил).
         "can_manage_dialogs": can(user, "feedback:dialogs"),
+        # Под какими сообщениями «✎ Изменить» — `services/feedback_edit.py`.
+        "editable_message_ids": editable_mock_exam_message_ids(db, cycle, user["user_id"]),
         "rating_panel": _rating_panel(db, payload, viewer_role),
         "can_score": can_score(user["role_rank"]),
         "student": {"id": student.id, "name": student.name},
@@ -842,6 +850,10 @@ def superadmin_return_to_curator(
     )
     if cycle.is_on_revision:
         raise HTTPException(status_code=400, detail="Цикл уже возвращён куратору на изменение")
+    if mock_exam_cycle_fully_rated(db, cycle):
+        # Оценённую ОС не правят (`services/feedback_edit.py`): возврат
+        # открыл бы правку, которой не будет.
+        raise HTTPException(status_code=400, detail="Ученик уже оценил обратную связь – править её нельзя")
     author_id = request_curator_revision(db, cycle)
     if author_id is None:
         raise HTTPException(status_code=400, detail="В цикле нет обратной связи для правки")
@@ -858,21 +870,18 @@ def edit_feedback_message(
     background_tasks: BackgroundTasks,
     text: str = Form(default=""),
 ):
-    """Автор сообщения ОС правит ТЕКСТ своего сообщения, пока цикл «на изменении».
+    """Автор ОС правит ТЕКСТ своего сообщения, пока цикл «на изменении».
 
-    Право: можно править только своё сообщение (sender_id == текущий) и только
-    когда SA вернул цикл (revision_requested_at установлен). Студента не пускаем.
-    Правка текстовая; фото не трогаем. Ученику шлём уведомление перечитать ОС.
+    Правила — `services/feedback_edit.py::mock_exam_edit_refusal`: своё
+    сообщение, цикл возвращён суперадмином, ты автор этой ОС, ученик её ещё
+    не оценил. Правка текстовая; фото не трогаем. Ученику шлём уведомление
+    перечитать ОС.
     """
     from app.models.notification import Notification
 
     msg = db.query(FeedbackMessage).filter(FeedbackMessage.id == message_id).first()
     if not msg:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
-    if msg.sender_role == fb_service.ROLE_STUDENT:
-        raise HTTPException(status_code=403, detail="Сообщения ученика не редактируются")
-    if msg.sender_id != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Можно править только своё сообщение")
 
     fb = db.query(Feedback).filter(Feedback.id == msg.feedback_id).first()
     work = db.query(Work).filter(Work.id == fb.work_id).first() if fb else None
@@ -882,18 +891,16 @@ def edit_feedback_message(
     )
     if cycle is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    if not cycle.is_on_revision:
-        raise HTTPException(
-            status_code=403,
-            detail="Правка доступна только когда суперадмин вернул цикл на изменение",
-        )
+    refusal = mock_exam_edit_refusal(db, fb, msg, cycle, user["user_id"])
+    if refusal:
+        raise HTTPException(status_code=403, detail=refusal)
 
     text_clean = (text or "").strip()
     if not text_clean:
         raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
     if len(text_clean) > MAX_TEXT_LEN:
         text_clean = text_clean[:MAX_TEXT_LEN]
-    msg.text = text_clean
+    apply_edit(msg, text=text_clean)
 
     notification = Notification(
         user_id=work.user_id,

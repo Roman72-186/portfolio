@@ -322,6 +322,7 @@ def serialize_messages(
             "audio_s3_url": message.audio_s3_url,
             "video_is_note": bool(message.video_is_note),
             "created_at": message.created_at.isoformat() if message.created_at else None,
+            "edited": message.edited_at is not None,
         })
     return result
 

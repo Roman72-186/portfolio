@@ -384,6 +384,11 @@ def serialize_messages(
             "video_is_note": bool(m.video_is_note),
             "video_url": m.video_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
+            # Правка своей ОС (`services/feedback_edit.py`): «изменено» и
+            # диалог, к которому сообщение относится, — по нему экран решает,
+            # не оценена ли эта ОС.
+            "edited": m.edited_at is not None,
+            "feedback_id": m.feedback_id,
         }
         for m in messages
     ]

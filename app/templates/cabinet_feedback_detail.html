@@ -206,8 +206,10 @@
                                 {% else %}
                                     <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
                                 {% endif %}
+                                {%- if m.edited %} · изменено{% endif %}
                             </div>
-                            {% if cycle.revision_requested_at and viewer_role != 'student' and m.sender_role != 'student' and m.sender_id == user.user_id and m.text %}
+                            {# Кто и когда правит — `services/feedback_edit.py::mock_exam_edit_refusal`. #}
+                            {% if editable_message_ids and m.id in editable_message_ids and m.text %}
                                 <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>
                                 <form class="dlg-msg-edit-form" id="edit-form-{{ m.id }}" style="display:none" onsubmit="return submitEditMsg(event, {{ m.id }})">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
