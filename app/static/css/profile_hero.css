@@ -154,16 +154,19 @@
 
 /* Баллы — правая колонка на всю высоту карточки (05.10.2026, вариант А;
    раньше узкая мини-таблица в правом верхнем углу). Строки Р/К, точка А и год
-   делят высоту поровну (`flex: 1 1 0`), цифры крупнее прежних. */
+   делят высоту поровну (`flex: 1 1 0`), цифры крупнее прежних.
+   Фон — светлое «стекло» с белой рамкой и тенью (владелец 05.10.2026, вариант
+   4 из четырёх): прежний тёмный полупрозрачный блок терялся на градиенте. */
 .profile-scores {
     align-self: stretch;
     display: flex; flex-direction: column;
     min-width: 88px;
-    background: color-mix(in srgb, black 14%, transparent);
+    background: rgba(255,255,255,0.24);
     backdrop-filter: blur(12px) saturate(160%);
     -webkit-backdrop-filter: blur(12px) saturate(160%);
-    border: 0.5px solid rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.55);
     border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(40,0,80,0.25);
     overflow: hidden;
     position: relative; z-index: 1;
 }
@@ -188,19 +191,19 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
 }
-.profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.28); }
+.profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.4); }
 /* Точка А — строкой под Р/К, той же границей, что год (04.10.2026). */
 .profile-score-point-a {
     gap: 8px;
     padding: 5px 8px;
-    border-top: 0.5px solid rgba(255,255,255,0.28);
+    border-top: 0.5px solid rgba(255,255,255,0.4);
 }
 .profile-score-point-a .profile-score-value { font-size: 18px; }
 /* Год поступления — отдельной строкой под баллами, через тонкую границу. */
 .profile-score-year {
     font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.85);
     padding: 5px 8px;
-    border-top: 0.5px solid rgba(255,255,255,0.28);
+    border-top: 0.5px solid rgba(255,255,255,0.4);
     font-variant-numeric: tabular-nums;
 }
 
