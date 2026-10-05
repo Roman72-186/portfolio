@@ -10,6 +10,13 @@
 /* Карточка периода — не ссылка, подсветку наведения у неё снимаем. */
 .lrn-archive-period:hover { border-color: var(--line); }
 
+/* Период свёрнут (владелец 06.10.2026), строка раскрытия — `.trk-row-expand`
+   из tracker.css: стрелка и сброс маркера оттуда. Здесь только раскладка:
+   строка во всю ширину карточки, под палец 44px, число циклов у стрелки. */
+.lrn-archive-period > summary { display: flex; width: 100%; min-height: 44px; }
+.lrn-archive-period > summary .lrn-card-title { flex: 1; margin: 0; }
+.lrn-archive-count { color: var(--dim); font-size: 13px; font-weight: 600; white-space: nowrap; }
+
 .lrn-archive-stage {
     margin: 14px 0 8px;
     font-size: 12px; font-weight: 700;

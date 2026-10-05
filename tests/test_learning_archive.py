@@ -342,3 +342,23 @@ def test_archive_page_does_not_repeat_stage_named_like_period(auth_client, db):
     assert page.count("Предобучение 2026-2027") == 1
     assert '<h2 class="lrn-card-title">1 семестр 2026-2027</h2>' in page
     assert '<h3 class="lrn-archive-stage">Октябрь</h3>' in page
+
+
+def test_archive_periods_are_collapsed(auth_client, db):
+    """Владелец 06.10.2026: «периоды в архиве должны быть в свёрнутом виде» —
+    нативный `<details>` без `open`, в строке название и число циклов."""
+    import re
+    client, user = auth_client
+    _, year, _ = _period_program(db, user)
+    for offset in (40, 30):
+        cycle = _topic(db, user, title=f"Цикл {offset}", parent=year,
+                       starts_on=TODAY - timedelta(days=offset),
+                       ends_on=TODAY - timedelta(days=offset - 5))
+        _task(db, user, cycle, title="Наброски")
+
+    page = client.get("/cabinet/learning/archive").text
+
+    tags = re.findall(r"<details[^>]*lrn-archive-period[^>]*>", page)
+    assert len(tags) == 1
+    assert " open" not in tags[0]
+    assert '<span class="lrn-archive-count">2 цикла</span>' in page

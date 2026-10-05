@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=86">
 <link rel="stylesheet" href="/static/css/video_rows.css?v=1">
-<link rel="stylesheet" href="/static/css/learning_archive.css?v=3">
+<link rel="stylesheet" href="/static/css/learning_archive.css?v=4">
 {% endblock %}
 {% block content %}
 {#
@@ -25,10 +25,19 @@
 
     {% if periods %}
     <div class="lrn-archive">
+        {# Периоды свёрнуты (владелец 06.10.2026: «периоды в архиве должны быть
+           в свёрнутом виде»): строка — название и число циклов, внутри этапы и
+           циклы. Раскрытие — общий `.trk-row-expand` (tracker.css), как список
+           событий дайджеста; своего JS и своего шеврона нет. #}
         {% for period in periods %}
-        <section class="lrn-card lrn-archive-period"
+        {% set ns = namespace(cycles=0) %}
+        {% for stage in period.stages %}{% set ns.cycles = ns.cycles + stage.cycles|length %}{% endfor %}
+        <details class="lrn-card lrn-archive-period trk-row-expand"
                  {% if period.topic %}data-period-id="{{ period.topic.id }}"{% endif %}>
-            <h2 class="lrn-card-title">{{ period.title }}</h2>
+            <summary>
+                <h2 class="lrn-card-title">{{ period.title }}</h2>
+                <span class="lrn-archive-count">{{ ns.cycles }} {{ ns.cycles|plural('цикл', 'цикла', 'циклов') }}</span>
+            </summary>
             {% for stage in period.stages %}
             {# Этап с тем же названием, что у периода («Предобучение 2026-2027» на
                проде), второй раз не подписывается — так же у этапа без периода,
@@ -43,7 +52,7 @@
                 {% endfor %}
             </div>
             {% endfor %}
-        </section>
+        </details>
         {% endfor %}
     </div>
     {% else %}
