@@ -75,8 +75,13 @@
     {% endif %}
     {% if editable %}{% include "partials/digest_day_panel.html" %}{% endif %}
 
-    <h3 class="dgst-list-title">События месяца</h3>
+    {# Список свёрнут по умолчанию (владелец 05.10.2026: «список События
+       месяца должен быть в свёрнутом виде»): месяц читается по календарю,
+       день — в окне по тапу, список — для тех, кто хочет всё подряд.
+       Раскрытие — общий `.trk-row-expand` (tracker.css), своего JS нет. #}
     {% if digest_events %}
+    <details class="trk-row-expand dgst-list-wrap">
+    <summary class="dgst-list-title">События месяца <span class="dgst-list-count">{{ digest_events|length }}</span></summary>
     <ul class="dgst-list">
         {% for event in digest_events %}
         <li class="dgst-event"{% if editable %} data-event-id="{{ event.id }}"{% endif %}>
@@ -99,7 +104,9 @@
         </li>
         {% endfor %}
     </ul>
+    </details>
     {% else %}
+    <h3 class="dgst-list-title">События месяца</h3>
     <p class="dgst-empty">В этом месяце пока нет событий.</p>
     {% endif %}
 </section>

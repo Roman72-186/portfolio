@@ -1524,6 +1524,11 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .dgst-title { margin: 0; font: 700 20px/1.25 var(--font-display); color: var(--text); }
 
 .dgst-list-title { margin: 20px 0 0; font: 700 15px/1.3 var(--font-display); color: var(--text); }
+/* Список свёрнут по умолчанию (владелец 05.10.2026), заголовок — строка
+   раскрытия `.trk-row-expand` со стрелкой; высота под палец 44px. */
+.dgst-list-wrap { margin-top: 12px; }
+.dgst-list-wrap > summary.dgst-list-title { margin: 0; min-height: 44px; }
+.dgst-list-count { color: var(--muted); font-weight: 600; }
 .dgst-list { display: grid; gap: 12px; margin-top: 12px; padding: 0; list-style: none; }
 /* Колонка плашки дат с нижней границей ширины: при чистом `auto` «25–30
    сентября» шире, чем «4 сентября», и названия вставали лесенкой. Верхней

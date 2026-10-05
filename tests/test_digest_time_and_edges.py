@@ -352,3 +352,17 @@ def test_editor_has_no_popup_it_has_the_day_panel(client, db, user_factory, sess
     html = client.get(f"{PAGE}/{digest_id}/events").text
     assert "data-day-pop" not in html
     assert "digest-day-pop.js" not in html
+
+
+def test_month_list_is_collapsed_by_default(client, db, user_factory, session_factory):
+    """Владелец 05.10.2026: «список События месяца должен быть в свёрнутом
+    виде». Список — `<details>` без `open`, в заголовке число событий."""
+    student = _student(client, user_factory, session_factory, vk_id=440_104)
+    today = today_msk()
+    _published(db, student.id, title="Месяц", year=today.year, month=today.month,
+               events=[("Первое", today, []), ("Второе", today, [])])
+
+    html = client.get("/cabinet/tracker").text
+    assert '<details class="trk-row-expand dgst-list-wrap">' in html
+    assert 'События месяца <span class="dgst-list-count">2</span>' in html
+    assert "dgst-list-wrap\" open" not in html
