@@ -30,3 +30,19 @@
 @media (prefers-reduced-motion: reduce) {
     .video-cover { transition: none; }
 }
+
+/* ⛶ и «Повернуть» — вверху справа (владелец 05.10.2026): внизу справа на
+   телефоне и планшете у плеера Bunny шестерёнка настроек, кнопка её закрывала.
+   Та же раскладка, что у инлайн-плеера в tracker.css::.lrn-inline-video.
+   Ширина кнопки — 40px из video_ios.css, отсюда шаг 48px. */
+.video-frame .video-rotate-button { right: 56px; }
+.video-frame .video-rotate-button[hidden] { display: none; }
+.video-frame.is-pseudo-fullscreen .video-rotate-button {
+    right: calc(max(8px, env(safe-area-inset-right)) + 48px);
+}
+.video-frame.is-rotated .video-fullscreen-button {
+    right: max(8px, env(safe-area-inset-bottom)); top: max(8px, env(safe-area-inset-right));
+}
+.video-frame.is-rotated .video-rotate-button {
+    right: calc(max(8px, env(safe-area-inset-bottom)) + 48px);
+}

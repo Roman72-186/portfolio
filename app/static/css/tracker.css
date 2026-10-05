@@ -829,7 +829,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-inline-video .video-watermark-copy.is-drifting.is-visible { opacity: 1; }
 .lrn-inline-video .video-watermark-copy span { display: block; }
 .lrn-inline-video .video-fullscreen-button {
-    position: absolute; right: 8px; bottom: 8px; z-index: 4;
+    position: absolute; right: 8px; top: 8px; z-index: 4;
     display: grid; width: 40px; height: 40px; padding: 0; place-items: center;
     border: none; border-radius: 50%;
     background: rgba(28,28,30,.55);
@@ -841,7 +841,23 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-inline-video .video-fullscreen-button:active { transform: scale(.90); }
 .lrn-inline-video .video-fullscreen-button:focus-visible { outline: 2px solid var(--on-color); outline-offset: 2px; }
 .lrn-inline-video .video-frame.is-pseudo-fullscreen .video-fullscreen-button {
-    right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom));
+    right: max(8px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top));
+}
+/* ⛶ и «Повернуть» — вверху справа (владелец 05.10.2026): внизу справа на
+   телефоне и планшете у плеера Bunny шестерёнка настроек, кнопка её закрывала.
+   «Повернуть» собирает video-player.js и показывает только в полноэкранном
+   режиме на вертикальном экране. В повёрнутой рамке её верх смотрит в правый
+   край экрана, а правый край — вниз, поэтому и вырезы экрана берём оттуда. */
+.lrn-inline-video .video-rotate-button { right: 56px; }
+.lrn-inline-video .video-rotate-button[hidden] { display: none; }
+.lrn-inline-video .video-frame.is-pseudo-fullscreen .video-rotate-button {
+    right: calc(max(8px, env(safe-area-inset-right)) + 48px);
+}
+.lrn-inline-video .video-frame.is-rotated .video-fullscreen-button {
+    right: max(8px, env(safe-area-inset-bottom)); top: max(8px, env(safe-area-inset-right));
+}
+.lrn-inline-video .video-frame.is-rotated .video-rotate-button {
+    right: calc(max(8px, env(safe-area-inset-bottom)) + 48px);
 }
 /* Видео стартует само, но без звука (server::bunny_stream.py, muted=true) —
    эта кнопка призывает включить звук явно, не полагаясь на мелкую иконку

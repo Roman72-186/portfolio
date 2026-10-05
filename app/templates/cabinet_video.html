@@ -86,7 +86,7 @@ body.has-video-pseudo-fullscreen {
 .video-fullscreen-button {
     position: absolute;
     right: 8px;
-    bottom: 8px;
+    top: 8px;
     z-index: 4;
     display: grid;
     width: 44px;
@@ -113,7 +113,7 @@ body.has-video-pseudo-fullscreen {
 }
 .video-frame.is-pseudo-fullscreen .video-fullscreen-button {
     right: max(8px, env(safe-area-inset-right));
-    bottom: max(8px, env(safe-area-inset-bottom));
+    top: max(8px, env(safe-area-inset-top));
 }
 .video-loading {
     position: absolute; inset: 0; z-index: 1;
@@ -147,7 +147,7 @@ body.has-video-pseudo-fullscreen {
     .video-help { font-size: 12px; }
 }
 </style>
-<link rel="stylesheet" href="/static/css/video.css?v=2">
+<link rel="stylesheet" href="/static/css/video.css?v=3">
 <link rel="stylesheet" href="/static/css/video_ios.css?v=8">
 {% endblock %}
 {% block content %}

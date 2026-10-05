@@ -200,6 +200,29 @@ def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(auth_clien
     assert "picture-in-picture" not in page
 
 
+def test_fullscreen_button_sits_top_right_and_video_can_rotate(auth_client, monkeypatch, served):
+    """Владелец 05.10.2026: на телефоне и планшете ⛶ внизу справа закрывала
+    шестерёнку настроек Bunny, плюс просьба повернуть видео горизонтально."""
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    page = served(client.get("/cabinet/video"))
+    # Кнопка вверху: низ кадра занимает панель управления Bunny.
+    assert ".video-fullscreen-button {\n    position: absolute;\n    right: 8px;\n    top: 8px;" in page
+    assert "bottom: max(8px, env(safe-area-inset-bottom));" not in page
+    # Поворот — та же рамка, вместе с водяным знаком, а не системный разворот.
+    assert "rotateButton.setAttribute('data-role', 'rotate-btn')" in page
+    assert "'rotate(90deg) translateY(-100%)'" in page
+    assert "rotated = rotateRequested && height > width;" in page
+
+    css_dir = Path(__file__).resolve().parents[1] / "app" / "static" / "css"
+    video_css = (css_dir / "video.css").read_text(encoding="utf-8")
+    assert ".video-frame .video-rotate-button[hidden] { display: none; }" in video_css
+    tracker_css = (css_dir / "tracker.css").read_text(encoding="utf-8")
+    assert "position: absolute; right: 8px; top: 8px; z-index: 4;" in tracker_css
+    assert ".lrn-inline-video .video-rotate-button[hidden] { display: none; }" in tracker_css
+
+
 def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch, served):
     client, _ = auth_client
     _configure_bunny(monkeypatch)

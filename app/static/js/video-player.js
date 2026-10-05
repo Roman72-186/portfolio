@@ -170,6 +170,22 @@
             var lastWatermarkPoint = null;
             var lastWatermarkCell = -1;
             var pseudoFullscreen = false;
+            var rotateRequested = false;
+            var rotated = false;
+            // Кнопка «Повернуть» — одна на все три разметки плеера (страница
+            // ролика, вкладка «Видео», видеоблок конструктора), поэтому её
+            // собирает ядро, а не каждый шаблон. Видна только в полноэкранном
+            // режиме на вертикально стоящем экране.
+            var rotateButton = null;
+            if (fullscreenButton) {
+                rotateButton = document.createElement('button');
+                rotateButton.type = 'button';
+                rotateButton.className = 'video-fullscreen-button video-rotate-button';
+                rotateButton.setAttribute('data-role', 'rotate-btn');
+                rotateButton.textContent = '⟳';
+                rotateButton.hidden = true;
+                fullscreenButton.parentNode.insertBefore(rotateButton, fullscreenButton);
+            }
 
             function measureWatermarkBounds() {
                 if (!watermarkCopy) return;
@@ -183,6 +199,16 @@
                 // до первого layout, до `is-ready`) не запоминаем: границы
                 // остаются прежними, следующий цикл/ResizeObserver пересчитает.
                 var containerRect = playerContainer.getBoundingClientRect();
+                // Повёрнутая рамка (кнопка «Повернуть», 05.10.2026): у неё
+                // `getBoundingClientRect()` отдаёт экранный прямоугольник, где
+                // ширина и высота поменялись местами, а надпись ставится в
+                // координатах самой рамки. Здесь нужен размер до поворота.
+                if (rotated) {
+                    containerRect = {
+                        width: playerContainer.offsetWidth,
+                        height: playerContainer.offsetHeight
+                    };
+                }
                 if (containerRect.width < 20 || containerRect.height < 20) return;
                 // Ролик — 16:9, плеер показывает его через object-fit: contain.
                 // В псевдо-полноэкранном режиме на высоком узком телефоне рамка
@@ -218,8 +244,8 @@
                 var watermarkHeight = watermarkCopy.offsetHeight;
                 var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
                 var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
-                // Нижний отступ крупнее прочих: там панель управления Bunny и своя
-                // кнопка фуллскрина — надпись не должна на них наезжать.
+                // Нижний отступ крупнее прочих: там панель управления Bunny —
+                // надпись не должна на неё наезжать.
                 var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
                 var minX = visibleOffsetX + sidePadding;
                 var maxX = Math.max(minX, visibleOffsetX + containerWidth - watermarkWidth - sidePadding);
@@ -347,11 +373,52 @@
             // отдаёт реальную видимую высоту в любой момент, включая смену
             // адресной строки — держим размер синхронным с ней, а не с
             // постоянными vh/dvh.
+            //
+            // Поворот (владелец 05.10.2026: «хотелось бы, чтобы видео можно
+            // было повернуть горизонтально»). Системный разворот экрана из
+            // страницы недоступен: `screen.orientation.lock` на iPhone нет
+            // вовсе, а на Android он работает только в нативном полном экране,
+            // которого у тач-устройств нет (см. shouldUsePseudoFullscreen).
+            // Поэтому поворачиваем саму рамку на 90° — вместе с iframe и
+            // водяным знаком, слой поверх ролика остаётся тем же. Рамка
+            // получает размеры экрана наоборот, поворачивается вокруг левого
+            // верхнего угла и сдвигается на свою высоту обратно в кадр.
+            // Повернул телефон сам — экран уже горизонтальный, второй поворот
+            // не нужен: рамка встаёт ровно, а просьба ждёт возврата в вертикаль.
             function syncPseudoFullscreenSize() {
                 if (!pseudoFullscreen) return;
                 var vv = window.visualViewport;
-                playerContainer.style.height = (vv ? vv.height : window.innerHeight) + 'px';
-                playerContainer.style.width = (vv ? vv.width : window.innerWidth) + 'px';
+                var width = vv ? vv.width : window.innerWidth;
+                var height = vv ? vv.height : window.innerHeight;
+                rotated = rotateRequested && height > width;
+                playerContainer.classList.toggle('is-rotated', rotated);
+                if (rotated) {
+                    playerContainer.style.width = height + 'px';
+                    playerContainer.style.height = width + 'px';
+                    playerContainer.style.transformOrigin = 'top left';
+                    playerContainer.style.transform = 'rotate(90deg) translateY(-100%)';
+                } else {
+                    playerContainer.style.width = width + 'px';
+                    playerContainer.style.height = height + 'px';
+                    playerContainer.style.transformOrigin = '';
+                    playerContainer.style.transform = '';
+                }
+                updateRotateButton(height > width);
+            }
+            function updateRotateButton(isPortrait) {
+                if (!rotateButton) return;
+                rotateButton.hidden = !pseudoFullscreen || !(isPortrait || rotated);
+                var label = rotated ? 'Вернуть вертикально' : 'Повернуть горизонтально';
+                rotateButton.setAttribute('aria-label', label);
+                rotateButton.setAttribute('title', label);
+                rotateButton.setAttribute('aria-pressed', String(rotated));
+            }
+            if (rotateButton) {
+                rotateButton.addEventListener('click', function () {
+                    rotateRequested = !rotated;
+                    syncPseudoFullscreenSize();
+                    window.requestAnimationFrame(measureWatermarkBounds);
+                });
             }
             function enterPseudoFullscreen() {
                 if (pseudoFullscreen) return;
@@ -371,9 +438,15 @@
             function exitPseudoFullscreen(restoreFocus) {
                 if (!pseudoFullscreen) return;
                 pseudoFullscreen = false;
+                rotateRequested = false;
+                rotated = false;
                 playerContainer.classList.remove('is-pseudo-fullscreen');
+                playerContainer.classList.remove('is-rotated');
                 playerContainer.style.height = '';
                 playerContainer.style.width = '';
+                playerContainer.style.transformOrigin = '';
+                playerContainer.style.transform = '';
+                updateRotateButton(false);
                 document.documentElement.classList.remove('has-video-pseudo-fullscreen');
                 document.body.classList.remove('has-video-pseudo-fullscreen');
                 if (window.visualViewport) {
