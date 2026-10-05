@@ -30,7 +30,10 @@
                  {% if period.topic %}data-period-id="{{ period.topic.id }}"{% endif %}>
             <h2 class="lrn-card-title">{{ period.title }}</h2>
             {% for stage in period.stages %}
-            {% if stage.title %}<h3 class="lrn-archive-stage">{{ stage.title }}</h3>{% endif %}
+            {# Этап с тем же названием, что у периода («Предобучение 2026-2027» на
+               проде), второй раз не подписывается — так же у этапа без периода,
+               где период и есть этап (`cycle_feed._archive_levels`). #}
+            {% if stage.title and stage.title != period.title %}<h3 class="lrn-archive-stage">{{ stage.title }}</h3>{% endif %}
             <div class="lrn-archive-cycles">
                 {% for cycle in stage.cycles %}
                 <a class="video-row" href="/cabinet/learning/archive/{{ cycle.id }}" data-cycle-id="{{ cycle.id }}">

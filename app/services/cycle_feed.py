@@ -26,7 +26,12 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import (
+    TOPIC_KIND_PERIOD,
+    TOPIC_KIND_STAGE,
+    TOPIC_KIND_WEEK,
+    LearningTopic,
+)
 from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
@@ -712,15 +717,26 @@ def _archive_levels(
     """Период и этап цикла для архива (владелец 05.10.2026: «Период →
     Этап → Цикл → задания»).
 
-    В базе пока один уровень над циклом — запись `kind='stage'`
-    («Предобучение», «Семестр 1»), её название ученик видит в ленте. По
-    решению владельца это период, а промежуточный этап заводится отдельной
-    доработкой; до неё этап повторяет период тем же названием. Появится
-    настоящий уровень — меняется только эта функция. Цикл без этапа (до
-    24.09.2026) — `(None, None)`.
+    С 06.10.2026 период — отдельная запись `kind='period'` над этапом
+    (`stage.parent_id`), и каждый этап внутри периода. Владелец 06.10.2026
+    («да, показывать»): в архиве настоящий период. До этого уровня в базе не
+    было, и этап повторял период тем же названием — так и остаётся, если
+    периода у этапа нет (данные до 06.10.2026), он удалён или скрыт галочкой
+    «Показывать ученикам»: скрытый период ученик не видит и здесь. Цикл без
+    этапа (до 24.09.2026) — `(None, None)`.
     """
     stage = _stage_of(db, cycle)
-    return stage, stage
+    if stage is None:
+        return None, None
+    period = db.get(LearningTopic, stage.parent_id) if stage.parent_id is not None else None
+    if (
+        period is None
+        or period.kind != TOPIC_KIND_PERIOD
+        or period.deleted_at is not None
+        or not period.is_published
+    ):
+        return stage, stage
+    return period, stage
 
 
 def archive_for_student(
@@ -771,13 +787,18 @@ def archive_for_student(
             }
         stages = periods[period_key]["stages"]
         stage_key = stage_topic.id if stage_topic is not None else None
-        if not stages or stages[-1]["key"] != stage_key:
-            stages.append({
+        # Этап ищется среди всех этапов периода, а не только последнего: этапы
+        # одного периода идут в одни даты («Октябрь» и «1 семестр_годовой курс»
+        # оба с 04.10.2026), и при чередовании циклов этап встал бы дважды.
+        stage_group = next((group for group in stages if group["key"] == stage_key), None)
+        if stage_group is None:
+            stage_group = {
                 "key": stage_key,
                 "title": stage_topic.title if stage_topic is not None else "",
                 "cycles": [],
-            })
-        stages[-1]["cycles"].append({
+            }
+            stages.append(stage_group)
+        stage_group["cycles"].append({
             "id": cycle.id, "title": cycle_label(db, cycle), "start": first, "end": last,
         })
 

@@ -11,7 +11,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import (
+    TOPIC_KIND_PERIOD,
+    TOPIC_KIND_STAGE,
+    TOPIC_KIND_WEEK,
+    LearningTopic,
+)
 from app.models.learning_video import LearningVideo
 from app.models.task_block import BLOCK_VIDEO
 from app.services.cycle_feed import archive_for_student
@@ -100,8 +105,8 @@ def _cycle_ids(periods):
 
 
 def test_finished_cycle_is_in_archive_under_period_and_stage(db, regular_user):
-    """Период — запись этапа («Предобучение»). Промежуточного этапа в базе
-    пока нет, он повторяет название периода (владелец 05.10.2026)."""
+    """Этап без периода (данные до 06.10.2026) — период повторяет название
+    этапа, как было до уровня «Период» (владелец 05.10.2026)."""
     _, pre1, _, sem1 = _program(db, regular_user)
     _task(db, regular_user, pre1, title="Наброски")
     _task(db, regular_user, sem1, title="Идёт сейчас", required=True)
@@ -249,3 +254,91 @@ def test_empty_archive_explains_when_cycles_appear(auth_client):
 
     assert resp.status_code == 200
     assert "Цикл попадёт сюда" in resp.text
+
+
+# ── настоящий период над этапом (владелец 06.10.2026: «да, показывать») ─────
+
+def _period_program(db, owner):
+    """Как на проде: период «1 семестр» над двумя этапами в одни даты."""
+    period = _topic(db, owner, title="1 семестр 2026-2027", kind=TOPIC_KIND_PERIOD,
+                    starts_on=TODAY - timedelta(days=60), ends_on=TODAY + timedelta(days=60))
+    year = _topic(db, owner, title="1 семестр_годовой курс", kind=TOPIC_KIND_STAGE,
+                  parent=period, starts_on=TODAY - timedelta(days=60),
+                  ends_on=TODAY + timedelta(days=60))
+    october = _topic(db, owner, title="Октябрь", kind=TOPIC_KIND_STAGE, parent=period,
+                     starts_on=TODAY - timedelta(days=60), ends_on=TODAY + timedelta(days=60))
+    return period, year, october
+
+
+def test_archive_shows_real_period_above_stage(db, regular_user):
+    period, year, _ = _period_program(db, regular_user)
+    cycle = _topic(db, regular_user, title="Цикл 1", parent=year,
+                   starts_on=TODAY - timedelta(days=30), ends_on=TODAY - timedelta(days=20))
+    _task(db, regular_user, cycle, title="Наброски")
+
+    periods = _archive(db, regular_user)
+
+    assert [p["title"] for p in periods] == ["1 семестр 2026-2027"]
+    assert periods[0]["topic"].id == period.id
+    assert [s["title"] for s in periods[0]["stages"]] == ["1 семестр_годовой курс"]
+    assert _cycle_ids(periods) == [cycle.id]
+
+
+def test_interleaved_stages_of_one_period_are_grouped_once(db, regular_user):
+    """Этапы одного периода идут в одни даты, циклы чередуются — каждый этап
+    в архиве один раз."""
+    _, year, october = _period_program(db, regular_user)
+    cycles = []
+    for offset, stage in ((50, year), (40, october), (30, year)):
+        cycle = _topic(db, regular_user, title=f"Цикл {offset}", parent=stage,
+                       starts_on=TODAY - timedelta(days=offset),
+                       ends_on=TODAY - timedelta(days=offset - 5))
+        _task(db, regular_user, cycle, title=f"Задание {offset}")
+        cycles.append(cycle)
+
+    periods = _archive(db, regular_user)
+
+    assert len(periods) == 1
+    stages = {s["title"]: [c["id"] for c in s["cycles"]] for s in periods[0]["stages"]}
+    assert len(periods[0]["stages"]) == 2
+    assert stages["1 семестр_годовой курс"] == [cycles[0].id, cycles[2].id]
+    assert stages["Октябрь"] == [cycles[1].id]
+
+
+def test_hidden_period_is_not_shown_to_student(db, regular_user):
+    """Период со снятой галочкой «Показывать ученикам» ученик не видит и в
+    архиве — этап стоит сам за себя, как до уровня «Период»."""
+    period, year, _ = _period_program(db, regular_user)
+    period.is_published = False
+    db.commit()
+    cycle = _topic(db, regular_user, title="Цикл 1", parent=year,
+                   starts_on=TODAY - timedelta(days=30), ends_on=TODAY - timedelta(days=20))
+    _task(db, regular_user, cycle, title="Наброски")
+
+    periods = _archive(db, regular_user)
+
+    assert [p["title"] for p in periods] == ["1 семестр_годовой курс"]
+    assert periods[0]["topic"].id == year.id
+
+
+def test_archive_page_does_not_repeat_stage_named_like_period(auth_client, db):
+    """Прод: период и этап оба «Предобучение 2026-2027» — подпись этапа не
+    повторяется; этап со своим названием («Октябрь») подписан."""
+    client, user = auth_client
+    pre_period = _topic(db, user, title="Предобучение 2026-2027", kind=TOPIC_KIND_PERIOD,
+                        starts_on=TODAY - timedelta(days=60), ends_on=TODAY - timedelta(days=15))
+    pre_stage = _topic(db, user, title="Предобучение 2026-2027", kind=TOPIC_KIND_STAGE,
+                       parent=pre_period, starts_on=TODAY - timedelta(days=60),
+                       ends_on=TODAY - timedelta(days=15))
+    _, _, october = _period_program(db, user)
+    for stage, offset in ((pre_stage, 50), (october, 20)):
+        cycle = _topic(db, user, title="Цикл 1", parent=stage,
+                       starts_on=TODAY - timedelta(days=offset),
+                       ends_on=TODAY - timedelta(days=offset - 5))
+        _task(db, user, cycle, title="Наброски")
+
+    page = client.get("/cabinet/learning/archive").text
+
+    assert page.count("Предобучение 2026-2027") == 1
+    assert '<h2 class="lrn-card-title">1 семестр 2026-2027</h2>' in page
+    assert '<h3 class="lrn-archive-stage">Октябрь</h3>' in page
