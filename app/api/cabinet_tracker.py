@@ -137,6 +137,7 @@ from app.services.tracker import (
 from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
+from app.services.video_catalog import get_published_video
 from app.services.video_progress import get_video_progress
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import format_rich_text, templates
@@ -447,14 +448,28 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
 VIDEO_WATCH_CONTROL_ENABLED = True
 
 
-def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> bool:
-    """Нужно ли требовать просмотр видео для закрытия блока."""
-    return bool(
-        VIDEO_WATCH_CONTROL_ENABLED
-        and task.is_required
-        and task.kind != ITEM_MOCK_EXAM
-        and block.is_required
-    )
+def _video_block_requires_completion(
+    db: DBSession, task: TrackerTask, block: TaskBlock, user: dict
+) -> bool:
+    """Нужно ли требовать просмотр видео для закрытия блока.
+
+    Любой видео-блок, обязательный или нет (владелец 05.10.2026: «проверять
+    все»). С 17.09 по 05.10 проверялся только блок, у которого обязательны и
+    задание, и сам блок, — на проде это 5 видео-блоков из 36, остальные
+    закрывались кружком без просмотра. Пробник исключён по-прежнему.
+
+    Просмотр требуется, только если его можно сделать и засчитать: ролик
+    отдаётся этому ученику (то же правило, что у плеера,
+    `get_published_video`) и у него есть длительность (без неё
+    `evaluate_watch` не засчитает никогда). Иначе блок без ролика, с удалённым
+    или снятым с публикации роликом запер бы шаг навсегда.
+    """
+    if not VIDEO_WATCH_CONTROL_ENABLED or task.kind == ITEM_MOCK_EXAM:
+        return False
+    if not block.video_id:
+        return False
+    video = get_published_video(db, block.video_id, viewer=user)
+    return bool(video is not None and getattr(video, "duration_seconds", None))
 
 
 def _submission_payload(
@@ -689,14 +704,12 @@ def cabinet_tracker_task_blocks(
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
-            # Проверка просмотра нужна только эффективному обязательному
-            # блоку: флаг задания имеет приоритет над флагом блока, поэтому
-            # необязательное задание не создаёт скрытый гейт. Кружок же нужен
-            # всем: блок входит в счётчик «Сделано N из M» ленты, и без кружка
-            # необязательное видео было не закрыть ничем (владелец 18.09.2026).
+            # Проверка просмотра — у любого видео-блока, обязательность блока
+            # и задания на неё не влияет (владелец 05.10.2026). Кружок нужен
+            # всем: блок входит в счётчик «Сделано N из M» ленты (18.09.2026).
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item["requires_watch"] = _video_block_requires_completion(task, block)
+            item["requires_watch"] = _video_block_requires_completion(db, task, block, user)
             item["watched"] = (
                 _video_block_watched(db, block, user["user_id"])
                 if item["requires_watch"] else False
@@ -1107,10 +1120,9 @@ def confirm_video_block_watched(
 ):
     """Ученик отмечает видео-блок выполненным кружком в углу карточки.
 
-    Отметку ставит ученик кликом, а для эффективного обязательного блока
-    сервер дополнительно проверяет `VideoProgress`. Необязательный блок не
-    должен превращаться в скрытый гейт, поэтому для него эта проверка
-    отключается.
+    Отметку ставит ученик кликом, а сервер дополнительно проверяет
+    `VideoProgress` — у любого видео-блока, кроме пробника
+    (`_video_block_requires_completion`).
     """
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_VIDEO:
@@ -1121,7 +1133,7 @@ def confirm_video_block_watched(
     # (`activity_stats`), запирает здесь только срок блока сдачи
     # (`DEADLINE_BLOCKS_COMPLETION`), а видео в него не входит.
     task = _accessible_task_or_404(db, user["user_id"], block.task_id)
-    if _video_block_requires_completion(task, block) and not _video_block_watched(
+    if _video_block_requires_completion(db, task, block, user) and not _video_block_watched(
         db, block, user["user_id"]
     ):
         return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)

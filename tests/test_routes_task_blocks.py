@@ -710,7 +710,12 @@ def test_submit_on_task_without_questions_is_404(client, db, user_factory, sessi
 # запирал бы хвост ленты навсегда.
 
 def _video_task_with_block(db, staff_user_id):
-    video = LearningVideo(bunny_library_id=1, bunny_video_id="v-blk-1", title="Урок")
+    # Опубликованный готовый ролик с длительностью: контроль просмотра
+    # требуется, только если ролик можно посмотреть и засчитать.
+    video = LearningVideo(
+        bunny_library_id=1, bunny_video_id="v-blk-1", title="Урок",
+        status="ready", is_published=True, duration_seconds=120.0,
+    )
     db.add(video)
     db.flush()
     task = _material_task_with_blocks(
@@ -736,8 +741,10 @@ def _mark_watched(db, *, user_id, bunny_video_id):
 @pytest.fixture
 def watch_control_on(monkeypatch):
     """Явно включённый контроль просмотра (`VIDEO_WATCH_CONTROL_ENABLED`):
-    тесты правила не должны зависеть от того, что стоит в коде по умолчанию."""
+    тесты правила не должны зависеть от того, что стоит в коде по умолчанию.
+    Bunny включён: без него ролик ученику не отдаётся и проверять нечего."""
     monkeypatch.setattr("app.api.cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED", True)
+    monkeypatch.setattr("app.services.video_catalog.settings.bunny_stream_enabled", True)
 
 
 def test_video_watch_control_enabled_by_default():
@@ -784,25 +791,57 @@ def test_video_block_confirm_rejected_when_not_watched(
     assert body["blocks"][0]["done"] is False
 
 
-def test_optional_video_block_does_not_require_watch(
-    client, db, user_factory, session_factory
+@pytest.mark.parametrize(
+    "task_required,block_required",
+    [(False, True), (True, False), (False, False)],
+)
+def test_optional_video_block_requires_watch_too(
+    client, db, user_factory, session_factory, task_required, block_required,
+    watch_control_on,
 ):
+    """Владелец 05.10.2026: «проверять все». Необязательное задание или
+    необязательный блок контроль просмотра не снимают — до этого так
+    проверялись только 5 видео-блоков из 36."""
     staff = user_factory(vk_id=550_326, name="Стафф", is_admin=True, role_name="админ")
     task, block, _video = _video_task_with_block(db, staff.id)
-    task.is_required = False
-    block.is_required = True
+    task.is_required = task_required
+    block.is_required = block_required
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["requires_watch"] is True
+    assert body["blocks"][0]["confirm_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/watched"
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "not_watched"
+
+
+@pytest.mark.parametrize("breakage", ["no_video", "unpublished", "deleted", "no_duration"])
+def test_video_block_without_watchable_clip_closes_by_click(
+    client, db, user_factory, session_factory, watch_control_on, breakage
+):
+    """Посмотреть нечего или засчитать нельзя — контроль не требуется, иначе
+    шаг заперт навсегда: ролик не прикреплён, снят с публикации, удалён или
+    без длительности (`evaluate_watch` без неё не засчитывает)."""
+    staff = user_factory(vk_id=550_328, name="Стафф", is_admin=True, role_name="админ")
+    task, block, video = _video_task_with_block(db, staff.id)
+    if breakage == "no_video":
+        block.video_id = None
+    elif breakage == "unpublished":
+        video.is_published = False
+    elif breakage == "deleted":
+        video.deleted_at = datetime.now(timezone.utc)
+    else:
+        video.duration_seconds = None
     db.commit()
     _student_client(client, user_factory, session_factory)
 
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert body["blocks"][0]["requires_watch"] is False
-    # Кружок остаётся: иначе необязательный блок не закрыть ничем, а в
-    # счётчике «Сделано N из M» он висит недоделанным.
-    assert body["blocks"][0]["confirm_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/watched"
-
     resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["ok"] is True
 
 
 def test_video_block_confirm_closes_when_watched(
