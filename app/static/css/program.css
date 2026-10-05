@@ -139,6 +139,21 @@
 .dgst-cal-day.has-fill .dgst-cal-num { color: var(--dgst-ink); }
 .dgst-cal-num.has-dot.is-fill { color: var(--dgst-ink); background: var(--dgst-soft); box-shadow: inset 0 0 0 1.5px var(--dgst-color); }
 .dgst-cal-num.has-dot.is-ring { box-shadow: inset 0 0 0 2px var(--dgst-color); background: var(--surface); }
+/* Кружок, поделённый по типам дня (digest_calendar → `dot.parts`; служба
+   заботы 05.10.2026: точки под числом на телефоне не читались, ребёнок видел
+   «только один цвет»). Каждая доля — целый кружок своего цвета, обрезанный
+   clip-path: две — половины, три — сектора по 120° от верха. Число — над
+   долями своим слоем, цветом текста: чернила у долей разные. */
+.dgst-cal-num.is-split { color: var(--text); }
+.dgst-cal-part { position: absolute; inset: 0; border-radius: 50%; }
+.dgst-cal-part.is-fill { background: var(--dgst-soft); box-shadow: inset 0 0 0 2px var(--dgst-color); }
+.dgst-cal-part.is-ring { background: var(--surface); box-shadow: inset 0 0 0 2px var(--dgst-color); }
+.is-split-2 .dgst-cal-part:nth-child(1) { clip-path: inset(0 50% 0 0); }
+.is-split-2 .dgst-cal-part:nth-child(2) { clip-path: inset(0 0 0 50%); }
+.is-split-3 .dgst-cal-part:nth-child(1) { clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 78.9%); }
+.is-split-3 .dgst-cal-part:nth-child(2) { clip-path: polygon(50% 50%, 100% 78.9%, 100% 100%, 0 100%, 0 78.9%); }
+.is-split-3 .dgst-cal-part:nth-child(3) { clip-path: polygon(50% 50%, 0 78.9%, 0 0, 50% 0); }
+.dgst-cal-digit { position: relative; }
 .dgst-cal-more {
     position: absolute; top: 4px; right: 18%; width: 5px; height: 5px;
     border-radius: 50%; background: var(--muted);

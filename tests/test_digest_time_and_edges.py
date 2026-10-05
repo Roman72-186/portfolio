@@ -302,3 +302,29 @@ def test_split_title_takes_time_out_of_the_title():
     assert split_title("Разбор КР/пробника") is None
     assert split_title("10:00-11:30") is None
     assert split_title("Сдача до 10.11") is None
+
+
+# ── Несколько типов в один день — кружок на доли (05.10.2026) ───────────
+
+def test_student_calendar_splits_the_circle_by_types(client, db, user_factory, session_factory):
+    """Служба заботы второй раз 05.10.2026: «ребёнку нужно видеть это в
+    календаре, а то у него только один цвет» — точка 5px под кружком на
+    телефоне не читалась. Кружок дня делится на доли цветов типов."""
+    student = _student(client, user_factory, session_factory, vk_id=440_103)
+    today = today_msk()
+    digest = create_digest(db, title="Месяц", year=today.year, month=today.month,
+                           assign_to_all=True, user_id=student.id)
+    publish = create_type(db, name="Публикация", color="sky", style="fill")
+    lesson = create_type(db, name="Занятие", color="violet", style="fill")
+    for event_type, title in ((publish, "2 неделя"), (lesson, "Рисунок"), (lesson, "Композиция")):
+        create_event(db, digest.id, type_id=event_type.id, title=title, note=None,
+                     starts_on=today, ends_on=today, meeting_url=None)
+    publish_digest(digest, user_id=student.id)
+    db.commit()
+
+    html = client.get("/cabinet/tracker").text
+    cell = html.split(f'data-day="{today.isoformat()}"', 1)[1].split("</div>", 1)[0]
+    assert "dgst-cal-num has-dot is-split is-split-2" in cell
+    assert cell.index("dgst-cal-part is-fill dgst-color--sky") < cell.index("dgst-cal-part is-fill dgst-color--violet")
+    assert f'<span class="dgst-cal-digit">{today.day}</span>' in cell
+    assert "dgst-cal-more" in cell

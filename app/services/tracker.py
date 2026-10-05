@@ -1831,7 +1831,8 @@ def month_list_events(
     ]
 
 
-# Сколько цветных точек помещается под числом клетки шириной ~48px на 375px.
+# Сколько цветов помещается в клетке шириной ~48px на 375px: долей кружка дня
+# и точек под числом.
 DIGEST_DAY_EXTRA_LIMIT = 3
 
 
@@ -1896,9 +1897,25 @@ def digest_calendar(
             drawn.append(event)
         day["dot"] = None
         if singles:
-            event = _layer_winner(singles)
-            day["dot"] = {"color": event.type.color, "style": event.type.style}
-            drawn.append(event)
+            # Кружок дня делится на доли по типам однодневных событий
+            # (служба заботы, второй раз 05.10.2026: «ребёнку нужно видеть
+            # это в календаре, а то у него только один цвет»). Точки под
+            # числом, сделанные 05.10 утром, на телефоне не читались: 5px
+            # под кружком, а сам кружок — одного цвета. Первым идёт тип
+            # самого короткого события, как в слоях; долей не больше трёх.
+            winner = _layer_winner(singles)
+            parts = [winner]
+            for event in sorted(singles, key=lambda e: (e.sort_order, e.id)):
+                if len(parts) >= DIGEST_DAY_EXTRA_LIMIT:
+                    break
+                if all(event.type_id != part.type_id for part in parts):
+                    parts.append(event)
+            day["dot"] = {
+                "color": winner.type.color,
+                "style": winner.type.style,
+                "parts": [{"color": e.type.color, "style": e.type.style} for e in parts],
+            }
+            drawn.extend(parts)
         # Точки под числом — типы дня, не попавшие ни в один слой (служба
         # заботы 04.10.2026: «если в один день несколько событий, то ребёнку
         # нужно видеть это в календаре, а то у него только один цвет»; на

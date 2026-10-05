@@ -62,7 +62,9 @@ def test_single_day_is_a_dot_on_top_of_a_period(db, user_factory):
 
     day = _days(db, digest)["2026-04-09"]
 
-    assert day["dot"] == {"color": "violet", "style": "fill"}
+    assert day["dot"] == {
+        "color": "violet", "style": "fill", "parts": [{"color": "violet", "style": "fill"}],
+    }
     assert day["ring"] == {"color": "pink", "pos": "mid"}
     assert day["more"] is False
 
@@ -71,7 +73,9 @@ def test_ring_style_single_day_is_an_outlined_dot(db, user_factory):
     digest, types = _setup(db, user_factory)
     _add(db, digest, types["meeting"], "Стратегическая встреча", date(2026, 4, 27))
 
-    assert _days(db, digest)["2026-04-27"]["dot"] == {"color": "violet", "style": "ring"}
+    assert _days(db, digest)["2026-04-27"]["dot"] == {
+        "color": "violet", "style": "ring", "parts": [{"color": "violet", "style": "ring"}],
+    }
 
 
 def test_period_from_previous_month_is_painted_in_the_grid(db, user_factory):
@@ -106,10 +110,12 @@ def test_shorter_period_wins_the_layer_and_day_is_flagged(db, user_factory):
     assert days["2026-04-20"]["more"] is False
 
 
-def test_other_types_of_the_day_become_colour_dots(db, user_factory):
-    """Служба заботы 04.10.2026: «если в один день несколько событий, то
-    ребёнку нужно видеть это в календаре, а то у него только один цвет».
-    Прод, 11.10: публикация и три занятия рисовались одним кружком."""
+def test_other_types_of_the_day_split_the_circle(db, user_factory):
+    """Служба заботы 04.10.2026 и второй раз 05.10.2026: «если в один день
+    несколько событий, то ребёнку нужно видеть это в календаре, а то у него
+    только один цвет». Прод, 11.10: публикация и три занятия. Сначала второй
+    тип стал точкой под числом — на телефоне её не видно; теперь кружок дня
+    делится на доли по типам."""
     digest, types = _setup(db, user_factory)
     publish = create_type(db, name="Публикация", color="sky", style="fill")
     _add(db, digest, publish, "2 неделя", date(2026, 4, 11))
@@ -119,9 +125,11 @@ def test_other_types_of_the_day_become_colour_dots(db, user_factory):
     day = _days(db, digest)["2026-04-11"]
 
     assert day["dot"]["color"] == "sky"
-    # Точка на тип, а не на событие: три занятия — одна фиолетовая.
-    assert day["extra"] == [{"color": "violet"}]
-    assert day["more"] is False
+    # Доля на тип, а не на событие: три занятия — одна фиолетовая доля,
+    # ещё два занятия того же цвета — серая точка.
+    assert [part["color"] for part in day["dot"]["parts"]] == ["sky", "violet"]
+    assert day["extra"] == []
+    assert day["more"] is True
 
 
 def test_same_type_duplicates_keep_the_grey_more_flag(db, user_factory):
@@ -137,7 +145,7 @@ def test_same_type_duplicates_keep_the_grey_more_flag(db, user_factory):
     assert day["more"] is True
 
 
-def test_colour_dots_are_capped_and_overflow_is_flagged(db, user_factory):
+def test_circle_takes_three_types_and_the_rest_become_dots(db, user_factory):
     digest, types = _setup(db, user_factory)
     colours = ("sky", "pink", "mint", "teal", "coral")
     for index, colour in enumerate(colours):
@@ -146,9 +154,10 @@ def test_colour_dots_are_capped_and_overflow_is_flagged(db, user_factory):
 
     day = _days(db, digest)["2026-04-22"]
 
-    assert day["dot"]["color"] == "sky"
-    assert [extra["color"] for extra in day["extra"]] == ["pink", "mint", "teal"]
-    assert day["more"] is True
+    assert [part["color"] for part in day["dot"]["parts"]] == ["sky", "pink", "mint"]
+    assert [extra["color"] for extra in day["extra"]] == ["teal", "coral"]
+    # Все пять цветов видны — серой точке сказать нечего.
+    assert day["more"] is False
 
 
 def test_one_day_period_is_solo(db, user_factory):
