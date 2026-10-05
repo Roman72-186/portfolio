@@ -957,6 +957,8 @@ def program_stages(
             "cycles_count": _children_count(db, stage.id, TOPIC_KIND_WEEK),
             # Задания прямо на этапе («Портфолио») — кнопка «Задания этапа».
             "items_count": count_week_items(db, stage.id),
+            # Ролики старой привязки — третье, что держит этап от удаления.
+            "videos_count": _cycle_video_count(db, stage.id),
             "period_id": stage.parent_id,
             "period_label": period_titles.get(stage.parent_id) if stage.parent_id else None,
         }
@@ -1030,6 +1032,84 @@ def update_program_stage(
     else:
         unpublish_topic(stage)
     db.commit()
+    return JSONResponse({"ok": True})
+
+
+def _frame_blockers(db: DBSession, topic: LearningTopic) -> list[str]:
+    """Что держит период или этап от удаления. Пусто — можно удалять.
+
+    Удаление насовсем (владелец 06.10.2026: «периоды и этапы можно удалять и
+    насовсем, когда мы будем делать их тестовыми»), поэтому только пустую
+    рамку. Внешние ключи на `learning_topics` — `SET NULL`: у живого этапа
+    циклы, задания и ролики не исчезли бы, а остались бы без рамки, и цикл
+    без этапа ученик видит по старым правилам — ленту это сломало бы молча.
+    Поэтому сервер отказывает, а не каскадит.
+    """
+    if topic.kind == TOPIC_KIND_PERIOD:
+        return ["этапы"] if _children_count(db, topic.id, TOPIC_KIND_STAGE) else []
+    blockers = []
+    if _children_count(db, topic.id, TOPIC_KIND_WEEK):
+        blockers.append("циклы")
+    if count_week_items(db, topic.id):
+        blockers.append("задания")
+    if _cycle_video_count(db, topic.id):
+        blockers.append("ролики")
+    return blockers
+
+
+def _delete_frame(db: DBSession, topic: LearningTopic, *, user_id: int) -> None:
+    blockers = _frame_blockers(db, topic)
+    if blockers:
+        noun = "В периоде" if topic.kind == TOPIC_KIND_PERIOD else "В этапе"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{noun} есть {' и '.join(blockers)} – сначала перенесите или удалите их.",
+        )
+    title, kind, topic_id = topic.title, topic.kind, topic.id
+    db.expunge(topic)
+    # Насовсем, одним запросом: строки адресации (`learning_topic_tariffs`,
+    # `_assignees`, `_tags`) снимает `ON DELETE CASCADE` в базе, удалённые
+    # раньше мягко циклы теряют ссылку на этап через `SET NULL`.
+    db.query(LearningTopic).filter(LearningTopic.id == topic_id).delete(
+        synchronize_session=False
+    )
+    db.add(
+        AuditLog(
+            action=f"program_{kind}_delete",
+            performed_by_id=user_id,
+            details=json.dumps({"topic_id": topic_id, "title": title}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+
+
+@router.post("/periods/{period_id}/delete", response_class=JSONResponse)
+def delete_program_period(
+    period_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Удалить пустой период насовсем — см. `_frame_blockers`."""
+    period = get_topic(db, period_id, kinds=(TOPIC_KIND_PERIOD,))
+    if period is None:
+        raise HTTPException(status_code=404, detail="Период не найден")
+    _delete_frame(db, period, user_id=user["user_id"])
+    return JSONResponse({"ok": True})
+
+
+@router.post("/stages/{stage_id}/delete", response_class=JSONResponse)
+def delete_program_stage(
+    stage_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Удалить пустой этап насовсем — см. `_frame_blockers`."""
+    stage = get_topic(db, stage_id, kinds=(TOPIC_KIND_STAGE,))
+    if stage is None:
+        raise HTTPException(status_code=404, detail="Этап не найден")
+    _delete_frame(db, stage, user_id=user["user_id"])
     return JSONResponse({"ok": True})
 
 

@@ -55,10 +55,15 @@ def _login_chief(client, user_factory, session_factory):
 
 def _stage(client, db, title, *, starts_in=0):
     starts = today_msk() + timedelta(days=starts_in)
-    resp = client.post(f"{PROGRAM}/stages", json={
-        "title": title, "description": None,
+    dates = {
+        "description": None, "is_published": True,
         "starts_on": starts.isoformat(), "ends_on": (starts + timedelta(days=30)).isoformat(),
-        "is_published": True,
+    }
+    # Этап всегда внутри периода (владелец 06.10.2026).
+    period = client.post(f"{PROGRAM}/periods", json={"title": "Период", **dates}, headers=CSRF)
+    assert period.status_code == 200, period.text
+    resp = client.post(f"{PROGRAM}/stages", json={
+        "title": title, "period_id": period.json()["period_id"], **dates,
     }, headers=CSRF)
     assert resp.status_code == 200, resp.text
     return (

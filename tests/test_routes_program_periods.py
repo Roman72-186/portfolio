@@ -6,7 +6,7 @@
 на периоде нет. Связка «цикл → этап», на которой держится лента ученика, не
 меняется — это сторожат тесты ниже.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.models.learning_topic import (
     TOPIC_KIND_PERIOD,
@@ -32,6 +32,10 @@ def _payload(**over):
     }
     data.update(over)
     return data
+
+
+def _now():
+    return datetime.now(timezone.utc)
 
 
 def _of_kind(db, kind):
@@ -289,3 +293,108 @@ def test_cycles_page_does_not_list_period(admin_client, db):
     assert f'data-cycle-id="{period.id}"' not in resp.text
     # И в выборе этапа у цикла периода нет.
     assert f'<option value="{period.id}"' not in resp.text
+
+
+# ── удаление периода и этапа (владелец 06.10.2026) ──────────────────────────
+# «Периоды и этапы можно удалять и насовсем, когда мы будем делать их
+# тестовыми» — удаляется только пустая рамка, и насовсем, без `deleted_at`.
+
+def _audit_actions(db):
+    from app.models.audit_log import AuditLog
+    return [row.action for row in db.query(AuditLog).all()]
+
+
+def test_empty_period_is_deleted_for_good(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db, title="ннннннн")
+    period_id = period.id
+
+    resp = client.post(f"{PERIODS_PAGE}/{period_id}/delete")
+    assert resp.status_code == 200
+    db.expire_all()
+    assert db.get(LearningTopic, period_id) is None
+    assert "program_period_delete" in _audit_actions(db)
+
+
+def test_period_with_stage_is_not_deleted(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db)
+    stage = _stage(client, db, period_id=period.id)
+
+    resp = client.post(f"{PERIODS_PAGE}/{period.id}/delete")
+    assert resp.status_code == 409
+    assert resp.json()["detail"].startswith("В периоде есть этапы")
+    db.expire_all()
+    assert db.get(LearningTopic, period.id) is not None
+    assert db.get(LearningTopic, stage.id).parent_id == period.id
+
+
+def test_empty_stage_is_deleted_for_good(admin_client, db):
+    client, _ = admin_client
+    period = _period(client, db)
+    stage = _stage(client, db, period_id=period.id, title="Пробный этап")
+    stage_id = stage.id
+
+    resp = client.post(f"{STAGES_PAGE}/{stage_id}/delete")
+    assert resp.status_code == 200
+    db.expire_all()
+    assert db.get(LearningTopic, stage_id) is None
+    # Период после этого пустой — удаляется следом.
+    assert client.post(f"{PERIODS_PAGE}/{period.id}/delete").status_code == 200
+    assert "program_stage_delete" in _audit_actions(db)
+
+
+def test_stage_with_cycle_is_not_deleted(admin_client, db):
+    client, _ = admin_client
+    stage = _stage(client, db)
+    cycle = _cycle(client, db, stage_id=stage.id, offset=1)
+
+    resp = client.post(f"{STAGES_PAGE}/{stage.id}/delete")
+    assert resp.status_code == 409
+    assert resp.json()["detail"].startswith("В этапе есть циклы")
+    db.expire_all()
+    assert db.get(LearningTopic, cycle.id).parent_id == stage.id
+
+
+def test_delete_addresses_do_not_mix_levels(admin_client, db):
+    """Адрес периода не удаляет этап и наоборот — `kinds` в `get_topic`."""
+    client, _ = admin_client
+    stage = _stage(client, db)
+    assert client.post(f"{PERIODS_PAGE}/{stage.id}/delete").status_code == 404
+    assert client.post(f"{STAGES_PAGE}/{stage.parent_id}/delete").status_code == 404
+    assert client.post(f"{STAGES_PAGE}/999999/delete").status_code == 404
+
+
+def test_student_cannot_delete_period(auth_client, db):
+    client, _ = auth_client
+    period = LearningTopic(
+        title="Чужой", kind=TOPIC_KIND_PERIOD, opens_at=_now(), assign_to_all=True,
+    )
+    db.add(period)
+    db.commit()
+    resp = client.post(f"{PERIODS_PAGE}/{period.id}/delete", follow_redirects=False)
+    assert resp.status_code in (302, 403)
+    db.expire_all()
+    assert db.get(LearningTopic, period.id) is not None
+
+
+def test_delete_button_only_on_empty_cards(admin_client, db):
+    client, _ = admin_client
+    full = _period(client, db, title="С этапом")
+    empty = _period(client, db, title="Пустой")
+    stage = _stage(client, db, period_id=full.id, title="С циклом")
+    _cycle(client, db, stage_id=stage.id, offset=1)
+    lonely = _stage(client, db, period_id=full.id, title="Без циклов")
+
+    def card(html, topic_id):
+        start = html.index(f'data-stage-id="{topic_id}"')
+        end = html.find("</article>", start)
+        return html[start:end]
+
+    periods = client.get(PERIODS_PAGE).text
+    assert "data-stage-delete" not in card(periods, full.id)
+    assert "data-stage-delete" in card(periods, empty.id)
+
+    stages = client.get(STAGES_PAGE).text
+    assert "data-stage-delete" not in card(stages, stage.id)
+    assert "data-stage-delete" in card(stages, lonely.id)

@@ -24,10 +24,15 @@ def _login_chief(client, user_factory, session_factory):
 
 def _stage_with_cycle(client, db):
     today = today_msk()
-    resp = client.post(f"{PROGRAM}/stages", json={
-        "title": "Предобучение", "description": None,
+    dates = {
+        "description": None, "is_published": True,
         "starts_on": today.isoformat(), "ends_on": (today + timedelta(days=30)).isoformat(),
-        "is_published": True,
+    }
+    # Этап всегда внутри периода (владелец 06.10.2026).
+    period = client.post(f"{PROGRAM}/periods", json={"title": "Период", **dates}, headers=CSRF)
+    assert period.status_code == 200, period.text
+    resp = client.post(f"{PROGRAM}/stages", json={
+        "title": "Предобучение", "period_id": period.json()["period_id"], **dates,
     }, headers=CSRF)
     assert resp.status_code == 200, resp.text
     stage = db.query(LearningTopic).filter(LearningTopic.kind == TOPIC_KIND_STAGE).one()

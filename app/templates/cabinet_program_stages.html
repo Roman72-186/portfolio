@@ -151,12 +151,21 @@
                 {% if prg_edit %}
                 <button type="button" class="btn-outline" data-stage-edit
                         data-payload='{{ stage|tojson }}'>Название и даты</button>
+                {# Удаление насовсем и только пустой рамки (владелец 06.10.2026:
+                   «когда мы будем делать их тестовыми»), см.
+                   `_frame_blockers`. У непустой кнопки нет — сервер всё равно
+                   откажет. Корзиной, как у цикла. #}
+                {% if (is_period and not stage.stages_count) or (not is_period and not stage.cycles_count and not stage.items_count and not stage.videos_count) %}
+                <button type="button" class="btn-danger prg-icon-btn" data-stage-delete
+                        aria-label="Удалить {{ noun }}" title="Удалить {{ noun }}"
+                        data-label="{{ stage.label }}"><span aria-hidden="true">🗑</span></button>
+                {% endif %}
                 {% endif %}
             </div>
         </article>
         {% endfor %}
         {% elif is_period %}
-        <p class="prg-hint">Пока ни одного периода. Этапы без периода работают как раньше.</p>
+        <p class="prg-hint">Пока ни одного периода. Заведите первый – к нему привязываются этапы.</p>
         {% elif period_filter %}
         <p class="prg-hint">В этом периоде пока нет этапов. Привяжите этап к периоду в форме «Название и даты».</p>
         {% else %}
@@ -173,6 +182,24 @@
     // часами, и после перезахода ключ страницы мёртв (инцидент 26.09.2026).
     var form = document.querySelector('[data-stage-form]');
     if (!form) return;
+
+    document.querySelectorAll('[data-stage-delete]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var card = button.closest('[data-stage-id]');
+            var noun = '{{ noun }}';
+            if (!window.confirm('Удалить ' + noun + ' «' + button.getAttribute('data-label') + '» насовсем? Вернуть его не получится.')) return;
+            button.disabled = true;
+            window.csrfFetch(form.getAttribute('data-endpoint') + '/' + card.getAttribute('data-stage-id') + '/delete', {
+                method: 'POST'
+            }).then(function (resp) {
+                if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
+                window.location.reload();
+            }).catch(function (err) {
+                button.disabled = false;
+                window.alert(err.message || 'Не удалось удалить ' + noun + '.');
+            });
+        });
+    });
 
     var fields = {
         id: form.querySelector('[data-s-id]'),
