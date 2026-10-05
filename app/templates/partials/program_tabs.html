@@ -22,20 +22,21 @@
        (`/cabinet/staff/program`, `/cabinet/staff/program/{iso}`) остаётся
        живым для прямых ссылок и уже опубликованных там заданий — роуты не
        трогали, убрана только ссылка на них здесь. #}
-    {% set _prg_cycles = _prg_p.startswith('/cabinet/staff/program/cycles') %}
-    <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
-       href="/cabinet/staff/program/cycles"
-       {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>
-    {% set _prg_stages = _prg_p.startswith('/cabinet/staff/program/stages') %}
-    <a class="prg-tab{% if _prg_stages %} is-active{% endif %}"
-       href="/cabinet/staff/program/stages"
-       {% if _prg_stages %}aria-current="page"{% endif %}>Этапы</a>
     {# Периоды (владелец 06.10.2026) — уровень над этапами: Период → Этап →
-       Цикл → задания. Стоят после «Этапов»: от мелкого к крупному. #}
+       Цикл → задания. Порядок вкладок — от крупного к мелкому: Периоды, Этапы, Циклы
+       (владелец 06.10.2026). #}
     {% set _prg_periods = _prg_p.startswith('/cabinet/staff/program/periods') %}
     <a class="prg-tab{% if _prg_periods %} is-active{% endif %}"
        href="/cabinet/staff/program/periods"
        {% if _prg_periods %}aria-current="page"{% endif %}>Периоды</a>
+    {% set _prg_stages = _prg_p.startswith('/cabinet/staff/program/stages') %}
+    <a class="prg-tab{% if _prg_stages %} is-active{% endif %}"
+       href="/cabinet/staff/program/stages"
+       {% if _prg_stages %}aria-current="page"{% endif %}>Этапы</a>
+    {% set _prg_cycles = _prg_p.startswith('/cabinet/staff/program/cycles') %}
+    <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
+       href="/cabinet/staff/program/cycles"
+       {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>
     <span class="prg-tabs-sep" aria-hidden="true"></span>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"
