@@ -287,12 +287,10 @@ def test_rating_goes_to_care_topic_with_thread(
     assert args[0] == -100500
     assert kwargs["message_thread_id"] == 77
     text = args[1]
-    for part in ("Оценка ОС: 4 из 5", TARIFF_WITH_YOU, "Куратор Оценка",
+    for part in ("Оценка ОС: 4 из 5", "Ученик: Ученик Оценка", TARIFF_WITH_YOU, "Куратор Оценка",
                  "Домашка: Домашка недели", "&lt;b&gt;Спасибо&lt;/b&gt;"):
         assert part in text, part
-    # Обезличено (владелец 04.10.2026): ни имени, ни строки «Ученик».
-    assert "Ученик Оценка" not in text
-    assert "Ученик:" not in text
+    # Ученик назван: топик — для команды (владелец 05.10.2026).
     assert "Открыть диалог" not in text
     assert "/cabinet/" not in text
     assert "Скриншоты" not in text
