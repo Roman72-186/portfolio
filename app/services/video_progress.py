@@ -48,6 +48,18 @@ def get_video_progress(
 RESUME_SHORTFALL_MARGIN_SECONDS = 15.0
 
 
+def watch_shortfall_seconds(progress: VideoProgress | None) -> float:
+    """Сколько честных секунд не хватает до зачёта, если ученик уже дошёл до
+    порога, а просмотр не засчитан; иначе 0. По нему `get_resume_position`
+    сдвигает ученика назад, а плеер говорит, зачем (05.10.2026)."""
+    if progress is None or progress.completed_at is not None or not progress.duration_seconds:
+        return 0.0
+    threshold = watch_threshold_seconds(progress.duration_seconds)
+    if progress.position_seconds < threshold:
+        return 0.0
+    return max(0.0, threshold - progress.watched_seconds)
+
+
 def get_resume_position(progress: VideoProgress | None) -> float:
     if progress is None or progress.position_seconds < 5:
         return 0.0
@@ -60,11 +72,9 @@ def get_resume_position(progress: VideoProgress | None) -> float:
     # Засчитывается любое проигранное время, поэтому ставим ученика ровно за
     # столько секунд до конца, сколько не хватает, — досмотрел до конца, и
     # зачёт есть. Правило зачёта при этом не мягче.
-    if progress.completed_at is None and duration:
-        threshold = watch_threshold_seconds(duration)
-        missing = threshold - progress.watched_seconds
-        if progress.position_seconds >= threshold and missing > 0:
-            return round(max(0.0, duration - missing - RESUME_SHORTFALL_MARGIN_SECONDS), 1)
+    missing = watch_shortfall_seconds(progress)
+    if missing > 0:
+        return round(max(0.0, duration - missing - RESUME_SHORTFALL_MARGIN_SECONDS), 1)
     # Засчитанный ролик, досмотренный до конца, начинается сначала. Позицию
     # рядом с концом сохраняем: ученик мог уйти за несколько секунд до `ended`.
     if duration is not None and progress.position_seconds >= duration:

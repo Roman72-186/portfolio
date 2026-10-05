@@ -57,6 +57,27 @@ def test_embed_returns_player_data_for_group_member(auth_client, db, monkeypatch
     assert "quiz_submit_endpoint" not in body
 
 
+def test_embed_tells_player_when_resume_was_moved_back_to_finish(auth_client, db, monkeypatch):
+    """05.10.2026: позиция у конца, засчитано меньше порога — сервер сдвигает
+    возврат назад и говорит плееру, чтобы тот объяснил ученику, зачем."""
+    from app.services.video_progress import save_video_progress
+
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    video = _video_open_to_all(db, user.id)
+
+    body = client.get(f"/cabinet/videos/{video.id}/embed").json()
+    assert body["resume_to_finish"] is False
+
+    save_video_progress(
+        db, user_id=user.id, video_id=VIDEO_ID, position_seconds=600.0,
+        duration_seconds=600.0, completed=False, watched_seconds=500.0,
+    )
+    body = client.get(f"/cabinet/videos/{video.id}/embed").json()
+    assert body["resume_to_finish"] is True
+    assert body["resume_position_seconds"] == 515.0
+
+
 def test_embed_logs_a_view(auth_client, db, monkeypatch):
     client, user = auth_client
     _configure_bunny(monkeypatch)

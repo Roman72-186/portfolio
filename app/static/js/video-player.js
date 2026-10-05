@@ -620,6 +620,11 @@
             var saveInFlight = false;
             var pendingProgress = null;
             var savingDisabled = false;
+            // Сервер сдвинул позицию назад: до порога не хватило честных
+            // секунд (`video_progress.py::watch_shortfall_seconds`, 05.10.2026).
+            // Пока висит эта подсказка, «Место просмотра сохранено» её не
+            // затирает — иначе ученик снова не поймёт, зачем ролик отмотан.
+            var finishHintShown = false;
             var hasReportedSaved = false;
             var completionReported = false;
             // Разовый сбой сохранения ученику не показываем: выкатка
@@ -689,7 +694,7 @@
                     var recovered = saveFailures >= SAVE_FAILURES_BEFORE_ERROR;
                     saveFailures = 0;
                     if (recovered && !progress.completed) setStatus('Место просмотра сохранено.', false);
-                    if (!hasReportedSaved && !progress.completed) {
+                    if (!hasReportedSaved && !progress.completed && !finishHintShown) {
                         hasReportedSaved = true;
                         setStatus('Место просмотра сохранено.', false);
                     }
@@ -709,7 +714,7 @@
                     } else if (!watchRequired) {
                         setStatus('Место просмотра сохранено.', false);
                     } else {
-                        setStatus('Просмотр пока не подтверждён. Обнови страницу и продолжи с сохранённого места.', true);
+                        setStatus('Просмотр пока не засчитан – часть ролика пропущена. Обнови страницу, и ролик встанет туда, откуда нужно досмотреть.', true);
                     }
                 }).catch(function (error) {
                     if (error.message === 'session_expired') setStatus('Обнови страницу, чтобы сохранять место просмотра.', true);
@@ -761,6 +766,15 @@
                         } else {
                             currentSeconds = 0;
                             setStatus('Место просмотра сохраняется автоматически.', false);
+                        }
+                        // Только при первой загрузке: после переподключения
+                        // плеера позиция уже своя, а после зачёта подсказка лжёт.
+                        if (data.resume_to_finish && watchRequired && !finishHintShown
+                            && !completionReported && durationSeconds) {
+                            var left = Math.max(0, durationSeconds - currentSeconds);
+                            finishHintShown = true;
+                            setStatus('Чтобы просмотр засчитался, досмотри отсюда до конца – это '
+                                + (left < 60 ? 'меньше минуты' : Math.ceil(left / 60) + ' мин') + '.', false);
                         }
                     });
                 });

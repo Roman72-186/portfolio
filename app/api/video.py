@@ -41,6 +41,7 @@ from app.services.video_progress import (
     evaluate_watch,
     save_video_progress as persist_video_progress,
     view_state,
+    watch_shortfall_seconds,
     watch_threshold_seconds,
 )
 from app.tmpl import templates
@@ -189,11 +190,15 @@ def _player_payload(
     try:
         progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
         payload["resume_position_seconds"] = get_resume_position(progress)
+        # Позиция сдвинута назад ради зачёта — плеер объясняет ученику, сколько
+        # досмотреть (05.10.2026).
+        payload["resume_to_finish"] = watch_shortfall_seconds(progress) > 0
         payload["video_already_completed"] = bool(progress and progress.completed_at)
     except SQLAlchemyError:
         logger.exception("Video progress read failed for user_id=%s", user["user_id"])
         db.rollback()
         payload["resume_position_seconds"] = 0.0
+        payload["resume_to_finish"] = False
         payload["video_already_completed"] = False
 
     return payload, False
@@ -210,6 +215,7 @@ _PLAYER_DATA_KEYS = (
     "cover_url",
     "viewer_watermark",
     "resume_position_seconds",
+    "resume_to_finish",
     "progress_endpoint",
     "player_url_endpoint",
     "player_url_ttl_seconds",

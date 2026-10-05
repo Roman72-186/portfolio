@@ -12,6 +12,7 @@ from app.services.video_progress import (
     get_resume_position,
     get_video_progress,
     save_video_progress,
+    watch_shortfall_seconds,
     watch_threshold_seconds,
 )
 
@@ -182,6 +183,28 @@ def test_unconfirmed_watch_resumes_where_finishing_completes_it(db, regular_user
     # Порог 570, не хватает 70: старт на 600 − 70 − 15.
     assert resume == 515.0
     assert progress.watched_seconds + (600.0 - resume) >= watch_threshold_seconds(600.0)
+
+
+def test_shortfall_only_when_threshold_reached_and_not_completed(db, regular_user):
+    """Подсказку «досмотри отсюда» плеер показывает только застрявшему у конца."""
+    save_video_progress(
+        db, user_id=regular_user.id, video_id=VIDEO_ID, position_seconds=300.0,
+        duration_seconds=600.0, completed=False, watched_seconds=100.0,
+    )
+    assert watch_shortfall_seconds(get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)) == 0.0
+
+    save_video_progress(
+        db, user_id=regular_user.id, video_id=VIDEO_ID, position_seconds=598.0,
+        duration_seconds=600.0, completed=False, watched_seconds=500.0,
+    )
+    assert watch_shortfall_seconds(get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)) == 70.0
+
+    save_video_progress(
+        db, user_id=regular_user.id, video_id=VIDEO_ID, position_seconds=600.0,
+        duration_seconds=600.0, completed=True, watched_seconds=600.0,
+    )
+    assert watch_shortfall_seconds(get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)) == 0.0
+    assert watch_shortfall_seconds(None) == 0.0
 
 
 def test_scrubbed_to_end_resumes_near_start(db, regular_user):
