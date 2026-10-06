@@ -215,7 +215,10 @@ async def not_found_handler(request: Request, exc):
         return JSONResponse(status_code=404, content={"detail": getattr(exc, "detail", "Not found")})
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
-        return JSONResponse(status_code=404, content={"detail": "Not found"})
+        # Причину из `HTTPException` не теряем, как и обработчик 403: экрану
+        # нужно «Ученик не найден», а не «Not found» (карточка «Учеников»,
+        # 06.10.2026). Несуществующий адрес по-прежнему даёт «Not Found».
+        return JSONResponse(status_code=404, content={"detail": getattr(exc, "detail", "Not found")})
     from app.tmpl import templates
     return templates.TemplateResponse(request, "404.html", {"request": request}, status_code=404)
 

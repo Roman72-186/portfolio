@@ -162,16 +162,27 @@ function selectStudent(id, forceTab) {
         return;
     }
 
-    fetch('/cabinet/students/' + id + '/profile')
-        .then(function(r) { return r.json(); })
+    getCardJson('/cabinet/students/' + id + '/profile')
         .then(function(data) {
             _tabCache[id].profile = data;
             renderProfile(data);
-        })
-        .catch(function() {
-            document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Не удалось открыть ученика. Проверьте интернет и выберите его ещё раз.</div></div>';
+        }, function(err) {
+            document.getElementById('main-panel').innerHTML = loadFailedHtml(err,
+                'Не удалось открыть ученика. Проверьте интернет и выберите его ещё раз.');
         });
+}
+
+// Карточка не открылась. Сервер назвал причину («Ученик не найден», «Нет
+// доступа к этому ученику») — показываем её; про интернет — только когда
+// ответа не было вовсе. Ошибки отрисовки сюда не попадают: `then` с двумя
+// обработчиками ловит только запрос, иначе поломка скрипта выглядела бы как
+// «нет связи».
+function loadFailedHtml(err, netText) {
+    var reason = err && err.serverMessage;
+    var text = typeof reason === 'string' && reason ? reason
+        : err && err.status ? 'Сервер не ответил как надо (код ' + err.status + '). Обновите страницу.'
+        : netText;
+    return '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">' + esc(text) + '</div></div>';
 }
 
 // Точку А и уровень для шапки отдаёт только профиль (`/profile`, поле hero):
@@ -179,8 +190,7 @@ function selectStudent(id, forceTab) {
 // его в фоне и перерисовываем шапку.
 function prefetchProfile(id) {
     if (_tabCache[id] && _tabCache[id].profile) return;
-    fetch('/cabinet/students/' + id + '/profile')
-        .then(function(r) { return r.json(); })
+    getCardJson('/cabinet/students/' + id + '/profile')
         .then(function(data) {
             if (!_tabCache[id]) _tabCache[id] = {};
             _tabCache[id].profile = data;
@@ -599,15 +609,16 @@ function switchTab(tabName) {
     var tc = document.getElementById('tab-content');
     if (tc) tc.innerHTML = '<div class="tab-loading">Загружаем…</div>';
 
-    fetch('/cabinet/students/' + _currentStudentId + '/' + tabName)
-        .then(function(r) { return r.json(); })
+    getCardJson('/cabinet/students/' + _currentStudentId + '/' + tabName)
         .then(function(data) {
             _tabCache[_currentStudentId][tabName] = data;
             renderTab(tabName, data);
-        })
-        .catch(function() {
+        }, function(err) {
+            // Ученика нет или он чужой — вкладки ему не помогут, прячем их
+            if (err && err.status === 404) document.getElementById('tab-bar').style.display = 'none';
             var tc = document.getElementById('tab-content');
-            if (tc) tc.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Не удалось открыть вкладку. Проверьте интернет и нажмите на неё ещё раз.</div></div>';
+            if (tc) tc.innerHTML = loadFailedHtml(err,
+                'Не удалось открыть вкладку. Проверьте интернет и нажмите на неё ещё раз.');
         });
 }
 
@@ -945,9 +956,17 @@ function readJsonOrThrow(r) {
     return r.json().catch(function() { return {}; }).then(function(body) {
         if (r.ok) return body;
         var err = new Error('bad status');
+        err.status = r.status;
         err.serverMessage = window.csrfMessage(body, '');
         throw err;
     });
+}
+
+// Данные карточки и вкладок. `Accept` обязателен: без него обработчики ошибок
+// в `app/main.py` отдают HTML-страницу, и причина («Ученик не найден») до
+// экрана не доходит.
+function getCardJson(url) {
+    return fetch(url, {headers: {'Accept': 'application/json'}}).then(readJsonOrThrow);
 }
 
 function toggleEditForm(id, btn) {

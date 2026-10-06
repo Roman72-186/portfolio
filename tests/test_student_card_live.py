@@ -227,6 +227,35 @@ def test_card_script_has_no_mock_exams_tab():
     assert "if (t === 'cycles' || t === 'mock-exams') t = 'portfolio';" in source
 
 
+@pytest.mark.parametrize("tab", ["profile", "portfolio", "tasks", "statistics"])
+def test_unknown_student_says_not_found(client, db, user_factory, session_factory, tab):
+    """`?student=<нет такого>`: сервер называет причину словами, а карточка
+    показывает её, а не «Проверьте интернет» (проход 06.10.2026, пункт 8).
+    До правки сломано было трижды: скрипт слал запрос без `Accept` и получал
+    HTML-страницу 404, обработчик 404 и на JSON-запрос писал «Not found», а
+    скрипт не смотрел на код ответа и показывал заглушку про связь."""
+    _login(client, session_factory, _chief(user_factory))
+
+    resp = client.get(f"/cabinet/students/987654/{tab}", headers={"Accept": "application/json"})
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Ученик не найден"
+
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    assert "fetch(url, {headers: {'Accept': 'application/json'}}).then(readJsonOrThrow)" in source
+    assert "getCardJson('/cabinet/students/' + id + '/profile')" in source
+    assert "getCardJson('/cabinet/students/' + _currentStudentId + '/' + tabName)" in source
+
+
+def test_unknown_address_still_not_found_in_json(client):
+    """Причина из `HTTPException` теперь доходит до JSON-ответа 404, а адрес,
+    которого нет вовсе, отвечает как раньше."""
+    resp = client.get("/no-such-page-at-all", headers={"Accept": "application/json"})
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Not Found"}
+
+
 # ── Отработки сняты ──────────────────────────────────────────────────────────
 
 def test_retake_routes_are_gone(client, db, user_factory, session_factory):
