@@ -1354,7 +1354,9 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.poll_intro = (
             (item.get("poll_intro") or "").strip() or None
         ) if in_poll and row.poll_key else None
-        row.is_required = bool(item.get("is_required"))
+        # Контрольная на время обязательна всегда (`is_block_required_for_user`);
+        # пишем и в базу, чтобы конструктор не показал другого.
+        row.is_required = bool(item.get("is_required")) or block_type == BLOCK_TIMED
         row.is_required_for_intake = bool(
             item.get("is_required_for_intake", True)
             if block_type == BLOCK_PORTFOLIO else False
@@ -2045,7 +2047,9 @@ def completion_button_needed(
       30.09.2026, сбой) — страховка от тупика.
     """
     steps = autoclose_steps(db, task_id, user_id=user_id, user_tariff=user_tariff)
-    if not steps or not all(block.is_required for block in steps):
+    if not steps or not all(
+        is_block_required_for_user(block, is_intake_student=False) for block in steps
+    ):
         return True
     states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
     return all(
@@ -2450,9 +2454,17 @@ def is_block_required_for_user(
     конструкторе галочки у них нет (`blockSettingsHTML`). Через эту функцию
     идут очередь ленты (`cycle_feed.build_cycle_feed`, `feed_state`) и
     подпись «что держит» — своей копии условия у них нет.
+
+    **Контрольная на время обязательна всегда** (владелец 06.10.2026: «если
+    не сдал контрольные, то застрял на этом и у него висит это и всё
+    остальное недоступно»). На проде у «Контрольной по рисунку» галочку не
+    поставили, и «Завершить задание» закрывало её без сдачи. Флаг в базе не
+    важен; в конструкторе галочка стоит и не снимается.
     """
     if block.block_type not in COMPLETABLE_BLOCK_TYPES:
         return False
+    if block.block_type == BLOCK_TIMED:
+        return True
     if is_intake_student and block.block_type == BLOCK_PORTFOLIO:
         return block.is_required_for_intake
     return block.is_required
