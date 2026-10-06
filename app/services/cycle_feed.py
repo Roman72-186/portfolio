@@ -38,15 +38,16 @@ from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds
 from app.services.task_blocks import (
+    BlockViewer,
     close_block_for_user,
+    get_audiences,
     get_blocks_for_tasks,
     get_required_tariffs,
     get_submit_deadlines,
     get_task_submit_deadlines,
     get_states,
-    get_tariffs,
     is_block_accessible,
-    is_block_open_for_tariff,
+    is_block_open_to,
     required_by_block_for_task,
     poll_inner_block_ids,
     portfolio_window_expired,
@@ -56,6 +57,7 @@ from app.services.tracker import (
     accessible_cycles,
     accessible_task_entries,
     cycle_bounds,
+    cycle_deadline_for,
     cycle_debt,
     cycle_label,
     effective_cycle,
@@ -63,6 +65,7 @@ from app.services.tracker import (
     locked_cycle_ids,
     upcoming_cycles,
 )
+from app.services.tz import MSK_TZ
 
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
@@ -306,9 +309,11 @@ def build_cycle_feed(
     # 28.09.2026 ученик чужого тарифа читал название чужого урока с подписью
     # «Откроется, когда будет сделано предыдущее» — открыться оно не могло
     # никогда. Правило одно на все слои — `visible_blocks_for_student`; здесь
-    # взят его предикат, потому что тарифы всё равно нужны ниже целым словарём
-    # и второй запрос за тем же был бы лишним.
-    tariffs_by_block = get_tariffs(
+    # взят его предикат, потому что правила доступа всё равно нужны ниже целым
+    # словарём и второй запрос за тем же был бы лишним. С 06.10.2026 блок
+    # бывает открыт ещё уровню точки А и ученикам поимённо (`is_block_open_to`).
+    viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
+    audiences_by_block = get_audiences(
         db,
         [block.id for task_blocks in blocks_by_task.values() for block in task_blocks],
     )
@@ -317,7 +322,7 @@ def build_cycle_feed(
         blocks_by_task[task_id] = [
             block
             for block in blocks_by_task.get(task_id, [])
-            if is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+            if is_block_open_to(audiences_by_block.get(block.id), viewer)
         ]
 
     # Сквозной список блоков в порядке ленты — на нём и считается блокировка.
@@ -456,8 +461,8 @@ def build_cycle_feed(
                     block_index=block_index,
                     blocks=ordered_blocks,
                     states=states,
-                    tariffs_by_block=tariffs_by_block,
-                    user_tariff=user_tariff,
+                    audiences_by_block=audiences_by_block,
+                    viewer=viewer,
                     required_tariffs_by_block=required_tariffs_by_block,
                     submit_deadlines_by_block=submit_deadlines_by_block,
                     tasks_by_id=tasks_by_id,
@@ -847,6 +852,25 @@ def archive_cycle_ids(
     }
 
 
+def deadline_view(moment: datetime | None) -> dict | None:
+    """Срок цикла словами для ученика: `text` — «12.10 в 23:59» для шапки,
+    `short` — «12.10» для пилюли карусели.
+
+    Владелец 06.10.2026: «срок по… показывать ученику, что по какой у него
+    срок идёт». Без «по» срок цикла — конец последних суток, в базе это
+    полночь следующих (`day_bounds`): «до 13.10 в 00:00» ученик прочёл бы как
+    лишний день, поэтому полночь показываем как 23:59 предыдущих суток.
+    """
+    if moment is None:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    local = moment.astimezone(MSK_TZ)
+    if local.hour == 0 and local.minute == 0:
+        local -= timedelta(minutes=1)
+    return {"text": local.strftime("%d.%m в %H:%M"), "short": local.strftime("%d.%m")}
+
+
 def feed_for_student(
     db: Session, *, user_id: int, user_tariff: str | None, today: date,
     cycle_id: int | None = None,
@@ -958,6 +982,18 @@ def feed_for_student(
         ]
         if upcoming:
             waiting_for = min(upcoming)
+    # Срок цикла у ученика (владелец 06.10.2026) — тот же, по которому
+    # приходят напоминания о долге (`tracker.cycle_deadline_for`): «по» его
+    # тарифа, без неё — конец цикла. Одно чтение «по» на все циклы экрана.
+    from app.services.video_topics import cycle_tariff_closes
+
+    viewed_cycle = topic if topic is not None and topic.kind == TOPIC_KIND_WEEK else None
+    deadline_topics = list(ahead) + list(cycles) + ([viewed_cycle] if viewed_cycle else [])
+    tariff_closes = cycle_tariff_closes(db, {item.id for item in deadline_topics})
+
+    def cycle_deadline(item: LearningTopic) -> dict | None:
+        return deadline_view(cycle_deadline_for(item, user_tariff, tariff_closes.get(item.id)))
+
     poll_inner = poll_inner_block_ids([step["block"] for step in steps if step["block"] is not None])
     counted_steps = [
         step for step in steps
@@ -979,6 +1015,7 @@ def feed_for_student(
                 "is_current": False,
                 "is_locked": True,
                 "opens_on": cycle_bounds(item)[0],
+                "deadline": cycle_deadline(item),
             }
             for item in ahead
         ] + [
@@ -990,10 +1027,13 @@ def feed_for_student(
                 "is_current": topic is not None and item.id == topic.id,
                 "is_locked": item.id in locked_ids,
                 "opens_on": None,
+                "deadline": cycle_deadline(item),
             }
             for item in cycles
         ],
         "debt": _debt_view(db, debt, topic) if debt else None,
+        # Срок открытого цикла; у этапа, открытого напрямую, срока нет.
+        "deadline": cycle_deadline(viewed_cycle) if viewed_cycle else None,
         "stage": stage,
         # Кнопки перед циклами в карусели («Портфолио») — задания, заведённые
         # прямо на этапе. Якорь на них уже есть у любого шага ленты

@@ -66,7 +66,7 @@ def _accessible_block_video_ids(
     # Локальные импорты: `tracker` тянет `video_topics`, и импорт на уровне
     # модуля замкнул бы кольцо через этот файл; `task_blocks` — по той же
     # причине, что и раньше не был затянут сюда без необходимости.
-    from app.services.task_blocks import get_tariffs
+    from app.services.task_blocks import BlockViewer, get_audiences, is_block_open_to
     from app.services.tracker import accessible_task_ids
 
     topic_ids = accessible_topic_ids(db, user_id)
@@ -88,11 +88,13 @@ def _accessible_block_video_ids(
     )
     if not rows:
         return set()
-    tariffs_by_block = get_tariffs(db, [block_id for block_id, _video_id in rows])
+    # Кому открыт блок — то же правило, что у ленты (`is_block_open_to`):
+    # тарифы, уровень точки А и ученики поимённо (06.10.2026).
+    audiences = get_audiences(db, [block_id for block_id, _video_id in rows])
+    viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
     accessible: set[int] = set()
     for block_id, video_id in rows:
-        block_tariffs = tariffs_by_block.get(block_id)
-        if not block_tariffs or user_tariff in block_tariffs:
+        if is_block_open_to(audiences.get(block_id), viewer):
             accessible.add(video_id)
     return accessible
 

@@ -19,6 +19,9 @@
   значит на разных панелях разное (у блока «виден всем», у задания с
   «Ограничить по тарифу» — «никому не видно»), поэтому своя фраза на пустоту —
   `data-sum-empty`, нет её — пустой список в сводку не идёт;
+- `data-sum-count="ученики:"` — контейнер меток `[data-b-student-chip]`
+  (ученики поимённо в «Кому доступно», 06.10.2026): «ученики: 2», пусто —
+  в сводку не идёт;
 - `data-sum-rows="свой срок у"` — контейнер строк сроков по тарифам
   `[data-sum-row]`: считаются строки, где стоит дата или галочка, — «свой
   срок у 1 тарифа», «у 2 тарифов».
@@ -52,7 +55,7 @@ function settingsHiddenInside(panel, node) {
 function settingsSummaryParts(panel) {
     var parts = [];
     var marked = panel.querySelectorAll(
-        '[data-sum], [data-sum-on], [data-sum-off], [data-sum-list], [data-sum-rows]'
+        '[data-sum], [data-sum-on], [data-sum-off], [data-sum-list], [data-sum-count], [data-sum-rows]'
     );
     marked.forEach(function (el) {
         if (settingsHiddenInside(panel, el)) return;
@@ -77,6 +80,9 @@ function settingsSummaryParts(panel) {
             } else if (el.hasAttribute('data-sum-empty')) {
                 parts.push(el.getAttribute('data-sum-empty'));
             }
+        } else if (el.hasAttribute('data-sum-count')) {
+            var chosen = el.querySelectorAll('[data-b-student-chip]').length;
+            if (chosen) parts.push(el.getAttribute('data-sum-count') + ' ' + chosen);
         } else {
             var count = 0;
             el.querySelectorAll('[data-sum-row]').forEach(function (row) {

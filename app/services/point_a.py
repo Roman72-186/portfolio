@@ -306,6 +306,20 @@ def point_a_level(average: int) -> int:
     return 2 if average >= POINT_A_LEVEL_2_MIN_AVERAGE else 1
 
 
+def student_point_a_level(db: DBSession, student: User) -> int | None:
+    """Уровень точки А ученика; `None` — точка А ещё не разобрана целиком.
+
+    Тот же момент, что у уведомления об уровне (`maybe_notify_point_a_level`):
+    уровень есть, когда оценены все плашки. По нему блок конструктора бывает
+    открыт только уровню 1 или 2 (`task_blocks.is_block_open_to`, владелец
+    06.10.2026).
+    """
+    point_a = student_point_a(db, student, with_images=False)
+    if not point_a.is_done or point_a.average is None:
+        return None
+    return point_a_level(point_a.average)
+
+
 def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | None:
     """Уведомление об уровне точки А — один раз, в момент, когда разобрана
     последняя плашка.

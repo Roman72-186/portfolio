@@ -39,6 +39,14 @@
         {% if feed.total_count %}
         <p class="lrn-progress">Сделано {{ feed.done_count }} из {{ feed.total_count }}</p>
         {% endif %}
+        {# Срок цикла (владелец 06.10.2026: «показывать ученику, что по какой у
+           него срок идёт») — «по» его тарифа или конец цикла, тот же, по
+           которому приходят напоминания о долге (`cycle_feed.deadline_view`).
+           Сроки блоков и заданий по-прежнему не печатаются
+           (`docs/invariants/deadlines.md`). #}
+        {% if feed.deadline and not archive_view %}
+        <p class="lrn-progress" data-role="cycle-deadline">Срок цикла – до {{ feed.deadline.text }}</p>
+        {% endif %}
     </div>
 
     {# Переключатель направления появляется, только если в этом цикле есть
@@ -66,11 +74,11 @@
            циклы, которые были до и после»): видно, что цикл есть, открыть
            нельзя. #}
         <span class="lrn-cycle-chip is-locked" data-cycle-id="{{ cycle.id }}"
-              title="{% if cycle.opens_on %}Откроется {{ cycle.opens_on.strftime('%d.%m') }}{% else %}Откроется, когда закроешь «{{ feed.debt.label }}»{% endif %}">{{ cycle.title }}</span>
+              title="{% if cycle.opens_on %}Откроется {{ cycle.opens_on.strftime('%d.%m') }}{% else %}Откроется, когда закроешь «{{ feed.debt.label }}»{% endif %}">{{ cycle.title }}{% if cycle.deadline %} · до {{ cycle.deadline.short }}{% endif %}</span>
         {% else %}
         <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
            href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
-           data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</a>
+           data-cycle-id="{{ cycle.id }}">{{ cycle.title }}{% if cycle.deadline %} · до {{ cycle.deadline.short }}{% endif %}</a>
         {% endif %}
         {% endfor %}
     </div>

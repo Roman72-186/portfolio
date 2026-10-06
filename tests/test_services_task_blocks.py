@@ -28,6 +28,8 @@ from app.models.task_block import (
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask
 from app.services.task_blocks import (
+    BlockViewer,
+    get_audiences,
     block_status,
     close_block_for_user,
     feed_state,
@@ -974,11 +976,12 @@ def test_close_block_for_user_creates_state_lazily(db, regular_user):
 
 def _accessible(db, blocks, user_id, user_tariff, index):
     states = get_states(db, block_ids=[b.id for b in blocks], user_id=user_id)
-    tariffs_by_block = get_tariffs(db, [b.id for b in blocks])
+    audiences_by_block = get_audiences(db, [b.id for b in blocks])
     required_tariffs_by_block = get_required_tariffs(db, [b.id for b in blocks])
     return is_block_accessible(
         block_index=index, blocks=blocks, states=states,
-        tariffs_by_block=tariffs_by_block, user_tariff=user_tariff,
+        audiences_by_block=audiences_by_block,
+        viewer=BlockViewer(db, user_id=user_id, tariff=user_tariff),
         required_tariffs_by_block=required_tariffs_by_block,
     )
 
@@ -1178,8 +1181,8 @@ def test_is_block_accessible_opens_at_combines_with_sequence():
     blocks = [past, later]
 
     assert is_block_accessible(
-        block_index=1, blocks=blocks, states={}, tariffs_by_block={},
-        user_tariff="УВЕРЕННЫЙ", now=now,
+        block_index=1, blocks=blocks, states={}, audiences_by_block={},
+        viewer=BlockViewer(None, user_id=None, tariff="УВЕРЕННЫЙ"), now=now,
     ) is False  # дата открытия прошла, но предыдущий обязательный блок не закрыт
 
 
@@ -1352,13 +1355,13 @@ def test_expired_submit_until_stops_blocking_the_tail():
     blocks = [first, second]
 
     assert is_block_accessible(
-        block_index=1, blocks=blocks, states={}, tariffs_by_block={},
-        user_tariff=TARIFF_SELF, now=now,
+        block_index=1, blocks=blocks, states={}, audiences_by_block={},
+        viewer=BlockViewer(None, user_id=None, tariff=TARIFF_SELF), now=now,
     ) is True
     # Сам блок при этом остаётся доступным — закрыта только сдача.
     assert is_block_accessible(
-        block_index=0, blocks=blocks, states={}, tariffs_by_block={},
-        user_tariff=TARIFF_SELF, now=now,
+        block_index=0, blocks=blocks, states={}, audiences_by_block={},
+        viewer=BlockViewer(None, user_id=None, tariff=TARIFF_SELF), now=now,
     ) is True
 
 

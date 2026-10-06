@@ -89,9 +89,10 @@ from app.models.tracker import (
 from app.models.user import User
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
+    BlockViewer,
+    get_audiences,
     get_blocks_for_tasks,
     get_submit_deadlines,
-    get_tariffs,
     feed_visible_blocks,
     get_task_submit_deadlines,
 )
@@ -248,9 +249,11 @@ def _collect_new_content(
 
     task_ids = list(tasks_by_id)
     blocks_by_task = get_blocks_for_tasks(db, task_ids)
-    tariffs = get_tariffs(
+    audiences = get_audiences(
         db, [b.id for blocks in blocks_by_task.values() for b in blocks]
     )
+    # Один `BlockViewer` на ученика: уровень точки А он считает лениво и один раз.
+    viewers: dict[int, BlockViewer] = {}
     # Когда ученику уже написали о задании — от этого момента ролик считается
     # доложенным позже, а не частью самого задания.
     told_at = {
@@ -265,9 +268,12 @@ def _collect_new_content(
         audience = task_audience_user_ids(db, task_id) & learners.keys()
         for uid in audience:
             user = learners[uid]
-            visible = feed_visible_blocks(blocks_by_task.get(task_id, []), tariffs, user.tariff)
+            viewer = viewers.setdefault(
+                uid, BlockViewer(db, user_id=uid, tariff=user.tariff)
+            )
+            visible = feed_visible_blocks(blocks_by_task.get(task_id, []), audiences, viewer)
             if blocks_by_task.get(task_id) and not visible:
-                continue  # всё задание — чужого тарифа
+                continue  # всё задание ученику закрыто (тариф, уровень, поимённо)
             told = told_at.get((uid, task_id))
             if task_id in new_tasks and told is None:
                 # Одно уведомление на задание: ролики внутри идут в заголовок.
@@ -342,7 +348,8 @@ def _collect_deadlines(
         for task_id, blocks in get_blocks_for_tasks(db, list(tasks)).items()
     }
     block_ids = [b.id for blocks in blocks_by_task.values() for b in blocks]
-    tariffs = get_tariffs(db, block_ids)
+    audiences = get_audiences(db, block_ids)
+    viewers: dict[int, BlockViewer] = {}
     block_deadlines = get_submit_deadlines(db, block_ids)
     task_deadlines = get_task_submit_deadlines(db, list(tasks))
 
@@ -385,7 +392,10 @@ def _collect_deadlines(
                 continue
             user = learners[uid]
             pending: list[datetime] = []
-            for block in feed_visible_blocks(blocks, tariffs, user.tariff):
+            viewer = viewers.setdefault(
+                uid, BlockViewer(db, user_id=uid, tariff=user.tariff)
+            )
+            for block in feed_visible_blocks(blocks, audiences, viewer):
                 if (uid, block.id) in done_blocks:
                     continue
                 if _utc(block.opens_at) and _utc(block.opens_at) > now:

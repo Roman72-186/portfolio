@@ -132,6 +132,125 @@ function tariffChecksHTML() {
     }).join('');
 }
 
+// «Кому доступно» (владелец 06.10.2026: «кроме доступа по тарифу будет ещё по
+// юзернейму», «задание по уровню», «выделить всё это, чтобы видно было»):
+// тарифы, уровень точки А и ученики поимённо — одной выделенной группой.
+// Правило видимости одно, на сервере — `task_blocks.is_block_open_to`.
+//
+// Ученики приходят со страницей (`block_students`, только у того, кто правит
+// программу) и ищутся здесь же, в браузере: ник в базе зашифрован, SQL по нему
+// не ищет, а учеников пара сотен. Выбранный — метка `.chip` с крестиком.
+var BLOCK_STUDENTS = {{ (block_students or [])|tojson }};
+var BLOCK_STUDENT_RESULTS_MAX = 8;
+
+function levelChecksHTML() {
+    return [1, 2].map(function (level) {
+        return '<label class="prg-field prg-field--row">'
+            + '<input type="checkbox" data-b-level value="' + level + '">'
+            + '<span>Уровень ' + level + '</span></label>';
+    }).join('');
+}
+
+function studentChipHTML(student) {
+    var nick = student.username ? ' @' + student.username : '';
+    return '<span class="chip" data-b-student-chip data-id="' + Number(student.id) + '">'
+        + escapeHTML(student.name + nick)
+        + '<button type="button" class="chip-x" data-b-student-remove'
+        + ' aria-label="Убрать ' + escapeHTML(student.name) + '">×</button>'
+        + '</span>';
+}
+
+function blockAudienceHTML() {
+    return ''
+        + '<fieldset class="prg-blk-audience">'
+        + '  <legend>Кому доступно</legend>'
+        + '  <p class="prg-hint">Ничего не отмечено – блок видят все.</p>'
+        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="только">'
+        + '    <p class="prg-hint">Тарифы</p>'
+        + tariffChecksHTML()
+        + '  </div>'
+        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="уровень">'
+        + '    <p class="prg-hint">Уровень точки А. Тариф и уровень вместе – блок видят ученики этого тарифа с этим уровнем.</p>'
+        + levelChecksHTML()
+        + '  </div>'
+        + '  <div class="prg-blk-setting prg-blk-students" data-b-students data-sum-count="ученики:">'
+        + '    <p class="prg-hint">Ученики поимённо – видят блок при любом тарифе и уровне.</p>'
+        + '    <input type="search" data-b-student-search autocomplete="off"'
+        + '      placeholder="Имя, фамилия или @ник" aria-label="Найти ученика по имени, фамилии или нику">'
+        + '    <div class="prg-blk-student-results" data-b-student-results hidden></div>'
+        + '    <div class="prg-blk-student-chips" data-b-student-chips></div>'
+        + '  </div>'
+        + '</fieldset>';
+}
+
+function addBlockStudentChip(box, student) {
+    var chips = box.querySelector('[data-b-student-chips]');
+    if (!chips || chips.querySelector('[data-b-student-chip][data-id="' + Number(student.id) + '"]')) return;
+    chips.insertAdjacentHTML('beforeend', studentChipHTML(student));
+}
+
+function blockStudentMatches(box, query) {
+    var needle = query.trim().toLowerCase().replace(/^@/, '');
+    if (!needle) return [];
+    var chosen = {};
+    box.querySelectorAll('[data-b-student-chip]').forEach(function (chip) {
+        chosen[chip.getAttribute('data-id')] = true;
+    });
+    return BLOCK_STUDENTS.filter(function (student) {
+        if (chosen[String(student.id)]) return false;
+        return student.name.toLowerCase().indexOf(needle) >= 0
+            || (student.username || '').toLowerCase().indexOf(needle) >= 0;
+    }).slice(0, BLOCK_STUDENT_RESULTS_MAX);
+}
+
+function renderBlockStudentResults(box) {
+    var search = box.querySelector('[data-b-student-search]');
+    var results = box.querySelector('[data-b-student-results]');
+    var query = search.value || '';
+    if (!query.trim()) {
+        results.hidden = true;
+        results.innerHTML = '';
+        return;
+    }
+    var found = blockStudentMatches(box, query);
+    results.innerHTML = found.length
+        ? found.map(function (student) {
+            var extra = [student.username ? '@' + student.username : '', student.tariff]
+                .filter(Boolean).join(' · ');
+            return '<button type="button" class="prg-blk-student-option" data-b-student-pick="' + Number(student.id) + '">'
+                + escapeHTML(student.name)
+                + (extra ? '<span class="prg-hint">' + escapeHTML(extra) + '</span>' : '')
+                + '</button>';
+        }).join('')
+        : '<p class="prg-hint">Никого не нашли.</p>';
+    results.hidden = false;
+}
+
+document.addEventListener('input', function (event) {
+    var search = event.target.closest && event.target.closest('[data-b-student-search]');
+    if (search) renderBlockStudentResults(search.closest('[data-b-students]'));
+});
+
+document.addEventListener('click', function (event) {
+    var pick = event.target.closest && event.target.closest('[data-b-student-pick]');
+    var remove = event.target.closest && event.target.closest('[data-b-student-remove]');
+    if (!pick && !remove) return;
+    var box = (pick || remove).closest('[data-b-students]');
+    if (pick) {
+        var id = Number(pick.getAttribute('data-b-student-pick'));
+        var student = BLOCK_STUDENTS.find(function (row) { return row.id === id; });
+        if (student) addBlockStudentChip(box, student);
+        var search = box.querySelector('[data-b-student-search]');
+        search.value = '';
+        renderBlockStudentResults(box);
+        search.focus();
+    } else {
+        remove.closest('[data-b-student-chip]').remove();
+    }
+    // Сводку панели пересчитывает общий обработчик `change` (program_settings_panel_js.html).
+    box.dispatchEvent(new Event('change', {bubbles: true}));
+});
+
 // Обязательность блока по тарифу — отдельная ось от видимости (владелец
 // 10.09.2026): «Тарифы» выше решают, кому блок виден; этот список — с
 // кого требовать выполнение, если блок обязательный.
@@ -532,10 +651,7 @@ function blockSettingsHTML(type) {
         + subjectOptionsHTML()
         + '    </select>'
         + '  </label>'
-        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="только">'
-        + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
-        + tariffChecksHTML()
-        + '  </div>'
+        + blockAudienceHTML()
         + (lockable ? ''
             + '  <div class="prg-blk-required-tariffs prg-blk-setting" data-sum-list="обязательно для">'
             + '    <p class="prg-hint">Кого обязать выполнить: не отметили ни одного — обязательно для всех, кому видно.</p>'
@@ -1136,6 +1252,20 @@ function fillBlockRow(row, block) {
         var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
         if (box) box.checked = true;
     });
+    (block.levels || []).forEach(function (level) {
+        var box = row.querySelector('[data-b-level][value="' + Number(level) + '"]');
+        if (box) box.checked = true;
+    });
+    // Имя к метке — из списка учеников страницы. Ученика, которого там уже
+    // нет (удалён, в архиве потока), сервер при сохранении и так отбросит
+    // (`_sync_students`), поэтому меткой он не показывается.
+    var studentsBox = row.querySelector('[data-b-students]');
+    if (studentsBox) {
+        (block.student_ids || []).forEach(function (id) {
+            var student = BLOCK_STUDENTS.find(function (one) { return one.id === Number(id); });
+            if (student) addBlockStudentChip(studentsBox, student);
+        });
+    }
     (block.required_tariffs || []).forEach(function (tariff) {
         var box = row.querySelector('[data-b-required-tariff][value="' + tariff + '"]');
         if (box) box.checked = true;
@@ -1350,6 +1480,14 @@ function collectFormBlocks(form) {
         item.tariffs = [];
         row.querySelectorAll('[data-b-tariff]:checked').forEach(function (box) {
             item.tariffs.push(box.value);
+        });
+        item.levels = [];
+        row.querySelectorAll('[data-b-level]:checked').forEach(function (box) {
+            item.levels.push(Number(box.value));
+        });
+        item.student_ids = [];
+        row.querySelectorAll('[data-b-student-chip]').forEach(function (chip) {
+            item.student_ids.push(Number(chip.getAttribute('data-id')));
         });
         item.required_tariffs = [];
         row.querySelectorAll('[data-b-required-tariff]:checked').forEach(function (box) {

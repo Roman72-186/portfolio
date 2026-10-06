@@ -782,6 +782,49 @@ class TaskBlockTariff(Base):
     tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
 
 
+class TaskBlockStudent(Base):
+    """Ученик, которому блок открыт поимённо (владелец 06.10.2026: «кроме
+    доступа по тарифу будет ещё по юзернейму»).
+
+    Складывается с тарифами и уровнем, а не сужает их: выбранный ученик видит
+    блок при любом тарифе и уровне. Только ученики, без тарифов и уровня —
+    блок видят только они. Правило одно — `task_blocks.is_block_open_to`.
+    """
+
+    __tablename__ = "task_block_students"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (
+        Index("ix_task_block_students_user", "user_id"),
+    )
+
+
+class TaskBlockLevel(Base):
+    """Уровень точки А, которому доступен блок (владелец 06.10.2026: «задание
+    по уровню»). Уровень 1 или 2 — `point_a.point_a_level`.
+
+    Вместе с тарифами сужает: отмечены тариф и уровень — блок видят ученики
+    этого тарифа с этим уровнем. Пусто — уровень не важен.
+    """
+
+    __tablename__ = "task_block_levels"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    level: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    __table_args__ = (
+        CheckConstraint("level IN (1, 2)", name="ck_task_block_levels_level"),
+    )
+
+
 class TaskBlockRequiredTariff(Base):
     """Тариф, которому обязательно выполнение блока. Пусто — обязательно всем,
     кому блок виден (владелец 10.09.2026: на дешёвом тарифе ученик всё делает

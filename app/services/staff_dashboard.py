@@ -20,8 +20,8 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
-    completed_after_deadline, feed_visible_blocks, get_submit_deadlines,
-    get_task_submit_deadlines, get_tariffs,
+    BlockViewer, completed_after_deadline, feed_visible_blocks, get_audiences,
+    get_submit_deadlines, get_task_submit_deadlines,
 )
 from app.services.tracker import (
     cycle_deadline_lookup, program_learners, program_students, task_audience_user_ids,
@@ -220,7 +220,11 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
     reachable = learners.keys() & {student.id for student in students}
     block_ids = [block.id for block, _ in candidates]
     task_ids = list({task.id for _, task in candidates})
-    tariffs = get_tariffs(db, block_ids)
+    audiences = get_audiences(db, block_ids)
+    # Уровень точки А считается лениво и один раз на ученика (`BlockViewer`).
+    viewers = {
+        uid: BlockViewer(db, user_id=uid, tariff=learners[uid].tariff) for uid in reachable
+    }
     block_deadlines = get_submit_deadlines(db, block_ids)
     task_deadlines = get_task_submit_deadlines(db, task_ids)
     # Срок цикла — запасной срок отметки «Сдал после срока» (06.10.2026).
@@ -238,7 +242,7 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
     for block, task in candidates:
         eligible = sorted(
             uid for uid in audience[task.id]
-            if feed_visible_blocks([block], tariffs, learners[uid].tariff)
+            if feed_visible_blocks([block], audiences, viewers[uid])
         )
         submitted, overdue, pending, notes = [], [], [], {}
         for uid in eligible:

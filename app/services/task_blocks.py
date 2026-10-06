@@ -5,6 +5,7 @@
 свежим запросом, кэша между запросами нет.
 """
 
+from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session as DBSession
@@ -48,11 +49,13 @@ from app.models.task_block import (
     TaskBlockCompareStep,
     TaskBlockDialogTariff,
     TaskBlockImage,
+    TaskBlockLevel,
     TaskBlockOption,
     TaskBlockOptionImage,
     TaskBlockRequiredTariff,
     TaskBlockResponse,
     TaskBlockState,
+    TaskBlockStudent,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
     TaskBlockTariff,
@@ -319,26 +322,122 @@ def get_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
     return grouped
 
 
-def is_block_open_for_tariff(
-    block_tariffs: set[str] | None, user_tariff: str | None
-) -> bool:
-    """Открыт ли блок этому тарифу. Пустой список тарифов — открыт всем.
+@dataclass(frozen=True)
+class BlockAudience:
+    """Кому виден блок — три оси «Доступности блока»: тарифы, уровни точки А
+    и ученики поимённо (последние две — владелец 06.10.2026). Все пустые —
+    блок видят все. Решает по ним только `is_block_open_to`."""
 
-    **Единственное место, где записано это правило.** До 28.09.2026 та же
-    строчка условия жила в трёх местах (`is_block_accessible` дважды — про сам
-    блок и про предыдущий, — и нигде больше, из-за чего экраны блок показывали),
-    а ученик чужого тарифа видел в ленте название чужого урока.
+    tariffs: frozenset[str] = frozenset()
+    levels: frozenset[int] = frozenset()
+    user_ids: frozenset[int] = frozenset()
+
+    @property
+    def is_everyone(self) -> bool:
+        return not (self.tariffs or self.levels or self.user_ids)
+
+
+_LEVEL_UNKNOWN = object()
+
+
+class BlockViewer:
+    """Ученик, для которого решаем, какие блоки ему видны: id, тариф и уровень
+    точки А.
+
+    Уровень считается лениво и один раз: точка А собирается из шести
+    источников (`point_a.student_point_a`), а блоков с уровнем почти нет —
+    платить за неё на каждом показе ленты незачем. `level=` задают тесты и
+    массовые проходы, где уровень уже известен.
     """
-    if not block_tariffs:
+
+    def __init__(
+        self, db: DBSession | None, *, user_id: int | None, tariff: str | None,
+        level: int | None | object = _LEVEL_UNKNOWN,
+    ) -> None:
+        self._db = db
+        self.user_id = user_id
+        self.tariff = tariff
+        self._level = level
+
+    @property
+    def level(self) -> int | None:
+        if self._level is _LEVEL_UNKNOWN:
+            self._level = None
+            if self._db is not None and self.user_id is not None:
+                # Локальный импорт: `point_a` тянет портфолио и работы.
+                from app.models.user import User
+                from app.services.point_a import student_point_a_level
+
+                student = self._db.get(User, self.user_id)
+                if student is not None:
+                    self._level = student_point_a_level(self._db, student)
+        return self._level
+
+
+def get_audiences(db: DBSession, block_ids: list[int]) -> dict[int, BlockAudience]:
+    """Кому видны блоки — только блоки с ограничением; блока нет в ответе —
+    его видят все. Три чтения на любой список блоков."""
+    if not block_ids:
+        return {}
+    tariffs: dict[int, set[str]] = {}
+    levels: dict[int, set[int]] = {}
+    users: dict[int, set[int]] = {}
+    for block_id, tariff in (
+        db.query(TaskBlockTariff.block_id, TaskBlockTariff.tariff)
+        .filter(TaskBlockTariff.block_id.in_(block_ids))
+    ):
+        tariffs.setdefault(block_id, set()).add(tariff)
+    for block_id, level in (
+        db.query(TaskBlockLevel.block_id, TaskBlockLevel.level)
+        .filter(TaskBlockLevel.block_id.in_(block_ids))
+    ):
+        levels.setdefault(block_id, set()).add(level)
+    for block_id, user_id in (
+        db.query(TaskBlockStudent.block_id, TaskBlockStudent.user_id)
+        .filter(TaskBlockStudent.block_id.in_(block_ids))
+    ):
+        users.setdefault(block_id, set()).add(user_id)
+    return {
+        block_id: BlockAudience(
+            tariffs=frozenset(tariffs.get(block_id, ())),
+            levels=frozenset(levels.get(block_id, ())),
+            user_ids=frozenset(users.get(block_id, ())),
+        )
+        for block_id in set(tariffs) | set(levels) | set(users)
+    }
+
+
+def is_block_open_to(audience: BlockAudience | None, viewer: BlockViewer) -> bool:
+    """Виден ли блок этому ученику.
+
+    **Единственное место, где записано это правило.** До 28.09.2026 условие
+    по тарифу жило в трёх местах, и ученик чужого тарифа видел в ленте
+    название чужого урока. С 06.10.2026 (владелец: «кроме доступа по тарифу
+    будет ещё по юзернейму», «задание по уровню») осей три:
+
+    - ничего не отмечено — видят все;
+    - ученик выбран поимённо — видит при любом тарифе и уровне;
+    - отмечены тарифы и/или уровни — нужно подойти под каждую отмеченную ось;
+    - отмечены только ученики — видят только они.
+    """
+    if audience is None or audience.is_everyone:
         return True
-    return user_tariff in block_tariffs
+    if viewer.user_id is not None and viewer.user_id in audience.user_ids:
+        return True
+    if not audience.tariffs and not audience.levels:
+        return False
+    if audience.tariffs and viewer.tariff not in audience.tariffs:
+        return False
+    if audience.levels and viewer.level not in audience.levels:
+        return False
+    return True
 
 
 def feed_visible_blocks(
-    blocks: list[TaskBlock], tariffs_by_block: dict[int, set[str]], user_tariff: str | None
+    blocks: list[TaskBlock], audiences_by_block: dict[int, BlockAudience], viewer: BlockViewer
 ) -> list[TaskBlock]:
-    """Блоки, которые ученик видит в ленте, по заранее собранным тарифам
-    (`get_tariffs`): чужой тариф и скрытые до закрытия задания вопросы
+    """Блоки, которые ученик видит в ленте, по заранее собранным правилам
+    доступа (`get_audiences`): чужие и скрытые до закрытия задания вопросы
     выпадают — ровно как в `cycle_feed.build_cycle_feed`.
 
     Для массовых проходов «много учеников × много блоков» — напоминания
@@ -349,12 +448,12 @@ def feed_visible_blocks(
     return [
         block for block in blocks
         if not block.hidden_until_done
-        and is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+        and is_block_open_to(audiences_by_block.get(block.id), viewer)
     ]
 
 
 def visible_blocks_for_student(
-    db: DBSession, blocks: list[TaskBlock], *, user_tariff: str | None
+    db: DBSession, blocks: list[TaskBlock], *, viewer: BlockViewer
 ) -> list[TaskBlock]:
     """Блоки, которые ученик вообще вправе видеть.
 
@@ -371,11 +470,11 @@ def visible_blocks_for_student(
     """
     if not blocks:
         return []
-    tariffs_by_block = get_tariffs(db, [block.id for block in blocks])
+    audiences = get_audiences(db, [block.id for block in blocks])
     return [
         block
         for block in blocks
-        if is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+        if is_block_open_to(audiences.get(block.id), viewer)
     ]
 
 
@@ -399,9 +498,10 @@ def unfinished_required_steps(
     from app.models.tracker import TrackerTask
     from app.models.user import User
 
+    viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
     blocks = [
         block for block in visible_blocks_for_student(
-            db, get_blocks(db, task_id), user_tariff=user_tariff
+            db, get_blocks(db, task_id), viewer=viewer
         )
         if not block.hidden_until_done
     ]
@@ -418,7 +518,7 @@ def unfinished_required_steps(
         return []
     block_ids = [block.id for block in candidates]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
-    tariffs_by_block = get_tariffs(db, block_ids)
+    audiences_by_block = get_audiences(db, block_ids)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)
     submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
     task_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
@@ -428,8 +528,8 @@ def unfinished_required_steps(
         if holds_sequence(
             block,
             states=states,
-            tariffs_by_block=tariffs_by_block,
-            user_tariff=user_tariff,
+            audiences_by_block=audiences_by_block,
+            viewer=viewer,
             required_tariffs_by_block=required_tariffs_by_block,
             required_by_block=required_by_block,
             submit_deadlines_by_block=submit_deadlines_by_block,
@@ -463,7 +563,10 @@ def completion_blocker(
     """
     pending = [
         block for block in question_blocks(
-            visible_blocks_for_student(db, get_blocks(db, task_id), user_tariff=user_tariff)
+            visible_blocks_for_student(
+                db, get_blocks(db, task_id),
+                viewer=BlockViewer(db, user_id=user_id, tariff=user_tariff),
+            )
         )
         if not block.hidden_until_done
     ]
@@ -516,6 +619,117 @@ def _sync_tariffs(db: DBSession, block: TaskBlock, tariffs: list[str] | None) ->
             continue
         seen.add(tariff)
         db.add(TaskBlockTariff(block_id=block.id, tariff=tariff))
+
+
+# Уровни точки А, которые можно отметить у блока (`point_a.point_a_level`).
+BLOCK_LEVELS = (1, 2)
+
+
+def _sync_levels(db: DBSession, block: TaskBlock, levels: list | None) -> None:
+    """Полная пересборка уровней точки А у блока, как у тарифов: чужое
+    значение молча отбрасывается, а не роняет сохранение задания."""
+    db.query(TaskBlockLevel).filter(
+        TaskBlockLevel.block_id == block.id
+    ).delete(synchronize_session=False)
+    seen: set[int] = set()
+    for raw in levels or []:
+        try:
+            level = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if level not in BLOCK_LEVELS or level in seen:
+            continue
+        seen.add(level)
+        db.add(TaskBlockLevel(block_id=block.id, level=level))
+
+
+def _sync_students(db: DBSession, block: TaskBlock, user_ids: list | None) -> None:
+    """Полная пересборка учеников, которым блок открыт поимённо.
+
+    Записывается только действующий ученик (`block_student_choices`): id
+    сотрудника, удалённого или выдуманного молча отбрасывается — тот же
+    принцип, что у тарифов.
+    """
+    db.query(TaskBlockStudent).filter(
+        TaskBlockStudent.block_id == block.id
+    ).delete(synchronize_session=False)
+    wanted: list[int] = []
+    for raw in user_ids or []:
+        try:
+            user_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if user_id not in wanted:
+            wanted.append(user_id)
+    if not wanted:
+        return
+    from app.models.user import User
+
+    allowed = {user.id for user in _student_query(db).filter(User.id.in_(wanted))}
+    for user_id in wanted:
+        if user_id in allowed:
+            db.add(TaskBlockStudent(block_id=block.id, user_id=user_id))
+
+
+def _student_query(db: DBSession):
+    """Действующие ученики: ранг 1, не удалены, не в архиве потока.
+
+    Служебные аккаунты (`REPORT_EXCLUDED_USER_IDS`) не отсекаются, в отличие
+    от `cycle_stats.active_students`: у них доступ ученика, и на них проверяют,
+    как блок выглядит у выбранного ученика.
+    """
+    from app.models.role import Role
+    from app.models.user import User
+
+    return (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 1, User.deleted_at.is_(None), User.archived_at.is_(None))
+    )
+
+
+def block_student_choices(db: DBSession) -> list[dict]:
+    """Действующие ученики для поиска в «Доступности блока», по фамилии:
+    id, имя, @ник и тариф. Ник в базе зашифрован — расшифровывает ORM, а
+    ищет по нему браузер."""
+    rows = []
+    for user in _student_query(db):
+        name = " ".join(part for part in (user.last_name, user.first_name) if part).strip()
+        rows.append({
+            "id": user.id,
+            "name": name or f"Ученик {user.id}",
+            "username": (user.tg_username or "").strip().lstrip("@"),
+            "tariff": user.tariff or "",
+        })
+    return sorted(rows, key=lambda row: (row["name"].lower(), row["id"]))
+
+
+def get_levels(db: DBSession, block_ids: list[int]) -> dict[int, set[int]]:
+    """Уровни точки А у блоков. Пустой набор — уровень не важен."""
+    if not block_ids:
+        return {}
+    grouped: dict[int, set[int]] = {}
+    for block_id, level in (
+        db.query(TaskBlockLevel.block_id, TaskBlockLevel.level)
+        .filter(TaskBlockLevel.block_id.in_(block_ids))
+    ):
+        grouped.setdefault(block_id, set()).add(level)
+    return grouped
+
+
+def get_student_ids(db: DBSession, block_ids: list[int]) -> dict[int, list[int]]:
+    """Ученики, которым блоки открыты поимённо, — id для формы конструктора.
+    Имя к метке форма берёт из `block_student_choices` той же страницы."""
+    if not block_ids:
+        return {}
+    grouped: dict[int, list[int]] = {}
+    for block_id, user_id in (
+        db.query(TaskBlockStudent.block_id, TaskBlockStudent.user_id)
+        .filter(TaskBlockStudent.block_id.in_(block_ids))
+        .order_by(TaskBlockStudent.user_id)
+    ):
+        grouped.setdefault(block_id, []).append(user_id)
+    return grouped
 
 
 def get_required_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
@@ -1009,6 +1223,12 @@ def _drop_block(db: DBSession, block: TaskBlock) -> None:
     db.query(TaskBlockTariff).filter(
         TaskBlockTariff.block_id == block.id
     ).delete(synchronize_session=False)
+    db.query(TaskBlockLevel).filter(
+        TaskBlockLevel.block_id == block.id
+    ).delete(synchronize_session=False)
+    db.query(TaskBlockStudent).filter(
+        TaskBlockStudent.block_id == block.id
+    ).delete(synchronize_session=False)
     db.query(TaskBlockState).filter(
         TaskBlockState.block_id == block.id
     ).delete(synchronize_session=False)
@@ -1210,6 +1430,8 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             item.get("images") if row.block_type in IMAGE_BLOCK_TYPES else [],
         )
         _sync_tariffs(db, row, item.get("tariffs"))
+        _sync_levels(db, row, item.get("levels"))
+        _sync_students(db, row, item.get("student_ids"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
         _sync_dialog_settings(db, row, item)
         sync_submit_deadlines(db, row, item.get("submit_deadlines"))
@@ -1786,7 +2008,9 @@ def close_block_for_user(
 _SELF_CLOSING_TASK_KINDS = ("homework", "mock_exam")
 
 
-def autoclose_steps(db: DBSession, task_id: int, user_tariff: str | None) -> list[TaskBlock]:
+def autoclose_steps(
+    db: DBSession, task_id: int, *, user_id: int, user_tariff: str | None
+) -> list[TaskBlock]:
     """Шаги, по которым задание закрывается само (`maybe_close_task_by_blocks`).
 
     Блоки, видимые ученику по тарифу, кроме скрытых до сдачи
@@ -1795,7 +2019,10 @@ def autoclose_steps(db: DBSession, task_id: int, user_tariff: str | None) -> lis
     «Завершить задание» в ленте (`completion_button_needed`) — разойдись они,
     кнопка пропала бы там, где задание само не закроется.
     """
-    blocks = visible_blocks_for_student(db, get_blocks(db, task_id), user_tariff=user_tariff)
+    blocks = visible_blocks_for_student(
+        db, get_blocks(db, task_id),
+        viewer=BlockViewer(db, user_id=user_id, tariff=user_tariff),
+    )
     return [
         block for block in blocks
         if block.block_type in COMPLETABLE_BLOCK_TYPES and not block.hidden_until_done
@@ -1817,7 +2044,7 @@ def completion_button_needed(
     - если все шаги уже отмечены, а задание открыто (отметки до автозакрытия
       30.09.2026, сбой) — страховка от тупика.
     """
-    steps = autoclose_steps(db, task_id, user_tariff)
+    steps = autoclose_steps(db, task_id, user_id=user_id, user_tariff=user_tariff)
     if not steps or not all(block.is_required for block in steps):
         return True
     states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
@@ -1858,7 +2085,9 @@ def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> boo
     if current == STATUS_DONE:
         return False
     user = db.get(User, user_id)
-    steps = autoclose_steps(db, task_id, user.tariff if user else None)
+    steps = autoclose_steps(
+        db, task_id, user_id=user_id, user_tariff=user.tariff if user else None
+    )
     if not steps:
         return False
     states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
@@ -1893,8 +2122,8 @@ def is_block_accessible(
     block_index: int,
     blocks: list[TaskBlock],
     states: dict[int, TaskBlockState],
-    tariffs_by_block: dict[int, set[str]],
-    user_tariff: str | None,
+    audiences_by_block: dict[int, BlockAudience],
+    viewer: BlockViewer,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
     submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
@@ -1917,8 +2146,9 @@ def is_block_accessible(
        так же безусловно, как и до открытия. Симметрично пункту 1, но
        отдельным полем: у блока может быть только открытие, только закрытие,
        оба сразу или ни одного.
-    3. **Тариф**: недоступен, если тариф ученика не входит в список тарифов
-       блока (пустой список — доступен всем).
+    3. **Кому доступно**: недоступен, если блок не открыт этому ученику —
+       тарифы, уровень точки А и ученики поимённо, правило одно —
+       `is_block_open_to` (пусто везде — доступен всем).
     4. **Последовательность** (владелец 05.09.2026, подтверждено
        06.09.2026): недоступен, если среди блоков строго перед ним есть
        хотя бы один обязательный, ещё не закрытый этим учеником. Один
@@ -1985,7 +2215,7 @@ def is_block_accessible(
                 closes_at = closes_at.replace(tzinfo=timezone.utc)
             if closes_at <= moment:
                 return False
-    if not is_block_open_for_tariff(tariffs_by_block.get(target.id), user_tariff):
+    if not is_block_open_to(audiences_by_block.get(target.id), viewer):
         return False
     if target.bypass_sequence:
         return True
@@ -1993,8 +2223,8 @@ def is_block_accessible(
         holds_sequence(
             prior,
             states=states,
-            tariffs_by_block=tariffs_by_block,
-            user_tariff=user_tariff,
+            audiences_by_block=audiences_by_block,
+            viewer=viewer,
             required_tariffs_by_block=required_tariffs_by_block,
             required_by_block=required_by_block,
             submit_deadlines_by_block=submit_deadlines_by_block,
@@ -2010,8 +2240,8 @@ def holds_sequence(
     prior: TaskBlock,
     *,
     states: dict[int, TaskBlockState],
-    tariffs_by_block: dict[int, set[str]],
-    user_tariff: str | None,
+    audiences_by_block: dict[int, BlockAudience],
+    viewer: BlockViewer,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
     submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
@@ -2036,12 +2266,12 @@ def holds_sequence(
     )
     if not prior_is_required:
         return False
-    if not is_block_open_for_tariff(tariffs_by_block.get(prior.id), user_tariff):
+    if not is_block_open_to(audiences_by_block.get(prior.id), viewer):
         return False
     prior_required_tariffs = (
         required_tariffs_by_block.get(prior.id) if required_tariffs_by_block else None
     )
-    if prior_required_tariffs and user_tariff not in prior_required_tariffs:
+    if prior_required_tariffs and viewer.tariff not in prior_required_tariffs:
         return False
     state = states.get(prior.id)
     if (
@@ -2078,7 +2308,7 @@ def holds_sequence(
     prior_submit_until = (
         submit_deadline_for(
             prior, prior_task,
-            user_tariff=user_tariff,
+            user_tariff=viewer.tariff,
             block_overrides=(submit_deadlines_by_block or {}).get(prior.id),
             task_overrides=(task_submit_deadlines_by_task or {}).get(prior.task_id),
         )
@@ -2292,9 +2522,8 @@ def feed_state(
     from app.models.tracker import TrackerTask
     from app.models.user import User
 
-    blocks = visible_blocks_for_student(
-        db, get_blocks(db, task_id), user_tariff=user_tariff
-    )
+    viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
+    blocks = visible_blocks_for_student(db, get_blocks(db, task_id), viewer=viewer)
     task = db.get(TrackerTask, task_id)
     student = db.get(User, user_id)
     required_by_block = required_by_block_for_task(
@@ -2303,7 +2532,7 @@ def feed_state(
     )
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
-    tariffs_by_block = get_tariffs(db, block_ids)
+    audiences_by_block = get_audiences(db, block_ids)
     submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
     task_submit_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
     now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
@@ -2313,8 +2542,8 @@ def feed_state(
             block_index=index,
             blocks=blocks,
             states=states,
-            tariffs_by_block=tariffs_by_block,
-            user_tariff=user_tariff,
+            audiences_by_block=audiences_by_block,
+            viewer=viewer,
             required_by_block=required_by_block,
             submit_deadlines_by_block=submit_deadlines_by_block,
             tasks_by_id={task_id: task} if task is not None else None,

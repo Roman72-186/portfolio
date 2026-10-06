@@ -64,10 +64,13 @@ from app.models.task_block import (
 )
 from app.services.feedback import read_audio_upload, read_video_upload
 from app.services.task_blocks import (
+    block_student_choices,
     get_blocks as get_task_blocks,
     get_blocks_for_tasks as get_task_blocks_for_tasks,
     get_dialog_tariffs as get_task_block_dialog_tariffs,
     get_images as get_task_block_images,
+    get_levels as get_task_block_levels,
+    get_student_ids as get_task_block_student_ids,
     get_option_images as get_task_block_option_images,
     get_options as get_task_block_options,
     get_required_tariffs as get_task_block_required_tariffs,
@@ -504,6 +507,8 @@ def _edit_payloads(
         )
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
+        block_levels = get_task_block_levels(db, [b.id for b in blocks])
+        block_students = get_task_block_student_ids(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
         block_dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
         block_submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
@@ -534,6 +539,8 @@ def _edit_payloads(
                         "is_required": b.is_required,
                         "subject": b.subject,
                         "tariffs": sorted(block_tariffs.get(b.id, set())),
+                        "levels": sorted(block_levels.get(b.id, set())),
+                        "student_ids": block_students.get(b.id, []),
                         "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
                         "opens_at": msk_input_value(b.opens_at) or None,
                         "closes_at": (
@@ -573,6 +580,8 @@ def _edit_payloads(
                 "is_required_for_intake": b.is_required_for_intake,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
+                "levels": sorted(block_levels.get(b.id, set())),
+                "student_ids": block_students.get(b.id, []),
                 "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
                 "opens_at": msk_input_value(b.opens_at) or None,
                 "closes_at": (
@@ -1550,6 +1559,7 @@ POLL_ANSWER_TYPES = QUESTION_TYPES + (POLL_ANSWER_SCALE,)
 # конструктора, сервер копирует её на каждый вопрос, как у диагностики.
 _POLL_SHARED_FIELDS = (
     "hidden_until_done", "is_required", "subject", "tariffs", "required_tariffs",
+    "levels", "student_ids",
     "opens_at", "closes_at", "submit_until", "submit_deadlines",
     "locked_message", "bypass_sequence",
 )
@@ -1659,6 +1669,12 @@ class BlockItem(BaseModel):
     # (владелец 10.09.2026). Валидацию значений делает сервисный слой
     # (`sync_blocks`/`_sync_required_tariffs`), как и у `tariffs`.
     required_tariffs: list[str] = Field(default_factory=list, max_length=10)
+    # Кому ещё доступен блок (владелец 06.10.2026): уровень точки А (1, 2) —
+    # сужает вместе с тарифами; ученики поимённо — видят при любом тарифе и
+    # уровне. Правило — `task_blocks.is_block_open_to`, значения проверяет
+    # `sync_blocks` (`_sync_levels`, `_sync_students`).
+    levels: list[int] = Field(default_factory=list, max_length=2)
+    student_ids: list[int] = Field(default_factory=list, max_length=500)
     # Период доступа — блок открывается в указанный момент, независимо от
     # действий ученика; складывается с is_required, не заменяет (владелец
     # 03.09.2026, найдено при повторном разборе 06.09.2026).
@@ -1983,6 +1999,12 @@ def program_cycle_items(
             "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
             "tariffs": TARIFFS_CURRENT,
+            # Ученики для «Кому доступно» в «Доступности блока» (владелец
+            # 06.10.2026). С никами — поэтому только тому, кто правит
+            # программу; у «Смотреть» формы блока нет.
+            "block_students": (
+                block_student_choices(db) if can(user, "program") else []
+            ),
             # Типы, у которых срок запирает действие ученика — редактор по
             # ним выбирает подсказку под полем срока (владелец 27.09.2026).
             # Список серверный, чтобы в JS не завелась своя копия, способная
@@ -2121,6 +2143,8 @@ def _diagnostic_availability(item: "BlockItem") -> dict:
         "closes_at": item.closes_at,
         "tariffs": item.tariffs,
         "required_tariffs": item.required_tariffs,
+        "levels": item.levels,
+        "student_ids": item.student_ids,
         "subject": item.subject,
         "locked_message": item.locked_message,
         "bypass_sequence": item.bypass_sequence,
@@ -2535,6 +2559,8 @@ def _fold_diagnostic_for_copy(
             "is_required": row["is_required"],
             "subject": row["subject"],
             "tariffs": row["tariffs"],
+            "levels": row["levels"],
+            "student_ids": row["student_ids"],
             "required_tariffs": row["required_tariffs"],
             "locked_message": row["locked_message"],
             "bypass_sequence": row["bypass_sequence"],
@@ -2563,6 +2589,8 @@ def blocks_source_content(
         db, [o.id for block_options in options.values() for o in block_options]
     )
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
+    levels = get_task_block_levels(db, [b.id for b in blocks])
+    students = get_task_block_student_ids(db, [b.id for b in blocks])
     required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
     dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
     copied = [
@@ -2588,6 +2616,10 @@ def blocks_source_content(
             "is_required_for_intake": b.is_required_for_intake,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
+            # Уровень и ученики копируются, как тарифы: без них блок «только
+            # для Маши» в копии стал бы виден всем (владелец 06.10.2026).
+            "levels": sorted(levels.get(b.id, set())),
+            "student_ids": students.get(b.id, []),
             "required_tariffs": sorted(required_tariffs.get(b.id, set())),
             # opens_at, closes_at и submit_until сюда намеренно не копируются:
             # это абсолютные дата и время исходного дня, в новом дне они бы
@@ -2686,6 +2718,12 @@ def program_day(
             # забыли»). Валидация ниже осталась по всему списку: настройка,
             # сохранённая под прежним тарифом, не должна отваливаться с 400.
             "tariffs": TARIFFS_CURRENT,
+            # Ученики для «Кому доступно» в «Доступности блока» (владелец
+            # 06.10.2026). С никами — поэтому только тому, кто правит
+            # программу; у «Смотреть» формы блока нет.
+            "block_students": (
+                block_student_choices(db) if can(user, "program") else []
+            ),
             # Типы, у которых срок запирает действие ученика — редактор по
             # ним выбирает подсказку под полем срока (владелец 27.09.2026).
             # Список серверный, чтобы в JS не завелась своя копия, способная

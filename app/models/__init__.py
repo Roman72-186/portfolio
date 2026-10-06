@@ -39,6 +39,8 @@ from app.models.task_block import (
     TaskBlockState,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
+    TaskBlockLevel,
+    TaskBlockStudent,
     TaskBlockTariff,
 )
 from app.models.learning_topic import (

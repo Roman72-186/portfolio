@@ -108,6 +108,7 @@ from app.services.task_blocks import (
     get_state as get_task_block_state,
     poll_submission_error,
     question_blocks as task_question_blocks,
+    BlockViewer,
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
     timed_overrun as task_block_timed_overrun,
@@ -574,7 +575,8 @@ def cabinet_tracker_task_blocks(
     # имя чужого урока и ждал, что оно откроется.
     blocks = [
         b for b in visible_blocks_for_student(
-            db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
+            db, get_task_blocks(db, task_id),
+            viewer=BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff")),
         )
         # Флаг бывает у вопроса и у шкалы опроса (`sync_blocks`), у остальных
         # типов он всегда False — проверять тип не нужно.
@@ -1454,7 +1456,8 @@ def submit_cabinet_tracker_task_blocks(
     # Ответ на блок чужого тарифа не принимается: клиент его не получал, а
     # присланный руками `block_id` уйдёт в «Ответ на чужой вопрос» ниже.
     all_blocks = visible_blocks_for_student(
-        db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
+        db, get_task_blocks(db, task_id),
+        viewer=BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff")),
     )
     questions = [
         b for b in task_question_blocks(all_blocks)
