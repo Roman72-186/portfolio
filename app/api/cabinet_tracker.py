@@ -839,8 +839,12 @@ def cabinet_tracker_task_blocks(
                 item["diagnostic_intro_body_html"] = format_rich_text(intro_body)
         if block.block_type == BLOCK_VIDEO:
             item["video_id"] = block.video_id
+            # Свой мост у блока (`video_bridge`) — флагом в адресе, его же
+            # `/embed` держит при перевыпуске ссылки (владелец 06.10.2026).
             item["video_embed_endpoint"] = (
-                f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
+                f"/cabinet/videos/{block.video_id}/embed"
+                + (f"?bridge={block.video_bridge}" if block.video_bridge else "")
+                if block.video_id else None
             )
             # Проверка просмотра — у любого видео-блока, обязательность блока
             # и задания на неё не влияет (владелец 05.10.2026). Кружок нужен

@@ -402,7 +402,15 @@ function blockBodyHTML(type) {
             + TITLE_FIELD_OPTIONAL
             + BODY_FIELD_OPTIONAL
             + '<label class="prg-field"><select data-b-video aria-label="Ролик">'
-            + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>';
+            + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
+            // Свой мост у блока (владелец 06.10.2026): проверить российский
+            // мост на задании, открытом только себе, не переключая всех.
+            // Значения — `VIDEO_BRIDGE_CHOICES` в `models/task_block.py`.
+            + '<label class="prg-field"><select data-b-video-bridge aria-label="Мост до видео">'
+            + '<option value="">Мост: как у всех</option>'
+            + '<option value="ru">Мост: Россия (Selectel)</option>'
+            + '<option value="nl">Мост: Нидерланды</option>'
+            + '</select></label>';
     }
     if (type === 'media') {
         // Голосовое или кружок преподавателя (владелец 25.09.2026). Запись
@@ -1277,6 +1285,8 @@ function fillBlockRow(row, block) {
     if (url) url.value = block.url || '';
     var video = row.querySelector('[data-b-video]');
     if (video) video.value = block.video_id || '';
+    var videoBridge = row.querySelector('[data-b-video-bridge]');
+    if (videoBridge) videoBridge.value = block.video_bridge || '';
     var mediaBox = row.querySelector('[data-b-media]');
     if (mediaBox && block.media_url) {
         mediaBox.setAttribute('data-media-url', block.media_url);
@@ -1617,6 +1627,7 @@ function collectFormBlocks(form) {
             var picked = row.querySelector('[data-b-video]').value;
             if (!picked) return;
             item.video_id = Number(picked);
+            item.video_bridge = row.querySelector('[data-b-video-bridge]').value || null;
         }
         if (type === 'photo') {
             item.images = [];
