@@ -247,6 +247,18 @@ def test_unknown_student_says_not_found(client, db, user_factory, session_factor
     assert "getCardJson('/cabinet/students/' + _currentStudentId + '/' + tabName)" in source
 
 
+def test_hero_name_wraps_between_words():
+    """Шапка карточки кладёт имя по слову на `.profile-name-line`: строка не
+    переносится внутри себя (`profile_hero.css`, многоточие), и полное `name`
+    ученика без анкеты одной строкой обрезалось даже на 1280 (проход
+    06.10.2026, пункт 10)."""
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    hero = source[source.index("function buildHero("):]
+    hero = hero[:hero.index("\n}\n")]
+
+    assert ".join(' ').split(/\\s+/)" in hero
+
+
 def test_unknown_address_still_not_found_in_json(client):
     """Причина из `HTTPException` теперь доходит до JSON-ответа 404, а адрес,
     которого нет вовсе, отвечает как раньше."""

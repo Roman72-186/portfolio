@@ -678,7 +678,14 @@ function buildHero(s, bySubj) {
             + '<span class="profile-tariff-dot"></span>'
             + esc(p.tariff_label || TARIFF_LABELS[p.tariff] || p.tariff) + '</span>'
         : '';
-    var names = (p.first_name || p.last_name) ? [p.first_name, p.last_name] : [p.name];
+    // По слову на `.profile-name-line`: строка стека не переносится внутри
+    // себя, стек переносит между ними — как «имя / фамилия» у ученика. Без
+    // анкеты имя берётся из `name` целиком, и «Александра Константиновна
+    // Преображенская» шла одной строкой с многоточием даже на 1280 (проход
+    // 06.10.2026, пункт 10). Многоточие осталось только слову, которое не
+    // влезает само (`profile_hero.css`).
+    var names = ((p.first_name || p.last_name) ? [p.first_name, p.last_name] : [p.name])
+        .join(' ').split(/\s+/);
     var nameHtml = names.filter(Boolean).map(function(n) {
         return '<div class="profile-name-line">' + esc(n) + '</div>';
     }).join('');
