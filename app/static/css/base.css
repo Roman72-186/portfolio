@@ -1269,22 +1269,22 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 /* Поворот фото (с 04.10.2026 — у всех ролей, каждой в своей зоне). Кнопки
    рендерятся скрытыми, `lightbox.js` открывает их только у слайда, который
    сервер разрешил крутить (`/cabinet/rotate-photo/allowed`).
-   Стоят в углу затемнения напротив «×», а не поверх фото (06.10.2026):
-   работы — рисунки на белой бумаге, и белые полупрозрачные кнопки на
-   телефоне с ними сливались. */
-.lightbox-tools {
-    position: absolute; z-index: 3;
-    top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
-    display: flex; gap: 8px;
-}
+   Ряд под фото, значки как в «Фото» на iPhone (владелец 06.10.2026): поверх
+   фото белые кнопки сливались с рисунком на белой бумаге. */
+.lightbox-tools { display: flex; justify-content: center; gap: 16px; }
 .lightbox-tools[hidden] { display: none; }
 .lightbox-tool {
     background: rgba(20,20,30,.62); border: 1px solid rgba(255,255,255,.22); color: var(--on-color);
-    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1;
+    width: 44px; height: 44px; border-radius: 50%; padding: 0;
     cursor: pointer; transition: background 0.2s; touch-action: manipulation;
     display: flex; align-items: center; justify-content: center;
 }
 .lightbox-tool:hover { background: rgba(20,20,30,.85); }
+.lightbox-tool-icon {
+    width: 24px; height: 24px; fill: none; stroke: currentColor;
+    stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.lightbox-tool-icon.is-mirrored { transform: scaleX(-1); }
 .lightbox-tools.is-busy { pointer-events: none; }
 .lightbox-tools.is-busy .lightbox-tool:not(.is-spinning) { opacity: .45; }
 .lightbox-tool.is-spinning { animation: spin 0.9s linear infinite; }

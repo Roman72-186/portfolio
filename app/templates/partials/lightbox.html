@@ -4,14 +4,7 @@
 {% set lightbox_can_rotate = (user is defined and user and user.role_rank is defined and user.role_name != "модератор") %}
 <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фото" aria-hidden="true" onclick="closeLightbox(event)">
     <button class="lightbox-close" type="button" onclick="closeLightbox(event)" aria-label="Закрыть">&times;</button>
-    {# Кнопки поворота — в углу затемнения, напротив «×», а не поверх фото:
-       на светлом рисунке они пропадали (владелец 06.10.2026, телефон). Клик
-       по затемнению закрывает просмотр — отсюда stopPropagation. #}
     {% if lightbox_can_rotate %}
-    <div class="lightbox-tools" id="lightbox-tools" hidden onclick="event.stopPropagation()">
-        <button class="lightbox-tool" type="button" onclick="lightboxRotate('left', this)" title="Повернуть влево" aria-label="Повернуть влево">⟲</button>
-        <button class="lightbox-tool" type="button" onclick="lightboxRotate('right', this)" title="Повернуть вправо" aria-label="Повернуть вправо">⟳</button>
-    </div>
     <script>window.LIGHTBOX_CSRF = "{{ csrf_token(request) }}";</script>
     {% endif %}
 
@@ -19,6 +12,19 @@
         <button class="lightbox-nav lightbox-prev" type="button" onclick="lightboxStep(-1)" aria-label="Предыдущее фото">‹</button>
         <img id="lightbox-img" src="" alt="">
         <button class="lightbox-nav lightbox-next" type="button" onclick="lightboxStep(1)" aria-label="Следующее фото">›</button>
+
+        {# Поворот — под фото, значки как в «Фото» на iPhone (владелец 06.10.2026).
+           Поверх фото белые кнопки сливались с рисунком на белой бумаге. #}
+        {% if lightbox_can_rotate %}
+        <div class="lightbox-tools" id="lightbox-tools" hidden>
+            <button class="lightbox-tool" type="button" onclick="lightboxRotate('left', this)" title="Повернуть влево" aria-label="Повернуть влево">
+                <svg class="lightbox-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="10" width="11" height="11" rx="2"/><path d="M19 15v-4a5 5 0 0 0-5-5H8.5"/><path d="M11 3.5 8.5 6 11 8.5"/></svg>
+            </button>
+            <button class="lightbox-tool" type="button" onclick="lightboxRotate('right', this)" title="Повернуть вправо" aria-label="Повернуть вправо">
+                <svg class="lightbox-tool-icon is-mirrored" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="10" width="11" height="11" rx="2"/><path d="M19 15v-4a5 5 0 0 0-5-5H8.5"/><path d="M11 3.5 8.5 6 11 8.5"/></svg>
+            </button>
+        </div>
+        {% endif %}
 
         <div class="lightbox-counter" id="lightbox-counter"></div>
 
@@ -28,4 +34,4 @@
 {# Код лайтбокса — в `/static/js/lightbox.js` (с 01.10.2026, аудит АОП ученика, п. 4.1):
    партиал стоит на 18 экранах, встроенным он заново качался на каждом. Правишь файл —
    поднимай `?v=` здесь. Ключ для поворота остаётся строкой выше: он у каждой сессии свой. #}
-<script src="/static/js/lightbox.js?v=3"></script>
+<script src="/static/js/lightbox.js?v=4"></script>

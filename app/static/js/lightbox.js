@@ -12,7 +12,15 @@
     var rotatable = new Set();
     var rotatableSeq = 0;
 
-    function baseUrl(u) { return (u || '').split('?')[0]; }
+    // Адрес без `?v=` и в одном написании. Сервер после поворота отдаёт путь
+    // с кириллицей буквами («До», «После», тариф), а на странице тот же файл
+    // записан через %D0%94…: без приведения это два разных фото, и кнопки
+    // пропадали после первого поворота (владелец 06.10.2026).
+    function baseUrl(u) {
+        var clean = (u || '').split('?')[0];
+        if (!clean) return '';
+        try { return new URL(clean, location.href).href; } catch (_) { return clean; }
+    }
 
     function updateTools() {
         if (!tools) return;
@@ -136,16 +144,18 @@
         }).then(function(r){ return r.json(); }).then(function(d){
             if (!d || !d.success) { setBusy(false); alert((d && d.error) || 'Не удалось повернуть фото'); return; }
             var newUrl = d.src;
+            // Сервер только что повернул этот файл — значит, крутить его можно и дальше.
+            rotatable.add(baseUrl(newUrl));
             // Превью работы сервер пересобрал; нет превью — квадратик берёт само фото.
             var newThumb = d.thumb_src || newUrl;
             // Обновляем все <img> на странице, указывающие на старый объект.
             document.querySelectorAll('img').forEach(function(im){
-                if ((im.getAttribute('src') || '').split('?')[0] === base) im.src = newUrl;
-                if ((im.getAttribute('data-full') || '').split('?')[0] === base) {
+                if (baseUrl(im.getAttribute('src')) === base) im.src = newUrl;
+                if (baseUrl(im.getAttribute('data-full')) === base) {
                     im.setAttribute('data-full', newUrl);
                     im.src = newThumb;
                 }
-                if ((im.getAttribute('data-thumb') || '').split('?')[0] === base) im.setAttribute('data-thumb', newUrl);
+                if (baseUrl(im.getAttribute('data-thumb')) === base) im.setAttribute('data-thumb', newUrl);
             });
             // Обновляем слайд и его миниатюру, перерисовываем.
             s.full = newUrl;
