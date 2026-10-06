@@ -400,11 +400,13 @@ def test_unfinished_optional_task_keeps_ended_stage_out_of_archive(db, regular_u
     _task(db, regular_user, sem1, title="Идёт сейчас")
 
     assert _archive(db, regular_user) == []
-    # Цикл рабочий: в карусели, подписан этапом, запись не заперта.
+    # Цикл рабочий: в карусели, запись не заперта. Подпись — только цикл,
+    # без этапа (владелец 06.10.2026: «название этапов убрать из навигации»).
     assert cycle_is_archived_for_user(db, regular_user.id, pre1.id, TODAY) is False
     feed = feed_for_student(db, user_id=regular_user.id, user_tariff=regular_user.tariff,
                             today=TODAY)
-    assert f"{pre.title}: Цикл 1" in [c["title"] for c in feed["cycles"]]
+    chip = next(c for c in feed["cycles"] if c["id"] == pre1.id)
+    assert chip["title"] == "Цикл 1"
     opened = feed_for_student(db, user_id=regular_user.id, user_tariff=regular_user.tariff,
                               today=TODAY, cycle_id=pre1.id)
     assert opened["is_archive"] is False

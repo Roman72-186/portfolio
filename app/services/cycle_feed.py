@@ -795,20 +795,6 @@ def task_is_archived_for_user(
     return True
 
 
-def _carousel_title(db: Session, cycle: LearningTopic, stage_id: int | None) -> str:
-    """Подпись плитки карусели. Цикл другого этапа подписан этапом
-    («Предобучение 2026-2027: Цикл 3»): в карусели с 06.10.2026 стоят и
-    недоделанные закончившиеся этапы, и без подписи «Цикл 3» прошлого этапа
-    не отличить от «Цикла 3» текущего. Тот же приём, что у плашки долга."""
-    label = cycle_label(db, cycle)
-    if stage_id is None or cycle.parent_id is None or cycle.parent_id == stage_id:
-        return label
-    stage = db.get(LearningTopic, cycle.parent_id)
-    if stage is None or not stage.title:
-        return label
-    return f"{stage.title}: {label}"
-
-
 def _debt_view(db: Session, debt: dict, viewed: LearningTopic | None) -> dict:
     """Плашка долга над лентой: какой цикл закрыть, что в нём осталось и что
     откроется следом. Запертый цикл другого этапа подписан этапом — иначе
@@ -1256,7 +1242,10 @@ def feed_for_student(
         ] + [
             {
                 "id": item.id,
-                "title": _carousel_title(db, item, stage_id),
+                # Только название цикла, без этапа (владелец 06.10.2026:
+                # «название этапов нужно убрать из навигации, оставить
+                # циклы»). Плашка долга этап по-прежнему называет.
+                "title": cycle_label(db, item),
                 "start": cycle_bounds(item)[0],
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,

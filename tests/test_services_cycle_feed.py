@@ -613,8 +613,9 @@ def test_carousel_keeps_previous_stage_until_its_last_day(db, regular_user):
 
     feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
     assert feed["topic"].id == october.id
-    # Цикл другого этапа подписан этапом (06.10.2026).
-    assert {c["title"] for c in feed["cycles"]} == {f"{stage_a.title}: Занятие", "Октябрь"}
+    # Только название цикла, этап в навигации не пишется (владелец 06.10.2026:
+    # «название этапов нужно убрать из навигации, оставить циклы»).
+    assert {c["title"] for c in feed["cycles"]} == {"Занятие", "Октябрь"}
 
     tomorrow = feed_for_student(
         db, user_id=regular_user.id, user_tariff=None, today=TODAY + timedelta(days=1),
