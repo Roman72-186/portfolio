@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.constants import (
     VIDEO_WATCH_MAX_PLAYBACK_RATE,
     VIDEO_WATCH_NETWORK_SLACK_SECONDS,
+    VIDEO_WATCH_SKIP_NOTICE_SECONDS,
     VIDEO_WATCH_TAIL_SECONDS,
 )
 from app.models.video_progress import VideoProgress
@@ -118,24 +119,46 @@ def compute_watched_seconds(
     задержка одного запроса в сети делала следующий «слишком ранним» — весь
     кусок пропадал как перемотка, засчитывалось 65–85% вместо 100%.
     """
+    return _credit_step(
+        previous,
+        position_seconds=position_seconds,
+        playback_active=playback_active,
+        now=now,
+    )[0]
+
+
+def _credit_step(
+    previous: VideoProgress | None,
+    *,
+    position_seconds: float,
+    playback_active: bool,
+    now: datetime | None,
+) -> tuple[float, float]:
+    """Засчитанные секунды после heartbeat'а и сколько секунд ролика ученик
+    перескочил вперёд с прошлого — их не засчитали.
+
+    Перескок считается и на паузе: позиция ушла вперёд без проигрывания —
+    перемотка целиком (06.10.2026, для предупреждения ученику)."""
     if previous is None:
-        return 0.0
+        return 0.0, 0.0
+    watched = previous.watched_seconds
+    position_delta = position_seconds - previous.position_seconds
+    if position_delta <= 0:
+        return watched, 0.0
     if not playback_active:
-        return previous.watched_seconds
+        return watched, position_delta
     now = now or datetime.now(timezone.utc)
     updated_at = previous.updated_at
     if updated_at is None:
-        return previous.watched_seconds
+        return watched, 0.0
     if updated_at.tzinfo is None:
         updated_at = updated_at.replace(tzinfo=timezone.utc)
     gap = (now - updated_at).total_seconds()
     if gap <= 0:
-        return previous.watched_seconds
-    position_delta = position_seconds - previous.position_seconds
-    if position_delta <= 0:
-        return previous.watched_seconds
+        return watched, 0.0
     allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_NETWORK_SLACK_SECONDS
-    return previous.watched_seconds + min(position_delta, allowed)
+    credited = min(position_delta, allowed)
+    return watched + credited, position_delta - credited
 
 
 def watch_threshold_seconds(duration_seconds: float) -> float:
@@ -152,6 +175,12 @@ class WatchDecision:
     threshold_seconds: float | None
     position_reached: bool
     completed: bool
+    # Перескок вперёд именно этим heartbeat'ом не меньше порога
+    # `VIDEO_WATCH_SKIP_NOTICE_SECONDS` — плеер предупреждает ученика.
+    skipped: bool = False
+    # Сколько секунд ролика этот heartbeat не засчитал из прироста позиции —
+    # для лога, в том числе мелкие срезы от задержек сети.
+    skipped_seconds: float = 0.0
 
 
 def evaluate_watch(
@@ -172,20 +201,27 @@ def evaluate_watch(
     После первого зачёта считается только новый проход
     (`last_completion_watched_seconds`, 19.09.2026). Без длительности
     проверить нечего — fail-closed."""
-    watched = compute_watched_seconds(
+    watched, skipped_seconds = _credit_step(
         previous,
         position_seconds=position_seconds,
         playback_active=playback_active or ended,
         now=now,
     )
+    skipped = skipped_seconds >= VIDEO_WATCH_SKIP_NOTICE_SECONDS
     credited = watched
     if previous is not None and previous.completed_at is not None:
         credited = max(0.0, watched - previous.last_completion_watched_seconds)
     if duration_seconds is None or duration_seconds <= 0:
-        return WatchDecision(watched, credited, None, False, False)
+        return WatchDecision(
+            watched, credited, None, False, False, skipped, skipped_seconds
+        )
     threshold = watch_threshold_seconds(duration_seconds)
     reached = ended or position_seconds >= threshold
-    return WatchDecision(watched, credited, threshold, reached, reached and credited >= threshold)
+    completed = reached and credited >= threshold
+    return WatchDecision(
+        watched, credited, threshold, reached, completed,
+        skipped and not completed, skipped_seconds,
+    )
 
 
 def save_video_progress(

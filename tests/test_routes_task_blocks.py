@@ -791,6 +791,32 @@ def test_video_block_confirm_rejected_when_not_watched(
     assert body["blocks"][0]["done"] is False
 
 
+def test_video_block_refusal_is_logged_with_reason(
+    client, db, user_factory, session_factory, watch_control_on, caplog
+):
+    """Владелец 06.10.2026: отказ на кружке пишется в лог с причиной и
+    цифрами — на жалобу «смотрела до конца, а не засчитало» хватает строки."""
+    from app.models.video_progress import VideoProgress
+
+    staff = user_factory(vk_id=550_329, name="Стафф", is_admin=True, role_name="админ")
+    _task, block, video = _video_task_with_block(db, staff.id)
+    student = _student_client(client, user_factory, session_factory)
+    db.add(VideoProgress(
+        user_id=student.id, video_id=video.bunny_video_id,
+        position_seconds=115.0, watched_seconds=40.0, duration_seconds=120.0,
+    ))
+    db.commit()
+
+    with caplog.at_level("WARNING", logger="app.api.cabinet_tracker"):
+        resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+
+    assert resp.status_code == 409
+    line = next(r.getMessage() for r in caplog.records if "кружок не поставлен" in r.getMessage())
+    assert f"user={student.id}" in line
+    assert "дошёл до конца, но пропустил 50 с" in line
+    assert "честных=40" in line
+
+
 @pytest.mark.parametrize(
     "task_required,block_required",
     [(False, True), (True, False), (False, False)],

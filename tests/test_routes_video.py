@@ -367,7 +367,7 @@ def test_video_progress_is_saved_and_restored_for_current_user(auth_client, db, 
         },
     )
     assert saved.status_code == 200
-    assert saved.json() == {"ok": True, "completed": False}
+    assert saved.json() == {"ok": True, "completed": False, "skipped": False}
 
     progress = db.get(VideoProgress, (user.id, VIDEO_ID))
     assert progress.position_seconds == 123.5
@@ -446,7 +446,7 @@ def test_video_progress_ignores_client_completed_flag(auth_client, db, monkeypat
 
     assert forged.status_code == 422
     assert near_end.status_code == 200
-    assert near_end.json() == {"ok": True, "completed": True}
+    assert near_end.json() == {"ok": True, "completed": True, "skipped": False}
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
 
 
@@ -712,3 +712,34 @@ def test_done_step_stays_open_while_its_video_runs():
     # Разнесены по одному: неизвестный браузеру селектор в группе через запятую
     # выбрасывает всю группу, и открытие шага пропало бы целиком.
     assert ":has(.video-frame:fullscreen),\n" not in css
+
+
+def test_video_progress_reports_skip_forward(auth_client, db, monkeypatch, caplog):
+    """Перемотка вперёд — ответ несёт `skipped`, плеер предупреждает ученика
+    (владелец 06.10.2026)."""
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    db.add(
+        VideoProgress(
+            user_id=user.id, video_id=VIDEO_ID,
+            position_seconds=10.0, watched_seconds=10.0,
+        )
+    )
+    db.commit()
+
+    with caplog.at_level("WARNING", logger="app.api.video"):
+        jumped = client.post(
+            "/cabinet/video/progress",
+            json={"position_seconds": 300, "duration_seconds": 600, "playback_active": True},
+        )
+
+    assert jumped.status_code == 200
+    assert jumped.json() == {"ok": True, "completed": False, "skipped": True}
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).watched_seconds < 20
+    # Срезанный кусок виден в логе: откуда куда, сколько срезано, играло ли.
+    line = next(r.getMessage() for r in caplog.records if "кусок не засчитан" in r.getMessage())
+    assert f"user={user.id}" in line
+    assert "позиция 10→300" in line
+    assert "играло=True" in line

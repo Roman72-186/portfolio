@@ -150,7 +150,7 @@ from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 from app.services.video_catalog import get_published_video
-from app.services.video_progress import get_video_progress
+from app.services.video_progress import get_video_progress, watch_threshold_seconds
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import format_rich_text, templates
 
@@ -541,6 +541,33 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     if block_created_at.tzinfo is None:
         block_created_at = block_created_at.replace(tzinfo=timezone.utc)
     return completed_at >= block_created_at
+
+
+def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
+    """Почему кружок видео-блока не поставлен — строка для лога (владелец
+    06.10.2026). До этого отказ уходил ученику кодом `not_watched` и нигде не
+    оставался: на жалобу «смотрела до конца, а не засчитало» ответить было
+    нечем, кроме гипотез. Те же условия, что у `_video_block_watched`."""
+    video = db.get(LearningVideo, block.video_id) if block.video_id else None
+    if video is None:
+        return "ролика нет"
+    progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
+    if progress is None:
+        return "ролик не запускался"
+    duration = video.duration_seconds
+    numbers = (
+        f"позиция={progress.position_seconds:.0f} | честных={progress.watched_seconds:.0f}"
+        f" | длительность={duration or 0:.0f}"
+    )
+    if progress.last_completed_at or progress.completed_at:
+        # Засчитан раньше, чем блок появился: в новом занятии нужен новый проход.
+        return "засчитан до создания блока, нужен новый проход | " + numbers
+    if not duration:
+        return "у ролика нет длительности | " + numbers
+    threshold = watch_threshold_seconds(duration)
+    if progress.position_seconds < threshold:
+        return f"не досмотрел до порога {threshold:.0f} | " + numbers
+    return f"дошёл до конца, но пропустил {threshold - progress.watched_seconds:.0f} с | " + numbers
 
 
 # Контроль просмотра видео. Выключался владельцем 19.09.2026: плеер Bunny не
@@ -1246,6 +1273,10 @@ def confirm_video_block_watched(
     if _video_block_requires_completion(db, task, block, user) and not _video_block_watched(
         db, block, user["user_id"]
     ):
+        log.warning(
+            "Видео не засчитано, кружок не поставлен | block=%s | user=%s | причина=%s",
+            block_id, user["user_id"], _video_watch_refusal(db, block, user["user_id"]),
+        )
         return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")
     db.commit()

@@ -529,6 +529,18 @@
             var reattachPlayer = null;
             var playerGeneration = 0;
             var isPlaying = false;
+            // Какие плееры страницы сейчас играют — общий на страницу список:
+            // скрипт подключается с каждым партиалом, поэтому живёт на window.
+            var playingPlayers = window.lrnVideoPlayer.playing
+                || (window.lrnVideoPlayer.playing = new Set());
+            var playerKey = {};
+            function setPlaying(value) {
+                isPlaying = value;
+                if (value) { playingPlayers.add(playerKey); return; }
+                if (playingPlayers.delete(playerKey) && playingPlayers.size === 0) {
+                    window.dispatchEvent(new Event('lrn-video-idle'));
+                }
+            }
             var hasEverPlayed = false;
 
             function showStatus(message, isError) {
@@ -575,10 +587,20 @@
                     .finally(function () { playerUrlRefreshInFlight = false; });
             }
 
+            // Пока на странице играет любой ролик, соседние плееры ссылку не
+            // обновляют: обновление перезагружает плеер Bunny целиком, и на
+            // слабой связи он отнимает канал у играющего ролика. Прод
+            // 06.10.2026: у ученицы с тремя плеерами на странице ролик вставал
+            // на минуту-полторы ровно в моменты таких перезагрузок соседа (раз в
+            // 5 минут на каждый простаивающий плеер), жалоба «зависает каждые
+            // две минуты». Ссылка обновится, как только воспроизведение встанет.
             function refreshPlayerUrlIfStale() {
-                if (isPlaying || !isPlayerUrlStale()) return;
+                if (playingPlayers.size > 0 || !isPlayerUrlStale()) return;
                 refreshPlayerUrl();
             }
+            window.addEventListener('lrn-video-idle', function () {
+                if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+            });
 
             document.addEventListener('visibilitychange', function () {
                 if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
@@ -709,6 +731,12 @@
                         );
                         if (!completionReported && onCompleted) onCompleted();
                         completionReported = true;
+                    } else if (respData && respData.skipped === true && watchRequired
+                        && !completionReported) {
+                        // Сервер увидел перескок вперёд (`evaluate_watch`) —
+                        // говорим сразу, а не когда ученик дойдёт до конца и
+                        // упрётся в незасчитанный просмотр (владелец 06.10.2026).
+                        setStatus('Перемотанный кусок не засчитается. Смотри без перемотки, ускорять можно до 2×.', true);
                     } else if (!progress.completed) {
                         return;
                     } else if (!watchRequired) {
@@ -791,7 +819,7 @@
                 });
                 player.on('play', function () {
                     if (generation !== playerGeneration) return;
-                    isPlaying = true;
+                    setPlaying(true);
                     hasEverPlayed = true;
                     hideCover();
                     // Каждый play создаёт серверную точку отсчёта. Без неё короткий
@@ -805,7 +833,7 @@
                     // Последний кусок до паузы тоже был просмотрен. Флаг активного
                     // воспроизведения должен попасть в тело запроса до смены состояния.
                     saveProgress(true, false, false);
-                    isPlaying = false;
+                    setPlaying(false);
                 });
                 player.on('seeked', function () {
                     if (generation !== playerGeneration) return;
@@ -817,9 +845,9 @@
                 });
                 player.on('ended', function () {
                     if (generation !== playerGeneration) return;
-                    isPlaying = false;
                     if (durationSeconds !== null) currentSeconds = durationSeconds;
                     saveProgress(true, true, false);
+                    setPlaying(false);
                 });
             }
 
@@ -827,7 +855,7 @@
             attachPlayer();
             reattachPlayer = function () {
                 resumeSeconds = currentSeconds;
-                isPlaying = false;
+                setPlaying(false);
                 attachPlayer();
             };
 
@@ -836,6 +864,7 @@
             });
             window.addEventListener('pagehide', function () {
                 saveProgress(true, false, true);
+                playingPlayers.delete(playerKey);
             });
         }
     };

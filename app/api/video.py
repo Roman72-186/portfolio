@@ -3,6 +3,7 @@
 import json
 import logging
 import secrets
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -723,6 +724,22 @@ def _save_progress(
     )
     watched_seconds = decision.watched_seconds
     completed = decision.completed
+    if decision.skipped_seconds >= 1:
+        # Каждый срезанный кусок — в лог (владелец 06.10.2026): по паузе между
+        # отметками и флагу воспроизведения видно, перемотка это или сеть.
+        # Без строки на жалобу «смотрела до конца» ответить было нечем.
+        updated_at = existing.updated_at
+        if updated_at is not None and updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        gap = (datetime.now(timezone.utc) - updated_at).total_seconds() if updated_at else None
+        logger.warning(
+            "Видео: кусок не засчитан | user=%s | video=%s | позиция %.0f→%.0f"
+            " | срезано=%.0f | пауза между отметками=%s | играло=%s | засчитано всего=%.0f",
+            user["user_id"], bunny_video_id, existing.position_seconds,
+            payload.position_seconds, decision.skipped_seconds,
+            f"{gap:.0f}" if gap is not None else "?", payload.playback_active,
+            watched_seconds,
+        )
     try:
         completed = persist_video_progress(
             db,
@@ -743,7 +760,9 @@ def _save_progress(
     if completed and not was_completed and topic_id is not None:
         _close_video_task_once(db, user_id=user["user_id"], topic_id=topic_id)
 
-    return JSONResponse({"ok": True, "completed": completed})
+    # `skipped` — ученик перемотал вперёд, перемотанное не засчитано: плеер
+    # предупреждает сразу, а не после досмотра (владелец 06.10.2026).
+    return JSONResponse({"ok": True, "completed": completed, "skipped": decision.skipped})
 
 
 @router.post("/video/progress", response_class=JSONResponse)

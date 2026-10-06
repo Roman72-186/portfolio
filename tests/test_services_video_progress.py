@@ -407,3 +407,46 @@ def test_short_video_needs_half_of_it():
 def test_without_duration_never_completes():
     """Нет длительности — проверить нечего, fail-closed."""
     assert _decide(_row(560.0, 560.0), 570.0, duration=None, ended=True).completed is False
+
+
+def _decide_paused(previous, position, *, duration=600.0, after=10):
+    return evaluate_watch(
+        previous, position_seconds=position, duration_seconds=duration,
+        playback_active=False, ended=False, now=T0 + timedelta(seconds=after),
+    )
+
+
+def test_seek_forward_while_playing_warns_student():
+    """Владелец 06.10.2026: ученику говорим о перемотке сразу. 450 секунд
+    вперёд за 10 секунд — засчитано 27,5, остальное перескочено."""
+    assert _decide(_row(50.0, 50.0), 500.0).skipped is True
+
+
+def test_seek_forward_while_paused_warns_student():
+    """На паузе ничего не засчитывается, и перемотку раньше не было видно:
+    позиция ушла вперёд без проигрывания."""
+    decision = _decide_paused(_row(50.0, 50.0), 300.0)
+    assert decision.skipped is True
+    assert decision.watched_seconds == 50.0
+
+
+def test_double_speed_with_network_delay_does_not_warn():
+    """Heartbeat на 2× сразу за задержанным теряет несколько секунд — это не
+    перемотка, предупреждать нельзя."""
+    assert _decide(_row(100.0, 100.0), 120.0, after=3).skipped is False
+    assert _decide(_row(100.0, 100.0), 120.0, after=10).skipped is False
+
+
+def test_short_nudge_forward_does_not_warn():
+    assert _decide_paused(_row(100.0, 100.0), 110.0).skipped is False
+
+
+def test_seek_back_does_not_warn():
+    assert _decide_paused(_row(300.0, 300.0), 100.0).skipped is False
+
+
+def test_completing_heartbeat_does_not_warn():
+    """Зачёт важнее: если просмотр засчитан, о перескоке не говорим."""
+    decision = _decide(_row(500.0, 565.0), 590.0, after=1)
+    assert decision.completed is True
+    assert decision.skipped is False

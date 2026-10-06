@@ -95,7 +95,23 @@ def test_player_reports_success_only_after_server_confirmation():
     assert "ended: Boolean(completed)" in source
     assert "Просмотр пока не подтверждён" in source
     pause_handler = source.split("player.on('pause'", 1)[1].split("});", 1)[0]
-    assert pause_handler.index("saveProgress") < pause_handler.index("isPlaying = false")
+    assert pause_handler.index("saveProgress") < pause_handler.index("setPlaying(false)")
+
+
+def test_idle_player_does_not_reload_while_another_plays():
+    """Прод 06.10.2026, жалоба «видео зависает каждые две минуты»: соседний
+    плеер раз в 5 минут перезагружал плеер Bunny ради свежей ссылки и отнимал
+    канал у играющего ролика. Признак «играет» общий на страницу; ссылка
+    обновляется, когда воспроизведение встало."""
+    source = _read("app/static/js/video-player.js")
+
+    assert "window.lrnVideoPlayer.playing" in source
+    refresh = source.split("function refreshPlayerUrlIfStale()", 1)[1].split("}", 1)[0]
+    assert "playingPlayers.size > 0" in refresh
+    assert "window.dispatchEvent(new Event('lrn-video-idle'))" in source
+    assert "window.addEventListener('lrn-video-idle'" in source
+    # Признак меняется только через setPlaying — иначе список страницы разойдётся.
+    assert source.count("isPlaying = ") - source.count("var isPlaying = ") == 1
 
 
 # ── 3D-лаборатория: проверки по исходникам, JS-раннера в проекте нет ──────────
