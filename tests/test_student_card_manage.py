@@ -8,6 +8,7 @@
 Карточка ученика в «Людях» уводит сюда.
 """
 
+import pathlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -241,6 +242,34 @@ def test_credentials_and_link_answer_json(client, db, session_factory, people):
     link = client.post(f"/cabinet/superadmin/users/{student.id}/issue-link", headers=headers)
     assert link.status_code == 200
     assert link.json()["link"]
+
+
+def test_card_rerenders_after_issuing_password():
+    """Проход 06.10.2026: выдача пароля стирала кэш карточки и не
+    перерисовывала её — до перезагрузки «Логин и пароль не выдавались»,
+    повторная выдача падала, «Редактировать анкету» не открывалась."""
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    body = source.split("function issueCredentials()", 1)[1].split("\nfunction ", 1)[0]
+
+    assert "reloadProfile();" in body
+    assert "_tabCache[_currentStudentId] = {};" not in body
+
+
+# ── Архив только читают ─────────────────────────────────────────────────────
+
+def test_archive_view_hides_portfolio_month_buttons(client, db, session_factory, people):
+    """Суперадмин видел в архиве «Переименовать», крестики и перетаскивание,
+    а сервер отвечал на них 404 «Not found» (проход 06.10.2026)."""
+    student = people["student"]
+    db.commit()
+    archive_user(db, target_user_id=student.id, performed_by_id=people["superadmin"].id, actor_rank=5)
+    _login(client, session_factory, people["superadmin"])
+
+    archive_page = client.get(f"/cabinet/archive?student={student.id}").text
+    active_page = client.get("/cabinet/students").text
+
+    assert "const CAN_PORTFOLIO_MONTHS = false;" in archive_page
+    assert "const CAN_PORTFOLIO_MONTHS = true;" in active_page
 
 
 # ── «Люди» уводят в «Учеников» ───────────────────────────────────────────────

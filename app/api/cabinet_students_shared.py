@@ -574,6 +574,11 @@ def _render_students_panel(
         # модератору и любому с «Смотреть» в «Учениках» сервер ответит 403
         # (шаг 2 плана тонких доступов, «кнопка = сервер»).
         "can_edit_card": can_score and can(user, "students"),
+        # Переименовать месяц и перенести работу — действие
+        # `students:portfolio_months`. Архив только читают: его PATCH отвечает
+        # 404, а без `not archived_b` суперадмин видел в архиве «Переименовать»
+        # и крестики, которые падали с «Not found» (проход 06.10.2026).
+        "can_portfolio_months": can(user, "students:portfolio_months") and not archived_b,
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
         "months": MONTHS,

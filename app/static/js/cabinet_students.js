@@ -1497,7 +1497,11 @@ function copyAccessText(btn) {
 }
 
 function issueCredentials() {
-    var m = _tabCache[_currentStudentId].profile.student.manage;
+    // Профиль перечитывается после каждой выдачи; кнопку нажали, пока он
+    // грузится, — ждём перерисовки, иначе не узнать, был ли логин.
+    var cached = _tabCache[_currentStudentId] && _tabCache[_currentStudentId].profile;
+    if (!cached) return;
+    var m = cached.student.manage;
     if (m.staff_login && !confirm('Старый пароль перестанет работать. Выдать новый?')) return;
     managePost('set-credentials', {})
         .then(function(res) {
@@ -1506,7 +1510,11 @@ function issueCredentials() {
             openAccessModal('Логин и пароль',
                 [['Ученик', d.name], ['Логин', d.login], ['Пароль', d.password], ['Где входить', d.url]],
                 'Пароль показываем один раз. Перешлите его ученику сейчас.');
-            _tabCache[_currentStudentId] = {};
+            // Карточку под окном перерисовываем сразу: до 06.10.2026 здесь
+            // только стирали кэш, и до перезагрузки страницы карточка писала
+            // «Логин и пароль не выдавались», повторная выдача падала, а
+            // «Редактировать анкету» молча не открывалась.
+            reloadProfile();
         })
         .catch(function() { alert(NET_ERROR); });
 }
