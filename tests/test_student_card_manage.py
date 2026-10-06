@@ -311,6 +311,19 @@ def test_card_refreshes_list_row_after_saving():
     assert "refreshSidebarRow(_currentStudentId);" in anketa_body
 
 
+def test_note_not_repeated_in_anketa_for_its_editor():
+    """Проход 06.10.2026, пункт 5: «Заметка о ребёнке» из «Управления»
+    повторялась в анкете с подписью «О себе», будто её написал ученик. Кто
+    правит заметку, тому анкета её не показывает; куратору и тем, кому правка
+    закрыта, — показывает под её настоящим именем."""
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    profile = source.split("function renderProfile(", 1)[1].split("\nfunction ", 1)[0]
+
+    assert 'profile-field-label">О себе<' not in profile
+    assert "if (s.about && !(s.manage && s.manage.can_edit))" in profile
+    assert 'profile-field-label">Заметка о ребёнке<' in profile
+
+
 # ── Архив только читают ─────────────────────────────────────────────────────
 
 def test_archive_view_hides_portfolio_month_buttons(client, db, session_factory, people):

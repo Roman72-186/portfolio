@@ -263,9 +263,13 @@ function renderProfile(data) {
     if (s.access_until && !s.manage) {
         html += profileField('Доступ до', s.access_until.replace('T', ' '));
     }
-    if (s.about) {
+    // Заметку пишет только персонал (`User.about`, «Управление»). Кто правит её
+    // там, тому второй раз в анкете она не нужна; куратору и тем, кому правка
+    // закрыта, анкета — единственное место, где её прочитать (проход 06.10.2026:
+    // здесь же она стояла с подписью «О себе», будто её написал ученик).
+    if (s.about && !(s.manage && s.manage.can_edit)) {
         html += '<div class="profile-field full-width">'
-            + '<div class="profile-field-label">О себе</div>'
+            + '<div class="profile-field-label">Заметка о ребёнке</div>'
             + '<div class="profile-about">' + (s.about_html || esc(s.about)) + '</div></div>';
     }
 
@@ -1199,7 +1203,7 @@ function buildManage(s) {
         '<label class="manage-check"><input type="checkbox" id="manage-publishable"' + (m.is_publishable ? ' checked' : '') + dis + '>'
         + '<span>Работы можно показывать в соцсетях и портфолио школы</span></label>');
     // Редактор заметки не смотрит на disabled, поэтому без права правки её
-    // здесь нет вовсе — прочитать её можно в анкете, строка «О себе».
+    // здесь нет вовсе — тогда её показывает анкета, строка «Заметка о ребёнке».
     if (m.can_edit) {
         html += manageField('Заметка о ребёнке',
             '<textarea data-rich-text class="profile-edit-input" id="manage-about" maxlength="500" placeholder="Видят Главный преподаватель и куратор">' + esc(m.about) + '</textarea>',
