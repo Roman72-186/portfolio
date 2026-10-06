@@ -17,11 +17,11 @@
    добавленный в задание, которое ученик уже видел: иначе запись занятия,
    доложенная в открытое задание, прошла бы молча.
 3. **Срок сдачи** — за сутки и за 3 часа (владелец), если блок сдачи или
-   ответа (`DEADLINE_BLOCKS_COMPLETION`) или контрольная на время
-   (`LATE_SUBMISSION_BLOCK_TYPES` — после срока её примут, но опозданием)
-   не закрыты или домашка не сдана.
-   Момент срока — `submission_edit.upload_deadline`, та же функция, что
-   запирает сдачу: напоминание не может разойтись с настоящим сроком.
+   ответа (`LATE_SUBMISSION_BLOCK_TYPES`) не закрыт или домашка не сдана.
+   После срока сдачу примут, но запишут опозданием (владелец 06.10.2026),
+   поэтому напоминание говорит о сроке, а не о закрытии приёма.
+   Момент срока — `submission_edit.upload_deadline`, та же функция, по
+   которой считается опоздание: напоминание не разойдётся с настоящим сроком.
 4. **Конец доступа** (`User.access_until`) — за 3 дня и за сутки.
 5. **Долг цикла** (владелец 06.10.2026: «отправить уведомление, что цикл
    закроется и у него есть долг… Напоминания должны прийти»). Цикл, на
@@ -70,7 +70,6 @@ from app.models.student_reminder import (
     StudentReminder,
 )
 from app.models.task_block import (
-    DEADLINE_BLOCKS_COMPLETION,
     LATE_SUBMISSION_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
     TaskBlock,
@@ -343,7 +342,7 @@ def _collect_deadlines(
     blocks_by_task = {
         task_id: [
             b for b in blocks
-            if b.block_type in DEADLINE_BLOCKS_COMPLETION + LATE_SUBMISSION_BLOCK_TYPES
+            if b.block_type in LATE_SUBMISSION_BLOCK_TYPES
         ]
         for task_id, blocks in get_blocks_for_tasks(db, list(tasks)).items()
     }
@@ -516,17 +515,19 @@ def _content_message(items: list[_Item]) -> tuple[str, str]:
 def _deadline_message(items: list[_Item]) -> tuple[str, str]:
     """Дату срока не называем (владелец 02.10.2026): `submit_until` ставят с
     запасом, и «до 04.10 в 19:23» спорило бы с дедлайном из текста задания —
-    ученики приняли бы это за перенос. Дедлайн называет только задание."""
+    ученики приняли бы это за перенос. Дедлайн называет только задание.
+    «Скоро закроется приём работ» (до 06.10.2026) снято: после срока сдачу
+    принимают опозданием, приём не закрывается."""
     if len(items) == 1:
         item = items[0]
         left = (
             "Осталось меньше трёх часов." if item.kind == KIND_DEADLINE_3H
             else "Осталось меньше суток."
         )
-        return f"Скоро закроется приём работ: «{item.title}»", left
+        return f"Скоро срок сдачи: «{item.title}»", left
     word = _plural(len(items), "задание", "задания", "заданий")
     items = sorted(items, key=lambda i: i.moment)
-    return f"Скоро закроется приём работ: {len(items)} {word}", _titles(items)
+    return f"Скоро срок сдачи: {len(items)} {word}", _titles(items)
 
 
 def _access_message(item: _Item) -> tuple[str, str]:

@@ -33,24 +33,24 @@ from app.models.learning_topic import (
     LearningTopic,
 )
 from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
-from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
+from app.models.tracker import ITEM_HOMEWORK, ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
     BlockViewer,
+    autoclose_steps,
+    block_still_doable,
     close_block_for_user,
     get_audiences,
+    get_blocks,
     get_blocks_for_tasks,
     get_required_tariffs,
-    get_submit_deadlines,
-    get_task_submit_deadlines,
     get_states,
     is_block_accessible,
     is_block_open_to,
     required_by_block_for_task,
     poll_inner_block_ids,
-    portfolio_window_expired,
     start_portfolio_window,
 )
 from app.services.tracker import (
@@ -88,15 +88,6 @@ def _not_open_yet(value: datetime | None, now: datetime) -> bool:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value > now
-
-
-def _already_closed(value: datetime | None, now: datetime) -> bool:
-    """Момент закрытия уже прошёл. `None` — не закрывается никогда."""
-    if value is None:
-        return False
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value <= now
 
 
 def feed_window(
@@ -340,12 +331,6 @@ def build_cycle_feed(
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)
-    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
-    # Сроки на уровне задания — запасные для блоков, которые своего не задали
-    # (владелец 27.09.2026). Ключ — задание, потому что в ленте цикла блоки
-    # идут подряд из разных заданий.
-    tasks_by_id = {entry["task"].id: entry["task"] for entry in entries}
-    task_deadlines_by_task = get_task_submit_deadlines(db, list(tasks_by_id))
 
     # Блок «Загрузить портфолио» закрывается фактом загрузки работы, а не
     # галочкой ученика (владелец 03.09.2026). Закрываем по-настоящему, а не
@@ -449,11 +434,7 @@ def build_cycle_feed(
                 block.block_type not in COMPLETABLE_BLOCK_TYPES and _task_done(entry)
             )
             block_waits_date = _not_open_yet(block.opens_at, now)
-            block_closed = (
-                portfolio_window_expired(block, state, now=now)
-                if block.block_type == BLOCK_PORTFOLIO and block.portfolio_window_hours
-                else _already_closed(block.closes_at, now)
-            )
+            block_closed = not block_still_doable(block, state, now=now)
             accessible = (
                 not blocked
                 and not task_waits_date
@@ -464,9 +445,6 @@ def build_cycle_feed(
                     audiences_by_block=audiences_by_block,
                     viewer=viewer,
                     required_tariffs_by_block=required_tariffs_by_block,
-                    submit_deadlines_by_block=submit_deadlines_by_block,
-                    tasks_by_id=tasks_by_id,
-                    task_submit_deadlines_by_task=task_deadlines_by_task,
                     required_by_block=required_by_block,
                     now=now,
                 )
@@ -584,28 +562,144 @@ def started_cycles(
     return list(reversed(started))
 
 
+def _task_finished_by_user(
+    db: Session, entry: dict, *, user_id: int, user_tariff: str | None, now: datetime
+) -> bool:
+    """Ученик сделал задание — всё, что в нём ещё можно сделать.
+
+    Закрытое задание — сделано. Задание из блоков — когда каждый шаг, который
+    можно отметить (`autoclose_steps`: видимые ученику блоки, кроме текста,
+    ссылки и скрытых до сдачи), отмечен или сделать его уже нельзя
+    (`block_still_doable`: закрыт по дате, истекло окно портфолио). Срок
+    сдачи шаг не закрывает: сдать можно и после него. Задание из одного
+    текста этап не держит — отметить в нём нечего. Старая домашка без блоков
+    сделана, когда сдана: принятия куратором не ждём (владелец 06.10.2026,
+    «сдал — значит сделал»).
+    """
+    task = entry["task"]
+    if _task_done(entry):
+        return True
+    if not get_blocks(db, task.id):
+        if task.kind == ITEM_HOMEWORK:
+            from app.services.homework_submission import get_submission
+
+            submission = get_submission(db, tracker_task_id=task.id, user_id=user_id)
+            return submission is not None and submission.submitted_at is not None
+        return False
+    steps = autoclose_steps(db, task.id, user_id=user_id, user_tariff=user_tariff)
+    if not steps:
+        return True
+    states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
+    return all(
+        (states.get(block.id) is not None and states[block.id].status == STATUS_DONE)
+        or not block_still_doable(block, states.get(block.id), now=now)
+        for block in steps
+    )
+
+
+def stage_finished_by_user(
+    db: Session, *, user_id: int, user_tariff: str | None, stage: LearningTopic,
+    today: date,
+) -> bool:
+    """Ученик сделал в этапе всё, что ещё можно сделать, — включая
+    необязательное (владелец 06.10.2026).
+
+    Служба заботы 06.10.2026: «Предобучение до 4 октября, но если его так
+    ставить, то он просто исчезает, хотя человек мог его ещё не пройти».
+    Владелец на вопрос, что значит «не завершил»: «Не сделал вообще всё,
+    включая необязательное». До этого закончившийся этап уходил в архив
+    у всех разом, а держал его только долг по обязательному
+    (`effective_cycle`).
+
+    Задания — те же, что видит лента (`accessible_task_entries`: аудитория,
+    тариф, «закончился до прихода»), в начавшихся циклах этапа, по своему
+    `topic_id`: датное задание соседнего этапа в окно цикла попадает по
+    совпадению дат и этап держать не должно. Билет пробника не считается —
+    он держит месяц, а не цикл (как в `missing_required_tasks`). Только
+    чтение: `build_cycle_feed` здесь не зовётся, он запускает окна
+    портфолио при показе.
+    """
+    now = datetime.now(timezone.utc)
+    for cycle in started_cycles(db, user_id, today, stage_id=stage.id):
+        first, last = cycle_bounds(cycle)
+        window_start, _ = day_bounds(first)
+        _, window_end = day_bounds(last)
+        for entry in accessible_task_entries(
+            db, user_id, start=window_start, end=window_end,
+            topic_id=cycle.id, include_undated=True,
+        ):
+            if entry["task"].topic_id != cycle.id or entry["task"].kind == ITEM_MOCK_EXAM:
+                continue
+            if not _task_finished_by_user(
+                db, entry, user_id=user_id, user_tariff=user_tariff, now=now,
+            ):
+                return False
+    return True
+
+
+class _StageVerdicts:
+    """«Этап у ученика в архиве?» — один ответ на этап за запрос.
+
+    Карусель, список архива и гейт записи спрашивают об одних и тех же
+    этапах по многу раз (гейт — по разу на каждый начавшийся цикл), а ответ
+    — обход всех заданий этапа. Живёт один вызов, не дольше: ученик сдал
+    последнее — следующий запрос уже видит этап в архиве.
+    """
+
+    def __init__(self, db: Session, user_id: int, today: date):
+        self.db = db
+        self.user_id = user_id
+        self.today = today
+        self._tariff: str | None = None
+        self._tariff_read = False
+        self._finished: dict[int, bool] = {}
+
+    def stage_archived(self, stage: LearningTopic) -> bool:
+        """Этап закончился по дате и ученик сделал в нём всё."""
+        if not _cycle_is_over(stage, self.today):
+            return False
+        if stage.id not in self._finished:
+            if not self._tariff_read:
+                student = self.db.get(User, self.user_id)
+                self._tariff = student.tariff if student is not None else None
+                self._tariff_read = True
+            self._finished[stage.id] = stage_finished_by_user(
+                self.db, user_id=self.user_id, user_tariff=self._tariff,
+                stage=stage, today=self.today,
+            )
+        return self._finished[stage.id]
+
+
 def _carousel_cycles(
-    db: Session, user_id: int, today: date, stage_id: int | None
+    db: Session, user_id: int, today: date, stage_id: int | None,
+    verdicts: _StageVerdicts | None = None,
 ) -> list[LearningTopic]:
-    """Циклы для карусели: текущего этапа и этапов, чья крайняя дата ещё не
-    прошла, от поздних к ранним.
+    """Циклы для карусели: текущего этапа, этапов, чья крайняя дата ещё не
+    прошла, и закончившихся этапов, которые ученик не доделал, — от поздних
+    к ранним.
 
     Владелец 04.10.2026: последний день «Предобучения» совпал с первым днём
     семестра, ученица закрыла всё, встала на цикл «Октябрь» нового этапа — и
     кнопка «Итоговая встреча» в «Занятии 4 октября» пропала вместе со всем
     прежним этапом. Этап показывается, «пока крайняя дата не прошла».
+    Владелец 06.10.2026: и после неё — пока ученик не сделал в этапе всё,
+    включая необязательное (`stage_finished_by_user`); недоделанный этап виден
+    в карусели рядом с текущим.
     """
     if stage_id is None:
         return started_cycles(db, user_id, today)
+    verdicts = verdicts or _StageVerdicts(db, user_id, today)
     open_stage_ids = {stage_id}
+    closed_stage_ids: set[int] = set()
     result = []
     for topic in started_cycles(db, user_id, today):
         parent_id = topic.parent_id
-        if parent_id is None:
+        if parent_id is None or parent_id in closed_stage_ids:
             continue
         if parent_id not in open_stage_ids:
-            stage = db.get(LearningTopic, parent_id)
-            if stage is None or cycle_bounds(stage)[1] < today:
+            stage = _stage_of(db, topic)
+            if stage is None or verdicts.stage_archived(stage):
+                closed_stage_ids.add(parent_id)
                 continue
             open_stage_ids.add(parent_id)
         result.append(topic)
@@ -613,18 +707,22 @@ def _carousel_cycles(
 
 
 def cycle_is_archived_for_user(
-    db: Session, user_id: int, topic_id: int, today: date
+    db: Session, user_id: int, topic_id: int, today: date,
+    verdicts: _StageVerdicts | None = None,
 ) -> bool:
     """Цикл `topic_id` для ученика — архив (только просмотр).
 
-    Архив — цикл (`kind='week'`) закончившегося этапа (`cycle_frame_is_over`),
-    который не совпадает с тем, на котором ученик стоит сейчас
-    (`effective_cycle`). Владелец 06.10.2026: «в архив должно уходить не весь
-    цикл, а весь этап» — пока этап идёт, его прошлые циклы рабочие, сданное
-    после срока цикла пишется «после срока». До этого (24.09.2026) прошлые
-    циклы открытого этапа были только на чтение. Прямая ссылка на цикл
-    закрытого этапа остаётся архивом (не 404) — тот же принцип, что у
-    прошедшей темы вообще («учебный архив», `models/learning_topic.py`).
+    Архив — цикл (`kind='week'`) этапа, который закончился по дате и в
+    котором ученик сделал всё (`_StageVerdicts.stage_archived`), и не тот, на
+    котором ученик стоит сейчас (`effective_cycle`). Владелец 06.10.2026: «в
+    архив должно уходить не весь цикл, а весь этап» — пока этап идёт, его
+    прошлые циклы рабочие, сданное после срока цикла пишется «после срока»;
+    и после конца этапа он рабочий, пока ученик не сделал в нём всё,
+    включая необязательное. До этого (24.09.2026) прошлые циклы открытого
+    этапа были только на чтение. Цикл без этапа (до 24.09.2026) — архив по
+    своему концу. Прямая ссылка на цикл архивного этапа остаётся архивом
+    (не 404) — тот же принцип, что у прошедшей темы вообще («учебный
+    архив», `models/learning_topic.py`).
     """
     topic = db.get(LearningTopic, topic_id)
     if topic is None or topic.kind != TOPIC_KIND_WEEK:
@@ -632,7 +730,12 @@ def cycle_is_archived_for_user(
     if not cycle_frame_is_over(db, topic, today):
         return False
     current = effective_cycle(db, user_id, today)
-    return current is None or current.id != topic.id
+    if current is not None and current.id == topic.id:
+        return False
+    stage = _stage_of(db, topic)
+    if stage is None:
+        return True
+    return (verdicts or _StageVerdicts(db, user_id, today)).stage_archived(stage)
 
 
 def task_is_archived_for_user(
@@ -657,7 +760,8 @@ def task_is_archived_for_user(
     """
     if task.topic_id is None:
         return False
-    if not cycle_is_archived_for_user(db, user_id, task.topic_id, today):
+    verdicts = _StageVerdicts(db, user_id, today)
+    if not cycle_is_archived_for_user(db, user_id, task.topic_id, today, verdicts):
         return False
     if task.id in current_feed_task_ids(db, user_id=user_id, today=today):
         return False
@@ -670,9 +774,23 @@ def task_is_archived_for_user(
         first, last = cycle_bounds(cycle)
         if not day_bounds(first)[0] <= due_at < day_bounds(last)[1]:
             continue
-        if not cycle_is_archived_for_user(db, user_id, cycle.id, today):
+        if not cycle_is_archived_for_user(db, user_id, cycle.id, today, verdicts):
             return False
     return True
+
+
+def _carousel_title(db: Session, cycle: LearningTopic, stage_id: int | None) -> str:
+    """Подпись плитки карусели. Цикл другого этапа подписан этапом
+    («Предобучение 2026-2027: Цикл 3»): в карусели с 06.10.2026 стоят и
+    недоделанные закончившиеся этапы, и без подписи «Цикл 3» прошлого этапа
+    не отличить от «Цикла 3» текущего. Тот же приём, что у плашки долга."""
+    label = cycle_label(db, cycle)
+    if stage_id is None or cycle.parent_id is None or cycle.parent_id == stage_id:
+        return label
+    stage = db.get(LearningTopic, cycle.parent_id)
+    if stage is None or not stage.title:
+        return label
+    return f"{stage.title}: {label}"
 
 
 def _debt_view(db: Session, debt: dict, viewed: LearningTopic | None) -> dict:
@@ -871,7 +989,9 @@ def archive_for_student(
     цикла, на котором ученик стоит (долг держит его рабочим и после конца
     этапа). Выполненный цикл идущего этапа живёт в карусели, в архив уходит
     вместе с этапом — это отменяет правило 04.10.2026 «пройденный —
-    закончился или выполнен». Своих правил видимости нет: циклы из
+    закончился или выполнен». Закончившийся этап, в котором ученик сделал не
+    всё (включая необязательное), в архив не уходит — он в карусели и рабочий
+    (владелец 06.10.2026, `stage_finished_by_user`). Своих правил видимости нет: циклы из
     `started_cycles` (аудитория, «закончился до прихода»), шаги из той же
     `build_cycle_feed`, что и лента; цикл без единого шага не показывается.
     Цикл, запертый долгом, пропускается: вперёд нельзя (30.09.2026).
@@ -879,6 +999,7 @@ def archive_for_student(
     debt = cycle_debt(db, user_id, today)
     locked_ids = {item.id for item in debt["locked"]} if debt else set()
     current = effective_cycle(db, user_id, today)
+    verdicts = _StageVerdicts(db, user_id, today)
     periods: dict[int | None, dict] = {}
 
     for cycle in reversed(started_cycles(db, user_id, today)):
@@ -887,6 +1008,9 @@ def archive_for_student(
         if current is not None and cycle.id == current.id:
             continue
         if not cycle_frame_is_over(db, cycle, today):
+            continue
+        cycle_stage = _stage_of(db, cycle)
+        if cycle_stage is not None and not verdicts.stage_archived(cycle_stage):
             continue
         first, last = cycle_bounds(cycle)
         steps = build_cycle_feed(
@@ -1054,7 +1178,8 @@ def feed_for_student(
         stage_topic = db.get(LearningTopic, stage_id)
         if stage_topic is not None:
             stage = {"id": stage_topic.id, "label": stage_topic.title or ""}
-    cycles = _carousel_cycles(db, user_id, today, stage_id)
+    verdicts = _StageVerdicts(db, user_id, today)
+    cycles = _carousel_cycles(db, user_id, today, stage_id, verdicts)
     # Ещё не открывшиеся циклы текущего этапа — закрытыми плитками с датой
     # (владелец 06.10.2026: «видеть циклы, которые были до и после»). Список
     # карусели идёт от поздних к ранним, поэтому они встают в начало.
@@ -1115,7 +1240,7 @@ def feed_for_student(
         ] + [
             {
                 "id": item.id,
-                "title": cycle_label(db, item),
+                "title": _carousel_title(db, item, stage_id),
                 "start": cycle_bounds(item)[0],
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,
@@ -1141,8 +1266,7 @@ def feed_for_student(
         # где сервер отметку примет.
         "is_archive": (
             chosen is not None
-            and (current_topic is None or chosen.id != current_topic.id)
-            and cycle_frame_is_over(db, chosen, today)
+            and cycle_is_archived_for_user(db, user_id, chosen.id, today, verdicts)
         ),
         # Опрос ученик видит одной карточкой (владелец 30.09.2026) — и
         # считается он одним шагом, по последнему вопросу: иначе опрос из

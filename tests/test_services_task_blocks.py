@@ -1343,9 +1343,10 @@ def test_effective_submit_until_prefers_the_tariff_row():
     ) == block.submit_until
 
 
-def test_expired_submit_until_stops_blocking_the_tail():
-    """Обязательный блок с закрытым приёмом не запирает хвост: сдать уже
-    нечем, и требование выполнить его было бы тупиком без выхода."""
+def test_expired_submit_until_still_blocks_the_tail():
+    """Обязательный блок с истёкшим сроком держит хвост: с 06.10.2026 сдать
+    его можно и после срока (владелец: «досдать свыше срока всегда можно»),
+    тупика нет. До этого срок запирал сдачу, и хвост отпускался."""
     now = datetime(2026, 9, 28, tzinfo=timezone.utc)
     first = TaskBlock(
         id=1, sort_order=0, block_type=BLOCK_UPLOAD, is_required=True,
@@ -1357,8 +1358,8 @@ def test_expired_submit_until_stops_blocking_the_tail():
     assert is_block_accessible(
         block_index=1, blocks=blocks, states={}, audiences_by_block={},
         viewer=BlockViewer(None, user_id=None, tariff=TARIFF_SELF), now=now,
-    ) is True
-    # Сам блок при этом остаётся доступным — закрыта только сдача.
+    ) is False
+    # Сам блок при этом доступен — сдать его можно.
     assert is_block_accessible(
         block_index=0, blocks=blocks, states={}, audiences_by_block={},
         viewer=BlockViewer(None, user_id=None, tariff=TARIFF_SELF), now=now,

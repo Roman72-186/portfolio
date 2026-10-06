@@ -114,7 +114,10 @@ def test_resubmit_final_replaces_previous(auth_client, db):
     assert len(finals) == 1
 
 
-def test_deadline_blocks_homework_upload_but_page_stays_visible(auth_client, db):
+def test_homework_after_deadline_accepts_first_upload_but_not_replacement(auth_client, db):
+    """Владелец 06.10.2026: «досдать свыше срока всегда можно, но просрок
+    дедлайна записывается». Первая сдача после срока проходит, замена
+    сданного — нет: опоздание пишется по первой сдаче."""
     client, user = auth_client
     task, _ = _homework_task(db, user.id)
     task.due_at = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -122,11 +125,14 @@ def test_deadline_blocks_homework_upload_but_page_stays_visible(auth_client, db)
 
     page = client.get(f"/cabinet/homework/{task.id}")
     with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
-        upload = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+        first = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+        again = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("b.jpg", b"2", "image/jpeg")})
 
     assert page.status_code == 200
-    assert "Срок сдачи прошёл" in page.text
-    assert upload.status_code == 409
+    # Форма открыта, а ученик предупреждён об опоздании.
+    assert "Работу ещё можно отправить, но она запишется как сданная после срока." in page.text
+    assert first.status_code == 200
+    assert again.status_code == 409
 
 
 def _upload_final(client, task):
@@ -157,6 +163,9 @@ def test_homework_submit_deadline_closes_before_the_day(auth_client, db):
     task.submit_until = now - timedelta(minutes=1)
     db.commit()
 
+    # Запирает срок сдачи, а не день задания, — но только замену: первую
+    # сдачу после срока принимают (06.10.2026).
+    assert _upload_final(client, task).status_code == 200
     assert _upload_final(client, task).status_code == 409
 
 
@@ -717,3 +726,35 @@ def test_accepted_homework_can_be_returned_and_uploaded_again(
     assert retry.status_code == 200
     db.refresh(submission)
     assert submission.status == "submitted"
+
+
+def test_homework_after_deadline_is_marked_late_for_review(auth_client, db):
+    """Владелец 06.10.2026: «просрок дедлайна записывается и показан при
+    проверке задания». Домашка — та же приписка, что у работ в блоках."""
+    from app.services.review_aggregate import DOMAIN_HOMEWORK, student_review_items
+
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    task.submit_until = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 200
+
+    items = student_review_items(db, student_id=user.id, role_rank=5)
+    homework = next(i for i in items if i.domain == DOMAIN_HOMEWORK)
+    assert homework.title == "Нарисуй куб (сдано после срока)"
+
+
+def test_homework_on_time_is_not_marked_late(auth_client, db):
+    from app.services.review_aggregate import DOMAIN_HOMEWORK, student_review_items
+
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    task.submit_until = datetime.now(timezone.utc) + timedelta(days=1)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 200
+
+    items = student_review_items(db, student_id=user.id, role_rank=5)
+    homework = next(i for i in items if i.domain == DOMAIN_HOMEWORK)
+    assert homework.title == "Нарисуй куб"

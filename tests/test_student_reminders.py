@@ -363,7 +363,9 @@ def test_deadline_reminders_a_day_and_three_hours_before(db, user_factory):
     ]
     # Дату срока напоминание не называет (владелец 02.10.2026): её
     # называет только текст задания.
-    assert notes[0].title == "Скоро закроется приём работ: «Портрет»"
+    # С 06.10.2026 после срока сдачу принимают опозданием — приём не
+    # «закрывается», напоминание говорит о сроке.
+    assert notes[0].title == "Скоро срок сдачи: «Портрет»"
 
 
 def test_no_deadline_reminder_once_handed_in(db, user_factory):

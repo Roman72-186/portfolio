@@ -60,7 +60,6 @@ from app.models.task_block import (
     TaskBlockSubmissionImage,
     TaskBlockTariff,
     TaskBlockTariffDeadline,
-    DEADLINE_BLOCKS_COMPLETION,
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN
 from app.services.tz import msk_midnight, parse_msk_local
@@ -517,8 +516,9 @@ def unfinished_required_steps(
 
     Обязательность — `required_by_block_for_task`, «ещё можно сделать» —
     `holds_sequence`: то же правило, по которому шаг запирает очередь ленты.
-    Шаг чужого тарифа, закрытый по календарю или с прошедшим сроком сдачи
-    кнопку не держит — сделать его уже нечем. Скрытые до сдачи
+    Шаг чужого тарифа или закрытый по календарю кнопку не держит — сделать
+    его уже нечем. Прошедший срок сдачи держит: сдать можно и после него
+    (владелец 06.10.2026). Скрытые до сдачи
     (`hidden_until_done`) не входят: ученик их не видит.
     """
     from app.models.tracker import TrackerTask
@@ -546,8 +546,6 @@ def unfinished_required_steps(
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     audiences_by_block = get_audiences(db, block_ids)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)
-    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
-    task_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
     now = _now()
     return [
         block for block in candidates
@@ -558,11 +556,6 @@ def unfinished_required_steps(
             viewer=viewer,
             required_tariffs_by_block=required_tariffs_by_block,
             required_by_block=required_by_block,
-            submit_deadlines_by_block=submit_deadlines_by_block,
-            tasks_by_id={task_id: task} if task is not None else None,
-            task_submit_deadlines_by_task=(
-                {task_id: task_deadlines} if task_deadlines else None
-            ),
             now=now,
         )
     ]
@@ -1423,10 +1416,10 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         ):
             row.closes_at = None
         # Срок — у любого типа блока (владелец 27.09.2026, второй заход:
-        # «добавить в доступность блока и для всех заданий»). Что он делает,
-        # зависит от типа: у сдачи и ответов запирает, у видео, фото, текста,
-        # ссылки и голосового только показывается ученику и попадает в
-        # статистику «до срока / после срока» (см. DEADLINE_BLOCKS_COMPLETION).
+        # «добавить в доступность блока и для всех заданий»). Первую сдачу он
+        # не запирает нигде, только отмечает опоздание в статистике и при
+        # проверке; у сдачи и ответов после срока нельзя поменять уже сданное
+        # (см. LATE_SUBMISSION_BLOCK_TYPES, владелец 06.10.2026).
         row.submit_until = _moment(item.get("submit_until"))
         row.locked_message = _clean(item.get("locked_message"), 300)
         if block_type == BLOCK_QUESTION:
@@ -2156,9 +2149,6 @@ def is_block_accessible(
     viewer: BlockViewer,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
-    submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
-    tasks_by_id: dict | None = None,
-    task_submit_deadlines_by_task: dict[int, dict[str, datetime | None]] | None = None,
     now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
@@ -2194,15 +2184,15 @@ def is_block_accessible(
        10.09.2026 — «на дешёвом тарифе ученик всё делает сам, на топовом
        сдача обязательна, но блок виден обоим») и тариф ученика в него не
        входит — блок для этого ученика необязателен, тоже не блокирует, хотя
-       остаётся видимым. **Истёкший срок приёма работ** (`submit_until`,
-       владелец 27.09.2026) снимает блокировку по той же причине: приём
-       закрыт, сдать уже нечем, и требовать выполнения — тупик без выхода.
+       остаётся видимым. **Истёкший срок сдачи** (`submit_until`) блокировку
+       не снимает: с 06.10.2026 сдать можно и после срока, опоздание только
+       записывается (владелец: «досдать свыше срока всегда можно… ЭТО
+       ПРАВИЛО!!!»), поэтому очередь ждёт сдачи. С 27.09 по 06.10.2026 срок
+       запирал сдачу, и обязательный блок с истёкшим сроком хвост отпускал.
 
-    **Срок приёма работ доступность самого блока не меняет** — в этом и его
-    смысл: после 9:30 ученик по-прежнему видит задание, свою работу, оценку и
-    переписку, закрыта только сдача (владелец 27.09.2026). Закрытие сдачи
-    считает `services/submission_edit.py::deadline_reason`, здесь срок нужен
-    ровно для развязки тупика в пункте 4.
+    **Срок сдачи доступность блока не меняет** и здесь не читается. Что
+    после срока можно поменять в сданном, решает
+    `services/submission_edit.py::deadline_reason`.
 
     `target.bypass_sequence` пропускает только пункт 4, не 1, 2 и 3
     (владелец 06.09.2026). Раньше это было жёстко зашито на `BLOCK_LINK`
@@ -2232,19 +2222,10 @@ def is_block_accessible(
             opens_at = opens_at.replace(tzinfo=timezone.utc)
         if opens_at > moment:
             return False
-    target_state = states.get(target.id)
-    # У нового портфолио абсолютный closes_at заменён персональным окном:
-    # каждому ученику даётся одинаковое число часов с его момента старта.
-    if target.block_type == BLOCK_PORTFOLIO and target.portfolio_window_hours:
-        if portfolio_window_expired(target, target_state, now=moment):
-            return False
-    else:
-        closes_at = target.closes_at
-        if closes_at is not None:
-            if closes_at.tzinfo is None:
-                closes_at = closes_at.replace(tzinfo=timezone.utc)
-            if closes_at <= moment:
-                return False
+    # Закрытие по календарю; у нового портфолио абсолютный closes_at заменён
+    # персональным окном — каждому ученику одинаковое число часов с его старта.
+    if not block_still_doable(target, states.get(target.id), now=moment):
+        return False
     if not is_block_open_to(audiences_by_block.get(target.id), viewer):
         return False
     if target.bypass_sequence:
@@ -2257,13 +2238,37 @@ def is_block_accessible(
             viewer=viewer,
             required_tariffs_by_block=required_tariffs_by_block,
             required_by_block=required_by_block,
-            submit_deadlines_by_block=submit_deadlines_by_block,
-            tasks_by_id=tasks_by_id,
-            task_submit_deadlines_by_task=task_submit_deadlines_by_task,
             now=moment,
         )
         for prior in blocks[:block_index]
     )
+
+
+def block_still_doable(
+    block: TaskBlock, state: TaskBlockState | None, *, now: datetime | None = None
+) -> bool:
+    """Можно ли ещё выполнить блок — не закрылся ли он навсегда.
+
+    Закрывают блок только закрытие по календарю (`closes_at`) и истёкшее
+    персональное окно портфолио (у такого блока `closes_at` — запасной и не
+    читается). Срок сдачи (`submit_until`) не закрывает: с 06.10.2026 сдать
+    можно и после него, опоздание только записывается (владелец: «досдать
+    свыше срока всегда можно… ЭТО ПРАВИЛО!!!»). Кому блок открыт — отдельный
+    вопрос (`is_block_open_to`), здесь не проверяется.
+
+    Одно правило на очередь ленты (`holds_sequence`) и на «сделал всё в
+    этапе» (`cycle_feed.stage_finished_by_user`): разойдись они, шаг держал бы
+    очередь, но не этап, или наоборот.
+    """
+    moment = now or _now()
+    if block.block_type == BLOCK_PORTFOLIO and block.portfolio_window_hours:
+        return not portfolio_window_expired(block, state, now=moment)
+    closes_at = block.closes_at
+    if closes_at is None:
+        return True
+    if closes_at.tzinfo is None:
+        closes_at = closes_at.replace(tzinfo=timezone.utc)
+    return closes_at > moment
 
 
 def holds_sequence(
@@ -2274,9 +2279,6 @@ def holds_sequence(
     viewer: BlockViewer,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
-    submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
-    tasks_by_id: dict | None = None,
-    task_submit_deadlines_by_task: dict[int, dict[str, datetime | None]] | None = None,
     now=None,
 ) -> bool:
     """Держит ли блок `prior` всё, что идёт после него: он обязателен этому
@@ -2286,10 +2288,11 @@ def holds_sequence(
     по нему же кнопка «Завершить задание» не даёт закрыть задание с
     несделанным обязательным шагом (`unfinished_required_steps`). Обязательный
     шаг, который сделать уже нельзя (чужой тариф, `closes_at`, истёкшее окно
-    портфолио, прошедший срок сдачи), не держит ни очередь, ни кнопку — иначе
-    тупик без выхода.
+    портфолио — `block_still_doable`), не держит ни очередь, ни кнопку —
+    иначе тупик без выхода. Прошедший срок сдачи держит: сдать можно и после
+    него (06.10.2026). До 06.10.2026 обязательный блок сдачи с истёкшим
+    сроком отпускал хвост — срок тогда запирал сдачу.
     """
-    moment = now or _now()
     prior_is_required = (
         required_by_block.get(prior.id, prior.is_required)
         if required_by_block is not None else prior.is_required
@@ -2304,53 +2307,8 @@ def holds_sequence(
     if prior_required_tariffs and viewer.tariff not in prior_required_tariffs:
         return False
     state = states.get(prior.id)
-    if (
-        prior.block_type == BLOCK_PORTFOLIO
-        and prior.portfolio_window_hours
-        and portfolio_window_expired(prior, state, now=moment)
-    ):
+    if not block_still_doable(prior, state, now=now):
         return False
-    prior_closes_at = (
-        None
-        if prior.block_type == BLOCK_PORTFOLIO and prior.portfolio_window_hours
-        else prior.closes_at
-    )
-    if prior_closes_at is not None:
-        prior_closes = (
-            prior_closes_at if prior_closes_at.tzinfo
-            else prior_closes_at.replace(tzinfo=timezone.utc)
-        )
-        if prior_closes <= moment:
-            return False
-    # Срок у обязательного блока прошёл, а ученик не закрыл его: если
-    # действие отобрал сам срок (сдача, ответ, правила), закрыть блок уже
-    # нечем, и без этой развязки лента встала бы навсегда — ровно тот же
-    # тупик, что выше снимают тариф и `closes_at` (владелец 27.09.2026).
-    #
-    # У видео, фото и голосового срок ничего не отбирает: отметить
-    # «Выполнено» можно и после него, это просто зачтётся опозданием в
-    # статистике. Такой блок очередь держит дальше — иначе срок,
-    # поставленный ради отчётности, молча снимал бы обязательность.
-    # Задание берётся по самому блоку, а не «то, ради которого позвали»:
-    # в ленте цикла блоки идут подряд из разных заданий, и чужой срок
-    # задания запер бы или отпустил не тот блок.
-    prior_task = (tasks_by_id or {}).get(prior.task_id)
-    prior_submit_until = (
-        submit_deadline_for(
-            prior, prior_task,
-            user_tariff=viewer.tariff,
-            block_overrides=(submit_deadlines_by_block or {}).get(prior.id),
-            task_overrides=(task_submit_deadlines_by_task or {}).get(prior.task_id),
-        )
-        if prior.block_type in DEADLINE_BLOCKS_COMPLETION else None
-    )
-    if prior_submit_until is not None:
-        prior_submit = (
-            prior_submit_until if prior_submit_until.tzinfo
-            else prior_submit_until.replace(tzinfo=timezone.utc)
-        )
-        if prior_submit <= moment:
-            return False
     return state is None or state.status != STATUS_DONE
 
 
@@ -2435,6 +2393,35 @@ def completed_after_deadline(
     """
     if state is None or state.completed_at is None:
         return False
+    # «Срока нет» (`None`) здесь — не опоздание: отметка отвечает да или нет.
+    return finished_after_deadline(
+        state.completed_at, block, task, user_tariff=user_tariff,
+        block_overrides=block_overrides, task_overrides=task_overrides,
+        cycle_deadline=cycle_deadline,
+    ) is True
+
+
+def finished_after_deadline(
+    finished: datetime | None,
+    block: TaskBlock | None,
+    task,
+    *,
+    user_tariff: str | None,
+    block_overrides: dict[str, datetime | None] | None = None,
+    task_overrides: dict[str, datetime | None] | None = None,
+    cycle_deadline: datetime | None = None,
+) -> bool | None:
+    """Сдано ли в момент `finished` позже срока; `None` — срока нет вовсе.
+
+    Одно правило опоздания на все места, где его показывают (владелец
+    06.10.2026: «просрок дедлайна записывается и показан при проверке
+    задания, также в статистике»): отметка у работ и ответов на проверке,
+    домашка (`block=None` — срок задания), статистика «Сроки сдачи». Срок —
+    `submit_deadline_for`; если не настроен нигде, — срок цикла
+    `cycle_deadline`. Явное «бессрочно» строкой тарифа остаётся бессрочным.
+    """
+    if finished is None:
+        return False
     deadline = submit_deadline_for(
         block, task, user_tariff=user_tariff,
         block_overrides=block_overrides, task_overrides=task_overrides,
@@ -2445,8 +2432,7 @@ def completed_after_deadline(
     ):
         deadline = cycle_deadline
     if deadline is None:
-        return False
-    finished = state.completed_at
+        return None
     if finished.tzinfo is None:
         finished = finished.replace(tzinfo=timezone.utc)
     if deadline.tzinfo is None:
@@ -2571,8 +2557,6 @@ def feed_state(
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     audiences_by_block = get_audiences(db, block_ids)
-    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
-    task_submit_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
     now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
     result: list[dict] = []
     for index, block in enumerate(blocks):
@@ -2583,11 +2567,6 @@ def feed_state(
             audiences_by_block=audiences_by_block,
             viewer=viewer,
             required_by_block=required_by_block,
-            submit_deadlines_by_block=submit_deadlines_by_block,
-            tasks_by_id={task_id: task} if task is not None else None,
-            task_submit_deadlines_by_task=(
-                {task_id: task_submit_deadlines} if task_submit_deadlines else None
-            ),
             now=now,
         )
         state = states.get(block.id)
@@ -2691,6 +2670,31 @@ def review_queue(
             if block.block_type == BLOCK_SCALE
         }
     }
+    # Ответ после срока принимается и помечается (владелец 06.10.2026:
+    # «просрок дедлайна… показан при проверке задания»). Момент — первая
+    # отметка блока (`completed_at`), как в статистике; сроки — одним
+    # запросом на выборку.
+    state_map = {
+        (state.block_id, state.user_id): state
+        for state in db.query(TaskBlockState).filter(
+            TaskBlockState.block_id.in_({block.id for _a, block, _r, _t, _u in rows}),
+            TaskBlockState.user_id.in_({student.id for _a, _b, _r, _t, student in rows}),
+        ).all()
+    }
+    block_deadlines = get_submit_deadlines(db, list({block.id for _a, block, _r, _t, _u in rows}))
+    task_deadlines = get_task_submit_deadlines(db, list({task.id for _a, _b, _r, task, _u in rows}))
+    from app.services.tracker import cycle_deadline_lookup
+
+    cycle_deadline = cycle_deadline_lookup(db, {task.topic_id for _a, _b, _r, task, _u in rows})
+
+    def _late(block: TaskBlock, task, student) -> bool:
+        return completed_after_deadline(
+            block, task, state_map.get((block.id, student.id)),
+            user_tariff=student.tariff,
+            block_overrides=block_deadlines.get(block.id),
+            task_overrides=task_deadlines.get(task.id),
+            cycle_deadline=cycle_deadline(task.topic_id, student.tariff),
+        )
 
     items: list[dict] = []
     for answer, block, response, task, student in rows:
@@ -2723,6 +2727,7 @@ def review_queue(
                 ],
                 "reviewed": answer.reviewed_at is not None,
                 "answered_at": response.updated_at,
+                "late": _late(block, task, student),
             })
             continue
         picked = chosen.get(response.id, {}).get(block.id, set())
@@ -2745,6 +2750,7 @@ def review_queue(
             "correct": [o.text for o in options.get(block.id, []) if o.is_correct],
             "reviewed": answer.reviewed_at is not None,
             "answered_at": response.updated_at,
+            "late": _late(block, task, student),
         })
     return items
 
@@ -3025,8 +3031,8 @@ def submission_review_queue(
             "review_comment": submission.review_comment,
             "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
             "overrun": timed_overrun(block, state),
-            # Сдано после срока (владелец 30.09.2026): после срока принимают
-            # только контрольную на время, но отметка общая для всех сдач.
+            # Сдано после срока (владелец 30.09.2026): с 06.10.2026 после
+            # срока принимают первую сдачу любого блока, отметка общая.
             "late": completed_after_deadline(
                 block, task, state, user_tariff=student.tariff,
                 block_overrides=block_deadlines.get(block.id),

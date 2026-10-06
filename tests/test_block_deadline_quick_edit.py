@@ -402,13 +402,14 @@ def test_task_deadline_reaches_every_block(client, db, user_factory, session_fac
     blocks = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"]
     assert all(b["submit_deadline"] for b in blocks), [b.get("submit_deadline") for b in blocks]
 
-    # 3. Срок в прошлом: сдача закрыта, а фото-блок отметить всё ещё можно.
+    # 3. Срок в прошлом: сдать работу ещё можно — запишется опозданием
+    # (владелец 06.10.2026), фото-блок отметить тоже можно.
     task.submit_until = day_bounds(TODAY - timedelta(days=1))[0]
     db.commit()
     blocks = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"]
     upload = [b for b in blocks if b["block_type"] == "photo_upload"][0]
     photo = [b for b in blocks if b["block_type"] == "photo"][0]
-    assert upload["edit_reason"], "сдача должна быть закрыта"
+    assert upload["edit_reason"] is None and upload["late_allowed"], upload
     done = client.post(photo["confirm_endpoint"])
     assert done.status_code == 200, done.text
 

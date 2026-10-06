@@ -15,8 +15,8 @@ from unittest.mock import patch
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
     BLOCK_TIMED,
+    BLOCK_QUESTION,
     BLOCK_UPLOAD,
-    DEADLINE_BLOCKS_COMPLETION,
     LATE_SUBMISSION_BLOCK_TYPES,
     TaskBlock,
     TaskBlockState,
@@ -185,14 +185,15 @@ def test_submitted_work_cannot_be_replaced_after_the_deadline(auth_client, db):
     assert _payload(client, task)["edit_reason"]
 
 
-def test_upload_block_is_still_locked_by_the_deadline(auth_client, db):
-    """Исключение только для контрольной: «Домашнее задание» по-прежнему
-    закрывается сроком (владелец 27.09.2026)."""
+def test_upload_block_follows_the_same_late_rule(auth_client, db):
+    """С 06.10.2026 правило контрольной общее: «Домашнее задание» после срока
+    тоже принимает первую сдачу (владелец: «досдать свыше срока всегда
+    можно… ЭТО ПРАВИЛО!!!»). До этого его срок запирал (27.09.2026)."""
     client, user = auth_client
     task = _task(db, user)
     block = _block(db, task, block_type=BLOCK_UPLOAD, submit_until=YESTERDAY)
 
-    assert _post(client, block.id).status_code == 409
+    assert _post(client, block.id).status_code == 200
 
 
 def test_closed_block_still_locks_the_timed_work(auth_client, db):
@@ -226,10 +227,12 @@ def test_expired_timed_block_keeps_holding_the_feed(db, regular_user):
     assert [s["status"] for s in steps] == ["current", "locked"]
 
 
-def test_timed_type_lives_in_its_own_list():
+def test_every_submission_type_accepts_late_first_submission():
+    """С 06.10.2026 правило контрольной общее (владелец: «досдать свыше срока
+    всегда можно… ЭТО ПРАВИЛО!!!») — списка «срок запирает» больше нет."""
     assert BLOCK_TIMED in LATE_SUBMISSION_BLOCK_TYPES
-    assert BLOCK_TIMED not in DEADLINE_BLOCKS_COMPLETION
-    assert BLOCK_UPLOAD in DEADLINE_BLOCKS_COMPLETION
+    assert BLOCK_UPLOAD in LATE_SUBMISSION_BLOCK_TYPES
+    assert BLOCK_QUESTION in LATE_SUBMISSION_BLOCK_TYPES
 
 
 # ── обратный отсчёт ─────────────────────────────────────────────────────────

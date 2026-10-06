@@ -235,12 +235,11 @@ def test_submit_until_closes_upload_but_keeps_the_block_visible(auth_client, db)
     assert payload["submitted_comment"] == "Сдал вовремя"
 
 
-def test_expired_submit_until_does_not_lock_the_rest_of_the_feed(db, regular_user):
-    """Обязательный блок с закрытым приёмом не запирает хвост ленты.
-
-    Иначе тупик без выхода: сдать уже нечем, а следующий шаг ждёт закрытия
-    этого — та же развязка, что 10.09.2026 сделали для `closes_at`.
-    """
+def test_expired_submit_until_still_holds_the_rest_of_the_feed(db, regular_user):
+    """Обязательный блок с истёкшим сроком держит хвост ленты (владелец
+    06.10.2026: «досдать свыше срока всегда можно»). Сдать его можно, значит
+    тупика нет — очередь ждёт сдачи. До 06.10.2026 срок запирал сдачу, и
+    такой блок хвост отпускал."""
     _cycle(db, regular_user)
     task = _task(db, regular_user)
     first = _upload_block(db, task, order=1)
@@ -256,7 +255,25 @@ def test_expired_submit_until_does_not_lock_the_rest_of_the_feed(db, regular_use
         start=CYCLE_START, end=CYCLE_END,
     )
 
-    assert [s["status"] for s in steps] == ["current", "current"]
+    assert [s["status"] for s in steps] == ["current", "locked"]
+
+
+def test_first_upload_after_the_deadline_is_accepted(auth_client, db):
+    """Владелец 06.10.2026: «досдать свыше срока всегда можно, но просрок
+    дедлайна записывается… ЭТО ПРАВИЛО!!!». Первую сдачу принимают,
+    повторную (замену) после срока — нет: опоздание пишется по первой."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _keep_task_open(db, task)
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+    assert payload["edit_reason"] is None
+    assert payload["late_allowed"] is True
+
+    assert _post(client, block.id).status_code == 200
+    assert _post(client, block.id).status_code == 409
 
 
 def test_tariff_deadline_overrides_the_common_one(auth_client, db):
@@ -310,7 +327,9 @@ def test_tariff_deadline_of_a_question_overrides_the_common_one(auth_client, db)
 
 
 def test_shortened_tariff_deadline_closes_the_question(auth_client, db):
-    """Обратная сторона: общий срок впереди, а у тарифа ученика уже вышел."""
+    """Обратная сторона: общий срок впереди, а у тарифа ученика уже вышел.
+    Первый ответ после срока принимается (владелец 06.10.2026), а
+    переответить уже нельзя — по сроку тарифа, не по общему."""
     client, user = auth_client
     task = _task(db, user)
     block = _question_block(db, task)
@@ -319,6 +338,7 @@ def test_shortened_tariff_deadline_closes_the_question(auth_client, db):
         db, block, day_bounds(TODAY - timedelta(days=1))[0], tariff=user.tariff,
     )
 
+    assert _answer(client, task, block).status_code == 200
     resp = _answer(client, task, block)
 
     assert resp.status_code == 409
@@ -337,6 +357,7 @@ def test_task_level_tariff_deadline_closes_the_question(auth_client, db):
     ))
     db.commit()
 
+    assert _answer(client, task, block).status_code == 200
     assert _answer(client, task, block).status_code == 409
 
 
@@ -372,11 +393,14 @@ def test_block_deadline_also_replaces_the_day_of_the_task(auth_client, db):
 
 
 def test_without_submit_deadline_the_day_of_the_task_still_closes(auth_client, db):
-    """Срока сдачи нет нигде — работает прежнее правило: день задания."""
+    """Срока сдачи нет нигде — работает прежнее правило: день задания. С
+    06.10.2026 он, как и срок, запирает только правку сданного."""
     client, user = auth_client
     task = _day_task_in_the_past(db, user)
     block = _upload_block(db, task)
+    _keep_task_open(db, task)
 
+    assert _post(client, block.id).status_code == 200
     assert _post(client, block.id).status_code == 409
 
 
@@ -390,7 +414,10 @@ def test_tariff_without_its_own_row_lives_by_the_common_deadline(auth_client, db
         db, block, day_bounds(TODAY + timedelta(days=1))[0],
         tariff=TARIFF_CONFIDENT_MAX if user.tariff != TARIFF_CONFIDENT_MAX else TARIFF_SELF,
     )
+    _keep_task_open(db, task)
 
+    # Первая сдача после срока принимается, замена — нет (06.10.2026).
+    assert _post(client, block.id).status_code == 200
     assert _post(client, block.id).status_code == 409
 
 
@@ -727,3 +754,23 @@ def test_constructor_offers_the_photo_upload_block(admin_client):
     # (владелец 16.09.2026: слить фотоблок и «Домашнее задание» в один тип).
     assert "type === 'photo_upload'" in page.text
 
+
+
+def test_answer_after_the_deadline_is_accepted_and_marked_for_review(auth_client, db):
+    """Владелец 06.10.2026: «досдать свыше срока всегда можно, но просрок
+    дедлайна записывается и показан при проверке задания». Первый ответ
+    после срока принят, на проверке — приписка «(сдано после срока)»."""
+    from app.services.review_aggregate import DOMAIN_TASK_BLOCK, student_review_items
+
+    client, user = auth_client
+    task = _task(db, user)
+    block = _question_block(db, task)
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+    assert payload["edit_reason"] is None
+    assert _answer(client, task, block).status_code == 200
+
+    items = student_review_items(db, student_id=user.id, role_rank=5)
+    answer = next(i for i in items if i.domain == DOMAIN_TASK_BLOCK)
+    assert answer.title == f"{task.title} (сдано после срока)"

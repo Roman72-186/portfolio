@@ -414,7 +414,9 @@ def test_foreign_url_is_refused(auth_client, db):
     assert _steps(db, block.id, user.id) == []
 
 
-def test_choice_after_deadline_is_refused(auth_client, db):
+def test_choice_after_deadline_is_accepted(auth_client, db):
+    """Владелец 06.10.2026: «досдать свыше срока всегда можно» — сравнение
+    после срока проходят, опоздание пишется. До этого срок его запирал."""
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
@@ -425,9 +427,23 @@ def test_choice_after_deadline_is_refused(auth_client, db):
     item = _feed_item(client, task.id, block.id)
     resp = _choose(client, block.id, WORKS[0])
 
-    assert item["submit_endpoint"] is None
-    assert item["edit_reason"]
-    assert resp.status_code == 409
+    assert item["submit_endpoint"]
+    assert item["edit_reason"] is None
+    assert resp.status_code == 200
+    assert len(_steps(db, block.id, user.id)) == 1
+
+
+def test_choice_after_block_closed_is_refused(auth_client, db):
+    """Закрытие блока по дате (`closes_at`) запирает и после 06.10.2026 —
+    это закрытие блока, а не срок сдачи."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    block.closes_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+
+    assert _choose(client, block.id, WORKS[0]).status_code in (403, 409)
     assert _steps(db, block.id, user.id) == []
 
 

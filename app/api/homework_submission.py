@@ -63,7 +63,7 @@ from app.services.homework_submission import (
 from app.services.cycle_feed import task_is_archived_for_user, task_is_locked_for_user
 from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
-from app.services.submission_edit import homework_reason
+from app.services.submission_edit import homework_reason, upload_deadline
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
 from app.services.tz import today_msk
@@ -148,6 +148,17 @@ async def _render_submission_page(
         homework_reason(db, task, submission, user_tariff=user.get("tariff"))
         if viewer_role == "student" else None
     )
+    # Срок прошёл, а работа ещё не сдана: сдать можно, но запишется опозданием
+    # (владелец 06.10.2026) — ученика об этом предупреждаем, как в блоках сдачи.
+    late_hint = False
+    if viewer_role == "student" and not edit_reason and submission.submitted_at is None:
+        from app.services.task_blocks import get_task_submit_deadlines
+
+        deadline = upload_deadline(
+            task, user_tariff=user.get("tariff"),
+            task_tariff_deadlines=get_task_submit_deadlines(db, [task.id]).get(task.id),
+        )
+        late_hint = deadline is not None and deadline <= datetime.now(timezone.utc)
 
     fb = (
         db.query(HomeworkFeedback)
@@ -185,6 +196,7 @@ async def _render_submission_page(
         "intermediate_images": intermediate,
         "max_intermediate": _submission_intermediate_limit(homework),
         "edit_reason": edit_reason,
+        "late_hint": late_hint,
         "message_count": message_count,
         "unread_feedback": unread_feedback,
         "feedback_url": feedback_url,

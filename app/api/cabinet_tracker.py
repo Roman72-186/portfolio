@@ -589,8 +589,9 @@ def _submission_payload(
 
     `submit_deadline` — срок приёма работ словами, тот же формат, что у окна
     портфолио (владелец 27.09.2026). Пока срок не вышел, ученик читает «до
-    27 сентября, 09:30»; после — `edit_reason` уже говорит, что срок истёк, и
-    рендерер сам убирает кнопки загрузки и удаления.
+    27 сентября, 09:30». После срока первую сдачу примут опозданием
+    (`late_allowed`), а у сданной работы `edit_reason` говорит, что срок
+    истёк, и рендерер убирает кнопки замены и удаления (владелец 06.10.2026).
     """
     submission = get_task_block_submission(db, block_id=block.id, user_id=user_id)
     images = (
@@ -626,8 +627,8 @@ def _submission_payload(
             task_tariff_deadlines=task_tariff_deadlines,
         ),
         "submit_deadline": format_deadline_msk(submit_until) or None,
-        # Контрольная на время: после срока первую сдачу примут опозданием
-        # (владелец 30.09.2026), и подсказка под формой должна это сказать.
+        # После срока первую сдачу примут опозданием (владелец 06.10.2026,
+        # до этого с 30.09 — только контрольную), и подсказка это скажет.
         "late_allowed": late_first_submission(block, submission),
         "deadline_passed": deadline_passed,
         "delete_endpoint": f"/cabinet/tracker/blocks/{block.id}/images",
@@ -761,13 +762,16 @@ def cabinet_tracker_task_blocks(
 
         Локальный, чтобы три ветки (вопрос, шкала, правила) не повторяли одни
         и те же пять аргументов: забыть один значит молча вернуться к общему
-        сроку вместо тарифного.
+        сроку вместо тарифного. Первый ответ срок не запирает (владелец
+        06.10.2026: «досдать свыше срока всегда можно»), только правку уже
+        данного ответа.
         """
         return deadline_reason(
             task, block,
             user_tariff=user.get("tariff"),
             tariff_deadlines=submit_deadlines.get(block.id),
             task_tariff_deadlines=task_submit_deadlines,
+            late_allowed=block.id not in answered_ids,
         )
 
     payload = []
@@ -1237,8 +1241,7 @@ def confirm_video_block_watched(
     # Без гейта архива (владелец 28.09.2026: этап закончился 27-го, а ученики
     # досматривают видео). Блок без сдачи работы отмечается и в пройденном
     # цикле; опоздание видно в статистике «до срока / после срока»
-    # (`activity_stats`), запирает здесь только срок блока сдачи
-    # (`DEADLINE_BLOCKS_COMPLETION`), а видео в него не входит.
+    # (`activity_stats`). Срок отметку не запирает ни у одного типа.
     task = _accessible_task_or_404(db, user["user_id"], block.task_id)
     if _video_block_requires_completion(db, task, block, user) and not _video_block_watched(
         db, block, user["user_id"]
@@ -1300,12 +1303,16 @@ def submit_compare_choice(
         raise HTTPException(status_code=404, detail="Блок не найден")
     task = _writable_task_or_404(db, user["user_id"], block.task_id)
     # Срок — с тарифом ученика и сроком задания, как в ленте: без них
-    # `deadline_reason` молча смотрел бы только на общий срок блока.
+    # `deadline_reason` молча смотрел бы только на общий срок блока. Сравнение
+    # идёт сюда, пока не закончено (повтор после итога отбивает
+    # `save_compare_step`), — это первая сдача, срок её не запирает
+    # (владелец 06.10.2026); запирает только закрытие блока.
     reason = deadline_reason(
         task, block,
         user_tariff=user.get("tariff"),
         tariff_deadlines=get_task_block_submit_deadlines(db, [block.id]).get(block.id),
         task_tariff_deadlines=get_task_level_submit_deadlines(db, [task.id]).get(task.id),
+        late_allowed=True,
     )
     if reason:
         raise HTTPException(status_code=409, detail=reason)
@@ -1620,11 +1627,14 @@ def submit_cabinet_tracker_task_blocks(
     task_submit_deadlines = get_task_level_submit_deadlines(db, [task.id]).get(task.id)
     for answer in payload.answers:
         block = next(b for b in visible if b.id == answer.block_id)
+        # Первый ответ после срока принимается и пишется опозданием, правка
+        # уже данного — нет (владелец 06.10.2026).
         reason = deadline_reason(
             task, block,
             user_tariff=user.get("tariff"),
             tariff_deadlines=submit_deadlines.get(block.id),
             task_tariff_deadlines=task_submit_deadlines,
+            late_allowed=block.id not in already,
         )
         if reason:
             raise HTTPException(status_code=409, detail=reason)

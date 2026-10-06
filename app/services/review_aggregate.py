@@ -127,7 +127,9 @@ def _task_block_items(
             domain=DOMAIN_TASK_BLOCK,
             item_id=row["answer_id"],
             student_id=row["student_id"],
-            title=row["task_title"],
+            # Ответ после срока принят и помечен (владелец 06.10.2026) — та же
+            # приписка, что у работ (`_block_work_items`).
+            title=f"{row['task_title']} (сдано после срока)" if row["late"] else row["task_title"],
             subject=row["subject"],
             submitted_at=row["answered_at"],
             is_reviewed=row["reviewed"],
@@ -262,13 +264,27 @@ def _homework_items(
     if week_end is not None:
         q = q.filter(HomeworkSubmission.submitted_at < week_end)
 
+    from app.services.task_blocks import finished_after_deadline, get_task_submit_deadlines
+    from app.services.tracker import cycle_deadline_lookup
+
+    found = q.order_by(HomeworkSubmission.submitted_at.desc()).all()
+    # Домашка после срока принята и помечена (владелец 06.10.2026) — то же
+    # правило опоздания, что у блоков и в статистике: срок задания, без него
+    # срок цикла, момент — `submitted_at`.
+    task_deadlines = get_task_submit_deadlines(db, list({task.id for _s, task, _u in found}))
+    cycle_deadline = cycle_deadline_lookup(db, {task.topic_id for _s, task, _u in found})
     items = []
-    for submission, task, student in q.order_by(HomeworkSubmission.submitted_at.desc()).all():
+    for submission, task, student in found:
+        late = finished_after_deadline(
+            submission.submitted_at, None, task, user_tariff=student.tariff,
+            task_overrides=task_deadlines.get(task.id),
+            cycle_deadline=cycle_deadline(task.topic_id, student.tariff),
+        )
         items.append(ReviewItem(
             domain=DOMAIN_HOMEWORK,
             item_id=submission.id,
             student_id=student.id,
-            title=task.title,
+            title=f"{task.title} (сдано после срока)" if late else task.title,
             subject=task.subject,
             submitted_at=submission.submitted_at,
             is_reviewed=submission.status == STATUS_ACCEPTED,

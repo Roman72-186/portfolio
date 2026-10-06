@@ -88,6 +88,8 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
 
         {% if viewer_role == 'student' and edit_reason %}
         <p class="card-desc">{{ edit_reason }}</p>
+        {% elif late_hint %}
+        <p class="card-desc">Срок сдачи прошёл. Работу ещё можно отправить, но она запишется как сданная после срока.</p>
         {% endif %}
         {% if viewer_role == 'student' and not edit_reason and intermediate_images|length < max_intermediate %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/intermediate" enctype="multipart/form-data">
