@@ -111,6 +111,10 @@ def test_idle_player_does_not_reload_while_another_plays():
     assert "playingPlayers.size > 0" in refresh
     assert "window.dispatchEvent(new Event('lrn-video-idle'))" in source
     assert "window.addEventListener('lrn-video-idle'" in source
+    # Уже запущенный плеер по паузе не перезагружается (прод 06.10.2026, 16:43
+    # UTC: пауза перезагрузила и сам ролик, видео 3 минуты не шло).
+    idle = source.split("window.addEventListener('lrn-video-idle'", 1)[1].split("});", 1)[0]
+    assert "if (hasEverPlayed" in idle
     # Признак меняется только через setPlaying — иначе список страницы разойдётся.
     assert source.count("isPlaying = ") - source.count("var isPlaying = ") == 1
 

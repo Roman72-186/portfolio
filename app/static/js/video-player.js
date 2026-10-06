@@ -598,8 +598,14 @@
                 if (playingPlayers.size > 0 || !isPlayerUrlStale()) return;
                 refreshPlayerUrl();
             }
+            // Только плееры, которые ещё не запускали, — то же условие, что у
+            // минутного таймера ниже. Без него пауза перезагружала и сам
+            // поставленный на паузу ролик (прод 06.10.2026, 16:43 UTC: ученица
+            // нажала паузу, все три плеера перезагрузились, видео 3 минуты не
+            // шло). Запущенный плеер обновляет ссылку по возврату на вкладку.
             window.addEventListener('lrn-video-idle', function () {
-                if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+                if (hasEverPlayed || document.visibilityState !== 'visible') return;
+                refreshPlayerUrlIfStale();
             });
 
             document.addEventListener('visibilitychange', function () {
