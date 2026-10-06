@@ -378,6 +378,32 @@ def test_check_page_is_the_lesson_page_through_the_bridge(admin_client, db, monk
     assert settings.bunny_player_proxy_base == ""
 
 
+def test_watch_check_goes_through_the_chosen_bridge(admin_client, db, monkeypatch):
+    """Владелец 06.10.2026: шаг 3 проверяет выбранный мост целиком. Форма
+    несёт мост дальше, плеер и перевыпуск ссылки идут через него же."""
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = admin_client
+
+    page = client.get(PAGE, params={"bridge": SELECTEL_BRIDGE, "video_id": video.id})
+    assert f'name="bridge" value="{SELECTEL_BRIDGE}"' in page.text
+
+    response = client.get(f"{PAGE}/player", params={"video_id": video.id, "bridge": SELECTEL_BRIDGE})
+    assert response.status_code == 200
+    assert f"{SELECTEL_BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
+    assert f"{BRIDGE}/embed/" not in response.text
+    assert f"/cabinet/videos/{video.id}/player-url?bridge=ru" in response.text
+
+
+def test_watch_check_rejects_unknown_bridge(admin_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = admin_client
+
+    response = client.get(f"{PAGE}/player", params={"video_id": video.id, "bridge": "https://evil.example"})
+    assert response.status_code == 400
+
+
 def test_bridge_page_shows_watch_check_to_superadmin(admin_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     _duration_video(db)

@@ -5,6 +5,7 @@ import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -545,22 +546,34 @@ def video_watch_check_player(
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     video_id: int,
+    bridge: str | None = None,
 ):
     """Урок глазами ученика через мост — тот же `cabinet_video.html` с тем же
-    плеером, водяным знаком и кнопками, плюс панель контроля просмотра."""
+    плеером, водяным знаком и кнопками, плюс панель контроля просмотра.
+
+    Мост — тот, что выбран переключателем страницы проверки (владелец
+    06.10.2026: «проверить там же, но по всем параметрам»). До этого шаг 3
+    всегда шёл через Нидерланды, и российскую копию целиком, с плеером,
+    сохранением места и зачётом, проверить было нечем."""
+    bridge_base = (bridge or "").strip().rstrip("/") or BRIDGE_TEST_DEFAULT_BASE
+    if bridge_base not in BRIDGE_TEST_ALLOWED_BASES:
+        raise HTTPException(status_code=400, detail="Этот адрес моста не разрешён")
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return _not_found(request, user)
+    # Перевыпуск ссылки — через тот же мост, иначе через пять минут плеер
+    # уехал бы на другой и проверка смешала бы два моста.
+    refresh_flag = "ru" if bridge_base == BRIDGE_RU_BASE else "1"
     return _render_player(
         request,
         user,
         db,
         video=video,
         progress_endpoint=f"/cabinet/videos/{video_id}/progress",
-        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url?bridge=1",
-        proxy_base=BRIDGE_BASE,
+        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url?bridge={refresh_flag}",
+        proxy_base=bridge_base,
         extra_context={
-            "back_url": f"{WATCH_CHECK_BASE}?video_id={video_id}",
+            "back_url": f"{WATCH_CHECK_BASE}?video_id={video_id}&bridge={quote(bridge_base, safe='')}",
             "watch_debug": {
                 "state_endpoint": f"{WATCH_CHECK_BASE}/watch-state?video_id={video_id}",
                 "reset_endpoint": f"{WATCH_CHECK_BASE}/reset?video_id={video_id}",

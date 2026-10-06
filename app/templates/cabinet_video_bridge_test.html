@@ -129,7 +129,8 @@
     <div class="vbt-card">
         <h2>Шаг 3. Как у ученика, с контролем просмотра</h2>
         <p class="vbt-lead" style="margin-bottom:12px;">
-            Откроется страница урока ровно такой, какой её видит ученик: плеер через мост, водяной знак
+            Откроется страница урока ровно такой, какой её видит ученик: плеер через мост
+            <b>{{ bridge_base|replace('https://', '') }}</b>, водяной знак
             с вашим именем, кнопки плеера. Под плеером – панель контроля: сколько засчитано, сколько
             осталось и засчитан ли просмотр. Засчитывается за {{ watch_tail_seconds }} секунд до конца
             ролика, ускорение считается, перемотка вперёд – нет. Правило то же, что у учеников;
@@ -137,6 +138,7 @@
         </p>
         {% if videos %}
         <form method="get" action="/cabinet/admin/video-bridge-test/player" class="vbt-buttons">
+            <input type="hidden" name="bridge" value="{{ bridge_base }}">
             <select name="video_id" class="vbt-btn" aria-label="Ролик">
                 {% for item in videos %}
                 <option value="{{ item.id }}" {% if video and item.id == video.id %}selected{% endif %}>{{ item.title }}</option>
