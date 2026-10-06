@@ -240,3 +240,56 @@ def test_impersonate_stop_without_cookie_is_safe(client):
     r = client.post("/cabinet/superadmin/impersonate/stop", follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"] == "/cabinet"
+
+
+def _enter_and_leave(client, session_factory, user_factory, return_to=None, vk=900_100):
+    sa = user_factory(vk_id=vk, name="SA Return", role_name="суперадмин")
+    student = user_factory(vk_id=vk + 1, name="Ученик", role_name="ученик")
+    sa_sess = session_factory(sa)
+    client.cookies.set("session_id", sa_sess.id)
+    data = {"csrf_token": _csrf_for(client, sa_sess.id)}
+    if return_to is not None:
+        data["return_to"] = return_to
+    r = client.post(f"/cabinet/superadmin/impersonate/{student.id}", data=data, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    client.cookies.set("session_id", r.cookies["session_id"])
+    client.cookies.set("impersonation_original", r.cookies["impersonation_original"])
+    if "impersonation_return" in r.cookies:
+        client.cookies.set("impersonation_return", r.cookies["impersonation_return"])
+    r2 = client.post("/cabinet/superadmin/impersonate/stop", follow_redirects=False)
+    assert r2.status_code == 303
+    assert r2.cookies.get("session_id") == sa_sess.id
+    return student, r2.headers["location"]
+
+
+def test_leave_returns_to_student_card(client, session_factory, user_factory):
+    """Проход 06.10.2026, пункт 7: «Выйти обратно» из кабинета ученика вела на
+    главную суперадмина, а не в карточку ученика, откуда вошли."""
+    student, location = _enter_and_leave(client, session_factory, user_factory, return_to="/cabinet/students?student=7")
+
+    assert location == "/cabinet/students?student=7"
+
+
+def test_leave_without_return_goes_home(client, session_factory, user_factory):
+    _, location = _enter_and_leave(client, session_factory, user_factory, vk=900_110)
+
+    assert location == "/cabinet"
+
+
+def test_leave_never_goes_to_another_site(client, session_factory, user_factory):
+    for i, bad in enumerate(("https://evil.example/", "//evil.example/cabinet", "/cabinet\\..\\\\evil.example","/cabinet\r\nX: y")):
+        client.cookies.clear()
+        _, location = _enter_and_leave(client, session_factory, user_factory, return_to=bad, vk=900_120 + i * 2)
+        assert location == "/cabinet", bad
+
+
+def test_student_card_sends_return_address():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    body = script.split("function impersonateStudent()", 1)[1].split("\nfunction ", 1)[0]
+    template = (root / "app/templates/cabinet_students.html").read_text(encoding="utf-8")
+
+    assert "[name=\"return_to\"]').value = location.pathname + '?student=' + _currentStudentId" in body
+    assert '<input type="hidden" name="return_to" value="">' in template

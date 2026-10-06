@@ -1418,6 +1418,8 @@ function impersonateStudent() {
     if (!confirm('Открыть кабинет ученика? Всё, что нажмёте там, сохранится от его имени.')) return;
     var form = document.getElementById('impersonate-form');
     form.action = '/cabinet/superadmin/impersonate/' + _currentStudentId;
+    // «Выйти обратно» вернёт в эту же карточку, а не на главную.
+    form.querySelector('[name="return_to"]').value = location.pathname + '?student=' + _currentStudentId;
     var fresh = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
     fresh.then(function(token) {
         form.querySelector('[name="csrf_token"]').value = token || CSRF_TOKEN;

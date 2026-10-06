@@ -2936,6 +2936,28 @@ def _impersonation_serializer() -> _UTS:
     return _UTS(settings.session_secret, salt="impersonation-v1")
 
 
+# Куда вернуть после «Выйти обратно» (проход 06.10.2026: из карточки ученика
+# выход вёл на главную, а не туда, откуда вошли). Отдельная кука, а не поле в
+# `_IMPERSONATION_COOKIE`: формат той менять — сломать выход тем, кто вошёл до
+# выкатки. Подписана, а адрес ещё и проверяется: только страница кабинета.
+_IMPERSONATION_RETURN_COOKIE = "impersonation_return"
+
+
+def _impersonation_return_serializer() -> _UTS:
+    return _UTS(settings.session_secret, salt="impersonation-return-v1")
+
+
+def _safe_return_path(value: str | None) -> str | None:
+    """Адрес возврата — только страница кабинета этого же сайта. `/cabinet` в
+    начале исключает `//чужой-сайт`; обратный слэш и управляющие символы
+    браузеры трактуют по-своему — такие адреса не принимаем."""
+    if not value or len(value) > 300 or not value.startswith("/cabinet"):
+        return None
+    if "\\" in value or any(ord(ch) < 32 for ch in value):
+        return None
+    return value
+
+
 @router.get("/superadmin/curators", response_class=HTMLResponse)
 def superadmin_curators_list(
     request: Request,
@@ -2989,6 +3011,7 @@ def superadmin_impersonate_stop(request: Request, db: Annotated[DBSession, Depen
 
     response = RedirectResponse("/cabinet", status_code=303)
     response.delete_cookie(_IMPERSONATION_COOKIE, path="/")
+    response.delete_cookie(_IMPERSONATION_RETURN_COOKIE, path="/")
 
     if not signed:
         # Нечего восстанавливать — просто чистим cookie и редиректим.
@@ -3025,6 +3048,15 @@ def superadmin_impersonate_stop(request: Request, db: Annotated[DBSession, Depen
 
     _invalidate_session_cache(original_session_id)
 
+    try:
+        return_to = _safe_return_path(_impersonation_return_serializer().loads(
+            request.cookies.get(_IMPERSONATION_RETURN_COOKIE, ""), max_age=_IMPERSONATION_MAX_AGE,
+        ))
+    except _BadData:
+        return_to = None
+    if return_to:
+        response.headers["location"] = return_to
+
     response.set_cookie(
         key="session_id",
         value=original_session_id,
@@ -3044,6 +3076,7 @@ def superadmin_impersonate_start(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    return_to: str = Form(""),
 ):
     if user.get("impersonated_by_id"):
         raise HTTPException(status_code=400, detail="Уже в режиме имперсонации")
@@ -3098,4 +3131,19 @@ def superadmin_impersonate_start(
         max_age=_IMPERSONATION_MAX_AGE,
         path="/",
     )
+    # Форма без адреса возврата («Люди», дашборд персонала) — выход на главную,
+    # как раньше; кука от прошлого входа не должна увести не туда.
+    safe_return = _safe_return_path(return_to)
+    if safe_return:
+        response.set_cookie(
+            key=_IMPERSONATION_RETURN_COOKIE,
+            value=_impersonation_return_serializer().dumps(safe_return),
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=_IMPERSONATION_MAX_AGE,
+            path="/",
+        )
+    else:
+        response.delete_cookie(_IMPERSONATION_RETURN_COOKIE, path="/")
     return response
