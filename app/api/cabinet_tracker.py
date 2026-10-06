@@ -8,8 +8,8 @@ Trello-чеклист без досок. Разбивка по дням неде
 
 Просроченное копится без нижней границы по времени — долг не имеет смысла
 терять после смены недели, ученик должен видеть его, пока не закроет. Рамка
-одна — период, в котором ученик сейчас (`cycle_feed.current_period`,
-владелец 06.10.2026): задания других периодов сюда не попадают.
+— период, в котором ученик сейчас (`cycle_feed.current_period`, владелец
+06.10.2026): прошлые периоды и текущий видны, будущие — нет.
 Выборка задач и их статус — общий движок `accessible_task_entries` из
 `app/services/tracker.py`, тот же самый, что использует `/cabinet/learning`.
 
@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
+from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_COMPARE, BLOCK_LINK, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
@@ -66,7 +67,7 @@ from app.services.cycle_feed import (
     current_feed_task_ids,
     current_period,
     deadline_view,
-    entries_in_period,
+    entries_up_to_period,
     entries_open_to_student,
     task_is_archived_for_user,
     task_is_locked_for_user,
@@ -104,6 +105,8 @@ from app.services.task_blocks import (
     list_submission_images as list_task_block_submission_images,
     mark_submitted as mark_task_block_submitted,
     get_blocks as get_task_blocks,
+    get_blocks_for_tasks as get_task_blocks_for_tasks,
+    task_content_label,
     get_option_images as get_task_block_option_images,
     get_images as get_task_block_images,
     grade_response as grade_task_blocks,
@@ -127,6 +130,8 @@ from app.services.tracker import (
     accessible_task_ids,
     active_digest_for_student,
     active_goal_for_student,
+    cycle_debt,
+    cycle_label,
     digest_calendar,
     digest_day_events,
     digest_events_with_edges,
@@ -183,16 +188,17 @@ def cabinet_tracker(
     entries = accessible_task_entries(
         db, user["user_id"], start=None, end=week_end, include_undated=True,
     )
-    # Только период, в котором ученик сейчас (владелец 06.10.2026): задания
-    # прошлых и будущих периодов в трекер не попадают ни одним разделом.
-    # Ни одного начавшегося цикла — сужать не по чему, список как раньше
-    # (на проде 06.10.2026 таких учеников и разовых задач вне циклов нет).
+    # Прошлое и текущее — да, будущее — нет (владелец 06.10.2026: «показываем
+    # все долги… не показывать будущий этап, который ещё не доступен»).
+    # Текущий период — тот, где ученик стоит в ленте; ни одного начавшегося
+    # цикла — сужать не по чему.
     period = current_period(db, user["user_id"], today)
     if period is not None:
-        entries = entries_in_period(db, entries, period)
-    # И только то, что уже открыто (владелец 06.10.2026): цикл, запертый
-    # долгом или не начавшийся, и задание с датой открытия впереди не видны.
-    entries = entries_open_to_student(db, user["user_id"], entries, today)
+        entries = entries_up_to_period(db, entries, period)
+    # И только то, что открылось по дате (владелец 06.10.2026): не начавшийся
+    # цикл и задание с датой открытия впереди не видны. Цикл, запертый долгом,
+    # виден — это тоже долг; будущий этап должника отсекает рамка периода.
+    entries = entries_open_to_student(db, entries, today)
 
     # Дайджест месяца — вкладка рядом с задачами (решение владельца 17.09.2026,
     # отменяет «первый блок на экране» от 22.08).
@@ -242,6 +248,64 @@ def cabinet_tracker(
     learning_task_ids = current_feed_task_ids(
         db, user_id=user["user_id"], today=today
     )
+    # В каком цикле задание (владелец 06.10.2026: «показать, в каком цикле
+    # долг»): подпись цикла — общая `cycle_label`, у задания прямо на этапе —
+    # название этапа.
+    cycle_labels: dict[int, str] = {}
+    for entry in overdue + upcoming + done:
+        topic_id = entry["task"].topic_id
+        if topic_id is None or topic_id in cycle_labels:
+            continue
+        topic = db.get(LearningTopic, topic_id)
+        if topic is None:
+            continue
+        if topic.kind == TOPIC_KIND_WEEK:
+            cycle_labels[topic_id] = cycle_label(db, topic)
+        elif topic.kind == TOPIC_KIND_STAGE and topic.title:
+            cycle_labels[topic_id] = topic.title
+    # Куда идти досдавать (владелец 06.10.2026: «все долги из предобучения
+    # нужно показать, чтобы могли досдать»). Задание текущей ленты — в ленту,
+    # как раньше; долг другого открытого цикла — в его ленту (`?cycle=`, тот же
+    # вход, что у карусели); цикл, запертый долгом, — без кнопки, с подписью,
+    # какой цикл закрыть первым. Отменяет решение «старые долги без кнопки
+    # перехода» (`cabinet_learning.py`). Архивный цикл — только просмотр,
+    # кнопку туда не даём.
+    debt = cycle_debt(db, user["user_id"], today)
+    locked_cycle_ids_ = {topic.id for topic in debt["locked"]} if debt else set()
+    debt_cycle_label = cycle_label(db, debt["cycle"]) if debt else None
+    go_urls: dict[int, str] = {}
+    locked_task_ids: set[int] = set()
+    for entry in overdue + upcoming:
+        task = entry["task"]
+        if task.id in learning_task_ids:
+            go_urls[task.id] = f"/cabinet/learning?task={task.id}#learning-task-{task.id}"
+        elif task.topic_id in locked_cycle_ids_:
+            locked_task_ids.add(task.id)
+        elif task.topic_id is not None and not task_is_archived_for_user(
+            db, user["user_id"], task, today
+        ):
+            topic = db.get(LearningTopic, task.topic_id)
+            if topic is not None and topic.kind == TOPIC_KIND_WEEK:
+                go_urls[task.id] = (
+                    f"/cabinet/learning?cycle={topic.id}#learning-task-{task.id}"
+                )
+    for entry in done:
+        task = entry["task"]
+        if task.id in learning_task_ids:
+            go_urls[task.id] = f"/cabinet/learning?task={task.id}#learning-task-{task.id}"
+
+    # Тип задания по содержимому (владелец 06.10.2026): по блокам, которые
+    # видит этот ученик, правило — `task_blocks.task_content_label`.
+    shown = overdue + upcoming + done
+    blocks_by_task = get_task_blocks_for_tasks(db, [e["task"].id for e in shown])
+    viewer = BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff"))
+    content_labels: dict[int, str] = {}
+    for task_id, task_blocks in blocks_by_task.items():
+        label = task_content_label(
+            visible_blocks_for_student(db, task_blocks, viewer=viewer)
+        )
+        if label:
+            content_labels[task_id] = label
 
     # Средний балл точки А — под баллами Р/К в шапке (владелец 04.10.2026).
     # Только у разобранного ученика: уровень сообщается уведомлением ровно в
@@ -259,6 +323,11 @@ def cabinet_tracker(
         "upcoming": upcoming,
         "done": done,
         "learning_task_ids": learning_task_ids,
+        "cycle_labels": cycle_labels,
+        "go_urls": go_urls,
+        "locked_task_ids": locked_task_ids,
+        "debt_cycle_label": debt_cycle_label,
+        "content_labels": content_labels,
         "digest": digest,
         "digest_events": month_list_events(digest, digest_events) if digest is not None else [],
         # Заголовок «Сентябрь · тема месяца» и сетка месяца с цветными метками

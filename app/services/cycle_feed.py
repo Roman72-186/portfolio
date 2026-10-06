@@ -36,7 +36,7 @@ from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
-from app.services.program import day_bounds
+from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
     BlockViewer,
     close_block_for_user,
@@ -785,50 +785,63 @@ def current_period(db: Session, user_id: int, today: date) -> LearningTopic | No
     return _frame_of(db, cycle)
 
 
-def entries_in_period(
-    db: Session, entries: list[dict], period: LearningTopic | None
+def entries_up_to_period(
+    db: Session, entries: list[dict], period: LearningTopic
 ) -> list[dict]:
-    """Записи `accessible_task_entries`, чьё задание лежит в рамке `period`
-    (в его цикле или прямо на его этапе). Разовые задания вне программы и
-    служебные темы старого календаря рамки не имеют и сюда не попадают."""
-    if period is None:
-        return []
-    frames: dict[int, int | None] = {}
+    """Записи `accessible_task_entries` без заданий периодов, которые идут
+    после `period`: прошлое и текущее — да, будущее — нет.
+
+    Владелец 06.10.2026, третий заход: «показываем все долги??? … не
+    показывать будущий этап, который ещё не доступен». Первая версия
+    оставляла только сам текущий период — и прятала недоделанное прошлых
+    периодов (необязательные задания «Цикла 1» у учеников, ушедших в
+    «1 семестр»). «Будущее» — рамка (`_frame_of`), начавшаяся позже рамки
+    `period`: должнику «Предобучения» не виден «1 семестр». Задание без рамки
+    (разовое, служебная тема дня) будущим не бывает и остаётся.
+    """
+    period_start = msk_date(period.opens_at) if period.opens_at else None
+    later: dict[int, bool] = {}
     result = []
     for entry in entries:
         topic_id = entry["task"].topic_id
-        if topic_id is None:
-            continue
-        if topic_id not in frames:
-            frame = _frame_of(db, db.get(LearningTopic, topic_id))
-            frames[topic_id] = frame.id if frame is not None else None
-        if frames[topic_id] == period.id:
-            result.append(entry)
+        if topic_id is not None and period_start is not None:
+            if topic_id not in later:
+                frame = _frame_of(db, db.get(LearningTopic, topic_id))
+                later[topic_id] = bool(
+                    frame is not None
+                    and frame.id != period.id
+                    and frame.opens_at is not None
+                    and msk_date(frame.opens_at) > period_start
+                )
+            if later[topic_id]:
+                continue
+        result.append(entry)
     return result
 
 
 def entries_open_to_student(
-    db: Session, user_id: int, entries: list[dict], today: date
+    db: Session, entries: list[dict], today: date
 ) -> list[dict]:
-    """Записи без заданий, которые ученику ещё не открыты (владелец
+    """Записи без заданий, которые ещё не открылись по дате (владелец
     06.10.2026: «у меня показаны задачи, которые мне ещё не доступны»).
 
-    Не открыто: цикл заперт долгом (`locked_cycle_ids` — тот же ответ, что у
-    `task_is_locked_for_user`, но одним расчётом на весь список), цикл ещё
-    не начался, у задания дата открытия (`starts_at`) впереди — правило ленты,
-    `_not_open_yet`. Закрытое задание остаётся: раз сделано, оно было открыто.
-    Очередь внутри открытого цикла («сначала сделай предыдущее») здесь не
-    считается — её знает только сборка ленты.
+    Не открылось: цикл ещё не начался или у задания дата открытия
+    (`starts_at`) впереди — правило ленты, `_not_open_yet`. Закрытое задание
+    остаётся: раз сделано, оно было открыто.
+
+    **Цикл, запертый долгом, здесь не прячется** (владелец 06.10.2026, после
+    первой выкатки: «нам нужно показывать долги и что нужно сделать»). Его
+    задания — тоже долг, они ждут только закрытия более раннего цикла; в первой
+    версии фильтр убирал их, и у 15 учеников пропали 76 заданий «Предобучения».
+    Будущий этап должника отсекает рамка периода (`entries_up_to_period`), а не
+    этот фильтр.
     """
-    locked = locked_cycle_ids(db, user_id, today)
     now = datetime.now(timezone.utc)
     result = []
     for entry in entries:
         task = entry["task"]
         if entry["status"] != STATUS_DONE:
             topic = db.get(LearningTopic, task.topic_id) if task.topic_id else None
-            if topic is not None and topic.id in locked:
-                continue
             if (
                 topic is not None and topic.kind == TOPIC_KIND_WEEK
                 and cycle_bounds(topic)[0] > today

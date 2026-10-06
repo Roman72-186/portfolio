@@ -709,23 +709,24 @@ def _two_periods(db, owner):
     return old_task
 
 
-def test_tracker_shows_only_current_period(auth_client, db):
-    """Ученик закрыл прошлый период и стоит в текущем — задания прошлого
-    периода не видны ни в одном разделе, даже закрытые на этой неделе."""
+def test_tracker_keeps_past_period_debt(auth_client, db):
+    """Ученик ушёл в новый период, а необязательное задание прошлого периода
+    не сделано — оно в трекере (владелец 06.10.2026: «показываем все
+    долги???»): прошлое и текущее видны, будущее — нет."""
     client, user = auth_client
     old_task = _two_periods(db, user)
-    close_task_for_user(db, old_task, user.id, source="test")
+    old_task.is_required = False
     db.commit()
 
     html = client.get(PAGE).text
 
-    assert "Задание: Текущий цикл" in html
-    assert "Задание: Старый цикл" not in html
+    assert "Задание: Текущий цикл" in _section(html, "В работе")
+    assert "Задание: Старый цикл" in _section(html, "Просрочено")
 
 
-def test_debtor_sees_period_of_debt_cycle(auth_client, db):
-    """Должник стоит в ленте на цикле долга — трекер показывает его период,
-    тот же, что лента «Обучения», а не период по календарю."""
+def test_debtor_does_not_see_future_period(auth_client, db):
+    """Должник стоит в ленте на цикле долга в прошлом периоде — следующий
+    период для него будущий и запертый, трекер его не показывает."""
     client, user = auth_client
     _two_periods(db, user)
 
@@ -738,9 +739,10 @@ def test_debtor_sees_period_of_debt_cycle(auth_client, db):
 # ── Только открытое ученику (владелец 06.10.2026) ───────────────────────────
 
 
-def test_tracker_hides_cycle_locked_by_debt(auth_client, db):
-    """Должник цикла 1: начавшийся цикл 2 того же периода заперт долгом —
-    в трекере его заданий нет, долг виден."""
+def test_tracker_shows_cycle_locked_by_debt(auth_client, db):
+    """Должник цикла 1: начавшийся цикл 2 того же периода заперт долгом, но
+    его задания — тоже долг, трекер показывает оба (владелец 06.10.2026:
+    «нам нужно показывать долги и что нужно сделать»)."""
     client, user = auth_client
     today = today_msk()
     _, stage = _period_stage(
@@ -757,8 +759,20 @@ def test_tracker_hides_cycle_locked_by_debt(auth_client, db):
 
     html = client.get(PAGE).text
 
-    assert "Задание: Цикл долга" in _section(html, "Просрочено")
-    assert "Задание: Запертый цикл" not in html
+    overdue = _section(html, "Просрочено")
+    upcoming = _section(html, "В работе")
+    assert "Задание: Цикл долга" in overdue
+    assert "Задание: Запертый цикл" in upcoming
+    # В каком цикле долг и цвет срока (владелец 06.10.2026): красный — срок
+    # прошёл, зелёный — время есть.
+    assert 'trk-badge--cycle">Цикл долга<' in overdue
+    assert 'class="is-overdue">до ' in overdue
+    assert 'trk-badge--cycle">Запертый цикл<' in upcoming
+    assert 'class="is-ontime">до ' in upcoming
+    # Досдать (владелец 06.10.2026): долг текущей ленты — кнопкой, запертый
+    # цикл — подписью, какой цикл закрыть первым.
+    assert "/cabinet/learning?task=" in overdue
+    assert "Сначала закрой «Цикл долга»" in upcoming
 
 
 def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db):
@@ -790,6 +804,72 @@ def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db)
     assert "Задание: Идёт" in html
     assert "Задание: Будущий" not in html
     assert "Задание: Откроется завтра" not in html
+
+
+def test_debt_of_past_open_cycle_links_to_its_feed(auth_client, db):
+    """Необязательное задание прошлого цикла идущего этапа не сделано — в
+    трекере кнопка ведёт в ленту этого цикла (`?cycle=`), чтобы досдать."""
+    client, user = auth_client
+    today = today_msk()
+    _, stage = _period_stage(
+        db, user, title="Предобучение", starts=today - timedelta(days=20), ends=today + timedelta(days=20),
+    )
+    past, past_task = _cycle_with_task(
+        db, user, title="Прошлый", starts=today - timedelta(days=15), ends=today - timedelta(days=8),
+        stage=stage,
+    )
+    past_task.is_required = False
+    db.commit()
+    _cycle_with_task(
+        db, user, title="Текущий", starts=today - timedelta(days=7), ends=today + timedelta(days=5),
+        stage=stage,
+    )
+
+    overdue = _section(client.get(PAGE).text, "Просрочено")
+
+    assert "Задание: Прошлый" in overdue
+    assert f"/cabinet/learning?cycle={past.id}#learning-task-{past_task.id}" in overdue
+
+
+def test_tracker_row_shows_task_type_by_content(auth_client, db):
+    """Тип задания — по блокам (владелец 06.10.2026, «по содержимому»):
+    работа на время главнее видео; блок чужого тарифа тип не задаёт."""
+    from app.models.task_block import TaskBlock, TaskBlockTariff
+
+    client, user = auth_client
+    user.tariff = "Я САМ"
+    db.commit()
+    today = today_msk()
+    _, stage = _period_stage(
+        db, user, title="Семестр", starts=today - timedelta(days=5), ends=today + timedelta(days=30),
+    )
+    cycle, exam = _cycle_with_task(
+        db, user, title="Цикл", starts=today - timedelta(days=2), ends=today + timedelta(days=5), stage=stage,
+    )
+    exam.title = "Контрольная"
+    video_task = create_task(
+        db, title="Лекция", user_id=user.id, kind="material", due_at=None,
+        topic_id=cycle.id, assign_to_all=True, is_required=False,
+    )
+    video_task.is_published = True
+    db.add_all([
+        TaskBlock(task_id=exam.id, block_type="video", sort_order=0),
+        TaskBlock(task_id=exam.id, block_type="timed", sort_order=1),
+        TaskBlock(task_id=video_task.id, block_type="video", sort_order=0),
+    ])
+    foreign = TaskBlock(task_id=video_task.id, block_type="upload", sort_order=1)
+    db.add(foreign)
+    db.flush()
+    db.add(TaskBlockTariff(block_id=foreign.id, tariff="Я С ВАМИ"))
+    db.commit()
+
+    html = client.get(PAGE).text
+
+    exam_row = html[html.index("<h3>Контрольная</h3>") - 1500:html.index("<h3>Контрольная</h3>")]
+    video_row = html[html.index("<h3>Лекция</h3>") - 1500:html.index("<h3>Лекция</h3>")]
+    assert 'trk-badge--type">Контрольная на время<' in exam_row
+    assert 'trk-badge--type">Видео<' in video_row
+    assert "Сдача работы" not in html
 
 
 def test_task_status_uses_cycle_deadline_only_without_due_at():

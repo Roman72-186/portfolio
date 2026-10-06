@@ -67,6 +67,9 @@
 
 .trk-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
 .trk-meta .is-overdue { color: var(--error); font-weight: 700; }
+/* Срок, который ещё не прошёл, — зелёный (владелец 06.10.2026: «красным,
+   если дедлайн прошёл, зелёным, если есть ещё время на сдачу»). */
+.trk-meta .is-ontime { color: var(--success-text); font-weight: 700; }
 
 .trk-badge {
     display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px;
@@ -106,6 +109,12 @@
 }
 
 .trk-badge--kind { color: var(--blue-on-soft); background: var(--surface-2); }
+/* Цикл и тип задания у ученика (владелец 06.10.2026) — подписи, а не
+   статус: цикл контуром, тип заливкой, чтобы два соседних чипа не сливались. */
+.trk-badge--cycle { color: var(--text); background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.trk-badge--type { color: var(--text); background: var(--surface-2); }
+/* Вместо «Перейти» у задания цикла, запертого долгом: какой цикл закрыть первым. */
+.trk-locked-note { color: var(--muted); font-size: 12px; font-weight: 600; }
 
 .trk-homework {
     display: grid; gap: 10px; padding: 12px 14px; margin-top: 4px;
@@ -375,6 +384,7 @@
 
 .ios-tracker .trk-meta { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); gap: 6px 10px; }
 .ios-tracker .trk-meta .is-overdue { color: var(--error); font-weight: 600; }
+.ios-tracker .trk-meta .is-ontime { color: var(--ios-green-text); font-weight: 600; }
 
 .ios-tracker .trk-badge {
     border-radius: 999px; font: 600 11px/1 var(--ios-font); letter-spacing: 0;

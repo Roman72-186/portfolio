@@ -478,6 +478,32 @@ def visible_blocks_for_student(
     ]
 
 
+# Тип задания для ученика — по главному блоку, сверху вниз по старшинству
+# (владелец 06.10.2026: «тип задания» в «Личном трекере», вариант «по
+# содержимому»). Поле `TrackerTask.kind` для этого не годится: у всех
+# заданий на проде оно «Материал», содержимое решают блоки (с 31.08.2026).
+TASK_CONTENT_LABELS: tuple[tuple[frozenset[str], str], ...] = (
+    (frozenset({BLOCK_TIMED}), "Контрольная на время"),
+    (frozenset({BLOCK_UPLOAD, BLOCK_PHOTO_UPLOAD}), "Сдача работы"),
+    (frozenset({BLOCK_COMPARE}), "Сравнение работ"),
+    (frozenset({BLOCK_QUESTION}), "Тест"),
+    (frozenset({BLOCK_PORTFOLIO}), "Портфолио"),
+    (frozenset({BLOCK_VIDEO, BLOCK_MEDIA}), "Видео"),
+)
+
+
+def task_content_label(blocks: list[TaskBlock]) -> str | None:
+    """Тип задания словами по его блокам — первая строка `TASK_CONTENT_LABELS`,
+    которой есть совпадение. Передавать блоки, уже отфильтрованные
+    `visible_blocks_for_student`: блок чужого тарифа тип не задаёт. Ни одного
+    совпадения (только текст, фото, ссылка) — `None`, подписи нет."""
+    present = {block.block_type for block in blocks}
+    for types, label in TASK_CONTENT_LABELS:
+        if present & types:
+            return label
+    return None
+
+
 def unfinished_required_steps(
     db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
 ) -> list[TaskBlock]:
