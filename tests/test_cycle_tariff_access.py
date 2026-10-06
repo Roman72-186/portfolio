@@ -7,7 +7,7 @@
 приходят напоминания; в архив уходит этап целиком, будущие циклы этапа видны
 закрытыми.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.models.learning_topic import (
     TOPIC_KIND_STAGE,
@@ -239,20 +239,38 @@ def test_debtor_is_warned_three_hours_before_tariff_deadline(db, regular_user, u
 def test_debtor_is_reminded_daily_after_deadline(db, regular_user, user_factory):
     student = user_factory(vk_id=100_302, name="Должник", tariff="Я САМ")
     cycle = _running_cycle(db, regular_user, title="Цикл 1")
-    set_topic_tariff_windows(db, cycle, {"Я САМ": (None, _day_end(TODAY - timedelta(days=1)))})
+    # Срок — после включения рассылки (`CYCLE_DEBT_REMINDERS_SINCE`).
+    day = max(TODAY, date(2026, 10, 8))
+    set_topic_tariff_windows(db, cycle, {"Я САМ": (None, _day_end(day - timedelta(days=1)))})
     db.commit()
 
-    run_student_reminders(db, now=_msk(TODAY, 8))
+    run_student_reminders(db, now=_msk(day, 8))
     assert _cycle_notes(db, student) == []  # не ночью и не утром
 
-    run_student_reminders(db, now=_msk(TODAY, 10, 5))
-    run_student_reminders(db, now=_msk(TODAY, 10, 35))
+    run_student_reminders(db, now=_msk(day, 10, 5))
+    run_student_reminders(db, now=_msk(day, 10, 35))
     notes = _cycle_notes(db, student)
     assert len(notes) == 1
     assert "не закрыт" in notes[0].title
     assert "запишется как сданное позже" in notes[0].text
     # Ключ общий с кнопкой «Напомнить всем»: сегодня ему уже напомнили.
-    assert cycle_debtors(db, cycle, now=_msk(TODAY, 11))[0]["reminded_today"] is True
+    assert cycle_debtors(db, cycle, now=_msk(day, 11))[0]["reminded_today"] is True
+
+
+def test_debt_older_than_reminders_is_not_reminded(db, regular_user, user_factory):
+    """Владелец 06.10.2026: «предобучение нужно исключить» — долг со сроком
+    до включения рассылки автоматически не напоминается."""
+    student = user_factory(vk_id=100_304, name="Старый долг", tariff="Я САМ")
+    cycle = _topic(
+        db, regular_user, title="Предобучение 1",
+        starts_on=date(2026, 9, 20), ends_on=date(2026, 10, 4),
+    )
+    _undated_task(db, regular_user, cycle, title="Задание предобучения")
+
+    run_student_reminders(db, now=_msk(max(TODAY, date(2026, 10, 7)), 10, 5))
+    assert _cycle_notes(db, student) == []
+    # Кнопка «Напомнить всем» его по-прежнему видит.
+    assert student.id in {row["user"].id for row in cycle_debtors(db, cycle)}
 
 
 def test_no_cycle_reminder_once_cycle_is_closed(db, regular_user, user_factory):

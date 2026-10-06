@@ -31,6 +31,8 @@
    конец цикла (`tracker.cycle_deadline_for`). Ежедневное уходит только в
    прогон с 10:00 до 11:00 МСК — не ночью — и делит ключ с кнопкой «Напомнить
    всем» (`cycle_stats.remind_cycle_debtors`): в один день одно сообщение.
+   Долги со сроком до 06.10.2026 («Предобучение») автоматически не
+   напоминаются (`CYCLE_DEBT_REMINDERS_SINCE`).
 
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
@@ -133,6 +135,12 @@ SUMMARY_LIMIT = 8
 # ежедневное после срока (прогон раз в 30 минут — попадают два).
 CYCLE_CLOSING_AHEAD = timedelta(hours=3)
 CYCLE_DEBT_DAILY_HOUR = 10
+# Ежедневное — только по долгам, чей срок прошёл после включения рассылки
+# (владелец 06.10.2026: «предобучение нужно исключить»). Все циклы
+# «Предобучения» закончились к 04.10.2026; их должникам напоминают только
+# кнопкой «Напомнить всем». Граница — дата, а не название периода: так она не
+# ломается от переименования и не требует id в коде.
+CYCLE_DEBT_REMINDERS_SINCE = datetime(2026, 10, 6, tzinfo=MSK_TZ)
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -460,7 +468,7 @@ def _collect_cycle_debts(
         deadline = cycle_deadline_for(topic, user.tariff, closes.get(topic.id))
         if now < deadline <= horizon:
             kind, ref = KIND_CYCLE_CLOSING_3H, f"{topic.id}:{deadline.isoformat()}"
-        elif deadline <= now and daily:
+        elif deadline <= now and daily and deadline >= CYCLE_DEBT_REMINDERS_SINCE:
             # Ключ как у кнопки «Напомнить всем» (`cycle_stats._reminder_ref`).
             kind, ref = KIND_CYCLE_DEBT, f"{topic.id}:{today.isoformat()}"
         else:
