@@ -62,6 +62,7 @@ from app.services.cycle_feed import (
     LINK_LOCKED_DETAIL,
     block_step_is_open,
     current_feed_task_ids,
+    deadline_view,
     task_is_archived_for_user,
     task_is_locked_for_user,
 )
@@ -148,6 +149,16 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/cabinet")
 
 
+_NO_DEADLINE = datetime.max.replace(tzinfo=timezone.utc)
+
+
+def _deadline_sort_key(entry: dict) -> datetime:
+    due_at = entry["task"].due_at
+    if due_at is not None:
+        return due_at if due_at.tzinfo else due_at.replace(tzinfo=timezone.utc)
+    return entry["cycle_deadline"] or _NO_DEADLINE
+
+
 @router.get("/tracker", response_class=HTMLResponse)
 def cabinet_tracker(
     request: Request,
@@ -189,8 +200,15 @@ def cabinet_tracker(
         digest_calendar(digest, digest_events, today=today) if digest is not None else []
     )
 
-    overdue = [e for e in entries if e["status"] == "overdue"]
-    upcoming = [e for e in entries if e["status"] == "upcoming"]
+    # Ближайший срок сверху (владелец 06.10.2026): у задания цикла срок —
+    # срок цикла, у датного — его `due_at`. Сортировка устойчивая, внутри
+    # одного срока остаётся порядок программы; без срока — в конце.
+    overdue = sorted(
+        (e for e in entries if e["status"] == "overdue"), key=_deadline_sort_key
+    )
+    upcoming = sorted(
+        (e for e in entries if e["status"] == "upcoming"), key=_deadline_sort_key
+    )
     # Сделанное показываем только за эту неделю — иначе список рос бы вечно
     # закрытыми делами месячной давности, которые уже никому не интересны.
     #
@@ -236,6 +254,9 @@ def cabinet_tracker(
         # Окно дня по тапу на число (владелец 05.10.2026).
         "digest_day_events": digest_day_events(digest_days),
         "digest_weekday_labels": WEEKDAY_LABELS,
+        # Срок цикла в строке задания — тот же вид, что в шапке цикла
+        # («до 12.10 в 23:59», `cycle_feed.deadline_view`).
+        "deadline_view": deadline_view,
         "format_event_dates": format_event_dates,
         "format_event_time": format_event_time,
         "goal": goal,

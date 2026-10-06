@@ -558,6 +558,123 @@ def test_undated_cycle_task_is_visible_in_personal_tracker(auth_client, db):
     assert "Задание цикла без даты" in resp.text
 
 
+# ── Срок цикла у задания без даты (владелец 06.10.2026, после аудита) ───────
+
+
+def _section(html: str, title: str) -> str:
+    """Кусок страницы от заголовка раздела до следующего заголовка."""
+    start = html.index(f'<div class="trk-day">{title}</div>')
+    end = html.find('<div class="trk-day">', start + 1)
+    return html[start:end if end != -1 else len(html)]
+
+
+def _cycle_with_task(db, owner, *, title, starts, ends):
+    topic = LearningTopic(
+        title=title,
+        opens_at=msk_midnight(starts).astimezone(timezone.utc).replace(tzinfo=None),
+        ends_at=(msk_midnight(ends) + timedelta(hours=23, minutes=59))
+        .astimezone(timezone.utc).replace(tzinfo=None),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=owner.id,
+    )
+    db.add(topic)
+    db.commit()
+    task = create_task(
+        db, title=f"Задание: {title}", user_id=owner.id, kind="material",
+        due_at=None, topic_id=topic.id, assign_to_all=True, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+    return topic, task
+
+
+def test_undated_task_is_overdue_after_tariff_cycle_deadline(auth_client, db):
+    """Срок «по» тарифа ученика прошёл вчера — задание в «Просрочено» с этим
+    сроком, а не «В работе · без даты». Цикл при этом ещё идёт по общим датам."""
+    from app.services.video_topics import set_topic_tariff_windows
+
+    client, user = auth_client
+    user.tariff = "Я САМ"
+    db.commit()
+    today = today_msk()
+    yesterday = today - timedelta(days=1)
+    topic, _ = _cycle_with_task(
+        db, user, title="Цикл с тарифом", starts=today - timedelta(days=5),
+        ends=today + timedelta(days=5),
+    )
+    set_topic_tariff_windows(db, topic, {
+        "Я САМ": (
+            None,
+            (msk_midnight(yesterday) + timedelta(hours=20)).astimezone(timezone.utc).replace(tzinfo=None),
+        ),
+    })
+    db.commit()
+
+    html = client.get(PAGE).text
+
+    overdue = _section(html, "Просрочено")
+    assert "Задание: Цикл с тарифом" in overdue
+    assert f"до {yesterday.strftime('%d.%m')} в 20:00" in overdue
+    assert "В работе" not in html
+
+
+def test_undated_task_shows_cycle_end_while_time_remains(auth_client, db):
+    """Без «по» у тарифа срок — конец цикла; полночь показывается 23:59
+    последнего дня, как в шапке цикла."""
+    client, user = auth_client
+    today = today_msk()
+    last_day = today + timedelta(days=4)
+    _cycle_with_task(db, user, title="Идущий цикл", starts=today - timedelta(days=2), ends=last_day)
+
+    html = client.get(PAGE).text
+
+    upcoming = _section(html, "В работе")
+    assert "Задание: Идущий цикл" in upcoming
+    assert f"до {last_day.strftime('%d.%m')} в 23:59" in upcoming
+    assert "без даты" not in html
+    assert "Просрочено" not in html
+
+
+def test_upcoming_is_sorted_by_nearest_deadline(auth_client, db):
+    client, user = auth_client
+    today = today_msk()
+    _cycle_with_task(db, user, title="Дальний", starts=today - timedelta(days=1), ends=today + timedelta(days=9))
+    _cycle_with_task(db, user, title="Ближний", starts=today - timedelta(days=1), ends=today + timedelta(days=2))
+
+    upcoming = _section(client.get(PAGE).text, "В работе")
+
+    assert upcoming.index("Задание: Ближний") < upcoming.index("Задание: Дальний")
+
+
+def test_closed_task_of_past_cycle_is_not_overdue(auth_client, db):
+    client, user = auth_client
+    today = today_msk()
+    _, task = _cycle_with_task(
+        db, user, title="Прошедший", starts=today - timedelta(days=9), ends=today - timedelta(days=3),
+    )
+    close_task_for_user(db, task, user.id, source="test")
+    db.commit()
+
+    html = client.get(PAGE).text
+
+    assert "Просрочено" not in html
+    assert "Задание: Прошедший" in _section(html, "Сделано на этой неделе")
+
+
+def test_task_status_uses_cycle_deadline_only_without_due_at():
+    from datetime import datetime
+
+    now = datetime(2026, 10, 6, 12, tzinfo=timezone.utc)
+    passed = now - timedelta(hours=1)
+    undated = TrackerTask(due_at=None)
+    dated = TrackerTask(due_at=now + timedelta(days=1))
+
+    assert task_status(undated, None, now=now, cycle_deadline=passed) == "overdue"
+    assert task_status(undated, None, now=now) == "upcoming"
+    # Свой день у задания главнее срока цикла.
+    assert task_status(dated, None, now=now, cycle_deadline=passed) == "upcoming"
+
+
 # ── Шапка трекера: баллы Р/К и точка А (владелец 04.10.2026) ─────────────────
 
 

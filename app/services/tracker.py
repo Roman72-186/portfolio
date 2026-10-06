@@ -387,7 +387,8 @@ def task_done_for_user(db: Session, task_id: int, user_id: int) -> bool:
 
 
 def task_status(
-    task: TrackerTask, state: TrackerTaskState | None, *, now: datetime
+    task: TrackerTask, state: TrackerTaskState | None, *, now: datetime,
+    cycle_deadline: datetime | None = None,
 ) -> Literal["done", "overdue", "upcoming"]:
     """Цвет строки у ученика: сделано → просрочено → есть время.
 
@@ -395,10 +396,15 @@ def task_status(
     `now` передаётся явно (через `app/services/tz.py::now_msk()` у вызывающего
     кода), чтобы не путать колонку без дедлайна с просроченной: задача без
     `due_at` считается «есть время», пока её не закрыли.
+
+    `cycle_deadline` — срок цикла для бездатного задания цикла
+    (`cycle_deadline_for`, владелец 06.10.2026): задания в циклах заводятся
+    без `due_at`, и без этого срока «Просрочено» не видел ни один ученик.
+    У датного задания срок — его `due_at`, срок цикла не применяется.
     """
     if state is not None and state.status == STATUS_DONE:
         return "done"
-    due_at = task.due_at
+    due_at = task.due_at if task.due_at is not None else cycle_deadline
     if due_at is not None:
         # SQLite в тестах отдаёт наивное время; весь проект трактует такое
         # значение как UTC (см. program.py::msk_date) — иначе naive < aware
@@ -478,6 +484,15 @@ def accessible_task_entries(
         )
         states = {row.task_id: row for row in rows}
 
+    # Срок цикла бездатного задания — «по» тарифа ученика или конец цикла
+    # (владелец 06.10.2026, после аудита трекера: 108 открытых заданий с
+    # прошедшим сроком стояли «В работе · без даты»). Тариф — из профиля того,
+    # чьи задания считаем: карточка ученика у сотрудника видит его срок.
+    undated_topics = {t.topic_id for t in tasks if t.due_at is None and t.topic_id is not None}
+    deadline_of = cycle_deadline_lookup(db, undated_topics) if undated_topics else None
+    owner = db.get(User, user_id) if deadline_of is not None else None
+    tariff = owner.tariff if owner is not None else None
+
     now = now_msk()
     entries = []
     for task in tasks:
@@ -489,13 +504,22 @@ def accessible_task_entries(
                 due_at = due_at.replace(tzinfo=timezone.utc)
             due_label = due_at.astimezone(MSK_TZ).strftime("%H:%M")
             day = msk_date(task.due_at)
+        cycle_deadline = (
+            deadline_of(task.topic_id, tariff)
+            if deadline_of is not None and task.due_at is None else None
+        )
+        if cycle_deadline is not None and cycle_deadline.tzinfo is None:
+            cycle_deadline = cycle_deadline.replace(tzinfo=timezone.utc)
         state = states.get(task.id)
         entries.append({
             "task": task,
             "kind_label": ITEM_KIND_LABELS.get(task.kind, task.kind),
-            "status": task_status(task, state, now=now),
+            "status": task_status(task, state, now=now, cycle_deadline=cycle_deadline),
             "due_label": due_label,
             "day": day,
+            # Срок цикла у бездатного задания цикла, иначе None. Ученику его
+            # печатает `cycle_feed.deadline_view` — тем же видом, что шапка цикла.
+            "cycle_deadline": cycle_deadline,
             # Дата закрытия отдельно от `day` (дата дедлайна): «Сделано» на
             # экране ученика фильтруется по ней, иначе закрытый долг прошлой
             # недели пропадал с экрана — из «Просрочено» вышел, в «Сделано»

@@ -17,6 +17,15 @@ FORM: Operate, список, а не карточка-витрина.
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
+{# Срок строки: у датного задания — его день и время, у задания цикла — срок
+   цикла по тарифу ученика (владелец 06.10.2026), тем же видом, что в шапке
+   цикла. Сроки блока и задания (`submit_until`) здесь не печатаются —
+   docs/invariants/deadlines.md. #}
+{% macro due_text(entry) -%}
+    {%- if entry.day -%}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}
+    {%- elif entry.cycle_deadline -%}до {{ deadline_view(entry.cycle_deadline).text }}
+    {%- else -%}без срока{%- endif -%}
+{%- endmacro %}
 {% macro learning_link(task, learning_task_ids) -%}
     {% if task.id in learning_task_ids %}
     <div class="trk-row-actions">
@@ -87,7 +96,7 @@ FORM: Operate, список, а не карточка-витрина.
             </div>
             <h3>{{ entry.task.title }}</h3>
             {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
-            <div class="trk-meta"><span class="is-overdue">{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
+            <div class="trk-meta"><span class="is-overdue">{{ due_text(entry) }}</span></div>
         </div>
         {{ learning_link(entry.task, learning_task_ids) }}
     </div>
@@ -113,7 +122,7 @@ FORM: Operate, список, а не карточка-витрина.
             </div>
             <h3>{{ entry.task.title }}</h3>
             {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
-            <div class="trk-meta"><span>{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
+            <div class="trk-meta"><span>{{ due_text(entry) }}</span></div>
         </div>
         {{ learning_link(entry.task, learning_task_ids) }}
     </div>
