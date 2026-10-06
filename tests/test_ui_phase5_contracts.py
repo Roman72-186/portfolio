@@ -93,7 +93,8 @@ def test_player_reports_success_only_after_server_confirmation():
     assert "respData && respData.completed === true" in source
     assert "playback_active: Boolean(isPlaying)" in source
     assert "ended: Boolean(completed)" in source
-    assert "Просмотр пока не подтверждён" in source
+    # Текст сменился в 20f9334 (подсказка, откуда досматривать) — тест отстал.
+    assert "Просмотр пока не засчитан" in source
     pause_handler = source.split("player.on('pause'", 1)[1].split("});", 1)[0]
     assert pause_handler.index("saveProgress") < pause_handler.index("setPlaying(false)")
 
