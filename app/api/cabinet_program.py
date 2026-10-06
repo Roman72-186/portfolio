@@ -557,7 +557,6 @@ def _edit_payloads(
                 "title": b.title,
                 "body": b.body,
                 "video_id": b.video_id,
-                "video_bridge": b.video_bridge,
                 # `is_pick` — выбор преподавателя в сравнении работ: без него
                 # повторное сохранение открытого задания отбила бы проверка
                 # «отметьте свой выбор».
@@ -1636,8 +1635,6 @@ class BlockItem(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     body: str | None = Field(default=None, max_length=5000)
     video_id: int | None = Field(default=None, ge=1)
-    # Мост у видео-блока: пусто — как у всех; значения — `VIDEO_BRIDGE_CHOICES`.
-    video_bridge: str | None = Field(default=None, max_length=10)
     images: list[BlockImageItem] = Field(
         default_factory=list, max_length=MAX_BLOCK_IMAGES
     )
@@ -2606,7 +2603,6 @@ def blocks_source_content(
             "poll_key": b.poll_key,
             "poll_intro": b.poll_intro,
             "video_id": b.video_id,
-            "video_bridge": b.video_bridge,
             "url": b.url,
             # Файл записи в S3 общий у оригинала и копии, как у фото блока:
             # удаление блока файлы из хранилища не трогает (`_drop_block`).

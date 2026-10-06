@@ -255,9 +255,6 @@ LATE_SUBMISSION_BLOCK_TYPES = SUBMISSION_BLOCK_TYPES + (
 # VIDEO_BLOCK_TYPES читает и `video_catalog`: ролик в любом из этих блоков
 # открывается ученику по доступу к блоку, а не по правилу «без темы — всем».
 VIDEO_BLOCK_TYPES = (BLOCK_VIDEO, BLOCK_PORTFOLIO)
-# Мост у видео-блока (`TaskBlock.video_bridge`) — те же флаги, что `?bridge=`
-# страницы урока (`api/video.py::_personal_bridge`). Только у BLOCK_VIDEO.
-VIDEO_BRIDGE_CHOICES = ("ru", "nl")
 # BLOCK_TIMED — фото к условию контрольной (владелец 02.10.2026), ученику
 # отдаются только после «Начать работу», как и само условие.
 IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_COMPARE, BLOCK_TIMED)
@@ -350,11 +347,6 @@ class TaskBlock(Base):
     video_id: Mapped[int | None] = mapped_column(
         ForeignKey("learning_videos.id", ondelete="SET NULL"), nullable=True
     )
-    # Мост до Bunny у видео-блока: None — общая настройка
-    # `BUNNY_PLAYER_PROXY_BASE`, "ru" — копия на Selectel, "nl" — Нидерланды
-    # (владелец 06.10.2026: проверить российский мост на задании, видимом
-    # только ему, не переключая всех). Значения — `VIDEO_BRIDGE_CHOICES`.
-    video_bridge: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Картинки блока — в отдельной таблице `TaskBlockImage`: блок «фото» стал
     # галереей до MAX_BLOCK_IMAGES снимков (владелец 31.08.2026). Раньше пара
     # колонок url+path лежала прямо здесь, по одной картинке на блок.

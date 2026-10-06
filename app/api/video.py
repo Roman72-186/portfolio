@@ -120,8 +120,7 @@ def _personal_bridge(user: dict, bridge: str | None) -> str | None:
     flag = str(bridge or "").strip().lower()
     if flag == "ru":
         return BRIDGE_RU_BASE
-    # "nl" — значение переключателя моста у видео-блока (`TaskBlock.video_bridge`).
-    if flag not in ("1", "true", "on", "nl"):
+    if flag not in ("1", "true", "on"):
         return None
     return BRIDGE_BASE
 
@@ -360,16 +359,11 @@ def cabinet_video_embed(
     video_id: int,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
-    bridge: str | None = None,
 ):
     """JSON-вариант `_render_player` для инлайн-карточки на АОП (без перехода
     на `/cabinet/videos/{id}`). Та же проверка доступа (`require_learning_content_access`
     — заворачивает ученика вне группы 403-м с понятным сообщением), тот же
-    `_video_for_viewer`, только без полного рендера страницы.
-
-    `?bridge=` дописывает сервер, когда у видео-блока выбран свой мост
-    (`TaskBlock.video_bridge`, владелец 06.10.2026); флаги те же, что у
-    страницы урока, и так же только из закрытого списка адресов."""
+    `_video_for_viewer`, только без полного рендера страницы."""
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
@@ -378,14 +372,12 @@ def cabinet_video_embed(
     except SQLAlchemyError:
         logger.exception("Video view log failed for user_id=%s", user["user_id"])
         db.rollback()
-    proxy_base = _personal_bridge(user, bridge)
     payload, has_error = _player_payload(
         user,
         db,
         video=video,
         progress_endpoint=f"/cabinet/videos/{video_id}/progress",
-        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url" + _bridge_query(proxy_base),
-        proxy_base=proxy_base,
+        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
     )
     if has_error:
         return JSONResponse({"ok": False, "error": "player_unavailable"}, status_code=503)

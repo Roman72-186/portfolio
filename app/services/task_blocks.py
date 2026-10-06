@@ -37,7 +37,6 @@ from app.models.task_block import (
     POLL_BLOCK_TYPES,
     SUBMISSION_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
-    VIDEO_BRIDGE_CHOICES,
     QUESTION_TEXT,
     QUESTION_TYPES,
     RULE_ITEM_DEFAULT_LABEL,
@@ -1344,10 +1343,6 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # Специализированные поля чистим у чужих типов: блок могли переключить
         # с видео на текст, и старый video_id тянул бы за собой плеер.
         row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
-        bridge = item.get("video_bridge")
-        row.video_bridge = (
-            bridge if block_type == BLOCK_VIDEO and bridge in VIDEO_BRIDGE_CHOICES else None
-        )
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
         is_media = block_type == BLOCK_MEDIA
         row.media_kind = item.get("media_kind") if is_media else None
