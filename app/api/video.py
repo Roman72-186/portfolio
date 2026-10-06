@@ -88,6 +88,10 @@ def _video_for_viewer(db: DBSession, *, catalog_id: int, user: dict):
 # объявлен рядом со страницей проверки, а этот нужен обычным маршрутам плеера
 # выше по файлу.
 BRIDGE_BASE = "https://video.assaru.space"
+# Копия моста в России (Selectel, на одном сервере с apparchi.ru). `?bridge=ru`
+# уводит через неё одного зрителя (владелец 06.10.2026): у ученицы домашний
+# провайдер 10 минут не пускал к нидерландскому мосту, а сам сайт открывался.
+BRIDGE_RU_BASE = "https://video-ru.assaru.space"
 
 
 def _personal_bridge(user: dict, bridge: str | None) -> str | None:
@@ -112,7 +116,10 @@ def _personal_bridge(user: dict, bridge: str | None) -> str | None:
     Возвращает `None`, если флага нет — тогда `build_signed_embed_url` берёт
     глобальную настройку, то есть остальные ходят как ходили.
     """
-    if str(bridge or "").strip().lower() not in ("1", "true", "on"):
+    flag = str(bridge or "").strip().lower()
+    if flag == "ru":
+        return BRIDGE_RU_BASE
+    if flag not in ("1", "true", "on"):
         return None
     return BRIDGE_BASE
 
@@ -328,7 +335,7 @@ def cabinet_video_by_id(
     proxy_base = _personal_bridge(user, bridge)
     refresh_endpoint = f"/cabinet/videos/{video_id}/player-url"
     if proxy_base:
-        refresh_endpoint += "?bridge=1"
+        refresh_endpoint += "?bridge=ru" if proxy_base == BRIDGE_RU_BASE else "?bridge=1"
     return _render_player(
         request,
         user,
@@ -411,7 +418,7 @@ BRIDGE_TEST_DEFAULT_BASE = "https://video.assaru.space"
 # Копия моста на Selectel (владелец, 26.09.2026): тот же конфиг nginx, но в
 # России, рядом с самим Apparchi. Заведена для сравнения с нидерландским мостом,
 # ученики через неё не ходят.
-BRIDGE_TEST_SELECTEL_BASE = "https://video-ru.assaru.space"
+BRIDGE_TEST_SELECTEL_BASE = BRIDGE_RU_BASE
 BRIDGE_TEST_ALLOWED_BASES = (BRIDGE_TEST_DEFAULT_BASE, BRIDGE_TEST_SELECTEL_BASE)
 # Подписи переключателя на странице: какой мост где стоит.
 BRIDGE_TEST_CHOICES = (

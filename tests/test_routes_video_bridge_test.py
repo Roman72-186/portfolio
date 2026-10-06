@@ -297,6 +297,24 @@ def test_player_url_refresh_honours_the_flag_for_students_too(auth_client, db, m
     assert response.json()["player_url"].startswith(f"{BRIDGE}/embed/")
 
 
+def test_ru_flag_leads_student_through_the_russian_copy(auth_client, db, monkeypatch):
+    """`?bridge=ru` — российская копия моста для одного зрителя (06.10.2026):
+    у ученицы провайдер не пускал к нидерландскому мосту. Перевыпуск ссылки
+    держит тот же флаг, иначе через пять минут плеер уехал бы обратно."""
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = auth_client
+    ru = "https://video-ru.assaru.space"
+
+    page = client.get(f"/cabinet/videos/{video.id}", params={"bridge": "ru"})
+    assert page.status_code == 200
+    assert f"{ru}/embed/720058/{VIDEO_ID}" in page.text
+    assert f"/cabinet/videos/{video.id}/player-url?bridge=ru" in page.text
+
+    refreshed = client.get(f"/cabinet/videos/{video.id}/player-url", params={"bridge": "ru"})
+    assert refreshed.json()["player_url"].startswith(f"{ru}/embed/")
+
+
 def test_lesson_page_stays_direct_without_the_flag(auth_client, db, monkeypatch):
     """Без флага ничего не меняется — это главный инвариант правки."""
     _configure_bunny(monkeypatch)
