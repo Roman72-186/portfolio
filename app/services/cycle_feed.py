@@ -51,6 +51,7 @@ from app.services.task_blocks import (
     is_block_open_to,
     required_by_block_for_task,
     poll_inner_block_ids,
+    shares_queue,
     start_portfolio_window,
 )
 from app.services.tracker import (
@@ -243,6 +244,8 @@ def build_cycle_feed(
     ждёт того, что выше. Блокировка считается сквозной: список блоков всех
     задач склеивается в один и отдаётся `is_block_accessible`, который уже
     умеет три условия разом (период доступа, тариф, последовательность).
+    Последовательность при этом делится по предметам (владелец 06.10.2026):
+    рисунок и композиция идут параллельно, «Общее» держит всех.
 
     Билет Пробника (`ITEM_MOCK_EXAM`) в ленте показывается, но хвост не
     запирает — он блокирует месяц, а не цикл (решение владельца 23.08,
@@ -317,12 +320,17 @@ def build_cycle_feed(
         ]
 
     # Сквозной список блоков в порядке ленты — на нём и считается блокировка.
+    # Предмет шага делит очередь: рисунок не ждёт композицию (06.10.2026).
     ordered_blocks = []
     required_by_block: dict[int, bool] = {}
+    subject_by_block: dict[int, str | None] = {}
     for entry in entries:
         task = entry["task"]
         task_blocks = blocks_by_task.get(task.id, [])
         ordered_blocks.extend(task_blocks)
+        subject_by_block.update(
+            (block.id, block.subject or task.subject) for block in task_blocks
+        )
         # Флаг задания над флагами блоков, опрос, диагностика — одно правило
         # с `feed_state` и кнопкой «Завершить задание».
         required_by_block.update(required_by_block_for_task(
@@ -373,8 +381,9 @@ def build_cycle_feed(
 
     # Задача без блоков участвует в блокировке хвоста наравне с блоками: пока
     # обязательное видео не досмотрено, следующее задание ленты закрыто.
-    # `blocked` взводится один раз и дальше запирает всё, что ниже.
-    blocked = False
+    # `held` — предметы таких незакрытых заданий (`None` — «Общее»); шаг ниже
+    # заперт, если делит очередь хоть с одним (`shares_queue`, 06.10.2026).
+    held: set[str | None] = set()
     steps: list[dict] = []
     block_index = 0
     started_portfolio_window = False
@@ -396,7 +405,7 @@ def build_cycle_feed(
                 status, lock_reason = STATUS_DONE, None
             elif task_waits_date:
                 status, lock_reason = STATUS_LOCKED, LOCK_BY_DATE
-            elif blocked:
+            elif any(shares_queue(subject, task.subject) for subject in held):
                 status, lock_reason = STATUS_LOCKED, LOCK_BY_SEQUENCE
             else:
                 status, lock_reason = STATUS_CURRENT, None
@@ -419,7 +428,7 @@ def build_cycle_feed(
                 and task.is_required
                 and task.kind != ITEM_MOCK_EXAM
             ):
-                blocked = True
+                held.add(task.subject or None)
             continue
 
         for position, block in enumerate(task_blocks):
@@ -435,8 +444,9 @@ def build_cycle_feed(
             )
             block_waits_date = _not_open_yet(block.opens_at, now)
             block_closed = not block_still_doable(block, state, now=now)
+            block_subject = subject_by_block[block.id]
             accessible = (
-                not blocked
+                not any(shares_queue(subject, block_subject) for subject in held)
                 and not task_waits_date
                 and is_block_accessible(
                     block_index=block_index,
@@ -446,6 +456,7 @@ def build_cycle_feed(
                     viewer=viewer,
                     required_tariffs_by_block=required_tariffs_by_block,
                     required_by_block=required_by_block,
+                    subject_by_block=subject_by_block,
                     now=now,
                 )
             )
@@ -487,7 +498,7 @@ def build_cycle_feed(
                 # Предмет блока важнее предмета задания: часть цикла идёт без
                 # деления на Рисунок и Композицию, часть — с делением
                 # (владелец 03.09.2026).
-                "subject": block.subject or task.subject,
+                "subject": block_subject,
                 # Первый **видимый** блок: `task_blocks` выше уже очищен от
                 # блоков `hidden_until_done` незакрытого задания.
                 "first_in_task": position == 0,
@@ -503,24 +514,29 @@ def build_cycle_feed(
 def _mark_sequence_holders(steps: list[dict], required_by_block: dict[int, bool]) -> None:
     """Запертому очередью шагу — какой шаг его держит (`step["blocked_by"]`).
 
-    Очередь одна на весь цикл и предмета не знает (владелец 01.10.2026:
-    вкладки «Общее / Композиция / Рисунок» очередь не делят). Держащий шаг
-    может стоять в другой вкладке, и без подписи ученик видел бы «Откроется,
+    С 06.10.2026 очередь делится по предметам (`shares_queue`): рисунок ждёт
+    только рисунок, композиция — композицию, «Общее» держит всех ниже и ждёт
+    всех выше. С 01.10 по 06.10.2026 очередь была одна на весь цикл. Держащий
+    шаг всё равно может стоять в другой вкладке — общий шаг для предметного,
+    любой предметный для общего, — и без подписи ученик видел бы «Откроется,
     когда будет сделано предыдущее», не находя этого предыдущего на экране.
-    Держит первый невыполненный обязательный шаг выше — до него ученик и
-    должен дойти первым. Это подпись, а не правило: само запирание решает
-    `is_block_accessible` и флаг `blocked` выше. Держащий шаг того же
-    задания шаблон по имени не называет — он стоит прямо выше.
+    Держит первый невыполненный обязательный шаг выше из той же очереди — до
+    него ученик и должен дойти первым. Это подпись, а не правило: само
+    запирание решает `is_block_accessible` и набор `held` выше. Держащий шаг
+    того же задания шаблон по имени не называет — он стоит прямо выше.
     """
-    holder = None
+    # Первый держащий шаг каждой очереди, в порядке ленты; ключ — предмет.
+    holders: dict[str | None, dict] = {}
     for step in steps:
-        if (
-            holder is not None
-            and step["status"] == STATUS_LOCKED
-            and step["lock_reason"] == LOCK_BY_SEQUENCE
-        ):
-            step["blocked_by"] = holder
-        if holder is not None or step["status"] == STATUS_DONE:
+        subject = step["subject"] or None
+        if step["status"] == STATUS_LOCKED and step["lock_reason"] == LOCK_BY_SEQUENCE:
+            holder = next(
+                (h for key, h in holders.items() if shares_queue(key, subject)),
+                None,
+            )
+            if holder is not None:
+                step["blocked_by"] = holder
+        if subject in holders or step["status"] == STATUS_DONE:
             continue
         block = step["block"]
         task = step["task"]
@@ -530,7 +546,7 @@ def _mark_sequence_holders(steps: list[dict], required_by_block: dict[int, bool]
             else task.is_required and task.kind != ITEM_MOCK_EXAM
         )
         if required:
-            holder = {
+            holders[subject] = {
                 "title": (block.title if block is not None and block.title else task.title),
                 "subject": step["subject"] or "",
                 "task_id": task.id,

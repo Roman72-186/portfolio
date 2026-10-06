@@ -2149,6 +2149,7 @@ def is_block_accessible(
     viewer: BlockViewer,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
+    subject_by_block: dict[int, str | None] | None = None,
     now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
@@ -2190,6 +2191,14 @@ def is_block_accessible(
        ПРАВИЛО!!!»), поэтому очередь ждёт сдачи. С 27.09 по 06.10.2026 срок
        запирал сдачу, и обязательный блок с истёкшим сроком хвост отпускал.
 
+       **Очередь делится по предметам** (владелец 06.10.2026, жалоба
+       преподавателя: «ребёнок, если не прошёл все блоки по композиции, не
+       может открыть ни одного блока по рисунку»). Рисунок и композиция идут
+       параллельно, у каждого своя очередь, а шаг без предмета («Общее»)
+       держит всё, что ниже, и сам ждёт всё, что выше, — `shares_queue`.
+       Предметы передаёт `subject_by_block` (`block.subject or task.subject`);
+       без него очередь одна на всех, как было с 01.10 по 06.10.2026.
+
     **Срок сдачи доступность блока не меняет** и здесь не читается. Что
     после срока можно поменять в сданном, решает
     `services/submission_edit.py::deadline_reason`.
@@ -2230,8 +2239,15 @@ def is_block_accessible(
         return False
     if target.bypass_sequence:
         return True
+    target_subject = (
+        subject_by_block.get(target.id) if subject_by_block is not None else None
+    )
     return not any(
-        holds_sequence(
+        (
+            subject_by_block is None
+            or shares_queue(subject_by_block.get(prior.id), target_subject)
+        )
+        and holds_sequence(
             prior,
             states=states,
             audiences_by_block=audiences_by_block,
@@ -2242,6 +2258,19 @@ def is_block_accessible(
         )
         for prior in blocks[:block_index]
     )
+
+
+def shares_queue(prior_subject: str | None, target_subject: str | None) -> bool:
+    """Стоят ли два шага в одной очереди — может ли первый держать второй.
+
+    Владелец 06.10.2026: рисунок и композиция идут параллельно. Шаг без
+    предмета («Общее») — общий для всех: держит всех ниже и ждёт всех выше.
+    Шаги с предметом держат только свой предмет. Пустая строка — то же, что
+    отсутствие предмета.
+    """
+    if not prior_subject or not target_subject:
+        return True
+    return prior_subject == target_subject
 
 
 def block_still_doable(
@@ -2557,6 +2586,10 @@ def feed_state(
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     audiences_by_block = get_audiences(db, block_ids)
+    # Очередь по предметам — та же, что в ленте цикла (06.10.2026): в одном
+    # задании блоки бывают разных предметов.
+    task_subject = task.subject if task is not None else None
+    subject_by_block = {block.id: block.subject or task_subject for block in blocks}
     now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
     result: list[dict] = []
     for index, block in enumerate(blocks):
@@ -2567,6 +2600,7 @@ def feed_state(
             audiences_by_block=audiences_by_block,
             viewer=viewer,
             required_by_block=required_by_block,
+            subject_by_block=subject_by_block,
             now=now,
         )
         state = states.get(block.id)
