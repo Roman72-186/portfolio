@@ -398,6 +398,20 @@ def test_counts_respect_curator_scope(db, user_factory):
     assert set(counts) == {own_student.id}
 
 
+def test_counts_for_one_student(db, user_factory):
+    """Строка списка, которую карточка перечитывает после правки, считает
+    только своего ученика — без обхода всей школы."""
+    first = user_factory(vk_id=840_108, name="Первый")
+    second = user_factory(vk_id=840_109, name="Второй")
+    db.commit()
+    _homework_submission(db, first.id)
+    _homework_submission(db, second.id)
+
+    counts = unreviewed_counts_by_student(db, curator_id=None, role_rank=5, student_id=second.id)
+
+    assert counts == {second.id: 1}
+
+
 def test_counts_skip_first_version_mock(db, user_factory):
     """Пробник первой версии в счётчик не идёт (06.10.2026): вкладки
     «Пробники» в карточке нет, и число вело бы к работам, которые негде

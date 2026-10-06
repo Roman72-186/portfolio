@@ -134,48 +134,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <button type="button" class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})"
-                 data-tariff="{% if not s.tariff %}__newcomer__{% else %}{{ s.tariff }}{% endif %}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}" data-unreviewed="{{ s.unchecked }}"
-                 data-tg-username="{{ s.tg_username }}" aria-label="{{ s.name }}">
-                <span class="avatar-wrap">
-                    {% if s.photo_url %}
-                    <img src="{{ s.photo_url }}" class="student-avatar" alt="" width="38" height="38" loading="lazy">
-                    {% else %}
-                    <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
-                    {% endif %}
-                    {% if s.cohort_tag %}
-                    <span class="cohort-badge cohort-{{ s.cohort_tag }}">{{ {'may':'М','june':'И','july':'И','august':'А'}.get(s.cohort_tag, '') }}</span>
-                    {% endif %}
-                </span>
-                <div class="student-row-info">
-                    <div class="student-row-name">{{ s.name }}</div>
-                    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">
-                        {% if s.needs_setup %}<span class="student-info-pill student-info-pill--warning">Нет анкеты</span>{% endif %}
-                        {% if s.tariff and s.tariff != '—' %}<span class="student-info-pill">{{ s.tariff|tariff_label }}</span>{% else %}<span class="student-info-pill student-info-pill--purple">Новенький</span>{% endif %}
-                        {% if s.course_periods %}{% for p in s.course_periods.split(',') %}{% set _pfx = p.split(' ')[0]|trim %}{% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _pcls }}">{{ _pfx }}</span>{% endfor %}{% endif %}
-                        {% if s.lessons_count %}{% set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _lcls }}">{{ s.lessons_count }}</span>{% endif %}
-                        {% if s.has_case %}<span class="student-info-pill">КЕЙС</span>{% endif %}
-                        {% if s.study_mode == 'offline' %}<span class="student-info-pill">ОЧНО</span>{% elif s.study_mode == 'online' %}<span class="student-info-pill">ОНЛАЙН</span>{% endif %}
-                    </div>
-                </div>
-                {# Очередь «кого проверять» (владелец 05.10.2026): непроверенное по
-                   всем видам сдач, у всех, кому открыт список. Значок есть всегда,
-                   ноль прячет `hidden` — после отметки в карточке JS правит число
-                   на месте (`bumpSidebarPending`). #}
-                {% if not is_archive_view %}
-                <span class="pending-badge" data-pending-badge title="Не проверено: {{ s.unchecked }}"{% if not s.unchecked %} hidden{% endif %}>{{ s.unchecked }}</span>
-                {% endif %}
-                {% if can_score and not s.unchecked %}
-                    {% set ss = s.scored_subjects %}
-                    {% if ss | length >= 2 %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
-                    {% elif 'Рисунок' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Рисунок</span>
-                    {% elif 'Композиция' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Композиция</span>
-                    {% endif %}
-                {% endif %}
-            </button>
+            {% include "partials/student_row.html" %}
             {% endfor %}
             {% if sidebar_students %}<div class="no-works" id="student-list-empty" hidden style="padding:24px 16px;text-align:center">Никого не нашли. Измените поиск или тариф.</div>{% endif %}
             {% if not sidebar_students %}
@@ -306,5 +265,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=15"></script>
+<script src="/static/js/cabinet_students.js?v=16"></script>
 {% endblock %}

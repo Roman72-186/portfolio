@@ -458,7 +458,8 @@ _CARD_ADAPTERS = (_task_block_items, _homework_items, _block_work_items)
 
 
 def unreviewed_counts_by_student(
-    db: DBSession, *, curator_id: int | None, role_rank: int = 0
+    db: DBSession, *, curator_id: int | None, role_rank: int = 0,
+    student_id: int | None = None,
 ) -> dict[int, int]:
     """Счётчик непроверенного по каждому ученику — по тем же видам сдач, что
     вкладка «Задания» (`_CARD_ADAPTERS`).
@@ -470,12 +471,15 @@ def unreviewed_counts_by_student(
     экран проверки небольшой (школа, не тысячи учеников), а адаптеры и так уже
     написаны и протестированы — второй параллельный набор запросов ради
     счётчика того не стоит.
+
+    `student_id` — счётчик одной строки списка, которую карточка перечитывает
+    после правки (`GET /cabinet/students/{id}/row`), без обхода всей школы.
     """
     from collections import Counter
 
     counts: Counter[int] = Counter()
     for adapter in _CARD_ADAPTERS:
-        for item in adapter(db, curator_id=curator_id, role_rank=role_rank):
+        for item in adapter(db, curator_id=curator_id, student_id=student_id, role_rank=role_rank):
             if not item.is_reviewed:
                 counts[item.student_id] += 1
     return dict(counts)

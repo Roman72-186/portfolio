@@ -1120,6 +1120,7 @@ function saveProfile() {
                 // Clear cache and reload
                 delete _tabCache[_currentStudentId].profile;
                 selectStudent(_currentStudentId, 'profile');
+                refreshSidebarRow(_currentStudentId);
                 showToast('Анкета сохранена');
             } else {
                 var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Не удалось сохранить анкету');
@@ -1264,10 +1265,36 @@ function reloadProfile(message) {
     var id = _currentStudentId;
     _tabCache[id] = {};
     selectStudent(id, 'profile');
+    refreshSidebarRow(id);
     if (message) showToast(message);
 }
 
-function manageSave(path, fields, message, failText, after) {
+// Строку списка рисует сервер — после правки в карточке берём её у него же
+// (`GET /cabinet/students/{id}/row`, тот же partial, что у списка). До
+// 06.10.2026 скрипт менял у строки только `data-*` для фильтра: до
+// перезагрузки она показывала старые имя, тариф и метку набора.
+function refreshSidebarRow(id) {
+    if (!document.getElementById('srow-' + id)) return;
+    fetch('/cabinet/students/' + id + '/row')
+        .then(function(r) { return r.ok ? r.text() : null; })
+        .then(function(html) {
+            var cur = document.getElementById('srow-' + id);
+            if (!html || !cur) return;
+            var box = document.createElement('div');
+            box.innerHTML = html;
+            var fresh = box.querySelector('.student-row');
+            if (!fresh) return;
+            // Подсветку открытого и видимость по фильтру оставляем как были:
+            // строка не прыгает из-под карточки, фильтр пересчитается при
+            // следующем нажатии уже по новым данным.
+            fresh.className = cur.className;
+            fresh.style.display = cur.style.display;
+            cur.replaceWith(fresh);
+        })
+        .catch(function() {});
+}
+
+function manageSave(path, fields, message, failText) {
     managePost(path, fields)
         .then(function(res) {
             if (!res.ok || !res.data.ok) {
@@ -1275,24 +1302,17 @@ function manageSave(path, fields, message, failText, after) {
                 reloadProfile();
                 return;
             }
-            if (after) after(res.data);
             reloadProfile(message);
         })
         .catch(function() { alert(NET_ERROR); });
 }
 
 function saveCurator(sel) {
-    manageSave('curator', {curator_id: sel.value}, 'Куратор сохранён', 'Не удалось сменить куратора', function(d) {
-        var row = document.getElementById('srow-' + _currentStudentId);
-        if (row) row.setAttribute('data-curator', d.curator_id || 0);
-    });
+    manageSave('curator', {curator_id: sel.value}, 'Куратор сохранён', 'Не удалось сменить куратора');
 }
 
 function saveTariff(sel) {
-    manageSave('tariff', {tariff: sel.value}, 'Тариф сохранён', 'Не удалось сменить тариф', function(d) {
-        var row = document.getElementById('srow-' + _currentStudentId);
-        if (row) row.setAttribute('data-tariff', d.tariff || '__newcomer__');
-    });
+    manageSave('tariff', {tariff: sel.value}, 'Тариф сохранён', 'Не удалось сменить тариф');
 }
 
 function saveCohort(sel) {

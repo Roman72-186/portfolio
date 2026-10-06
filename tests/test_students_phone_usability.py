@@ -22,10 +22,13 @@ import pytest
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
 # Стили экрана с 29.09.2026 живут в файле, а не в <style> шаблона (шаг 8 плана).
 STYLES = TEMPLATE.parent.parent / "static" / "css" / "cabinet_students.css"
+# Строка ученика с 06.10.2026 — отдельный partial: его рисует и список, и
+# `GET /cabinet/students/{id}/row`. Проверки экрана читают оба файла.
+ROW = TEMPLATE.parent / "partials" / "student_row.html"
 
 
 def _source() -> str:
-    return TEMPLATE.read_text(encoding="utf-8")
+    return TEMPLATE.read_text(encoding="utf-8") + ROW.read_text(encoding="utf-8")
 
 
 def _styles() -> str:

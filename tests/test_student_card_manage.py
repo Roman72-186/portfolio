@@ -258,6 +258,59 @@ def test_card_rerenders_after_issuing_password():
     assert "_tabCache[_currentStudentId] = {};" not in body
 
 
+# ── Строка списка после правки ──────────────────────────────────────────────
+
+def _list_row(page: str, student_id: int) -> str:
+    start = page.rindex("<button", 0, page.index(f'id="srow-{student_id}"'))
+    end = page.index("</button>", start) + len("</button>")
+    return " ".join(page[start:end].split())
+
+
+def test_row_shows_fresh_tariff_cohort_and_name(client, db, session_factory, people):
+    """Проход 06.10.2026, пункт 3: после смены тарифа, метки набора и имени
+    строка списка до перезагрузки оставалась старой, а фильтр по тарифу уже
+    работал по новому. Карточка перечитывает строку у сервера."""
+    student = people["student"]
+    student.profile_completed = True
+    db.commit()
+    _login(client, session_factory, people["chief"])
+
+    assert client.post(f"/cabinet/superadmin/users/{student.id}/tariff", data={"tariff": "Я С ВАМИ"}).status_code == 200
+    assert client.post(f"/cabinet/superadmin/users/{student.id}/cohort-tag", data={"cohort_tag": "may"}).status_code == 200
+    assert client.post(f"/cabinet/students/{student.id}/profile", data={
+        "first_name": "Ева", "last_name": "Новикова", "phone": "+79990000000", "anketa_only": "1",
+    }).status_code == 200
+
+    resp = client.get(f"/cabinet/students/{student.id}/row")
+
+    assert resp.status_code == 200, resp.text
+    row = " ".join(resp.text.split())
+    assert 'data-tariff="Я С ВАМИ"' in row
+    assert ">Я с вами<" in row
+    assert 'cohort-badge cohort-may">М<' in row
+    assert ">Новикова Ева<" in row
+    # Разметка одна — та же, что у строки в самом списке.
+    assert row == _list_row(client.get("/cabinet/students").text, student.id)
+
+
+def test_curator_row_only_own(client, db, session_factory, people, user_factory):
+    stranger = user_factory(vk_id=960_031, name="Чужой", role_name="ученик")
+    db.commit()
+    _login(client, session_factory, people["curator"])
+
+    assert client.get(f"/cabinet/students/{people['student'].id}/row").status_code == 200
+    assert client.get(f"/cabinet/students/{stranger.id}/row").status_code == 403
+
+
+def test_card_refreshes_list_row_after_saving():
+    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    reload_body = source.split("function reloadProfile(", 1)[1].split("\nfunction ", 1)[0]
+    anketa_body = source.split("function saveProfile()", 1)[1].split("\nfunction ", 1)[0]
+
+    assert "refreshSidebarRow(id);" in reload_body
+    assert "refreshSidebarRow(_currentStudentId);" in anketa_body
+
+
 # ── Архив только читают ─────────────────────────────────────────────────────
 
 def test_archive_view_hides_portfolio_month_buttons(client, db, session_factory, people):

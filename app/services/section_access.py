@@ -240,10 +240,11 @@ _RULES: tuple[_Rule, ...] = (
     _rule("students", _STUDENT + "/upload$"),
     _rule("students", _STUDENT + "/works/bulk$"),
     _rule("students", _STUDENT + r"/portfolio/(month|works/\d+/move)$"),
-    # Карточка ученика: её вкладки грузит и список учеников, и архив.
+    # Карточка ученика: её вкладки грузит и список учеников, и архив. `row` —
+    # строка списка, которую карточка перечитывает после правки.
     _rule(
         ("students", "archive"),
-        _STUDENT + "/(profile|tasks|portfolio|statistics|activity|legacy-portfolio)$", _GET,
+        _STUDENT + "/(profile|tasks|portfolio|statistics|activity|legacy-portfolio|row)$", _GET,
     ),
     # Пробники ученика читает ещё и экран «Проверка пробников».
     _rule(("students", "archive", "mock_check"), _STUDENT + "/mock-exams$", _GET),

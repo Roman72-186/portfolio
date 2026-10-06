@@ -317,6 +317,132 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
     }
 
 
+def _sidebar_rows(
+    db: DBSession,
+    user: dict,
+    students: list[User],
+    *,
+    archived_b: bool,
+    only_student_id: int | None = None,
+) -> list[dict]:
+    """Строки списка «Учеников»: всё, что рисует `partials/student_row.html`.
+
+    Одна выборка на весь список и на одну строку (`only_student_id`) — её
+    перечитывает карточка после правки тарифа, метки, анкеты (`GET
+    /cabinet/students/{id}/row`). До 06.10.2026 скрипт правил у строки только
+    `data-*` для фильтра, и до перезагрузки она показывала старые имя, тариф и
+    метку, хотя фильтр уже работал по новым (проход 06.10.2026, пункт 3)."""
+    is_admin_panel = user["role_rank"] >= 4
+    counts_by_user: dict = {}
+    avg_by_user: dict = {}
+    if students:
+        student_ids = [s.id for s in students]
+        # Aggregate upload counts per user — O(students) not O(works)
+        count_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(Work.user_id.in_(student_ids), Work.status == "success")
+            .group_by(Work.user_id)
+            .all()
+        )
+        counts_by_user = {r.user_id: r.cnt for r in count_rows}
+
+        # Aggregate avg mock-exam score per user
+        avg_rows = (
+            db.query(Work.user_id, func.avg(Work.score).label("avg"))
+            .filter(
+                Work.user_id.in_(student_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        avg_by_user = {r.user_id: round(float(r.avg)) for r in avg_rows}
+
+    mock_counts_by_user: dict = {}
+    unchecked_by_user: dict = {}
+    scored_subjects_by_user: dict = defaultdict(list)
+    has_case_by_user: dict[int, bool] = {}
+    if students:
+        _ids_all = [s.id for s in students]
+        case_works = (
+            db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
+                     Work.scored_at, Work.created_at, Work.work_type)
+            .filter(
+                Work.user_id.in_(_ids_all),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+                Work.subject.isnot(None),
+            )
+            .all()
+        )
+        works_by_uid: dict[int, list] = defaultdict(list)
+        for w in case_works:
+            works_by_uid[w.user_id].append(w)
+        for uid, ws in works_by_uid.items():
+            has_case_by_user[uid] = has_case_growth(ws)
+
+    # Очередь «кого проверять» (владелец 05.10.2026): экран «Проверка по
+    # ученику» снят, его счётчик живёт здесь — по всем видам сдач и у всех,
+    # кому открыт список, а не только пробники у ГП, как было раньше. Тот же
+    # расчёт, что «Не проверено» в карточке, и та же область куратора.
+    if students and not archived_b:
+        counts = unreviewed_counts_by_student(
+            db,
+            curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
+            role_rank=user["role_rank"],
+            student_id=only_student_id,
+        )
+        visible_ids = {s.id for s in students}
+        unchecked_by_user = {uid: n for uid, n in counts.items() if uid in visible_ids}
+
+    can_score = role_can_score(user["role_rank"]) and not archived_b
+    if students and can_score:
+        _ids = [s.id for s in students]
+        mock_count_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        mock_counts_by_user = {r.user_id: r.cnt for r in mock_count_rows}
+
+        scored_subj_rows = (
+            db.query(Work.user_id, Work.subject)
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+                Work.subject.isnot(None),
+            )
+            .distinct()
+            .all()
+        )
+        for r in scored_subj_rows:
+            scored_subjects_by_user[r.user_id].append(r.subject)
+
+    return [
+        _enrich(
+            s,
+            counts_by_user,
+            avg_by_user,
+            mock_counts_by_user,
+            unchecked_by_user,
+            scored_subjects_by_user,
+            has_case_by_user,
+            can_see_contacts=is_admin_panel,
+        )
+        for s in students
+    ]
+
+
 # ── Main page ─────────────────────────────────────────────────────────────────
 
 # Архив идёт отдельным путём (а не флагом на /students), чтобы подсветка пункта
@@ -388,113 +514,8 @@ def _render_students_panel(
     if has_access_deadline_b:
         active_hard_filters.append({"key": "has_access_deadline", "label": "Со сроком доступа"})
 
-    counts_by_user: dict = {}
-    avg_by_user: dict = {}
-    if students:
-        student_ids = [s.id for s in students]
-        # Aggregate upload counts per user — O(students) not O(works)
-        count_rows = (
-            db.query(Work.user_id, func.count(Work.id).label("cnt"))
-            .filter(Work.user_id.in_(student_ids), Work.status == "success")
-            .group_by(Work.user_id)
-            .all()
-        )
-        counts_by_user = {r.user_id: r.cnt for r in count_rows}
-
-        # Aggregate avg mock-exam score per user
-        avg_rows = (
-            db.query(Work.user_id, func.avg(Work.score).label("avg"))
-            .filter(
-                Work.user_id.in_(student_ids),
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.status == "success",
-                Work.score.isnot(None),
-            )
-            .group_by(Work.user_id)
-            .all()
-        )
-        avg_by_user = {r.user_id: round(float(r.avg)) for r in avg_rows}
-
-    mock_counts_by_user: dict = {}
-    unchecked_by_user: dict = {}
-    scored_subjects_by_user: dict = defaultdict(list)
-    has_case_by_user: dict[int, bool] = {}
-    if students:
-        _ids_all = [s.id for s in students]
-        case_works = (
-            db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
-                     Work.scored_at, Work.created_at, Work.work_type)
-            .filter(
-                Work.user_id.in_(_ids_all),
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.status == "success",
-                Work.score.isnot(None),
-                Work.subject.isnot(None),
-            )
-            .all()
-        )
-        works_by_uid: dict[int, list] = defaultdict(list)
-        for w in case_works:
-            works_by_uid[w.user_id].append(w)
-        for uid, ws in works_by_uid.items():
-            has_case_by_user[uid] = has_case_growth(ws)
-
-    # Очередь «кого проверять» (владелец 05.10.2026): экран «Проверка по
-    # ученику» снят, его счётчик живёт здесь — по всем видам сдач и у всех,
-    # кому открыт список, а не только пробники у ГП, как было раньше. Тот же
-    # расчёт, что «Не проверено» в карточке, и та же область куратора.
-    if students and not archived_b:
-        counts = unreviewed_counts_by_student(
-            db,
-            curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
-            role_rank=user["role_rank"],
-        )
-        visible_ids = {s.id for s in students}
-        unchecked_by_user = {uid: n for uid, n in counts.items() if uid in visible_ids}
-
     can_score = role_can_score(user["role_rank"]) and not archived_b
-    if students and can_score:
-        _ids = [s.id for s in students]
-        mock_count_rows = (
-            db.query(Work.user_id, func.count(Work.id).label("cnt"))
-            .filter(
-                Work.user_id.in_(_ids),
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.status == "success",
-            )
-            .group_by(Work.user_id)
-            .all()
-        )
-        mock_counts_by_user = {r.user_id: r.cnt for r in mock_count_rows}
-
-        scored_subj_rows = (
-            db.query(Work.user_id, Work.subject)
-            .filter(
-                Work.user_id.in_(_ids),
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.status == "success",
-                Work.score.isnot(None),
-                Work.subject.isnot(None),
-            )
-            .distinct()
-            .all()
-        )
-        for r in scored_subj_rows:
-            scored_subjects_by_user[r.user_id].append(r.subject)
-
-    sidebar_students = [
-        _enrich(
-            s,
-            counts_by_user,
-            avg_by_user,
-            mock_counts_by_user,
-            unchecked_by_user,
-            scored_subjects_by_user,
-            has_case_by_user,
-            can_see_contacts=is_admin_panel,
-        )
-        for s in students
-    ]
+    sidebar_students = _sidebar_rows(db, user, students, archived_b=archived_b)
     # ── Mock exam submission status by active ticket (per subject) ───────────
     # Оба предмета (Рисунок, Композиция) могут иметь активный билет одновременно —
     # «сдал» означает сдачу финала по КАЖДОМУ предмету, у которого сейчас есть
@@ -602,6 +623,27 @@ def _render_students_panel(
         "mock_status_available": mock_status_available,
         "submitted_students": submitted_students,
         "not_submitted_students": not_submitted_students,
+    })
+
+
+@router.get("/students/{student_id}/row", response_class=HTMLResponse)
+def get_student_row(
+    student_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(_require_student_panel)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Строка ученика в списке — та же разметка, что у самого списка
+    (`partials/student_row.html`). Карточка перечитывает её после правки
+    тарифа, метки набора и анкеты: второй копии разметки в скрипте нет."""
+    student = _check_access(student_id, user, db, read_archive=True)
+    archived_b = student.archived_at is not None
+    row = _sidebar_rows(db, user, [student], archived_b=archived_b, only_student_id=student.id)[0]
+    return templates.TemplateResponse(request, "partials/student_row.html", {
+        "request": request,
+        "s": row,
+        "can_score": role_can_score(user["role_rank"]) and not archived_b,
+        "is_archive_view": archived_b,
     })
 
 
