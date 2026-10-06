@@ -7,7 +7,9 @@ Trello-чеклист без досок. Разбивка по дням неде
 относится (см. `session-handoffs/current-program.md`, правка от 21.08).
 
 Просроченное копится без нижней границы по времени — долг не имеет смысла
-терять после смены недели, ученик должен видеть его, пока не закроет.
+терять после смены недели, ученик должен видеть его, пока не закроет. Рамка
+одна — период, в котором ученик сейчас (`cycle_feed.current_period`,
+владелец 06.10.2026): задания других периодов сюда не попадают.
 Выборка задач и их статус — общий движок `accessible_task_entries` из
 `app/services/tracker.py`, тот же самый, что использует `/cabinet/learning`.
 
@@ -62,7 +64,10 @@ from app.services.cycle_feed import (
     LINK_LOCKED_DETAIL,
     block_step_is_open,
     current_feed_task_ids,
+    current_period,
     deadline_view,
+    entries_in_period,
+    entries_open_to_student,
     task_is_archived_for_user,
     task_is_locked_for_user,
 )
@@ -178,6 +183,16 @@ def cabinet_tracker(
     entries = accessible_task_entries(
         db, user["user_id"], start=None, end=week_end, include_undated=True,
     )
+    # Только период, в котором ученик сейчас (владелец 06.10.2026): задания
+    # прошлых и будущих периодов в трекер не попадают ни одним разделом.
+    # Ни одного начавшегося цикла — сужать не по чему, список как раньше
+    # (на проде 06.10.2026 таких учеников и разовых задач вне циклов нет).
+    period = current_period(db, user["user_id"], today)
+    if period is not None:
+        entries = entries_in_period(db, entries, period)
+    # И только то, что уже открыто (владелец 06.10.2026): цикл, запертый
+    # долгом или не начавшийся, и задание с датой открытия впереди не видны.
+    entries = entries_open_to_student(db, user["user_id"], entries, today)
 
     # Дайджест месяца — вкладка рядом с задачами (решение владельца 17.09.2026,
     # отменяет «первый блок на экране» от 22.08).

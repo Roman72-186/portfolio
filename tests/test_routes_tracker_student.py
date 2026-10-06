@@ -4,7 +4,9 @@ from datetime import timedelta, timezone
 
 import pytest
 
-from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import (
+    TOPIC_KIND_PERIOD, TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic,
+)
 from app.models.tag import Tag, UserTag
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
 from app.services.program import day_bounds, week_start
@@ -568,17 +570,23 @@ def _section(html: str, title: str) -> str:
     return html[start:end if end != -1 else len(html)]
 
 
-def _cycle_with_task(db, owner, *, title, starts, ends):
+def _frame(db, owner, *, title, starts, ends, kind=TOPIC_KIND_WEEK, parent=None):
     topic = LearningTopic(
         title=title,
         opens_at=msk_midnight(starts).astimezone(timezone.utc).replace(tzinfo=None),
         ends_at=(msk_midnight(ends) + timedelta(hours=23, minutes=59))
         .astimezone(timezone.utc).replace(tzinfo=None),
-        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        assign_to_all=True, is_published=True, kind=kind,
         created_by_id=owner.id,
+        parent_id=parent.id if parent is not None else None,
     )
     db.add(topic)
     db.commit()
+    return topic
+
+
+def _cycle_with_task(db, owner, *, title, starts, ends, stage=None):
+    topic = _frame(db, owner, title=title, starts=starts, ends=ends, parent=stage)
     task = create_task(
         db, title=f"Задание: {title}", user_id=owner.id, kind="material",
         due_at=None, topic_id=topic.id, assign_to_all=True, is_required=True,
@@ -635,11 +643,27 @@ def test_undated_task_shows_cycle_end_while_time_remains(auth_client, db):
     assert "Просрочено" not in html
 
 
+def _period_stage(db, owner, *, title, starts, ends):
+    """Период с одним этапом на те же даты — рамка трекера."""
+    period = _frame(db, owner, title=title, starts=starts, ends=ends, kind=TOPIC_KIND_PERIOD)
+    stage = _frame(
+        db, owner, title=f"Этап: {title}", starts=starts, ends=ends,
+        kind=TOPIC_KIND_STAGE, parent=period,
+    )
+    return period, stage
+
+
 def test_upcoming_is_sorted_by_nearest_deadline(auth_client, db):
     client, user = auth_client
     today = today_msk()
-    _cycle_with_task(db, user, title="Дальний", starts=today - timedelta(days=1), ends=today + timedelta(days=9))
-    _cycle_with_task(db, user, title="Ближний", starts=today - timedelta(days=1), ends=today + timedelta(days=2))
+    _, stage = _period_stage(
+        db, user, title="Семестр", starts=today - timedelta(days=5), ends=today + timedelta(days=30),
+    )
+    far, _ = _cycle_with_task(db, user, title="Дальний", starts=today - timedelta(days=1), ends=today + timedelta(days=9), stage=stage)
+    _cycle_with_task(db, user, title="Ближний", starts=today - timedelta(days=1), ends=today + timedelta(days=2), stage=stage)
+    # Оба цикла открыты: первый не запирает следующий долгом.
+    far.locks_next = False
+    db.commit()
 
     upcoming = _section(client.get(PAGE).text, "В работе")
 
@@ -659,6 +683,113 @@ def test_closed_task_of_past_cycle_is_not_overdue(auth_client, db):
 
     assert "Просрочено" not in html
     assert "Задание: Прошедший" in _section(html, "Сделано на этой неделе")
+
+
+# ── Только текущий период (владелец 06.10.2026) ─────────────────────────────
+
+
+def _two_periods(db, owner):
+    """Прошлый период с закрытым циклом и текущий с идущим; будущий цикл
+    текущего периода ещё не начался."""
+    today = today_msk()
+    _, old_stage = _period_stage(
+        db, owner, title="Предобучение", starts=today - timedelta(days=30), ends=today - timedelta(days=3),
+    )
+    _, stage = _period_stage(
+        db, owner, title="Семестр", starts=today - timedelta(days=2), ends=today + timedelta(days=60),
+    )
+    _, old_task = _cycle_with_task(
+        db, owner, title="Старый цикл", starts=today - timedelta(days=20),
+        ends=today - timedelta(days=5), stage=old_stage,
+    )
+    _cycle_with_task(
+        db, owner, title="Текущий цикл", starts=today - timedelta(days=2),
+        ends=today + timedelta(days=5), stage=stage,
+    )
+    return old_task
+
+
+def test_tracker_shows_only_current_period(auth_client, db):
+    """Ученик закрыл прошлый период и стоит в текущем — задания прошлого
+    периода не видны ни в одном разделе, даже закрытые на этой неделе."""
+    client, user = auth_client
+    old_task = _two_periods(db, user)
+    close_task_for_user(db, old_task, user.id, source="test")
+    db.commit()
+
+    html = client.get(PAGE).text
+
+    assert "Задание: Текущий цикл" in html
+    assert "Задание: Старый цикл" not in html
+
+
+def test_debtor_sees_period_of_debt_cycle(auth_client, db):
+    """Должник стоит в ленте на цикле долга — трекер показывает его период,
+    тот же, что лента «Обучения», а не период по календарю."""
+    client, user = auth_client
+    _two_periods(db, user)
+
+    html = client.get(PAGE).text
+
+    assert "Задание: Старый цикл" in _section(html, "Просрочено")
+    assert "Задание: Текущий цикл" not in html
+
+
+# ── Только открытое ученику (владелец 06.10.2026) ───────────────────────────
+
+
+def test_tracker_hides_cycle_locked_by_debt(auth_client, db):
+    """Должник цикла 1: начавшийся цикл 2 того же периода заперт долгом —
+    в трекере его заданий нет, долг виден."""
+    client, user = auth_client
+    today = today_msk()
+    _, stage = _period_stage(
+        db, user, title="Семестр", starts=today - timedelta(days=20), ends=today + timedelta(days=30),
+    )
+    _cycle_with_task(
+        db, user, title="Цикл долга", starts=today - timedelta(days=15),
+        ends=today - timedelta(days=8), stage=stage,
+    )
+    _cycle_with_task(
+        db, user, title="Запертый цикл", starts=today - timedelta(days=7),
+        ends=today + timedelta(days=5), stage=stage,
+    )
+
+    html = client.get(PAGE).text
+
+    assert "Задание: Цикл долга" in _section(html, "Просрочено")
+    assert "Задание: Запертый цикл" not in html
+
+
+def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db):
+    from datetime import datetime
+
+    client, user = auth_client
+    today = today_msk()
+    _, stage = _period_stage(
+        db, user, title="Семестр", starts=today - timedelta(days=5), ends=today + timedelta(days=30),
+    )
+    _, current = _cycle_with_task(
+        db, user, title="Идёт", starts=today - timedelta(days=2), ends=today + timedelta(days=5),
+        stage=stage,
+    )
+    close_task_for_user(db, current, user.id, source="test")
+    _cycle_with_task(
+        db, user, title="Будущий", starts=today + timedelta(days=6), ends=today + timedelta(days=12),
+        stage=stage,
+    )
+    _, later = _cycle_with_task(
+        db, user, title="Откроется завтра", starts=today - timedelta(days=2),
+        ends=today + timedelta(days=5), stage=stage,
+    )
+    later.starts_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)
+    db.commit()
+
+    html = client.get(PAGE).text
+
+    assert "Задание: Идёт" in html
+    assert "Задание: Будущий" not in html
+    assert "Задание: Откроется завтра" not in html
 
 
 def test_task_status_uses_cycle_deadline_only_without_due_at():

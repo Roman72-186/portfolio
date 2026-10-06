@@ -759,6 +759,87 @@ def _archive_levels(
     return period, stage
 
 
+def _frame_of(db: Session, topic: LearningTopic | None) -> LearningTopic | None:
+    """Верхняя рамка темы задания: период, а без него этап, а без этапа сам
+    цикл (данные до 24.09.2026). Правило уровней — `_archive_levels`, своей
+    копии здесь нет: скрытый или удалённый период рамкой не считается."""
+    if topic is None or topic.kind not in (TOPIC_KIND_WEEK, TOPIC_KIND_STAGE):
+        return None
+    period, _ = _archive_levels(db, topic)
+    return period or topic
+
+
+def current_period(db: Session, user_id: int, today: date) -> LearningTopic | None:
+    """Период, в котором ученик сейчас, — по циклу, на котором он стоит в
+    ленте (`effective_cycle`, с учётом долга), а между циклами — по последнему
+    начавшемуся. `None` — доступных начавшихся циклов нет.
+
+    Владелец 06.10.2026: «в трекере показываем только период, в котором ученик
+    находится на данный момент и который ему доступен». Доступность — та же
+    выборка циклов, что у ленты (`accessible_cycles`: тариф, «с» по тарифу,
+    `program_access_from`).
+    """
+    cycle = effective_cycle(db, user_id, today)
+    if cycle is None:
+        cycle = next(iter(started_cycles(db, user_id, today)), None)
+    return _frame_of(db, cycle)
+
+
+def entries_in_period(
+    db: Session, entries: list[dict], period: LearningTopic | None
+) -> list[dict]:
+    """Записи `accessible_task_entries`, чьё задание лежит в рамке `period`
+    (в его цикле или прямо на его этапе). Разовые задания вне программы и
+    служебные темы старого календаря рамки не имеют и сюда не попадают."""
+    if period is None:
+        return []
+    frames: dict[int, int | None] = {}
+    result = []
+    for entry in entries:
+        topic_id = entry["task"].topic_id
+        if topic_id is None:
+            continue
+        if topic_id not in frames:
+            frame = _frame_of(db, db.get(LearningTopic, topic_id))
+            frames[topic_id] = frame.id if frame is not None else None
+        if frames[topic_id] == period.id:
+            result.append(entry)
+    return result
+
+
+def entries_open_to_student(
+    db: Session, user_id: int, entries: list[dict], today: date
+) -> list[dict]:
+    """Записи без заданий, которые ученику ещё не открыты (владелец
+    06.10.2026: «у меня показаны задачи, которые мне ещё не доступны»).
+
+    Не открыто: цикл заперт долгом (`locked_cycle_ids` — тот же ответ, что у
+    `task_is_locked_for_user`, но одним расчётом на весь список), цикл ещё
+    не начался, у задания дата открытия (`starts_at`) впереди — правило ленты,
+    `_not_open_yet`. Закрытое задание остаётся: раз сделано, оно было открыто.
+    Очередь внутри открытого цикла («сначала сделай предыдущее») здесь не
+    считается — её знает только сборка ленты.
+    """
+    locked = locked_cycle_ids(db, user_id, today)
+    now = datetime.now(timezone.utc)
+    result = []
+    for entry in entries:
+        task = entry["task"]
+        if entry["status"] != STATUS_DONE:
+            topic = db.get(LearningTopic, task.topic_id) if task.topic_id else None
+            if topic is not None and topic.id in locked:
+                continue
+            if (
+                topic is not None and topic.kind == TOPIC_KIND_WEEK
+                and cycle_bounds(topic)[0] > today
+            ):
+                continue
+            if _not_open_yet(task.starts_at, now):
+                continue
+        result.append(entry)
+    return result
+
+
 def archive_for_student(
     db: Session, *, user_id: int, user_tariff: str | None, today: date
 ) -> list[dict]:
