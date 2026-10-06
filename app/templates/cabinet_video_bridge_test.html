@@ -187,6 +187,28 @@
 
     var logList = document.querySelector('[data-role="log"]');
     var records = [];
+    var playedSeconds = { bridge: 0, direct: 0 };
+
+    // Результаты прогона живут во вкладке, а не только в памяти скрипта.
+    // Владелец уходит в шаг 3 и возвращается «назад»: браузер берёт страницу
+    // из кэша (та же метка прогона, сервер не спрашивают), но скрипт стартует
+    // заново, и отчёт печатал «Проверок не было» (06.10.2026). Ключ — метка
+    // прогона: свежая страница с сервера — новый прогон, старое не подмешиваем.
+    var STORE_KEY = 'vbt-run-' + CONFIG.probeId;
+
+    function saveRun() {
+        try {
+            sessionStorage.setItem(STORE_KEY, JSON.stringify({ records: records, played: playedSeconds }));
+        } catch (error) { /* без хранилища отчёт живёт до ухода со страницы */ }
+    }
+
+    function loadRun() {
+        try {
+            return JSON.parse(sessionStorage.getItem(STORE_KEY) || 'null');
+        } catch (error) {
+            return null;
+        }
+    }
 
     function mark(url, suffix) {
         // Метка прогона в адресе — единственный способ потом найти именно этот
@@ -198,6 +220,11 @@
 
     function write(name, ok, detail, ms) {
         records.push({ name: name, ok: ok, detail: detail, ms: ms });
+        saveRun();
+        render(name, ok, detail, ms);
+    }
+
+    function render(name, ok, detail, ms) {
         var empty = logList.querySelector('.vbt-log-empty');
         if (empty) empty.remove();
         var li = document.createElement('li');
@@ -342,8 +369,6 @@
     // ученик. Водяной знак и сохранение прогресса здесь намеренно не
     // повторяем: они живут на нашем домене и от моста не зависят, а лишний
     // просмотр засчитался бы ученику в статистику.
-    var playedSeconds = { bridge: 0, direct: 0 };
-
     function watchPlayback(side, iframe) {
         if (!playerJsReady || !window.playerjs || !window.playerjs.Player) return;
         try {
@@ -353,6 +378,7 @@
                     var seconds = Math.floor((state && state.seconds) || 0);
                     if (seconds > playedSeconds[side]) {
                         playedSeconds[side] = seconds;
+                        saveRun();
                         setStatus(side, 'Проиграло секунд: ' + seconds);
                     }
                 });
@@ -393,6 +419,21 @@
             }, TIMEOUT_MS);
         });
     });
+
+    var saved = loadRun();
+    if (saved) {
+        (saved.records || []).forEach(function (item) {
+            records.push(item);
+            render(item.name, item.ok, item.detail, item.ms);
+        });
+        ['bridge', 'direct'].forEach(function (side) {
+            var seconds = (saved.played && saved.played[side]) || 0;
+            if (seconds > 0) {
+                playedSeconds[side] = seconds;
+                setStatus(side, 'Проиграло секунд: ' + seconds);
+            }
+        });
+    }
 
     // Отчёт текстом: владелец проверяет с телефона, пересылать текст надёжнее,
     // чем разбирать скриншот.

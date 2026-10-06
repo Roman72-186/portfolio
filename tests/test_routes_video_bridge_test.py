@@ -59,6 +59,23 @@ def test_page_shows_both_players_on_one_video(admin_client, db, monkeypatch):
     assert "playback-key" not in response.text
 
 
+def test_report_survives_leaving_the_page_and_coming_back(admin_client, db, monkeypatch):
+    """Прод 06.10.2026: владелец ушёл в шаг 3, вернулся «назад», и отчёт
+    напечатал «Проверок не было» — браузер взял страницу из кэша, а скрипт
+    начал с пустой памяти. Результаты прогона лежат во вкладке под меткой
+    прогона и восстанавливаются при загрузке. Проверено в Playwright (WebKit
+    iPad/iPhone, Chromium); здесь сторожим, что механизм не выпилят."""
+    _configure_bunny(monkeypatch)
+    _published_video(db)
+    client, _ = admin_client
+
+    html = client.get(PAGE).text
+
+    assert "'vbt-run-' + CONFIG.probeId" in html
+    assert "sessionStorage.setItem(STORE_KEY" in html
+    assert "var saved = loadRun();" in html
+
+
 def test_page_does_not_turn_the_bridge_on_for_students(admin_client, db, monkeypatch):
     """Открытие страницы не трогает глобальную настройку.
 
