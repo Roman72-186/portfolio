@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{#
+Экран «Проверка по ученику» — очередь «кого проверять» для ГП и суперадмина.
+Появился 01.09.2026, снят 05.10.2026, возвращён в меню 06.10.2026 (владелец).
+Своей проверки у экрана нет: строка ведёт во вкладку «Задания» карточки
+ученика, где проверка живёт с 05.10.2026. Счётчик тот же, что в списке
+«Учеников» (`review_aggregate.unreviewed_counts_by_student`).
+
+Без своего <style> — только prg-* (program.css): новый блок стилей запрещает
+tests/test_reuse_ratchet.py.
+#}
+{% block title %}Проверка по ученику{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=59">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Проверка по ученику</h1>
+            <p>Откройте ученика — все его сдачи на проверку в одном месте.</p>
+            {% if is_filtered %}<p>Найдено {{ rows|length }} из {{ total }}</p>{% endif %}
+        </div>
+    </div>
+
+    {#
+    Поиск и фильтры (владелец 28.09.2026) — GET-форма на prg-form/prg-field.
+    Фильтруют на сервере (`review_aggregate.filter_review_rows`): список
+    собирается за один запрос, а фильтр только сужает его.
+    #}
+    <form class="prg-form" method="get" role="search" aria-label="Поиск ученика">
+        <div class="prg-grid2">
+            <label class="prg-field">Поиск
+                <input type="search" name="q" value="{{ filters.q }}"
+                       placeholder="Имя или @username" autocomplete="off">
+            </label>
+            <label class="prg-field">Проверка
+                <select name="status">
+                    <option value="">Все</option>
+                    <option value="{{ status_unchecked }}" {{ 'selected' if filters.status == status_unchecked }}>Есть непроверенное</option>
+                    <option value="{{ status_checked }}" {{ 'selected' if filters.status == status_checked }}>Всё проверено</option>
+                </select>
+            </label>
+        </div>
+        <div class="prg-grid2">
+            <label class="prg-field">Тариф
+                <select name="tariff">
+                    <option value="">Любой</option>
+                    {% for t in tariffs %}
+                    <option value="{{ t }}" {{ 'selected' if filters.tariff == t }}>{{ t|tariff_label }}</option>
+                    {% endfor %}
+                    <option value="{{ newcomer_tariff }}" {{ 'selected' if filters.tariff == newcomer_tariff }}>Новенький (без тарифа)</option>
+                </select>
+            </label>
+            <label class="prg-field">Куратор
+                <select name="curator">
+                    <option value="">Любой</option>
+                    {% for c in curators %}
+                    <option value="{{ c.id }}" {{ 'selected' if filters.curator == c.id|string }}>{{ c.name }}</option>
+                    {% endfor %}
+                    <option value="{{ no_curator }}" {{ 'selected' if filters.curator == no_curator }}>Без куратора</option>
+                </select>
+            </label>
+        </div>
+        <div class="prg-actions">
+            <button type="submit" class="btn-blue">Найти</button>
+            {% if is_filtered %}<a class="btn-outline" href="/cabinet/staff/students-review">Сбросить</a>{% endif %}
+        </div>
+    </form>
+
+    <section class="prg-items">
+        {% if rows %}
+        {% for row in rows %}
+        <a class="prg-item" href="{{ row.href }}">
+            <div>
+                <h3>{{ row.student.name }}</h3>
+                <div class="prg-meta">
+                    {% if row.student.tariff %}<span>{{ row.student.tariff|tariff_label }}</span>{% endif %}
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                {% if row.unchecked > 0 %}
+                <span class="prg-badge">{{ row.unchecked }} непроверено</span>
+                {% else %}
+                <span class="prg-badge prg-badge--done">всё проверено</span>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+        {% elif is_filtered and total %}
+        <div class="prg-empty">По этим условиям никого нет. Попробуйте убрать часть фильтров.</div>
+        {% else %}
+        <div class="prg-empty">Учеников пока нет.</div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

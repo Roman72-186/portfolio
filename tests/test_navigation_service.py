@@ -74,6 +74,14 @@ def test_staff_nav_items_keep_admin_contract():
         ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         (
+            "students_review",
+            "/cabinet/staff/students-review",
+            "Проверка по ученику",
+            "По ученику",
+            "Проверка по ученику",
+            "Кого проверять: ученики с непроверенными сдачами",
+        ),
+        (
             "point_a",
             "/cabinet/staff/point-a",
             "Оценка точки А",
@@ -122,10 +130,11 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
-    # Пункта «Проверка по ученику» нет ни у кого с 05.10.2026: проверка
-    # переехала во вкладку «Задания» карточки «Учеников».
-    for items in (rank_3_items, rank_4_items, rank_5_items):
-        assert "students_review" not in [item.key for item in items]
+    # «Проверка по ученику» снята 05.10.2026 и возвращена 06.10.2026 только
+    # ГП и суперадмину (владелец): ниже ранга 4 пункта нет.
+    assert "students_review" not in [item.key for item in rank_3_items]
+    assert "students_review" in [item.key for item in rank_4_items]
+    assert "students_review" in [item.key for item in rank_5_items]
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]

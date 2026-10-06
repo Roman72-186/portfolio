@@ -464,8 +464,8 @@ def unreviewed_counts_by_student(
     """Счётчик непроверенного по каждому ученику — по тем же видам сдач, что
     вкладка «Задания» (`_CARD_ADAPTERS`).
 
-    С 05.10.2026 это очередь «кого проверять» в списке «Учеников»: экран
-    списка с этим счётчиком снят вместе с пунктом меню «Проверка по ученику».
+    Это очередь «кого проверять»: счётчик в списке «Учеников» и на экране
+    «Проверка по ученику» (`aggregate_student_review_counts`) — одно число.
 
     Переиспользует адаптеры, а не отдельные COUNT-запросы: список учеников на
     экран проверки небольшой (школа, не тысячи учеников), а адаптеры и так уже
@@ -483,6 +483,122 @@ def unreviewed_counts_by_student(
             if not item.is_reviewed:
                 counts[item.student_id] += 1
     return dict(counts)
+
+
+# --- экран «Проверка по ученику»: список со счётчиками ----------------------
+#
+# Снят 05.10.2026, возвращён в меню ГП и суперадмина 06.10.2026 (владелец).
+# Сама проверка осталась в карточке: строка списка ведёт во вкладку «Задания».
+
+
+def aggregate_student_review_counts(db: DBSession, user: dict) -> list[dict]:
+    """Список учеников для экрана проверки: кто сколько не проверил.
+
+    Сортировка — непроверенные выше (по убыванию счётчика), дальше проверенные
+    по имени, как в базовом списке.
+    """
+    curator_id = None if user.get("role_rank", 0) >= FULL_ACCESS_RANK else user["user_id"]
+    students = _accessible_students(db, user)
+    counts = unreviewed_counts_by_student(
+        db, curator_id=curator_id, role_rank=user.get("role_rank", 0)
+    )
+
+    rows = [
+        {"student": student, "unchecked": counts.get(student.id, 0)}
+        for student in students
+    ]
+    rows.sort(key=lambda row: (-row["unchecked"], (row["student"].last_name or ""), (row["student"].first_name or row["student"].name or "")))
+    return rows
+
+
+# Значения фильтров из GET-формы экрана. `NEWCOMER_TARIFF` — тот же маркер, что
+# у пилюли «Новенький» на странице «Ученики»: «без тарифа» в базе хранится
+# пустой строкой, а пустое значение формы уже значит «любой тариф».
+REVIEW_STATUS_UNCHECKED = "unchecked"
+REVIEW_STATUS_CHECKED = "checked"
+NEWCOMER_TARIFF = "__newcomer__"
+NO_CURATOR = "none"
+
+
+def normalize_student_search(value: object) -> str:
+    """Python-двойник `normalizeStudentSearch` из `cabinet_students.html`:
+    NFKC, регистр, ё→е, схлопнутые пробелы. Правила общие, чтобы один и тот же
+    запрос находил одних и тех же учеников на обоих экранах."""
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", str(value or "")).lower().replace("ё", "е")
+    return " ".join(text.split())
+
+
+def filter_review_rows(
+    rows: list[dict],
+    *,
+    q: str = "",
+    status: str = "",
+    tariff: str = "",
+    curator: str = "",
+    search_contacts: bool = False,
+) -> list[dict]:
+    """Сужает список `aggregate_student_review_counts` — только сужает.
+
+    Круг учеников задаёт `_accessible_students`, фильтр по куратору здесь лишь
+    выбирает из уже доступных, поэтому подставленный в адрес чужой id выборку
+    не расширит. Поиск — каждое слово запроса должно найтись в имени (или
+    в @username при `search_contacts`, как и на «Учениках»: контакты там видит
+    только ГП и выше).
+    """
+    tokens = [t.lstrip("@") for t in normalize_student_search(q).split(" ") if t.lstrip("@")]
+
+    result = []
+    for row in rows:
+        student = row["student"]
+        if status == REVIEW_STATUS_UNCHECKED and row["unchecked"] <= 0:
+            continue
+        if status == REVIEW_STATUS_CHECKED and row["unchecked"] > 0:
+            continue
+        if tariff == NEWCOMER_TARIFF:
+            if (student.tariff or "").strip():
+                continue
+        elif tariff and student.tariff != tariff:
+            continue
+        if curator == NO_CURATOR:
+            if student.curator_id is not None:
+                continue
+        elif curator.isdigit() and student.curator_id != int(curator):
+            continue
+        if tokens:
+            parts = [student.last_name, student.first_name, student.name]
+            if search_contacts:
+                # vk_id — внутренний номер, людям не показывается (VK удалён
+                # 29.09.2026), искать по нему некому.
+                parts.append((student.tg_username or "").lstrip("@"))
+            haystack = normalize_student_search(" ".join(str(p) for p in parts if p))
+            if not all(token in haystack for token in tokens):
+                continue
+        result.append(row)
+    return result
+
+
+def review_curator_options(db: DBSession, rows: list[dict]) -> list[dict]:
+    """Кураторы для выпадающего списка — те, за кем числятся ученики списка.
+
+    Не выборка «все с рангом 2»: ученик может быть закреплён и за модератором,
+    а куратор без учеников в фильтре дал бы только пустой экран."""
+    from app.models.user import User
+
+    ids = {row["student"].curator_id for row in rows if row["student"].curator_id}
+    if not ids:
+        return []
+    staff = (
+        db.query(User)
+        .filter(User.id.in_(ids))
+        .order_by(User.last_name, User.first_name)
+        .all()
+    )
+    return [
+        {"id": s.id, "name": f"{s.last_name or ''} {s.first_name or s.name}".strip()}
+        for s in staff
+    ]
 
 
 # --- единый список по одному ученику (этап 5) --------------------------------

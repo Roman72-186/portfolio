@@ -1,12 +1,17 @@
 """Действия проверки по ученику: «просмотрено», отметки ответов и сдач, балл
 точки А.
 
-Экраны этого роутера — список учеников с непроверенным и недельная лента
-ученика — сняты 05.10.2026 (владелец: «собрать всё, что касается ученика, в
-одно место»). Проверка живёт во вкладке «Задания» карточки «Учеников»
-(`cabinet_students_shared.py::get_student_tasks`, `cabinet_students.js::buildTasks`),
-очередь «кого проверять» — счётчиком в списке «Учеников». Старые адреса
-экранов уводят туда же: на них ведут уведомления и закладки.
+Проверка живёт во вкладке «Задания» карточки «Учеников» (05.10.2026,
+владелец: «собрать всё, что касается ученика, в одно место»;
+`cabinet_students_shared.py::get_student_tasks`, `cabinet_students.js::buildTasks`).
+Недельная лента ученика снята, её адрес уводит в карточку: туда ведут
+уведомления и закладки.
+
+Экран-список «Проверка по ученику» — кого проверять, с поиском и фильтрами —
+возвращён 06.10.2026 в меню ГП и суперадмина (владелец). Строка ведёт во
+вкладку «Задания» карточки, своей проверки у экрана нет. Куратору пункта в
+меню нет, его адрес уводит в «Учеников» — там тот же счётчик и фильтр
+«Есть непроверенное».
 
 Сами действия остались на своих адресах: их зовут карточка, экран оценки
 работы в задании (`task_block_feedback_detail.html`) и экран точки А.
@@ -15,12 +20,13 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
+from app.constants import tariffs_for_data
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
@@ -29,8 +35,18 @@ from app.models.user import User
 from app.models.work import Work
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
-from app.services.review_aggregate import FULL_ACCESS_RANK
+from app.services.review_aggregate import (
+    FULL_ACCESS_RANK,
+    NEWCOMER_TARIFF,
+    NO_CURATOR,
+    REVIEW_STATUS_CHECKED,
+    REVIEW_STATUS_UNCHECKED,
+    aggregate_student_review_counts,
+    filter_review_rows,
+    review_curator_options,
+)
 from app.services.task_blocks import set_reviewed, set_submission_reviewed
+from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
 
@@ -55,9 +71,43 @@ def _check_student_access(
     return student
 
 
-@router.get("")
-def students_review_list(user: Annotated[dict, Depends(require_curator)]):
-    return RedirectResponse("/cabinet/students", status_code=302)
+@router.get("", response_class=HTMLResponse)
+def students_review_list(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    q: str = "",
+    status: str = "",
+    tariff: str = "",
+    curator: str = "",
+):
+    if user["role_rank"] < FULL_ACCESS_RANK:
+        return RedirectResponse("/cabinet/students", status_code=302)
+    all_rows = aggregate_student_review_counts(db, user)
+    rows = filter_review_rows(
+        all_rows, q=q, status=status, tariff=tariff, curator=curator,
+        search_contacts=True,
+    )
+    return templates.TemplateResponse(request, "staff_students_review.html", {
+        "request": request,
+        "user": user,
+        "rows": [
+            {**row, "href": student_tasks_url(row["student"].id)} for row in rows
+        ],
+        "total": len(all_rows),
+        "filters": {"q": q, "status": status, "tariff": tariff, "curator": curator},
+        "is_filtered": bool(q.strip() or status or tariff or curator),
+        # Тарифы — по ученикам этого списка (`tariffs_for_data`, инвариант
+        # students.md): действующие всегда, старый — только если стоит у
+        # кого-то из них.
+        "tariffs": tariffs_for_data(row["student"].tariff for row in all_rows),
+        "curators": review_curator_options(db, all_rows),
+        "status_unchecked": REVIEW_STATUS_UNCHECKED,
+        "status_checked": REVIEW_STATUS_CHECKED,
+        "newcomer_tariff": NEWCOMER_TARIFF,
+        "no_curator": NO_CURATOR,
+        "nav_active": "students_review",
+    })
 
 
 @router.get("/{student_id}")

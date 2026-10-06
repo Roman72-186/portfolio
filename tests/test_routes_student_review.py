@@ -102,8 +102,9 @@ def test_students_list_hides_zero_counter(db, user_factory, session_factory, cli
     assert "hidden" in _badge_tag(row)
 
 
-def test_old_review_addresses_lead_to_student_card(db, user_factory, session_factory, client):
-    """Экран снят 05.10.2026; на его адреса ведут уведомления и закладки."""
+def test_old_review_addresses_lead_curator_to_student_card(db, user_factory, session_factory, client):
+    """Недельная лента снята 05.10.2026; на её адреса ведут уведомления и
+    закладки. Списка у куратора нет — его адрес уводит в «Учеников»."""
     curator = user_factory(vk_id=860_104, name="Куратор", role_name="куратор")
     client.cookies.set("session_id", session_factory(curator).id)
 
@@ -116,14 +117,32 @@ def test_old_review_addresses_lead_to_student_card(db, user_factory, session_fac
     assert detail.headers["location"] == "/cabinet/students?student=42&tab=tasks"
 
 
-def test_review_menu_item_is_gone(db, user_factory, session_factory, client):
+def test_review_menu_item_only_for_chief_and_superadmin(db, user_factory, session_factory, client):
+    """Возвращён в меню 06.10.2026 — ГП и суперадмину, куратору нет."""
     curator = user_factory(vk_id=860_105, name="Куратор", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+    html = client.get("/cabinet/students").text
+    assert 'href="/cabinet/staff/students-review"' not in html
+
     chief = user_factory(vk_id=860_106, name="Главный", role_name="админ")
-    for staff in (curator, chief):
+    superadmin = user_factory(vk_id=860_107, name="Супер", role_name="суперадмин")
+    for staff in (chief, superadmin):
         client.cookies.set("session_id", session_factory(staff).id)
         html = client.get("/cabinet/students").text
-        assert 'href="/cabinet/staff/students-review"' not in html
-        assert "Проверка по ученику" not in html
+        assert 'href="/cabinet/staff/students-review"' in html
+
+
+def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, client):
+    """Строка списка ведёт во вкладку «Задания» карточки, где и проверяют."""
+    chief = user_factory(vk_id=860_108, name="Главный", role_name="админ")
+    student = user_factory(vk_id=860_109, name="Ученик Списка", role_name="ученик")
+    client.cookies.set("session_id", session_factory(chief).id)
+
+    resp = client.get("/cabinet/staff/students-review", follow_redirects=False)
+
+    assert resp.status_code == 200
+    assert f'href="/cabinet/students?student={student.id}&amp;tab=tasks"' in resp.text
+    assert "Ученик Списка" in resp.text
 
 
 def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client):
