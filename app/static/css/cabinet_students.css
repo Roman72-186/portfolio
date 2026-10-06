@@ -792,7 +792,11 @@
     .sidebar-search, .sidebar-select, .score-input, .tab-btn, .back-to-profile, .mobile-back-btn, .admin-upload-btn,
     .btn-edit-score, .score-revision-btn, .unlock-btn, .profile-edit-btn, .mock-month-btn,
     .mock-status-copy-btn, .portfolio-rename-btn, .folder-del-btn, .upload-count-clear, .portfolio-toggle,
-    #main-panel .cal-month-btn, #main-panel .rt-btn, .work-fb-link, .upload-select { min-height: 44px; }
+    #main-panel .cal-month-btn, #main-panel .rt-btn, .work-fb-link, .upload-select,
+    .profile-edit-input, .profile-edit-select, .manage-check { min-height: 44px; }
+    /* Галочка «Публикация» 20 px — цель вся подпись; по центру строки 44 px */
+    .manage-check { align-items: center; }
+    .manage-check input { margin-top: 0; }
     #main-panel .rt-btn { min-width: 44px; }
     .hard-filter-options a { display: flex; align-items: center; min-height: 44px; padding: 0; }
     .sidebar-hard-filters-add summary { min-height: 44px; padding: 13px 0; box-sizing: border-box; } /* flex съел бы треугольник */

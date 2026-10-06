@@ -1612,6 +1612,11 @@ button.desk-nav-item {
 /* ── Touch devices ── */
 @media (hover: none), (pointer: coarse) {
     .btn-blue, .btn-outline, .btn-danger, .btn-warn { min-height: 44px; }
+    /* Пилюли-переключатели — палец не попадал: кнопка была 36 px («На
+       проверку / Все» в карточке ученика, проход 06.10.2026). Отступ
+       обёртки 6 → 2, чтобы вся полоса осталась прежней высоты, 48 px. */
+    .nav-pill { padding: 2px; }
+    .nav-pill-item { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .btn-blue:hover { transform: none; box-shadow: none; filter: none; }
     .btn-danger:hover { background: transparent; color: var(--error); }
     .btn-warn:hover { background: transparent; color: var(--warning-deep); }

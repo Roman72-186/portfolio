@@ -142,8 +142,24 @@ def test_phone_inputs_are_16px_and_targets_44px():
     for sel in (".tab-btn", ".back-to-profile", ".mobile-back-btn", ".admin-upload-btn", ".btn-edit-score",
                 ".profile-edit-btn", ".mock-month-btn", ".cal-month-btn", ".mock-status-copy-btn"):
         assert sel in targets, f"{sel} меньше 44px на касание"
+    # Поля «Управления» и галочка «Публикация» (её цель — вся подпись) были
+    # 37–39 px (проход 06.10.2026, пункт 11).
+    manage = block[block.index(".upload-select,"):block.index("min-height: 44px; }")]
+    for sel in (".profile-edit-input", ".profile-edit-select", ".manage-check"):
+        assert sel in manage, f"{sel} меньше 44px на касание"
     assert ".hard-filter-options a" in block and ".sidebar-hard-filters-add summary" in block
     assert re.search(r"\.mock-day, #main-panel \.cal-day \{[^}]*min-height: 44px", block)
+
+
+def test_pill_switch_is_44px_on_touch():
+    """«На проверку / Все» — общий `.nav-pill` из base.css, кнопка была 36 px.
+    Чинится в компоненте, а не в карточке: та же полоса в трекере ученика,
+    событиях дайджеста и «Статистике активности»."""
+    base = (TEMPLATE.parent.parent / "static" / "css" / "base.css").read_text(encoding="utf-8")
+    touch = base[base.index("@media (hover: none), (pointer: coarse) {"):]
+    touch = touch[:touch.index("\n}\n")]
+
+    assert re.search(r"\.nav-pill-item \{[^}]*min-height: 44px", touch)
 
 
 # ── Шаг 3 `/layout` ──────────────────────────────────────────────────────────
