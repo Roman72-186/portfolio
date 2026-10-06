@@ -677,9 +677,10 @@ def test_stage_task_is_a_carousel_button_not_a_step_of_the_cycle(db, regular_use
 
 
 def test_stage_button_stays_when_viewing_an_older_cycle(db, regular_user):
-    """Кнопка «Портфолио» видна и в архивном цикле того же этапа, не только в
+    """Кнопка «Портфолио» видна и в прошлом цикле того же этапа, не только в
     текущем — этап достижим независимо от того, где стоит ученик. В ленту
-    старого цикла задание этапа тоже не входит."""
+    старого цикла задание этапа тоже не входит. Прошлый цикл идущего этапа —
+    рабочий, не архив (владелец 06.10.2026: в архив уходит этап целиком)."""
     stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=30), ends_on=TODAY + timedelta(days=30))
     portfolio = create_task(
         db, title="Портфолио", user_id=regular_user.id, kind="material",
@@ -707,7 +708,7 @@ def test_stage_button_stays_when_viewing_an_older_cycle(db, regular_user):
     )
 
     assert feed["topic"].id == old_cycle.id
-    assert feed["is_archive"] is True
+    assert feed["is_archive"] is False
     assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": False}]
     assert portfolio.id not in [step["task"].id for step in feed["steps"]]
 

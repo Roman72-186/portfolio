@@ -23,6 +23,14 @@
    Момент срока — `submission_edit.upload_deadline`, та же функция, что
    запирает сдачу: напоминание не может разойтись с настоящим сроком.
 4. **Конец доступа** (`User.access_until`) — за 3 дня и за сутки.
+5. **Долг цикла** (владелец 06.10.2026: «отправить уведомление, что цикл
+   закроется и у него есть долг… Напоминания должны прийти»). Цикл, на
+   котором ученик стоит (`tracker.effective_cycle`, галочка «не пускать
+   дальше»), с незакрытыми обязательными заданиями: за 3 часа до срока цикла
+   и после срока раз в день, пока долг не закрыт. Срок — «по» тарифа или
+   конец цикла (`tracker.cycle_deadline_for`). Ежедневное уходит только в
+   прогон с 10:00 до 11:00 МСК — не ночью — и делит ключ с кнопкой «Напомнить
+   всем» (`cycle_stats.remind_cycle_debtors`): в один день одно сообщение.
 
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
@@ -51,6 +59,8 @@ from app.models.notification import Notification
 from app.models.student_reminder import (
     KIND_ACCESS_1D,
     KIND_ACCESS_3D,
+    KIND_CYCLE_CLOSING_3H,
+    KIND_CYCLE_DEBT,
     KIND_DEADLINE_3H,
     KIND_DEADLINE_24H,
     KIND_NEW_TASK,
@@ -83,11 +93,20 @@ from app.services.task_blocks import (
     feed_visible_blocks,
     get_task_submit_deadlines,
 )
+from app.models.learning_topic import TOPIC_KIND_WEEK
+from app.services.cycle_stats import reminder_message
+from app.services.program import day_bounds, msk_date
 from app.services.tracker import (
+    cycle_bounds,
+    cycle_deadline_for,
+    cycle_label,
+    effective_cycle,
+    missing_required_tasks,
     program_learners,
     program_students,
     task_audience_user_ids,
 )
+from app.services.video_topics import cycle_tariff_closes
 from app.services.tz import MSK_TZ
 
 logger = logging.getLogger(__name__)
@@ -109,6 +128,11 @@ ACCESS_STAGES = (
 
 # Сколько названий печатать в сводке, дальше — «и ещё N».
 SUMMARY_LIMIT = 8
+
+# Долг цикла: за сколько до срока предупредить и в какой час МСК слать
+# ежедневное после срока (прогон раз в 30 минут — попадают два).
+CYCLE_CLOSING_AHEAD = timedelta(hours=3)
+CYCLE_DEBT_DAILY_HOUR = 10
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -139,6 +163,7 @@ class _Item:
     title: str          # название задания
     moment: datetime | None = None  # срок сдачи или конец доступа
     has_video: bool = False
+    tasks: list[str] | None = None  # долг цикла: незакрытые обязательные
 
 
 # Кто вообще получает — `tracker.program_students` / `program_learners`,
@@ -401,6 +426,54 @@ def _collect_access(
         ))
 
 
+# ── 5. Долг цикла ───────────────────────────────────────────────────────────
+
+def _collect_cycle_debts(
+    db: Session, learners: dict[int, User], now: datetime,
+    items: dict[int, list[_Item]],
+) -> None:
+    today = msk_date(now)
+    daily = now.astimezone(MSK_TZ).hour == CYCLE_DEBT_DAILY_HOUR
+    horizon = now + CYCLE_CLOSING_AHEAD
+    cycles = db.query(LearningTopic).filter(
+        LearningTopic.kind == TOPIC_KIND_WEEK,
+        LearningTopic.deleted_at.is_(None),
+        LearningTopic.is_published.is_(True),
+        LearningTopic.locks_next.is_(True),
+        LearningTopic.opens_at <= now,
+    ).all()
+    closes = cycle_tariff_closes(db, [topic.id for topic in cycles])
+    # Дорогой обход учеников (текущий цикл и долг каждого) — только когда
+    # есть что слать: ежедневный час или срок какого-то цикла в ближайшие 3
+    # часа (общий конец или «по» любого тарифа).
+    soon = any(
+        now < moment <= horizon
+        for topic in cycles
+        for moment in [day_bounds(cycle_bounds(topic)[1])[1], *closes.get(topic.id, {}).values()]
+    )
+    if not daily and not soon:
+        return
+    for uid, user in learners.items():
+        topic = effective_cycle(db, uid, today)
+        if topic is None or not topic.locks_next:
+            continue
+        deadline = cycle_deadline_for(topic, user.tariff, closes.get(topic.id))
+        if now < deadline <= horizon:
+            kind, ref = KIND_CYCLE_CLOSING_3H, f"{topic.id}:{deadline.isoformat()}"
+        elif deadline <= now and daily:
+            # Ключ как у кнопки «Напомнить всем» (`cycle_stats._reminder_ref`).
+            kind, ref = KIND_CYCLE_DEBT, f"{topic.id}:{today.isoformat()}"
+        else:
+            continue
+        missing = missing_required_tasks(db, uid, topic)
+        if not missing:
+            continue
+        items[uid].append(_Item(
+            kind=kind, ref=ref, title=cycle_label(db, topic), moment=deadline,
+            tasks=[task.title for task in missing],
+        ))
+
+
 # ── Сборка сообщений ────────────────────────────────────────────────────────
 
 def _titles(items: list[_Item]) -> str:
@@ -445,6 +518,27 @@ def _access_message(item: _Item) -> tuple[str, str]:
     return title, "Осталось три дня. Оплати обучение, и уроки останутся открытыми."
 
 
+def _cycle_debt_message(item: _Item) -> tuple[str, str]:
+    """Срок цикла не называем — по той же причине, что у срока сдачи
+    (`_deadline_message`): дедлайн называет только задание."""
+    names = ", ".join(f"«{title}»" for title in item.tasks or [])
+    cycle = item.title if item.title.lower().startswith("цикл") else f"Цикл «{item.title}»"
+    if item.kind == KIND_CYCLE_CLOSING_3H:
+        return (
+            f"{cycle} закрывается через 3 часа",
+            f"Осталось: {names}. Успей сдать до конца срока – после него "
+            "работа запишется как сданная позже.",
+        )
+    title, text = reminder_message(item.title, [_Named(t) for t in item.tasks or []])
+    return title, f"{text} Срок цикла прошёл – сданное сейчас запишется как сданное позже."
+
+
+@dataclass
+class _Named:
+    """`reminder_message` ждёт задания, ему нужно только название."""
+    title: str
+
+
 def _messages(items: list[_Item]) -> list[tuple[str, str]]:
     content = [i for i in items if i.kind in (KIND_NEW_TASK, KIND_NEW_VIDEO)]
     deadlines = [i for i in items if i.kind in (KIND_DEADLINE_24H, KIND_DEADLINE_3H)]
@@ -456,6 +550,9 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
         out.append(_deadline_message(deadlines))
     for item in access:
         out.append(_access_message(item))
+    for item in items:
+        if item.kind in (KIND_CYCLE_CLOSING_3H, KIND_CYCLE_DEBT):
+            out.append(_cycle_debt_message(item))
     return out
 
 
@@ -467,6 +564,7 @@ def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     _collect_new_content(db, learners, now, raw)
     _collect_deadlines(db, learners, now, raw)
     _collect_access(students, now, raw)
+    _collect_cycle_debts(db, learners, now, raw)
 
     all_items = [item for bucket in raw.values() for item in bucket]
     sent = set()

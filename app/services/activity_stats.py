@@ -1017,23 +1017,22 @@ def get_deadline_stats(db: DBSession) -> dict:
     с настоящим сроком при первой же правке (та же причина, по которой не
     хранится средний балл точки А).
 
-    Если срока нет ни у блока, ни у задания, сроком считается конец цикла,
+    Если срока нет ни у блока, ни у задания, сроком считается срок цикла,
     к которому приписано задание (владелец 28.09.2026: видео отмечают и после
-    конца этапа, «записывать всё для каждого ученика»). Это срок только для
-    отчёта: отметку он не запирает, сдачу работ запирает срок блока
-    (`submission_edit.deadline_reason`). Явное «бессрочно» строкой тарифа
+    конца этапа, «записывать всё для каждого ученика»): «по» тарифа ученика,
+    а без неё конец цикла (`tracker.cycle_deadline_for`, 06.10.2026). Это
+    срок только для отчёта: отметку он не запирает, сдачу работ запирает
+    срок блока (`submission_edit.deadline_reason`). Явное «бессрочно» строкой тарифа
     остаётся бессрочным. Задание без цикла и без срока в подсчёт не входит:
     «вовремя» у него не определено.
     """
     from app.models.task_block import TaskBlock
     from app.models.tracker import TrackerTask
-    from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
-    from app.services.program import day_bounds
     from app.services.task_blocks import (
         get_submit_deadlines, get_task_submit_deadlines, submit_deadline_for,
         submit_deadline_is_set,
     )
-    from app.services.tracker import cycle_bounds
+    from app.services.tracker import cycle_deadline_lookup
 
     student_ids = _student_ids(db)
     rows = (
@@ -1077,16 +1076,7 @@ def get_deadline_stats(db: DBSession) -> dict:
     ]
     block_deadlines = get_submit_deadlines(db, [r[2].id for r in rows if r[2] is not None])
     task_deadlines = get_task_submit_deadlines(db, [r[3].id for r in rows])
-    topic_ids = {r[3].topic_id for r in rows if r[3].topic_id is not None}
-    cycle_ends = {
-        topic.id: day_bounds(cycle_bounds(topic)[1])[1]
-        for topic in (
-            db.query(LearningTopic)
-            .filter(LearningTopic.id.in_(topic_ids), LearningTopic.kind == TOPIC_KIND_WEEK)
-            .all()
-            if topic_ids else []
-        )
-    }
+    cycle_deadline = cycle_deadline_lookup(db, {r[3].topic_id for r in rows})
 
     by_student: dict[int, dict] = {}
     by_task: dict[int, dict] = {}
@@ -1102,9 +1092,9 @@ def get_deadline_stats(db: DBSession) -> dict:
             block_overrides=block_deadlines.get(block.id) if block else None,
             task_overrides=task_deadlines.get(task.id),
         ):
-            # Ничего не настроено — сроком служит конец цикла. Явное
+            # Ничего не настроено — сроком служит срок цикла. Явное
             # «бессрочно» у тарифа остаётся бессрочным.
-            deadline = cycle_ends.get(task.topic_id)
+            deadline = cycle_deadline(task.topic_id, tariff)
         if deadline is None:
             continue
         is_late = _utc(completed_at) > _utc(deadline)

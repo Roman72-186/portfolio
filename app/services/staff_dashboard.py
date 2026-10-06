@@ -23,7 +23,9 @@ from app.services.task_blocks import (
     completed_after_deadline, feed_visible_blocks, get_submit_deadlines,
     get_task_submit_deadlines, get_tariffs,
 )
-from app.services.tracker import program_learners, program_students, task_audience_user_ids
+from app.services.tracker import (
+    cycle_deadline_lookup, program_learners, program_students, task_audience_user_ids,
+)
 from app.services.tz import msk_midnight, msk_text
 
 
@@ -221,6 +223,8 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
     tariffs = get_tariffs(db, block_ids)
     block_deadlines = get_submit_deadlines(db, block_ids)
     task_deadlines = get_task_submit_deadlines(db, task_ids)
+    # Срок цикла — запасной срок отметки «Сдал после срока» (06.10.2026).
+    cycle_deadline = cycle_deadline_lookup(db, {task.topic_id for _, task in candidates})
     audience = {task_id: task_audience_user_ids(db, task_id) & reachable for task_id in task_ids}
     done = {
         (state.block_id, state.user_id): state
@@ -246,6 +250,7 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
                     block, task, state, user_tariff=tariff,
                     block_overrides=block_deadlines.get(block.id),
                     task_overrides=task_deadlines.get(task.id),
+                    cycle_deadline=cycle_deadline(task.topic_id, tariff),
                 )
                 notes[uid] = "Сдал после срока" if late else "Сдал"
                 continue

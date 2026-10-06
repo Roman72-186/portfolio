@@ -57,13 +57,12 @@ from app.services.tracker import (
     accessible_task_entries,
     cycle_bounds,
     cycle_debt,
-    cycle_done_by_user,
     cycle_label,
     effective_cycle,
     effective_week_start,
     locked_cycle_ids,
+    upcoming_cycles,
 )
-from app.services.video_topics import tariff_closed_topic_ids
 
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
@@ -613,16 +612,19 @@ def cycle_is_archived_for_user(
 ) -> bool:
     """Цикл `topic_id` для ученика — архив (только просмотр).
 
-    Архив — закончившийся цикл (`kind='week'`), который не совпадает с тем,
-    на котором ученик стоит сейчас (`effective_cycle`). Владелец 24.09.2026:
-    пока этап открыт, прошлые циклы доступны только на чтение. Прямая ссылка
-    на цикл закрытого этапа тоже остаётся архивом (не 404) — тот же принцип,
-    что у прошедшей темы вообще («учебный архив», `models/learning_topic.py`).
+    Архив — цикл (`kind='week'`) закончившегося этапа (`cycle_frame_is_over`),
+    который не совпадает с тем, на котором ученик стоит сейчас
+    (`effective_cycle`). Владелец 06.10.2026: «в архив должно уходить не весь
+    цикл, а весь этап» — пока этап идёт, его прошлые циклы рабочие, сданное
+    после срока цикла пишется «после срока». До этого (24.09.2026) прошлые
+    циклы открытого этапа были только на чтение. Прямая ссылка на цикл
+    закрытого этапа остаётся архивом (не 404) — тот же принцип, что у
+    прошедшей темы вообще («учебный архив», `models/learning_topic.py`).
     """
     topic = db.get(LearningTopic, topic_id)
     if topic is None or topic.kind != TOPIC_KIND_WEEK:
         return False
-    if not cycle_is_over_for_user(db, user_id, topic, today):
+    if not cycle_frame_is_over(db, topic, today):
         return False
     current = effective_cycle(db, user_id, today)
     return current is None or current.id != topic.id
@@ -712,15 +714,16 @@ def _cycle_is_over(topic: LearningTopic, today: date) -> bool:
     return cycle_bounds(topic)[1] < today
 
 
-def cycle_is_over_for_user(
-    db: Session, user_id: int, topic: LearningTopic, today: date
-) -> bool:
-    """Цикл для ученика закончился: прошли его общие даты или окно его тарифа
-    (владелец 06.10.2026: после «по» цикл у тарифа уходит в архив). Этим
-    спрашивают архив, экран и пишущие роуты — одно правило на все три."""
-    return _cycle_is_over(topic, today) or topic.id in tariff_closed_topic_ids(
-        db, user_id, today
-    )
+def cycle_frame_is_over(db: Session, topic: LearningTopic, today: date) -> bool:
+    """Цикл ушёл в архив по датам: у цикла с этапом — закончился этап
+    (владелец 06.10.2026: «в архив должно уходить не весь цикл, а весь этап…
+    второй этап не уходит в архив, пока у этапа не закончилась дата по»), у
+    цикла без этапа (до 24.09.2026) — закончился он сам. Срок цикла по тарифу
+    («по», `tracker.cycle_deadline_for`) сюда не входит: он только отмечает
+    сданное позже. Этим спрашивают архив, экран и пишущие роуты — одно
+    правило на все три; текущий цикл ученика архивом не бывает никогда."""
+    stage = _stage_of(db, topic)
+    return _cycle_is_over(stage if stage is not None else topic, today)
 
 
 def _archive_levels(
@@ -764,29 +767,29 @@ def archive_for_student(
     список периодов, внутри этапы, внутри циклы; цикл открывается тут же, в
     архиве, а не в ленте обучения (`/cabinet/learning/archive/{id}`).
 
-    Пройденный цикл — закончился или ученик его выполнил
-    (`cycle_done_by_user`; владелец 04.10.2026: «Цикл 4» закрыли 83 ученика
-    из 98 до его конца). Цикл без обязательных заданий выполненным не
-    считается, иначе он уезжал бы в архив в первый же день. Своих правил
-    видимости нет: циклы из `started_cycles` (аудитория, «закончился до
-    прихода»), шаги из той же `build_cycle_feed`, что и лента; цикл без
-    единого шага не показывается. Цикл, запертый долгом, пропускается:
-    вперёд нельзя (30.09.2026).
+    В архиве — циклы закончившихся этапов (`cycle_frame_is_over`; владелец
+    06.10.2026: «в архив должно уходить не весь цикл, а весь этап»), кроме
+    цикла, на котором ученик стоит (долг держит его рабочим и после конца
+    этапа). Выполненный цикл идущего этапа живёт в карусели, в архив уходит
+    вместе с этапом — это отменяет правило 04.10.2026 «пройденный —
+    закончился или выполнен». Своих правил видимости нет: циклы из
+    `started_cycles` (аудитория, «закончился до прихода»), шаги из той же
+    `build_cycle_feed`, что и лента; цикл без единого шага не показывается.
+    Цикл, запертый долгом, пропускается: вперёд нельзя (30.09.2026).
     """
     debt = cycle_debt(db, user_id, today)
     locked_ids = {item.id for item in debt["locked"]} if debt else set()
-    # Окно тарифа закончилось (06.10.2026) — цикл в архиве, как закончившийся.
-    closed_ids = tariff_closed_topic_ids(db, user_id, today)
+    current = effective_cycle(db, user_id, today)
     periods: dict[int | None, dict] = {}
 
     for cycle in reversed(started_cycles(db, user_id, today)):
         if cycle.id in locked_ids:
             continue
-        first, last = cycle_bounds(cycle)
-        if not (
-            last < today or cycle.id in closed_ids or cycle_done_by_user(db, user_id, cycle)
-        ):
+        if current is not None and cycle.id == current.id:
             continue
+        if not cycle_frame_is_over(db, cycle, today):
+            continue
+        first, last = cycle_bounds(cycle)
         steps = build_cycle_feed(
             db, user_id=user_id, user_tariff=user_tariff, start=first, end=last,
             topic_id=cycle.id,
@@ -934,6 +937,13 @@ def feed_for_student(
         if stage_topic is not None:
             stage = {"id": stage_topic.id, "label": stage_topic.title or ""}
     cycles = _carousel_cycles(db, user_id, today, stage_id)
+    # Ещё не открывшиеся циклы текущего этапа — закрытыми плитками с датой
+    # (владелец 06.10.2026: «видеть циклы, которые были до и после»). Список
+    # карусели идёт от поздних к ранним, поэтому они встают в начало.
+    ahead = (
+        list(reversed(upcoming_cycles(db, user_id, stage_id)))
+        if stage_id is not None else []
+    )
     # «Следующее задание откроется 23 сентября» (владелец 03.09.2026): подсказка
     # тому, кто закрыл всё доступное и упёрся в календарь, а не в собственные
     # долги. Если впереди есть хоть один шаг, который можно делать сейчас,
@@ -959,7 +969,19 @@ def feed_for_student(
         "end": end,
         "steps": steps,
         # Список пройденных циклов для возврата; текущий помечен отдельно.
+        # Впереди — ещё не открывшиеся циклы этапа: заперты, с датой.
         "cycles": [
+            {
+                "id": item.id,
+                "title": cycle_label(db, item),
+                "start": cycle_bounds(item)[0],
+                "end": cycle_bounds(item)[1],
+                "is_current": False,
+                "is_locked": True,
+                "opens_on": cycle_bounds(item)[0],
+            }
+            for item in ahead
+        ] + [
             {
                 "id": item.id,
                 "title": cycle_label(db, item),
@@ -967,6 +989,7 @@ def feed_for_student(
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,
                 "is_locked": item.id in locked_ids,
+                "opens_on": None,
             }
             for item in cycles
         ],
@@ -985,7 +1008,7 @@ def feed_for_student(
         "is_archive": (
             chosen is not None
             and (current_topic is None or chosen.id != current_topic.id)
-            and cycle_is_over_for_user(db, user_id, chosen, today)
+            and cycle_frame_is_over(db, chosen, today)
         ),
         # Опрос ученик видит одной карточкой (владелец 30.09.2026) — и
         # считается он одним шагом, по последнему вопросу: иначе опрос из

@@ -25,11 +25,7 @@ from app.models.user import User
 from app.services.program import day_bounds, msk_date
 from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.tz import now_msk
-from app.services.video_topics import (
-    get_topic_tariff_windows,
-    saw_topic_period,
-    tariff_window_closed,
-)
+from app.services.video_topics import get_topic_tariff_windows, saw_topic_period
 
 
 def active_students(db: Session) -> list[User]:
@@ -253,16 +249,9 @@ def cycle_debtors(
     first, last = cycle_bounds(topic)
     if not _cycle_tasks(db, topic.id, first, last):
         return []
-    # Окно тарифа закончилось — цикл у ученика в архиве и долгом не держит
-    # (`tracker.cycle_debt`), напоминать о нём нечего.
-    windows = _tariff_windows(db, topic) or {}
-    today = msk_date(now)
     students = [
         student for student in _audience(db, topic)
         if not (student.access_until is not None and _utc(student.access_until) <= now)
-        and not tariff_window_closed(
-            windows.get((student.tariff or "").strip().upper(), (None, None)), today
-        )
     ]
     missing = _missing_by_student(db, topic, students)
     debtors = [student for student in students if missing[student.id]]

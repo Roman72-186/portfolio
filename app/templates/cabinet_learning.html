@@ -62,9 +62,11 @@
         {% endfor %}
         {% for cycle in feed.cycles %}
         {% if cycle.is_locked %}
-        {# Заперт долгом: видно, что цикл есть, но открыть нельзя. #}
+        {# Заперт долгом или ещё не начался (владелец 06.10.2026: «видеть
+           циклы, которые были до и после»): видно, что цикл есть, открыть
+           нельзя. #}
         <span class="lrn-cycle-chip is-locked" data-cycle-id="{{ cycle.id }}"
-              title="Откроется, когда закроешь «{{ feed.debt.label }}»">{{ cycle.title }}</span>
+              title="{% if cycle.opens_on %}Откроется {{ cycle.opens_on.strftime('%d.%m') }}{% else %}Откроется, когда закроешь «{{ feed.debt.label }}»{% endif %}">{{ cycle.title }}</span>
         {% else %}
         <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
            href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"

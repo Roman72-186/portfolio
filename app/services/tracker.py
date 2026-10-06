@@ -67,8 +67,8 @@ from app.services.video_topics import (
     get_tag_ids as topic_tag_ids,
     set_topic_assignees,
     set_topic_tags,
-    tariff_closed_topic_ids,
     topic_audience_user_ids,
+    upcoming_topic_ids,
 )
 
 STUDENT_ROLE_RANK = 1
@@ -653,6 +653,75 @@ def cycle_bounds(topic: LearningTopic) -> tuple[date, date]:
     return start, max(start, end)
 
 
+def cycle_deadline_for(
+    topic: LearningTopic,
+    tariff: str | None,
+    tariff_closes: dict[str, datetime] | None = None,
+) -> datetime:
+    """Срок цикла для ученика этого тарифа (владелец 06.10.2026).
+
+    «По» его тарифа из формы цикла, а если её нет — конец цикла
+    (`cycle_bounds`, конец последних суток по Москве). `tariff_closes` —
+    строка темы из `video_topics.cycle_tariff_closes`: её читают один раз на
+    список тем.
+
+    Срок мягкий: сдачу он не запирает (запирает только срок блока или
+    задания, `submission_edit`) и долг не снимает. Он решает, что сданное
+    позже — «после срока» (`task_blocks.completed_after_deadline`,
+    `activity_stats.get_deadline_stats`), и когда напоминать должнику
+    (`student_reminders`).
+    """
+    own = (tariff_closes or {}).get((tariff or "").strip().upper())
+    if own is not None:
+        return own
+    return day_bounds(cycle_bounds(topic)[1])[1]
+
+
+def cycle_deadline_lookup(db: Session, topic_ids):
+    """Срок цикла по `(id темы задания, тариф)` для списка тем — одно чтение
+    базы на всю выборку статистики. Тема не цикл (служебная тема дня, этап) —
+    `None`: у неё срока цикла нет."""
+    from app.services.video_topics import cycle_tariff_closes
+
+    ids = {topic_id for topic_id in topic_ids if topic_id is not None}
+    topics = {
+        topic.id: topic for topic in (
+            db.query(LearningTopic)
+            .filter(LearningTopic.id.in_(ids), LearningTopic.kind == TOPIC_KIND_WEEK)
+            .all()
+            if ids else []
+        )
+    }
+    closes = cycle_tariff_closes(db, list(topics))
+
+    def lookup(topic_id: int | None, tariff: str | None) -> datetime | None:
+        topic = topics.get(topic_id)
+        if topic is None:
+            return None
+        return cycle_deadline_for(topic, tariff, closes.get(topic.id))
+
+    return lookup
+
+
+def upcoming_cycles(db: Session, user_id: int, stage_id: int) -> list[LearningTopic]:
+    """Циклы этапа, которые ученику адресованы, но ещё не открылись, — от
+    ранних к поздним. Карусель показывает их закрытыми (владелец 06.10.2026:
+    «видеть циклы, которые были до и после»)."""
+    topic_ids = upcoming_topic_ids(db, user_id)
+    if not topic_ids:
+        return []
+    return (
+        db.query(LearningTopic)
+        .filter(
+            LearningTopic.id.in_(topic_ids),
+            LearningTopic.kind == TOPIC_KIND_WEEK,
+            LearningTopic.parent_id == stage_id,
+        )
+        .order_by(LearningTopic.opens_at.asc(), LearningTopic.id.asc())
+        .all()
+    )
+
+
 def cycle_label(db: Session, topic: LearningTopic) -> str:
     """Название цикла для показа — период дат, если `title` пуст.
 
@@ -775,15 +844,10 @@ def cycle_for_day(db: Session, user_id: int, day: date) -> LearningTopic | None:
     случаев: при пересечении **эта функция** берёт позже начавшийся цикл (он
     новее и ближе к тому, чем ученик занят сейчас), в зазоре — `None`, и
     решение, что показать в этом случае, принимает экран, а не резолвер.
-
-    Цикл, чьё окно тарифа к этому дню закончилось (владелец 06.10.2026), у
-    ученика в архиве и идущим не считается, даже если общие даты ещё идут.
     """
-    closed = tariff_closed_topic_ids(db, user_id, day)
     covering = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= day <= cycle_bounds(topic)[1]
-        and topic.id not in closed
     ]
     return covering[-1] if covering else None
 
@@ -874,18 +938,15 @@ def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | N
     списку стал бы архивом без кнопки «Завершить задание» и запер бы
     программу навсегда.
 
-    По той же причине пропускается цикл, чьё окно тарифа закончилось
-    (владелец 06.10.2026: после «по» цикл у тарифа в архиве): архив только
-    для просмотра, и стоящий на нём ученик застрял бы.
+    Срок цикла («по» тарифа или конец цикла, `cycle_deadline_for`) здесь не
+    участвует: должник стоит на цикле и после срока, и после конца этапа —
+    сдать можно, сданное пишется «после срока» (владелец 06.10.2026).
     """
-    closed = tariff_closed_topic_ids(db, user_id, today)
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for topic in started:
-        if topic.id in closed:
-            continue
         if topic.locks_next and not is_cycle_complete(db, user_id, topic):
             return topic
     return cycle_for_day(db, user_id, today)
@@ -911,9 +972,7 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
 
     Запирает только цикл с `locks_next=True` (галочка в настройке цикла,
     владелец 03.10.2026). Незакрытый цикл без неё долгом не считается: поиск
-    идёт дальше, к первому запирающему. Цикл с закончившимся окном тарифа
-    (06.10.2026) долгом тоже не считается — он у ученика в архиве, закрыть
-    его там нечем, то же правило, что в `effective_cycle`.
+    идёт дальше, к первому запирающему.
     """
     rank = (
         db.query(Role.rank)
@@ -923,13 +982,12 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
     )
     if rank != STUDENT_ROLE_RANK:
         return None
-    closed = tariff_closed_topic_ids(db, user_id, today)
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for position, topic in enumerate(started):
-        if not topic.locks_next or topic.id in closed:
+        if not topic.locks_next:
             continue
         missing = missing_required_tasks(db, user_id, topic)
         if missing:

@@ -124,18 +124,17 @@ def test_finished_cycle_without_steps_is_not_in_archive(db, regular_user):
     assert _archive(db, regular_user) == []
 
 
-def test_completed_running_cycle_is_in_archive(db, regular_user):
-    """Этап не закрыт, цикл ещё идёт, но ученик его выполнил — цикл в архиве
-    (владелец 04.10.2026: «Цикл 4» закрыли до его конца)."""
-    _, _, sem, sem1 = _program(db, regular_user)
+def test_completed_cycle_of_running_stage_is_not_in_archive(db, regular_user):
+    """Этап не закрыт, ученик цикл выполнил — цикл остаётся в карусели, в
+    архив уходит вместе с этапом (владелец 06.10.2026: «в архив должно
+    уходить не весь цикл, а весь этап»). Отменяет правило 04.10.2026, когда
+    выполненный цикл попадал в архив сразу."""
+    _, _, _, sem1 = _program(db, regular_user)
     required = _task(db, regular_user, sem1, title="Сдать работу", required=True)
     close_task_for_user(db, required, regular_user.id, source="manual")
     db.commit()
 
-    periods = _archive(db, regular_user)
-
-    assert _cycle_ids(periods) == [sem1.id]
-    assert periods[0]["topic"].id == sem.id
+    assert _archive(db, regular_user) == []
 
 
 def test_running_cycle_with_open_required_task_is_not_in_archive(db, regular_user):
@@ -259,14 +258,15 @@ def test_empty_archive_explains_when_cycles_appear(auth_client):
 # ── настоящий период над этапом (владелец 06.10.2026: «да, показывать») ─────
 
 def _period_program(db, owner):
-    """Как на проде: период «1 семестр» над двумя этапами в одни даты."""
+    """Как на проде: период «1 семестр» над двумя этапами в одни даты. Этапы
+    уже закончились: в архив уходит этап целиком (владелец 06.10.2026)."""
     period = _topic(db, owner, title="1 семестр 2026-2027", kind=TOPIC_KIND_PERIOD,
                     starts_on=TODAY - timedelta(days=60), ends_on=TODAY + timedelta(days=60))
     year = _topic(db, owner, title="1 семестр_годовой курс", kind=TOPIC_KIND_STAGE,
                   parent=period, starts_on=TODAY - timedelta(days=60),
-                  ends_on=TODAY + timedelta(days=60))
+                  ends_on=TODAY - timedelta(days=1))
     october = _topic(db, owner, title="Октябрь", kind=TOPIC_KIND_STAGE, parent=period,
-                     starts_on=TODAY - timedelta(days=60), ends_on=TODAY + timedelta(days=60))
+                     starts_on=TODAY - timedelta(days=60), ends_on=TODAY - timedelta(days=1))
     return period, year, october
 
 

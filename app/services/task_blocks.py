@@ -2159,13 +2159,19 @@ def completed_after_deadline(
     user_tariff: str | None,
     block_overrides: dict[str, datetime | None] | None = None,
     task_overrides: dict[str, datetime | None] | None = None,
+    cycle_deadline: datetime | None = None,
 ) -> bool:
     """Закрыт ли блок позже срока сдачи — отметка «сдано после срока».
 
     Срок — `submit_deadline_for`, тот же, что видит ученик и что запирает
     сдачу; момент — `completed_at`, первая сдача, как в статистике
-    (`activity_stats.get_deadline_stats`). Запасного срока «конец цикла»
-    здесь нет: он только для отчёта, ученику такого срока не показывали.
+    (`activity_stats.get_deadline_stats`). Если ни у блока, ни у задания
+    срока нет, сроком служит срок цикла `cycle_deadline` — «по» тарифа или
+    конец цикла (`tracker.cycle_deadline_for`; владелец 06.10.2026:
+    «записывать, что работа сдана была после дедлайна… в статистику задания
+    и в общую статистику»). Явное «бессрочно» строкой тарифа остаётся
+    бессрочным. Экраны ученика срок цикла не передают — это отметка для
+    команды.
     """
     if state is None or state.completed_at is None:
         return False
@@ -2173,6 +2179,11 @@ def completed_after_deadline(
         block, task, user_tariff=user_tariff,
         block_overrides=block_overrides, task_overrides=task_overrides,
     )
+    if deadline is None and not submit_deadline_is_set(
+        block, task, user_tariff=user_tariff,
+        block_overrides=block_overrides, task_overrides=task_overrides,
+    ):
+        deadline = cycle_deadline
     if deadline is None:
         return False
     finished = state.completed_at
@@ -2728,6 +2739,9 @@ def submission_review_queue(
     # Сроки по тарифам — одним запросом на всю выборку, как в ленте.
     block_deadlines = get_submit_deadlines(db, list({block.id for _, block, _, _ in rows}))
     task_deadlines = get_task_submit_deadlines(db, list({task.id for _, _, task, _ in rows}))
+    from app.services.tracker import cycle_deadline_lookup
+
+    cycle_deadline = cycle_deadline_lookup(db, {task.topic_id for _, _, task, _ in rows})
 
     items = []
     for submission, block, task, student in rows:
@@ -2750,6 +2764,7 @@ def submission_review_queue(
                 block, task, state, user_tariff=student.tariff,
                 block_overrides=block_deadlines.get(block.id),
                 task_overrides=task_deadlines.get(task.id),
+                cycle_deadline=cycle_deadline(task.topic_id, student.tariff),
             ),
             "reviewed": submission.reviewed_at is not None,
             "needs_revision": submission.needs_revision,

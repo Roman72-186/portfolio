@@ -78,14 +78,15 @@
         </label>
         {# Доступ по тарифам (владелец 06.10.2026: «с какой даты по какое
            доступен ему данный цикл»). Все галочки и пустые даты — цикл открыт
-           всем тарифам в свои даты, так сохраняется без ограничения. Окно
-           решает только, когда тариф видит цикл; после «по» цикл у него в
-           архиве (`video_topics.tariff_closed_topic_ids`). Разметка строк —
-           общая со сроками по тарифам (`.prg-deadline-row`). #}
+           всем тарифам в свои даты, так сохраняется без ограничения. «С» —
+           с какого дня тариф видит цикл, «по» — срок цикла для тарифа
+           (`tracker.cycle_deadline_for`): сдачу не запирает, сданное позже
+           пишется «после срока». Разметка строк — общая со сроками по
+           тарифам (`.prg-deadline-row`). #}
         <div class="prg-field">
             <span>Доступ по тарифам</span>
             <div class="prg-blk-deadlines" data-c-tariffs>
-                <p class="prg-hint">Пустые даты – тариф видит цикл в его даты. После даты «по» цикл у тарифа уходит в архив: смотреть можно, сдавать нельзя.</p>
+                <p class="prg-hint">«С» – с какого дня тариф видит цикл, «по» – срок цикла для тарифа. Сдать можно и позже, но работа запишется как сданная после срока. Пустые даты – как у самого цикла.</p>
                 {% for tariff in cycle_tariffs %}
                 <div class="prg-deadline-row" data-c-tariff="{{ tariff }}">
                     <label class="prg-field--row">
@@ -95,14 +96,14 @@
                     </label>
                     <div class="prg-grid2">
                         <label class="prg-field">
-                            <span>Доступен с</span>
+                            <span>Видит с</span>
                             <input type="date" data-c-tariff-from
-                                   aria-label="Тариф {{ tariff }}: доступен с">
+                                   aria-label="Тариф {{ tariff }}: видит цикл с">
                         </label>
                         <label class="prg-field">
-                            <span>по</span>
+                            <span>Срок по</span>
                             <input type="date" data-c-tariff-to
-                                   aria-label="Тариф {{ tariff }}: доступен по">
+                                   aria-label="Тариф {{ tariff }}: срок цикла по">
                         </label>
                     </div>
                 </div>

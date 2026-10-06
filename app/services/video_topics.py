@@ -7,7 +7,7 @@ Source of truth по тому, какие темы открыты ученику
 уровень куратора, и на билетах она уже прятала задания от учеников.
 """
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import or_, true
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ from app.models.learning_topic import (
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
-from app.services.tz import MSK_TZ, now_msk
+from app.services.tz import now_msk
 
 STUDENT_ROLE_RANK = 1
 
@@ -72,8 +72,14 @@ def get_topic(
     return topic
 
 
-def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
+def accessible_topic_ids(
+    db: Session, user_id: int, *, include_upcoming: bool = False
+) -> set[int]:
     """Темы, открытые ученику прямо сейчас.
+
+    `include_upcoming=True` снимает только условия времени (`opens_at` темы и
+    «с» тарифа): остаётся «кому адресовано» — так собирает будущие циклы
+    `upcoming_topic_ids`, своей копии адресации у неё нет.
 
     Тема открыта, если опубликована, наступил её `opens_at`, адресована
     ученику (флагом «всем», пересечением тегов или поимённо), не скрыта по
@@ -111,25 +117,24 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     tariff = (tariff or "").strip().upper()
     now = now_msk()
     # Окно тарифа (владелец 06.10.2026): до «с» цикла у тарифа нет. «По» здесь
-    # не проверяется — после него цикл уходит в архив, а не пропадает
-    # (`tariff_closed_topic_ids`).
-    tariff_ok_topic_ids = (
-        db.query(LearningTopicTariff.topic_id)
-        .filter(
-            LearningTopicTariff.tariff == tariff,
-            or_(
-                LearningTopicTariff.opens_at.is_(None),
-                LearningTopicTariff.opens_at <= now,
-            ),
-        )
-        .scalar_subquery()
+    # не проверяется — это срок цикла, а не конец доступа
+    # (`tracker.cycle_deadline_for`).
+    tariff_rows = db.query(LearningTopicTariff.topic_id).filter(
+        LearningTopicTariff.tariff == tariff
     )
+    if not include_upcoming:
+        tariff_rows = tariff_rows.filter(or_(
+            LearningTopicTariff.opens_at.is_(None),
+            LearningTopicTariff.opens_at <= now,
+        ))
+    tariff_ok_topic_ids = tariff_rows.scalar_subquery()
+    time_filters = () if include_upcoming else (LearningTopic.opens_at <= now,)
     rows = (
         db.query(LearningTopic.id)
         .filter(
             LearningTopic.deleted_at.is_(None),
             LearningTopic.is_published.is_(True),
-            LearningTopic.opens_at <= now,
+            *time_filters,
             or_(
                 LearningTopic.assign_to_all.is_(True),
                 LearningTopic.id.in_(tagged_topic_ids),
@@ -144,6 +149,16 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
         .all()
     )
     return {row[0] for row in rows}
+
+
+def upcoming_topic_ids(db: Session, user_id: int) -> set[int]:
+    """Темы, которые ученику адресованы, но ещё не открылись — по своей дате
+    или по «с» его тарифа. Карусель показывает такие циклы своего этапа
+    закрытыми (владелец 06.10.2026: «видеть циклы, которые были до и после»).
+    """
+    return accessible_topic_ids(db, user_id, include_upcoming=True) - accessible_topic_ids(
+        db, user_id
+    )
 
 
 def saw_topic_period(program_access_from: datetime | None, topic: LearningTopic) -> bool:
@@ -424,39 +439,34 @@ def set_topic_tariff_windows(
     db.flush()
 
 
-def tariff_window_closed(window: TariffWindow, today: date) -> bool:
-    """Окно тарифа закончилось: день «по» уже прошёл (московские даты)."""
-    closes_at = window[1]
-    return closes_at is not None and _aware(closes_at).astimezone(MSK_TZ).date() < today
-
-
-def tariff_closed_topic_ids(db: Session, user_id: int, today: date) -> set[int]:
-    """Темы, у которых окно тарифа ученика уже закончилось (владелец 06.10.2026:
-    после «по» цикл у тарифа — в архиве).
-
-    Тема при этом остаётся в `accessible_topic_ids`: архиву и карусели нужен
-    сам цикл. Что «закончилось» значит для ленты, долга и записи, решают
-    `tracker.effective_cycle`/`cycle_debt` и `cycle_feed`, спрашивая отсюда.
+def cycle_tariff_closes(
+    db: Session, topic_ids: list[int] | set[int]
+) -> dict[int, dict[str, datetime]]:
+    """«По» тарифов у тем: `{id темы: {тариф: момент}}` — только у тем с
+    ограничением по тарифу и только заполненные. Срок цикла из этого собирает
+    `tracker.cycle_deadline_for`; здесь — одно чтение на список тем, чтобы
+    статистика и напоминания не ходили в базу на каждого ученика.
     """
-    tariff = (
-        db.query(User.tariff).filter(User.id == user_id).scalar() or ""
-    ).strip().upper()
-    if not tariff:
-        return set()
+    if not topic_ids:
+        return {}
     rows = (
-        db.query(LearningTopicTariff.topic_id, LearningTopicTariff.closes_at)
+        db.query(
+            LearningTopicTariff.topic_id,
+            LearningTopicTariff.tariff,
+            LearningTopicTariff.closes_at,
+        )
         .join(LearningTopic, LearningTopic.id == LearningTopicTariff.topic_id)
         .filter(
-            LearningTopicTariff.tariff == tariff,
+            LearningTopicTariff.topic_id.in_(list(topic_ids)),
             LearningTopicTariff.closes_at.is_not(None),
             LearningTopic.tariff_restricted.is_(True),
         )
         .all()
     )
-    return {
-        topic_id for topic_id, closes_at in rows
-        if tariff_window_closed((None, closes_at), today)
-    }
+    result: dict[int, dict[str, datetime]] = {}
+    for topic_id, tariff, closes_at in rows:
+        result.setdefault(topic_id, {})[tariff] = _aware(closes_at)
+    return result
 
 
 def ambiguous_tag_names(db: Session, tag_ids: list[int]) -> list[str]:
