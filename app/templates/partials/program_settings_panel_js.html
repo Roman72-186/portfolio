@@ -142,9 +142,16 @@ function openCustomSettingsPanels(root) {
 // Правка руками. Пересчёт отложен на такт: соседние обработчики того же
 // события (например, галочка ограничения по тарифу открывает их список) должны
 // успеть отработать, иначе сводка прочтёт состояние до них.
+// Панели бывают вложенными (пункты «Доступности блока», 06.10.2026) —
+// пересчитываем строку пункта и все панели над ней.
 ['input', 'change'].forEach(function (type) {
     document.addEventListener(type, function (event) {
         var panel = event.target.closest && event.target.closest('[data-settings-panel]');
-        if (panel) setTimeout(function () { refreshSettingsPanel(panel); }, 0);
+        if (!panel) return;
+        setTimeout(function () {
+            for (var el = panel; el; el = el.parentElement && el.parentElement.closest('[data-settings-panel]')) {
+                refreshSettingsPanel(el);
+            }
+        }, 0);
     });
 });

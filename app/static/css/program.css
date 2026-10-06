@@ -782,10 +782,18 @@
     background: var(--blue-soft); border: 1px solid var(--blue-tint); border-radius: var(--r-sm);
 }
 .prg-blk-audience > legend {
+    display: inline-flex; align-items: center; gap: var(--s-2);
     padding: 0 var(--s-1);
     color: var(--blue-ink); font: 600 14px/1.3 var(--font-body);
 }
-.prg-blk-audience > .prg-hint { margin: 0; }
+
+/* Пункт «Доступности блока» — своя свёрнутая строка с «?» (владелец
+   06.10.2026). Это та же `.prg-settings`, только вложенная: отступ сверху
+   уже даёт сетка панели, подложка отделяет строку от соседних. */
+.prg-setting-item { margin-top: 0; background: var(--surface); }
+.prg-setting-item .prg-settings-title {
+    display: inline-flex; align-items: center; gap: var(--s-2);
+}
 .prg-blk-students { display: grid; gap: var(--s-2); }
 .prg-blk-students input[type="search"] { width: 100%; min-height: 44px; }
 .prg-blk-student-results { display: grid; gap: var(--s-1); }

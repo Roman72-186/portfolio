@@ -85,6 +85,7 @@ from app.services.task_blocks import (
 from app.services.cycle_stats import cycle_debtors, cycle_stats, reminder_message, remind_cycle_debtors
 from app.services.exam_cycle import MAX_INTERMEDIATE_PER_FINAL
 from app.services.notify import notify
+from app.services.point_a import POINT_A_LEVEL_2_MIN_AVERAGE
 from app.services.section_access import can
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -2005,6 +2006,9 @@ def program_cycle_items(
             "block_students": (
                 block_student_choices(db) if can(user, "program") else []
             ),
+            # Подпись «Уровень 1 – 65 и ниже» в «Кому доступно» — от
+            # серверного порога, а не от числа в JS.
+            "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
             # Типы, у которых срок запирает действие ученика — редактор по
             # ним выбирает подсказку под полем срока (владелец 27.09.2026).
             # Список серверный, чтобы в JS не завелась своя копия, способная
@@ -2724,6 +2728,9 @@ def program_day(
             "block_students": (
                 block_student_choices(db) if can(user, "program") else []
             ),
+            # Подпись «Уровень 1 – 65 и ниже» в «Кому доступно» — от
+            # серверного порога, а не от числа в JS.
+            "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
             # Типы, у которых срок запирает действие ученика — редактор по
             # ним выбирает подсказку под полем срока (владелец 27.09.2026).
             # Список серверный, чтобы в JS не завелась своя копия, способная

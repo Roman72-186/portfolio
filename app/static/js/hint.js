@@ -1,7 +1,10 @@
+// Подсказки «?» (`components/hint.html`; в конструкторе программы ту же
+// разметку собирает `hintHTML` в `program_blocks_editor_js.html`).
+//
+// Один обработчик на документ, а не по обработчику на подсказку (06.10.2026):
+// блоки конструктора рисуются на лету, и подсказка, появившаяся после загрузки
+// страницы, иначе не открывалась бы вовсе.
 (function () {
-    var wraps = document.querySelectorAll('.hint-wrap');
-    if (!wraps.length) return;
-
     function positionPop(btn, pop) {
         // Высота подсказки зависит от длины текста (в отличие от
         // .notif-gear-pop с фиксированной высотой) — меряем реальную после
@@ -19,55 +22,37 @@
         pop.style.top = top + 'px';
     }
 
+    function setOpen(wrap, open) {
+        var pop = wrap.querySelector('.hint-pop');
+        var btn = wrap.querySelector('.hint-trigger');
+        pop.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) positionPop(btn, pop);
+    }
+
     function closeAll(except) {
-        wraps.forEach(function (wrap) {
+        document.querySelectorAll('.hint-wrap').forEach(function (wrap) {
             if (wrap === except) return;
-            var pop = wrap.querySelector('.hint-pop');
-            var btn = wrap.querySelector('.hint-trigger');
-            if (!pop.hidden) {
-                pop.hidden = true;
-                btn.setAttribute('aria-expanded', 'false');
-            }
+            if (!wrap.querySelector('.hint-pop').hidden) setOpen(wrap, false);
         });
     }
 
-    wraps.forEach(function (wrap) {
-        var btn = wrap.querySelector('.hint-trigger');
-        var pop = wrap.querySelector('.hint-pop');
-        var closeBtn = wrap.querySelector('.hint-pop-close');
-
-        function openPop() {
-            closeAll(wrap);
-            pop.hidden = false;
-            positionPop(btn, pop);
-            btn.setAttribute('aria-expanded', 'true');
-        }
-        function closePop() {
-            pop.hidden = true;
-            btn.setAttribute('aria-expanded', 'false');
-        }
-
-        btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (pop.hidden) openPop(); else closePop();
-        });
-        if (closeBtn) {
-            closeBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                closePop();
-            });
-        }
-    });
-
     document.addEventListener('click', function (e) {
-        wraps.forEach(function (wrap) {
-            var pop = wrap.querySelector('.hint-pop');
-            if (!pop.hidden && !wrap.contains(e.target)) {
-                pop.hidden = true;
-                wrap.querySelector('.hint-trigger').setAttribute('aria-expanded', 'false');
-            }
-        });
+        var wrap = e.target.closest && e.target.closest('.hint-wrap');
+        if (!wrap) {
+            closeAll(null);
+            return;
+        }
+        // Подсказка бывает внутри <summary> свёрнутой панели конструктора:
+        // без этого клик по «?» или по тексту подсказки сворачивал бы панель.
+        e.preventDefault();
+        if (e.target.closest('.hint-pop-close')) {
+            setOpen(wrap, false);
+        } else if (e.target.closest('.hint-trigger')) {
+            var willOpen = wrap.querySelector('.hint-pop').hidden;
+            closeAll(wrap);
+            setOpen(wrap, willOpen);
+        }
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') closeAll(null);
