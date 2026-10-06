@@ -128,6 +128,46 @@ def test_staff_upload_saves_thumb(client, db, user_factory, session_factory):
     assert f"thumbs/{work.s3_path}" in fake.objects
 
 
+def test_staff_upload_before_needs_no_month(client, db, user_factory, session_factory):
+    """«До обучения» — одна сетка без месяцев (проход 06.10.2026, пункт 9):
+    окно «+ Загрузить» месяц и год не шлёт, сервер ставит их, как при загрузке
+    самим учеником. Присланный месяц тоже не берётся — «До» не раскладывается."""
+    from app.api.upload import _default_month, _now_year
+
+    chief = _chief(user_factory)
+    student = user_factory(vk_id=960_211, name="Ученик")
+    _login(client, session_factory, chief)
+
+    with _with(_FakeS3()):
+        bare = client.post(
+            f"/cabinet/students/{student.id}/upload",
+            data={"work_type": "before"},
+            files={"photos": ("a.jpg", _jpeg(), "image/jpeg")},
+        )
+        stale = client.post(
+            f"/cabinet/students/{student.id}/upload",
+            data={"work_type": "before", "month": "январь", "year": "2025"},
+            files={"photos": ("b.jpg", _jpeg(), "image/jpeg")},
+        )
+        after = client.post(
+            f"/cabinet/students/{student.id}/upload",
+            data={"work_type": "after"},
+            files={"photos": ("c.jpg", _jpeg(), "image/jpeg")},
+        )
+
+    assert bare.status_code == 200, bare.text
+    assert stale.status_code == 200, stale.text
+    works = db.query(Work).filter(Work.user_id == student.id).all()
+    assert [(w.work_type, w.month, w.year) for w in works] == [
+        (WORK_TYPE_BEFORE, _default_month(), _now_year()),
+    ] * 2
+    assert after.status_code == 400
+    assert after.json()["error"] == "Неверный месяц"
+
+    page = TEMPLATE.read_text(encoding="utf-8")
+    assert 'id="upload-work-type" required onchange="syncUploadPeriod()"' in page
+
+
 def test_student_upload_saves_thumb(auth_client, db):
     from app.models.user import User
 

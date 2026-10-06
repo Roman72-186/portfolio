@@ -1452,9 +1452,14 @@ async def admin_upload_works(
     if len(photos) > MAX_FILES:
         return JSONResponse({"ok": False, "error": f"Максимум {MAX_FILES} фото"}, status_code=400)
 
-    if month not in MONTHS:
+    if work_type == WORK_TYPE_BEFORE:
+        # «До обучения» — одна сетка без месяцев: окно месяц и год не
+        # спрашивает, ставим их, как при загрузке самим учеником (`upload.py`).
+        from app.api.upload import _default_month, _now_year
+        month, year = _default_month(), _now_year()
+    elif month not in MONTHS:
         return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
-    if year is None:
+    elif year is None:
         return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
 
     # Read and validate files

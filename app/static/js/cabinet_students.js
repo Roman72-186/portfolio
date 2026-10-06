@@ -1698,8 +1698,20 @@ function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
 function openUploadModal() {
     if (!_currentStudentId) return;
     document.querySelector('#upload-form [name="csrf_token"]').value = CSRF_TOKEN;
+    syncUploadPeriod();
     document.getElementById('upload-modal').classList.add('open');
     document.body.style.overflow = 'hidden';
+}
+
+// «До обучения» — одна сетка без месяцев: месяц и год ставит сервер, как при
+// загрузке самим учеником. Поля прячем и выключаем — выключенные `FormData`
+// не отправляет, и `required` не держит форму.
+function syncUploadPeriod() {
+    var before = document.getElementById('upload-work-type').value === 'before';
+    ['upload-month', 'upload-year'].forEach(function(id) {
+        document.getElementById(id).disabled = before;
+        document.getElementById(id + '-field').hidden = before;
+    });
 }
 
 function closeUploadModal() {

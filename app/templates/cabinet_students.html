@@ -211,7 +211,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <input type="hidden" name="csrf_token" value="">
             <div class="upload-field">
                 <label class="upload-field-label" for="upload-work-type">Тип работы</label>
-                <select class="upload-select" name="work_type" id="upload-work-type" required>
+                <select class="upload-select" name="work_type" id="upload-work-type" required onchange="syncUploadPeriod()">
                     <option value="before">До обучения</option>
                     <option value="after" selected>В процессе обучения</option>
                 </select>
@@ -266,5 +266,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=19"></script>
+<script src="/static/js/cabinet_students.js?v=20"></script>
 {% endblock %}
