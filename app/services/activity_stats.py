@@ -138,6 +138,17 @@ def _student_ids(db: DBSession):
     return _active_students_q(db).with_entities(User.id).scalar_subquery()
 
 
+def _scope_ids(db: DBSession, student_id: int | None):
+    """Чьи строки считать: все активные ученики школы (страница «Статистика
+    активности») или один ученик — вкладка «Статистика» его карточки
+    (владелец 06.10.2026: «собрать туда всё, что касается ребёнка»).
+
+    Один ученик берётся как есть, без фильтров `_active_students_q`: карточку
+    открывают и у архивного, и тогда его прошлые цифры должны быть видны.
+    """
+    return [student_id] if student_id is not None else _student_ids(db)
+
+
 def get_login_stats(db: DBSession) -> dict:
     """Входы учеников: за 7/30 дней, всего активных, список давно не заходивших.
 
@@ -669,7 +680,7 @@ _AUDIT_LABELS = {
 }
 
 
-def get_diagnostic_stats(db: DBSession) -> list[dict]:
+def get_diagnostic_stats(db: DBSession, *, student_id: int | None = None) -> list[dict]:
     """Прохождение диагностик АРХИ-ПРОФИЛЯ: по каждой опубликованной
     диагностике — кто не начал/начал/закончил, за сколько времени, с каким
     результатом (владелец 24.09.2026: статистика диагностики переехала сюда,
@@ -681,6 +692,9 @@ def get_diagnostic_stats(db: DBSession) -> list[dict]:
     владелец 24.09.2026) — оба попадают в список одинаково. Подсчёт по
     каждой — `archi_profile_stats.diagnostic_stats`, уже используется и
     покрыт тестами, здесь только сбор списка диагностик.
+
+    `student_id` — карточка ученика: строка только его, диагностики, которые
+    ему не адресованы (`total == 0`), не отдаются.
     """
     from app.models.task_block import TaskBlock
     from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
@@ -705,7 +719,10 @@ def get_diagnostic_stats(db: DBSession) -> list[dict]:
         .order_by(TrackerTask.created_at.desc())
         .all()
     )
-    return [diagnostic_stats(db, task) for task in tasks]
+    if student_id is None:
+        return [diagnostic_stats(db, task) for task in tasks]
+    stats = (diagnostic_stats(db, task, only_user_id=student_id) for task in tasks)
+    return [item for item in stats if item["total"]]
 
 
 _EVENT_LABELS = {
@@ -800,7 +817,9 @@ def get_student_event_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
     }
 
 
-def get_video_watch_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
+def get_video_watch_stats(
+    db: DBSession, days: int = RECENT_DAYS, *, student_id: int | None = None,
+) -> dict:
     """Просмотр видео учениками: кто начал, кто досмотрел, какая доля ролика
     реально просмотрена, сколько раз открывали плеер за `days` дней.
 
@@ -808,9 +827,12 @@ def get_video_watch_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
     время), `VideoViewLog` — каждое открытие плеера. Ролик адресуется
     bunny-id, а не FK: у легаси-роликов строки в каталоге нет, для них
     запасная подпись.
+
+    `student_id` — один ученик (карточка): «смотрели» по ролику тогда 0 или 1,
+    доля — его собственная.
     """
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    student_ids = _student_ids(db)
+    student_ids = _scope_ids(db, student_id)
     rows = (
         db.query(
             VideoProgress.user_id,
@@ -1001,7 +1023,7 @@ def get_submission_stats(db: DBSession) -> dict:
     }
 
 
-def get_deadline_stats(db: DBSession) -> dict:
+def get_deadline_stats(db: DBSession, *, student_id: int | None = None) -> dict:
     """Сдано до срока и после срока (владелец 27.09.2026: «записывать всё
     нужно в статистику, что сдано после дедлайна, до дедлайна»).
 
@@ -1025,6 +1047,8 @@ def get_deadline_stats(db: DBSession) -> dict:
     срок блока (`submission_edit.deadline_reason`). Явное «бессрочно» строкой тарифа
     остаётся бессрочным. Задание без цикла и без срока в подсчёт не входит:
     «вовремя» у него не определено.
+
+    `student_id` — один ученик (карточка): `tasks` — его задания со сроком.
     """
     from app.models.task_block import TaskBlock
     from app.models.tracker import TrackerTask
@@ -1034,7 +1058,7 @@ def get_deadline_stats(db: DBSession) -> dict:
     )
     from app.services.tracker import cycle_deadline_lookup
 
-    student_ids = _student_ids(db)
+    student_ids = _scope_ids(db, student_id)
     rows = (
         db.query(
             TaskBlockState.completed_at,
@@ -1125,7 +1149,7 @@ def get_deadline_stats(db: DBSession) -> dict:
     }
 
 
-def get_timed_stats(db: DBSession) -> dict:
+def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
     """Контрольные на время: кто уложился в таймер, кто превысил, кто сдал
     после срока (владелец 03.09.2026: «будем отслеживать статистику, сколько
     детей превысили время… пометить красненьким»; сводка — 30.09.2026).
@@ -1133,6 +1157,10 @@ def get_timed_stats(db: DBSession) -> dict:
     Правила не свои: превышение — `task_blocks.timed_overrun`, опоздание —
     `task_blocks.completed_after_deadline`, те же функции рисуют отметки у
     ученика и на экране проверки, и цифры здесь с ними не разъедутся.
+
+    `student_id` — один ученик (карточка): в `students` тогда каждая его
+    контрольная, а не только с превышением или опозданием — уложился в
+    таймер тоже ответ.
     """
     from app.models.task_block import BLOCK_TIMED, TaskBlock
     from app.services.task_blocks import (
@@ -1148,7 +1176,7 @@ def get_timed_stats(db: DBSession) -> dict:
         .join(User, User.id == TaskBlockState.user_id)
         .filter(
             TaskBlock.block_type == BLOCK_TIMED,
-            TaskBlockState.user_id.in_(_student_ids(db)),
+            TaskBlockState.user_id.in_(_scope_ids(db, student_id)),
             or_(TaskBlockState.started_at.isnot(None), TaskBlockState.completed_at.isnot(None)),
             TrackerTask.deleted_at.is_(None),
         )
@@ -1186,7 +1214,7 @@ def get_timed_stats(db: DBSession) -> dict:
         ):
             # Начал, время вышло, а работы нет — ещё рисует или бросил.
             item["running_over"] += 1
-        if overrun or late:
+        if overrun or late or student_id is not None:
             students.append({
                 "name": name, "tariff": tariff, "title": title,
                 "minutes": (
@@ -1512,3 +1540,62 @@ def student_activity(
         },
         "feed": feed,
     }
+
+
+def student_statistics(
+    db: DBSession,
+    student: User,
+    *,
+    today,
+    with_staff_actions: bool = False,
+    with_school_stats: bool = False,
+) -> dict:
+    """Вкладка «Статистика» карточки ученика: всё про ребёнка (владелец
+    06.10.2026: «собрать туда всё, что касается ребёнка из вкладки статистика,
+    которая у нас есть на главном дашборде»). «Активность» слита сюда же.
+
+    `activity` — то, что видит каждый, кто открыл карточку, включая куратора
+    (владелец: «оставить показ данных, как сейчас у куратора»).
+    `school` — разделы «Статистики активности» для одного ученика, только рангу
+    ≥ 4, как и сама та страница. Своих расчётов здесь нет: те же функции
+    с `student_id`, что кормят дашборд, иначе цифры карточки и дашборда
+    разъехались бы.
+    """
+    from app.services.staff_dashboard import student_assignments
+
+    result = {
+        "activity": student_activity(
+            db, student, today=today, with_staff_actions=with_staff_actions,
+        ),
+        "school": None,
+    }
+    if not with_school_stats:
+        return result
+
+    deadlines = get_deadline_stats(db, student_id=student.id)
+    timed = get_timed_stats(db, student_id=student.id)
+    video = get_video_watch_stats(db, student_id=student.id)
+    result["school"] = {
+        "assignments": student_assignments(db, student),
+        "deadlines": {
+            "on_time": deadlines["on_time"],
+            "late": deadlines["late"],
+            "late_tasks": [t for t in deadlines["tasks"] if t["late"]],
+        },
+        "timed": timed["students"],
+        "diagnostics": [
+            {
+                "title": item["task"].title,
+                "status": row["status_label"],
+                "started": row["started_at_text"],
+                "finished": row["finished_at_text"],
+                "duration": row["duration_text"],
+                "profile": row["profile"]["title"] if row["profile"] else None,
+            }
+            for item in get_diagnostic_stats(db, student_id=student.id)
+            for row in item["rows"]
+        ],
+        "videos": video["videos"],
+        "video_days": video["days"],
+    }
+    return result

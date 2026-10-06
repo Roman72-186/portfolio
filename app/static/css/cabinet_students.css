@@ -126,26 +126,6 @@
     border-color: var(--blue);
 }
 
-/* ── Statistics chart ── */
-.stat-chart-card {
-    background: var(--surface); border: 1.5px solid var(--line);
-    border-radius: 16px; padding: 18px 18px 14px; margin-top: 4px;
-}
-.stat-legend { display: flex; gap: 18px; margin-bottom: 8px; flex-wrap: wrap; }
-.stat-legend-item {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-size: 12px; font-weight: 700; color: var(--text);
-}
-.stat-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; background: var(--stat-color); }
-/* Цвет ряда — классом, не атрибутом SVG: так график перекрашивается при смене темы. */
-.stat-series--draw { --stat-color: var(--blue); }
-.stat-series--comp { --stat-color: var(--warning); }
-.stat-line { fill: none; stroke: var(--stat-color); }
-.stat-point { fill: var(--stat-color); }
-.stat-grad stop { stop-color: var(--stat-color); }
-.stat-chart-wrap { width: 100%; overflow-x: auto; }
-.stat-note { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.45; }
-
 /* ── Tariff pills ── */
 .tariff-pills {
     display: flex; gap: 4px; flex-wrap: wrap;
@@ -690,7 +670,8 @@
 /* Дата вместо числа: 30px из `.stat-tile-value` не влезают в плитку 150px. */
 .activity-when { font-size: 16px; letter-spacing: 0; }
 .activity-note { margin-bottom: 12px; }
-.activity-feed { list-style: none; margin: 0; padding: 0; }
+/* Отступ снизу: во «Статистике» за списком сразу идёт заголовок следующего раздела. */
+.activity-feed { list-style: none; margin: 0 0 16px; padding: 0; }
 .activity-feed-item {
     display: flex; gap: 12px; flex-wrap: wrap;
     padding: 10px 0; border-bottom: 1px solid var(--line);

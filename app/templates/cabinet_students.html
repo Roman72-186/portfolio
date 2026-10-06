@@ -2,7 +2,7 @@
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=14">
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=18">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=20">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -206,7 +206,6 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <button class="tab-btn" id="tab-portfolio"  onclick="switchTab('portfolio')">Портфолио</button>
             <button class="tab-btn" id="tab-tasks"      onclick="switchTab('tasks')">Задания</button>
             <button class="tab-btn" id="tab-statistics" onclick="switchTab('statistics')">Статистика</button>
-            <button class="tab-btn" id="tab-activity"   onclick="switchTab('activity')">Активность</button>
         </div>
 
         <div class="split-main-scroll" id="main-panel">
@@ -307,5 +306,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=14"></script>
+<script src="/static/js/cabinet_students.js?v=15"></script>
 {% endblock %}

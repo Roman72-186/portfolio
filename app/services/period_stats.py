@@ -32,7 +32,7 @@ MOCK_SCORE_RANGES = [(0, 50), (55, 65), (70, 75), (80, 85)]
 
 def _to_msk(dt):
     """UTC/naive datetime → MSK. func.max() в SQLite может вернуть naive — тогда
-    считаем UTC (как student_score_curve)."""
+    считаем UTC."""
     if dt is None:
         return None
     if dt.tzinfo is None:

@@ -461,6 +461,36 @@ def _assignment_scores(db: DBSession, student_ids: list[int], assignments: list[
     return result
 
 
+def student_assignments(db: DBSession, student: User) -> list[dict]:
+    """Задания со сдачей работы у одного ученика — раздел вкладки
+    «Статистика» его карточки (владелец 06.10.2026: «собрать туда всё, что
+    касается ребёнка из вкладки статистика»).
+
+    Тот же расчёт, что «Ученики поимённо» и «Баллы за задания» на
+    «Статистике активности»: `_assignment_activity` и `_assignment_scores`
+    для списка из одного ученика. Задание, которое ему сдавать не положено,
+    не отдаётся. Архивного и заблокированного `program_learners` не числит
+    учениками программы — у них список пуст.
+    """
+    mine = [item for item in _assignment_activity(db, [student]) if student.id in item["eligible"]]
+    scores = {item["id"]: item for item in _assignment_scores(db, [student.id], mine)}
+    rows = []
+    for item in mine:
+        if student.id in item["submitted"]:
+            status = "late" if item["notes"][student.id] == "Сдал после срока" else "done"
+        else:
+            status = "overdue" if student.id in item["overdue"] else "pending"
+        score = scores.get(item["id"])
+        rows.append({
+            "label": item["label"],
+            "status": status,
+            "note": item["notes"][student.id],
+            "score": score["scored"].get(student.id) if score else None,
+            "scorer": score["scorers"].get(student.id) if score else None,
+        })
+    return rows
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Главный экран Главного преподавателя и суперадмина
 # ═══════════════════════════════════════════════════════════════════════════════

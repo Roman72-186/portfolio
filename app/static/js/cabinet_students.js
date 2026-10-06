@@ -28,7 +28,9 @@ var _navDefaultTab = (function() {
         // уведомления и «назад» с экранов пробника открывают «Портфолио» —
         // там раздел «Пробные экзамены». Сервер делает то же (`tab` в списке).
         if (t === 'cycles' || t === 'mock-exams') t = 'portfolio';
-        var valid = ['portfolio', 'tasks', 'statistics', 'activity'];
+        // «Активность» слита в «Статистику» 06.10.2026 (владелец).
+        if (t === 'activity') t = 'statistics';
+        var valid = ['portfolio', 'tasks', 'statistics'];
         return (t && valid.indexOf(t) !== -1) ? t : null;
     } catch (e) { return null; }
 })();
@@ -304,12 +306,7 @@ function buildProfileActions(s) {
         + '<button class="profile-action-btn" onclick="openTab(\'statistics\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="19 9 13 15 9 11 5 15"/></svg></div>'
         +   '<div class="profile-action-label">Статистика</div>'
-        +   '<div class="profile-action-count">динамика баллов</div>'
-        + '</button>'
-        + '<button class="profile-action-btn" onclick="openTab(\'activity\')">'
-        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>'
-        +   '<div class="profile-action-label">Активность</div>'
-        +   '<div class="profile-action-count">входы и видео</div>'
+        +   '<div class="profile-action-count">задания, видео, входы</div>'
         + '</button>'
         + (IS_ARCHIVE_VIEW ? (
             // Для архивного ученика «Архив» — единая страница со всеми фото
@@ -581,7 +578,7 @@ function switchTab(tabName) {
     _currentTab = tabName;
     if (_viewMode === 'tab' && _currentStudentId) navCommit(false);
 
-    ['portfolio', 'tasks', 'statistics', 'activity'].forEach(function(t) {
+    ['portfolio', 'tasks', 'statistics'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
         if (btn) btn.classList.toggle('active', t === tabName);
     });
@@ -640,152 +637,6 @@ function renderTab(tabName, data) {
     }
     if (tabName === 'tasks')      { tc.innerHTML = backBtn + buildTasks(data);      }
     if (tabName === 'statistics') { tc.innerHTML = backBtn + buildStatistics(data); }
-    if (tabName === 'activity')   { tc.innerHTML = backBtn + buildActivity(data);   }
-}
-
-// ── Statistics: динамика баллов по пробникам (инлайн-SVG) ────────────────────
-function buildStatistics(data) {
-    var pts = data.points || [];
-    var title = '<div class="section-title">Динамика баллов по пробникам</div>';
-
-    var hasData = pts.some(function(p) { return p.drawing != null || p.composition != null; });
-    if (!pts.length || !hasData) {
-        return title + '<div class="no-works">График появится после первого пробника с баллом.</div>';
-    }
-
-    // Геометрия: рамка = ширине карточки в пикселях, тогда подписи осей — ровно 12px. Раньше рамка была
-    // 720 и сжималась по карточке: на телефоне в 2,2–2,9 раза, подписи ≈ 4–5px (11.10в).
-    var tcEl = document.getElementById('tab-content');
-    var avail = tcEl ? tcEl.clientWidth - 38 : 0;   // карточка: поля 18 + рамка 1.5 с каждой стороны
-    var W = avail > 0 ? Math.max(200, Math.floor(avail)) : 720;
-    var H = Math.min(320, Math.max(240, Math.round(W * 0.42)));
-    var padL = 38, padR = 16, padT = 16, padB = 32;
-    var FONT = 12;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var n = pts.length;
-    var xFor = function(i) { return padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1)); };
-    var yFor = function(v) { return padT + plotH * (1 - v / 100); };
-
-    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    // Сетка + ось Y (0..100 шаг 20)
-    var grid = '';
-    for (var g = 0; g <= 100; g += 20) {
-        var gy = yFor(g);
-        grid += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--line)" stroke-width="1"/>';
-        grid += '<text x="' + (padL - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="' + FONT + '" fill="var(--dim)">' + g + '</text>';
-    }
-
-    // Подписи месяцев по X (короткий формат: первые 3 буквы месяца). Если на подпись меньше 32px —
-    // через одну (две…), считая от последнего месяца: текущий подписан всегда.
-    var labelStep = n > 1 ? Math.max(1, Math.ceil(32 / (plotW / (n - 1)))) : 1;
-    var xLabels = '';
-    pts.forEach(function(p, i) {
-        if ((n - 1 - i) % labelStep) return;
-        var short = String(p.label || '').split(' ')[0].slice(0, 3);
-        xLabels += '<text x="' + xFor(i) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="' + FONT + '" fill="var(--dim)">' + esc(short) + '</text>';
-    });
-
-    // Сегменты: разрываем линию на соседних не-null точках (null = разрыв графика)
-    function buildSegments(key) {
-        var segs = [];
-        var current = [];
-        pts.forEach(function(p, i) {
-            var v = p[key];
-            if (v == null) {
-                if (current.length) segs.push(current);
-                current = [];
-                return;
-            }
-            current.push({ x: xFor(i), y: yFor(v), label: p.label, value: v });
-        });
-        if (current.length) segs.push(current);
-        return segs;
-    }
-
-    // Плавная кривая через точки сегмента (Catmull-Rom → кубический Безье),
-    // как в линейных графиках биржевых котировок.
-    function smoothPath(points) {
-        var d = 'M' + points[0].x.toFixed(2) + ',' + points[0].y.toFixed(2);
-        for (var i = 0; i < points.length - 1; i++) {
-            var p0 = points[i === 0 ? 0 : i - 1];
-            var p1 = points[i];
-            var p2 = points[i + 1];
-            var p3 = points[i + 2 < points.length ? i + 2 : i + 1];
-            var c1x = p1.x + (p2.x - p0.x) / 6;
-            var c1y = p1.y + (p2.y - p0.y) / 6;
-            var c2x = p2.x - (p3.x - p1.x) / 6;
-            var c2y = p2.y - (p3.y - p1.y) / 6;
-            d += ' C' + c1x.toFixed(2) + ',' + c1y.toFixed(2) + ' ' + c2x.toFixed(2) + ',' + c2y.toFixed(2) + ' ' + p2.x.toFixed(2) + ',' + p2.y.toFixed(2);
-        }
-        return d;
-    }
-
-    var baseY = padT + plotH;
-
-    function renderArea(segs, fillId) {
-        var out = '';
-        segs.forEach(function(seg) {
-            if (seg.length < 2) return;
-            var first = seg[0], last = seg[seg.length - 1];
-            out += '<path d="' + smoothPath(seg) + ' L' + last.x.toFixed(2) + ',' + baseY + ' L' + first.x.toFixed(2) + ',' + baseY + ' Z" fill="url(#' + fillId + ')" stroke="none"/>';
-        });
-        return out;
-    }
-
-    function renderLine(segs) {
-        var out = '';
-        segs.forEach(function(seg) {
-            if (seg.length < 2) return;
-            out += '<path class="stat-line" d="' + smoothPath(seg) + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
-        });
-        return out;
-    }
-
-    function renderDots(segs) {
-        var out = '';
-        segs.forEach(function(seg) {
-            seg.forEach(function(p) {
-                out += '<circle class="stat-point" cx="' + p.x.toFixed(2) + '" cy="' + p.y.toFixed(2) + '" r="3.5"/>';
-                out += '<title>' + esc(p.label) + ': ' + p.value + '</title>';
-            });
-        });
-        return out;
-    }
-
-    // Цвет ряда задают классы stat-series--draw / --comp в cabinet_students.css (токены темы).
-    function gradient(id, series) {
-        return '<linearGradient id="' + id + '" class="stat-grad stat-series--' + series + '" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-opacity="0.22"/>' +
-            '<stop offset="100%" stop-opacity="0"/>' +
-            '</linearGradient>';
-    }
-
-    function series(name, segs) {
-        return '<g class="stat-series--' + name + '">' + renderLine(segs) + renderDots(segs) + '</g>';
-    }
-
-    var drawSegs = buildSegments('drawing');
-    var compSegs = buildSegments('composition');
-
-    var defs = '<defs>' + gradient('statGradDraw', 'draw') + gradient('statGradComp', 'comp') + '</defs>';
-
-    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Динамика баллов по пробникам">' +
-        defs + grid + xLabels +
-        renderArea(drawSegs, 'statGradDraw') + renderArea(compSegs, 'statGradComp') +
-        series('draw', drawSegs) + series('comp', compSegs) +
-        '</svg>';
-
-    var legend = '<div class="stat-legend">' +
-        '<span class="stat-legend-item"><span class="stat-dot stat-series--draw"></span>Рисунок</span>' +
-        '<span class="stat-legend-item"><span class="stat-dot stat-series--comp"></span>Композиция</span>' +
-        '</div>';
-
-    return title +
-        '<div class="stat-chart-card">' + legend +
-        '<div class="stat-chart-wrap">' + svg + '</div>' +
-        '<div class="stat-note">Средний балл за месяц по пробникам с баллом.</div>' +
-        '</div>';
 }
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
@@ -1590,31 +1441,111 @@ function unarchiveStudent() {
         .catch(function() { alert(NET_ERROR); });
 }
 
-// ── Активность ───────────────────────────────────────────────────────────────
+// ── Статистика ───────────────────────────────────────────────────────────────
+// Всё про ребёнка (владелец 06.10.2026): бывшая «Активность» плюс разделы
+// «Статистики активности» с главного дашборда. `data.activity` видят все,
+// кто открыл карточку, включая куратора; `data.school` сервер отдаёт только
+// рангу ≥ 4 — у куратора там null, и разделов просто нет.
 
 function activityTile(label, value, isDate) {
     return '<div class="stat-tile"><div class="stat-tile-head">' + esc(label) + '</div>'
         + '<div class="stat-tile-value' + (isDate ? ' activity-when' : '') + '">' + esc(String(value)) + '</div></div>';
 }
 
-function buildActivity(data) {
+// Строка списка раздела: заголовок и под ним плашки — тот же вид, что у ленты.
+function statsRow(title, badges, details) {
+    return '<li class="activity-feed-item"><span class="activity-feed-text"><b>' + esc(title) + '</b>'
+        + (details ? ' · ' + esc(details) : '')
+        + (badges ? '<span class="profile-status-badges">' + badges + '</span>' : '')
+        + '</span></li>';
+}
+
+function statsBadge(text, tone) {
+    return '<span class="profile-badge' + (tone ? ' ' + tone : '') + '">' + esc(text) + '</span>';
+}
+
+var ASSIGNMENT_TONE = {done: 'ok', late: 'no', overdue: 'no', pending: ''};
+
+function buildStatsAssignments(sc) {
+    var rows = sc.assignments || [];
+    var html = '<div class="profile-field-label">Сдача работ</div>';
+    if (!rows.length) return html + '<div class="no-works">Заданий со сдачей работы у ученика нет.</div>';
+    var count = {done: 0, late: 0, overdue: 0, pending: 0};
+    rows.forEach(function(r) { count[r.status] += 1; });
+    html += '<div class="activity-tiles">'
+        + activityTile('Сдал вовремя', count.done)
+        + activityTile('Сдал после срока', count.late)
+        + activityTile('Не сдал, срок прошёл', count.overdue)
+        + activityTile('Не сдал, срок впереди', count.pending)
+        + '</div><ul class="activity-feed">';
+    rows.forEach(function(r) {
+        var badges = statsBadge(r.note, ASSIGNMENT_TONE[r.status]);
+        if (r.score != null) badges += statsBadge(r.score + ' / 100' + (r.scorer ? ' – ' + r.scorer : ''));
+        html += statsRow(r.label, badges);
+    });
+    return html + '</ul>';
+}
+
+function buildStatsDeadlines(sc) {
+    var d = sc.deadlines || {};
+    var html = '<div class="profile-field-label">Сроки сдачи</div>';
+    if (!d.on_time && !d.late) return html + '<div class="no-works">Сданного со сроком пока нет.</div>';
+    html += '<div class="activity-tiles">'
+        + activityTile('Вовремя', d.on_time || 0)
+        + activityTile('С опозданием', d.late || 0)
+        + '</div>';
+    var late = d.late_tasks || [];
+    if (!late.length) return html;
+    return html + '<ul class="activity-feed">' + late.map(function(t) {
+        return statsRow(t.title, statsBadge('С опозданием: ' + t.late, 'no'));
+    }).join('') + '</ul>';
+}
+
+function buildStatsTimed(sc) {
+    var rows = sc.timed || [];
+    var html = '<div class="section-title">Контрольные на время</div>';
+    if (!rows.length) return html + '<div class="no-works">Контрольных на время ученик не начинал.</div>';
+    return html + '<ul class="activity-feed">' + rows.map(function(r) {
+        var spent = r.minutes != null
+            ? 'Работал ' + r.minutes + ' мин' + (r.limit ? ' из ' + r.limit : '')
+            : 'Не сдал';
+        var badges = statsBadge(spent, r.overrun ? 'no' : (r.minutes != null ? 'ok' : ''));
+        if (r.overrun) badges += statsBadge('Превысил время', 'no');
+        if (r.late) badges += statsBadge('После срока', 'no');
+        return statsRow(r.title, badges);
+    }).join('') + '</ul>';
+}
+
+function buildStatsDiagnostics(sc) {
+    var rows = sc.diagnostics || [];
+    var html = '<div class="section-title">Диагностика АРХИ-ПРОФИЛЯ</div>';
+    if (!rows.length) return html + '<div class="no-works">Диагностик ученику не назначали.</div>';
+    return html + '<ul class="activity-feed">' + rows.map(function(r) {
+        var badges = statsBadge(r.status, r.profile ? 'ok' : '');
+        if (r.profile) badges += statsBadge('Профиль: ' + r.profile);
+        var when = [r.started ? 'начал ' + r.started : '', r.finished ? 'закончил ' + r.finished : '',
+                    r.duration ? 'за ' + r.duration : ''].filter(Boolean).join(', ');
+        return statsRow(r.title, badges, when);
+    }).join('') + '</ul>';
+}
+
+function buildStatsVideos(sc) {
+    var rows = sc.videos || [];
+    if (!rows.length) return '';
+    return '<ul class="activity-feed">' + rows.map(function(v) {
+        var badges = statsBadge(v.completed ? 'Досмотрел' : 'Смотрел', v.completed ? 'ok' : '');
+        if (v.avg_share_pct != null) badges += statsBadge('Просмотрено ' + v.avg_share_pct + '%');
+        if (v.opens) badges += statsBadge('Открывал за ' + sc.video_days + ' дней: ' + v.opens);
+        return statsRow(v.title, badges);
+    }).join('') + '</ul>';
+}
+
+function buildStatistics(data) {
     var a = data.activity || {};
     var v = a.video || {};
     var t = a.tasks || {};
+    var sc = data.school;
     var html = '';
-
-    html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
-        + activityTile('Последний вход', a.last_login || 'Не входил', true)
-        + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
-        + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
-        + '</div>';
-
-    html += '<div class="section-title">Видео</div><div class="activity-tiles">'
-        + activityTile('Начал смотреть', v.started || 0)
-        + activityTile('Досмотрел', v.completed || 0)
-        + activityTile('Открывал за ' + a.days + ' дней', v.opens || 0)
-        + activityTile('Последний просмотр', v.last_opened || 'Не смотрел', true)
-        + '</div>';
 
     html += '<div class="section-title">Задания</div>';
     if (t.behind) {
@@ -1624,6 +1555,23 @@ function buildActivity(data) {
         + activityTile('Сделано', t.done || 0)
         + activityTile('Просрочено', t.overdue || 0)
         + activityTile('Впереди на этой неделе', t.upcoming || 0)
+        + '</div>';
+    if (sc) html += buildStatsAssignments(sc) + buildStatsDeadlines(sc);
+
+    if (sc) html += buildStatsTimed(sc) + buildStatsDiagnostics(sc);
+
+    html += '<div class="section-title">Видео</div><div class="activity-tiles">'
+        + activityTile('Начал смотреть', v.started || 0)
+        + activityTile('Досмотрел', v.completed || 0)
+        + activityTile('Открывал за ' + a.days + ' дней', v.opens || 0)
+        + activityTile('Последний просмотр', v.last_opened || 'Не смотрел', true)
+        + '</div>';
+    if (sc) html += buildStatsVideos(sc);
+
+    html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
+        + activityTile('Последний вход', a.last_login || 'Не входил', true)
+        + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
+        + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
         + '</div>';
 
     html += '<div class="section-title">Последние события</div>';

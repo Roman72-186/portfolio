@@ -46,7 +46,7 @@ from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score, can_send_to_revision
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
-from app.services.activity_stats import student_activity
+from app.services.activity_stats import student_statistics
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
@@ -536,7 +536,7 @@ def _render_students_panel(
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     if archived_b:
         sidebar_title = "Архив учеников"
-    valid_tabs = ("portfolio", "tasks", "statistics", "activity")
+    valid_tabs = ("portfolio", "tasks", "statistics")
     # Вкладки «Пробники» нет с 06.10.2026 (владелец), «Цикла пробника» — с
     # 29.09.2026. На них по-прежнему ведут «назад» с диалога пробника и экрана
     # «Пробники», возврат после балла и старые уведомления — все открывают
@@ -544,6 +544,10 @@ def _render_students_panel(
     # одной: адрес разбирается здесь и в `_navDefaultTab` скрипта карточки.
     if tab in ("cycles", "mock-exams"):
         tab = "portfolio"
+    # «Активность» слита в «Статистику» 06.10.2026 (владелец) — закладки
+    # `?tab=activity` открывают «Статистику».
+    if tab == "activity":
+        tab = "statistics"
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
@@ -717,35 +721,6 @@ def get_student_profile(
             "hero": hero,
             "manage": _manage_block(db, user, student),
         },
-    })
-
-
-# ── AJAX: активность ─────────────────────────────────────────────────────────
-
-@router.get("/students/{student_id}/activity")
-def get_activity(
-    student_id: int,
-    user: Annotated[dict, Depends(_require_student_panel)],
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    """Вкладка «Активность» (владелец 05.10.2026): входы и загрузки, видео,
-    задания со сроками и лента событий. Действия сотрудников над учеником в
-    ленте — только с ранга 4: куратору не нужны имена тех, кто его правил."""
-    student = _check_access(student_id, user, db, read_archive=True)
-    enrolled_at = student.enrolled_at or student.created_at
-    return JSONResponse({
-        "student": {
-            "id": student.id,
-            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
-            "tariff": student.tariff or "—",
-            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
-            "photo_url": student.photo_url,
-            "cohort_tag": student.cohort_tag,
-        },
-        "activity": student_activity(
-            db, student, today=today_msk(), with_staff_actions=user["role_rank"] >= 4,
-        ),
     })
 
 
@@ -1024,7 +999,7 @@ def get_mock_exams(
     })
 
 
-# ── AJAX: statistics (динамика баллов по пробникам) ──────────────────────────
+# ── AJAX: статистика ─────────────────────────────────────────────────────────
 
 @router.get("/students/{student_id}/statistics")
 def get_statistics(
@@ -1032,10 +1007,16 @@ def get_statistics(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    from app.services.stats import student_score_curve
+    """Вкладка «Статистика» (владелец 06.10.2026): всё про ребёнка из
+    «Статистики активности» плюс бывшая вкладка «Активность» — входы и
+    загрузки, видео, задания со сроками, лента событий. График пробников
+    снят: пробник первой версии не сдают с июля 2026.
 
+    Разделы «Статистики активности» (`school`) и действия сотрудников в ленте —
+    только с ранга 4: куратор видит то же, что видел в «Активности»."""
     student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
+    senior = user["role_rank"] >= 4
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -1046,7 +1027,10 @@ def get_statistics(
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
-        "points": student_score_curve(db, student_id),
+        **student_statistics(
+            db, student, today=today_msk(),
+            with_staff_actions=senior, with_school_stats=senior,
+        ),
     })
 
 

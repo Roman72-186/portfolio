@@ -170,26 +170,19 @@ def test_reports_denied_for_student(client, db, user_factory, session_factory):
 
 # ── Statistics ────────────────────────────────────────────────────────────────
 
-def test_statistics_returns_points_from_first_score(curator_client, db, student):
-    """Точки начинаются с месяца первой оценённой работы, а не за фиксированные 12 месяцев."""
+def test_statistics_gives_curator_activity_without_school_sections(curator_client, db, student):
+    """С 06.10.2026 вкладка «Статистика» — всё про ребёнка, график пробников
+    снят. Куратору — бывшая «Активность», разделы «Статистики активности» —
+    с ранга 4 (владелец: «оставить показ данных, как сейчас у куратора»)."""
     client, _ = curator_client
     _add_mock(db, student.id, month="январь", year=2026, subject="Рисунок", score=70)
     resp = client.get(f"/cabinet/students/{student.id}/statistics")
     assert resp.status_code == 200
     data = resp.json()
     assert data["student"]["id"] == student.id
-    # created_at = now (default), единственная оценённая работа → одна точка текущего месяца
-    assert len(data["points"]) == 1
-    assert all("drawing" in p and "composition" in p for p in data["points"])
-    assert data["points"][0]["drawing"] == 70.0
-
-
-def test_statistics_empty_without_scored_works(curator_client, db, student):
-    client, _ = curator_client
-    resp = client.get(f"/cabinet/students/{student.id}/statistics")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["points"] == []
+    assert "points" not in data
+    assert data["school"] is None
+    assert {"logins", "video", "tasks", "feed"} <= set(data["activity"])
 
 
 def test_statistics_denied_other_curator(

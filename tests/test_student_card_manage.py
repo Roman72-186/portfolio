@@ -15,7 +15,10 @@ import pytest
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
+from app.models.learning_topic import LearningTopic
 from app.models.section_access import SectionAccessRule
+from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockState, TaskBlockSubmission
+from app.models.tracker import TrackerTask
 from app.services.point_a import PointA
 from app.services.tz import msk_input_value
 from app.services.user_management import apply_tariff_change, archive_user
@@ -298,12 +301,16 @@ def test_blocked_student_keeps_people_card(client, db, session_factory, people):
     assert resp.status_code == 200
 
 
-# ── Вкладка «Активность» ─────────────────────────────────────────────────────
+# ── Вкладка «Статистика» (с 06.10.2026 в ней и бывшая «Активность») ────────
+
+def _statistics(client, student) -> dict:
+    resp = client.get(f"/cabinet/students/{student.id}/statistics")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
 
 def _activity(client, student):
-    resp = client.get(f"/cabinet/students/{student.id}/activity")
-    assert resp.status_code == 200, resp.text
-    return resp.json()["activity"]
+    return _statistics(client, student)["activity"]
 
 
 def test_activity_counts_and_feed(client, db, session_factory, people):
@@ -334,7 +341,7 @@ def test_curator_activity_only_own(client, db, session_factory, people, user_fac
     db.commit()
     _login(client, session_factory, people["curator"])
 
-    assert client.get(f"/cabinet/students/{stranger.id}/activity").status_code == 403
+    assert client.get(f"/cabinet/students/{stranger.id}/statistics").status_code == 403
 
 
 def test_activity_queries_do_not_grow_with_history(client, db, session_factory, people, sql_counter):
@@ -359,3 +366,109 @@ def test_activity_queries_do_not_grow_with_history(client, db, session_factory, 
     db.commit()
 
     assert _count() == before
+
+
+def _late_control(db, student, scorer):
+    """Контрольная на время, сданная после срока и оценённая ГП."""
+    deadline = datetime.now(timezone.utc) - timedelta(days=1)
+    topic = LearningTopic(title="Цикл", kind="week", opens_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                          is_published=True, assign_to_all=True)
+    db.add(topic)
+    db.flush()
+    task = TrackerTask(title="Контрольная по рисунку", topic_id=topic.id, kind="material",
+                       is_published=True, submit_until=deadline, subject="Рисунок")
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_TIMED, title="Локация с дверью",
+                      time_limit_minutes=75)
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockState(block_id=block.id, user_id=student.id, status="done",
+                          started_at=deadline + timedelta(hours=1),
+                          completed_at=deadline + timedelta(hours=2)))
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=student.id,
+                               submitted_at=deadline + timedelta(hours=2),
+                               score=55, scored_by_id=scorer.id))
+    db.commit()
+    return block
+
+
+def test_statistics_collects_school_sections_for_chief(client, db, session_factory, people):
+    """Владелец 06.10.2026: «собрать туда всё, что касается ребёнка из вкладки
+    статистика». Цифры — те же функции, что у «Статистики активности»."""
+    chief = people["chief"]
+    chief.last_name, chief.first_name = "Иванова", "Анна"
+    _late_control(db, people["student"], chief)
+    _login(client, session_factory, chief)
+
+    data = _statistics(client, people["student"])
+
+    school = data["school"]
+    [row] = school["assignments"]
+    assert row["label"] == "Рисунок: Контрольная по рисунку · Локация с дверью"
+    assert (row["status"], row["note"]) == ("late", "Сдал после срока")
+    assert (row["score"], row["scorer"]) == (55, "Иванова Анна")
+    assert (school["deadlines"]["on_time"], school["deadlines"]["late"]) == (0, 1)
+    [timed] = school["timed"]
+    assert (timed["minutes"], timed["limit"], timed["late"]) == (60, 75, True)
+    assert school["diagnostics"] == [] and school["videos"] == []
+    assert "points" not in data  # график пробников снят
+    assert "activity" in data
+
+
+def test_statistics_timed_row_for_student_even_in_time(db, user_factory):
+    """Дашборд перечисляет только превысивших и опоздавших, карточка — каждую
+    контрольную ученика: «уложился» тоже ответ."""
+    from app.services.activity_stats import get_timed_stats
+
+    student = user_factory(vk_id=960_040, name="Ученик", role_name="ученик")
+    task = TrackerTask(title="Контрольная", kind="material", is_published=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_TIMED, title="Куб", time_limit_minutes=60)
+    db.add(block)
+    db.flush()
+    now = datetime.now(timezone.utc)
+    db.add(TaskBlockState(block_id=block.id, user_id=student.id, status="done",
+                          started_at=now - timedelta(minutes=40), completed_at=now))
+    db.commit()
+
+    assert get_timed_stats(db)["students"] == []
+    [row] = get_timed_stats(db, student_id=student.id)["students"]
+    assert (row["minutes"], row["overrun"], row["late"]) == (40, False, False)
+
+
+def test_curator_statistics_without_school_sections(client, db, session_factory, people):
+    """Владелец 06.10.2026: куратору — «как сейчас», то есть бывшая
+    «Активность»; разделы «Статистики активности» — с ранга 4."""
+    _late_control(db, people["student"], people["chief"])
+    _login(client, session_factory, people["curator"])
+
+    data = _statistics(client, people["student"])
+
+    assert data["school"] is None
+    assert {"logins", "video", "tasks", "feed"} <= set(data["activity"])
+
+
+def test_archived_student_statistics_readable(client, db, session_factory, people):
+    student = people["student"]
+    db.commit()
+    archive_user(db, target_user_id=student.id, performed_by_id=people["superadmin"].id, actor_rank=5)
+    _login(client, session_factory, people["chief"])
+
+    data = _statistics(client, student)
+
+    # Архивного ученика программа не числит — заданий к сдаче у него нет.
+    assert data["school"]["assignments"] == []
+
+
+def test_old_activity_tab_opens_statistics(client, db, session_factory, people):
+    """«Активность» слита в «Статистику» — закладки `?tab=activity` открывают её."""
+    db.commit()
+    _login(client, session_factory, people["chief"])
+
+    page = client.get(f"/cabinet/students?student={people['student'].id}&tab=activity").text
+
+    assert 'const INITIAL_TAB    = "statistics";' in page
+    assert 'id="tab-activity"' not in page
+    assert client.get(f"/cabinet/students/{people['student'].id}/activity").status_code == 404

@@ -41,14 +41,19 @@ def _duration_text(seconds: float | None) -> str | None:
     return f"{minutes} мин {secs} с"
 
 
-def diagnostic_stats(db: Session, task: TrackerTask) -> dict:
+def diagnostic_stats(db: Session, task: TrackerTask, *, only_user_id: int | None = None) -> dict:
     """Прохождение одной диагностики по всей её аудитории.
 
     Один запрос на `TrackerTaskState` и один на `TaskBlockResponse` по всей
     аудитории разом — не по ученику в цикле, чтобы не разъезжаться по числу
     запросов с размером группы.
+
+    `only_user_id` — карточка ученика: аудитория сужается до него; не
+    адресована ему — `total == 0`.
     """
     audience_ids = task_audience_user_ids(db, task.id) - REPORT_EXCLUDED_USER_IDS
+    if only_user_id is not None:
+        audience_ids &= {only_user_id}
     students = (
         db.query(User).filter(User.id.in_(audience_ids)).all()
         if audience_ids else []
