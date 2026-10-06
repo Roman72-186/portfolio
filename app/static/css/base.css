@@ -1184,7 +1184,11 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
     z-index: 2; line-height: 1;
 }
 .preview-remove { top: 4px; right: 4px; }
-.preview-rotate { bottom: 4px; left: 4px; font-size: 18px; }
+.preview-rotate { bottom: 4px; left: 4px; font-size: 18px; touch-action: manipulation; }
+/* Видно 32 px, а палец ловит 44 (06.10.2026): в ячейке ~117 px на телефоне
+   кнопка крупнее закрывала бы рисунок, а 32 px — мимо, по фото. */
+.preview-remove::before,
+.preview-rotate::before { content: ""; position: absolute; inset: -6px; }
 .preview-rotate[hidden] { display: none; }
 .preview-remove:hover { background: var(--error-fill); }
 .preview-rotate:hover { background: rgba(28,28,30,0.8); }
@@ -1224,20 +1228,22 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 }
 #lightbox-img { max-width: 100%; max-height: 75vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,.5); object-fit: contain; background: #000; }
 .lightbox-close {
-    position: absolute; top: 16px; right: 16px;
-    background: rgba(255,255,255,.15); border: none; color: #fff;
+    position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px;
+    background: rgba(20,20,30,.62); border: 1px solid rgba(255,255,255,.22); color: #fff;
     width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer;
     transition: background var(--duration-base); z-index: 2;
 }
-.lightbox-close:hover { background: rgba(255,255,255,.28); }
+.lightbox-close:hover { background: rgba(20,20,30,.85); }
 .lightbox-nav {
     position: absolute; top: 50%; transform: translateY(-50%);
-    background: rgba(255,255,255,.15); border: none; color: #fff;
+    /* Тёмная подложка, а не белая: стрелки лежат поверх фото, и на рисунке
+       на белой бумаге белые пропадали (06.10.2026). */
+    background: rgba(20,20,30,.62); border: 1px solid rgba(255,255,255,.22); color: #fff;
     width: 44px; height: 44px; border-radius: 50%; font-size: 28px; line-height: 1; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: background var(--duration-base);
 }
-.lightbox-nav:hover { background: rgba(255,255,255,.32); }
+.lightbox-nav:hover { background: rgba(20,20,30,.85); }
 .lightbox-prev { left: -8px; }
 .lightbox-next { right: -8px; }
 .lightbox.is-single .lightbox-nav,
@@ -1262,20 +1268,26 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 .lightbox-thumb.is-current img { opacity: 1; }
 /* Поворот фото (с 04.10.2026 — у всех ролей, каждой в своей зоне). Кнопки
    рендерятся скрытыми, `lightbox.js` открывает их только у слайда, который
-   сервер разрешил крутить (`/cabinet/rotate-photo/allowed`). */
+   сервер разрешил крутить (`/cabinet/rotate-photo/allowed`).
+   Стоят в углу затемнения напротив «×», а не поверх фото (06.10.2026):
+   работы — рисунки на белой бумаге, и белые полупрозрачные кнопки на
+   телефоне с ними сливались. */
 .lightbox-tools {
-    position: absolute; top: 16px; left: 16px; z-index: 3;
+    position: absolute; z-index: 3;
+    top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
     display: flex; gap: 8px;
 }
 .lightbox-tools[hidden] { display: none; }
 .lightbox-tool {
-    background: rgba(255,255,255,.15); border: none; color: var(--on-color);
-    width: 44px; height: 44px; border-radius: 50%; font-size: 20px; line-height: 1;
-    cursor: pointer; transition: background 0.2s;
+    background: rgba(20,20,30,.62); border: 1px solid rgba(255,255,255,.22); color: var(--on-color);
+    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; line-height: 1;
+    cursor: pointer; transition: background 0.2s; touch-action: manipulation;
     display: flex; align-items: center; justify-content: center;
 }
-.lightbox-tool:hover { background: rgba(255,255,255,.28); }
-.lightbox-tools.is-busy { opacity: .5; pointer-events: none; }
+.lightbox-tool:hover { background: rgba(20,20,30,.85); }
+.lightbox-tools.is-busy { pointer-events: none; }
+.lightbox-tools.is-busy .lightbox-tool:not(.is-spinning) { opacity: .45; }
+.lightbox-tool.is-spinning { animation: spin 0.9s linear infinite; }
 
 /* ═══════════════════════════════════════
    GATE MODAL — портфолио «До» не загружено (14.09.2026)

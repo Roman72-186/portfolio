@@ -91,12 +91,41 @@
 
     // Поворот текущего фото на 90° (перезаписывает файл в S3). Ссылка без `?v=`
     // остаётся прежней, поэтому разрешение из `rotatable` действует и дальше.
-    window.lightboxRotate = function(direction){
-        if (!slides.length) return;
+    //
+    // Занято, пока новое фото не нарисовалось, а не только пока ответил сервер:
+    // на телефоне фото 1600 px грузится секунды, старое всё это время стоит на
+    // экране, и ребёнок жал ⟳ второй раз — фото уходило на 180°.
+    var rotating = false;
+    function setBusy(on, btn) {
+        rotating = on;
+        if (!tools) return;
+        tools.classList.toggle('is-busy', on);
+        tools.setAttribute('aria-busy', on ? 'true' : 'false');
+        tools.querySelectorAll('.lightbox-tool').forEach(function(b){
+            b.classList.toggle('is-spinning', on && b === btn);
+        });
+    }
+    function whenShown(done) {
+        var called = false;
+        function finish() {
+            if (called) return;
+            called = true;
+            img.removeEventListener('load', finish);
+            img.removeEventListener('error', finish);
+            done();
+        }
+        img.addEventListener('load', finish);
+        img.addEventListener('error', finish);
+        // Сеть совсем плохая — не держим кнопки запертыми вечно.
+        setTimeout(finish, 15000);
+    }
+
+    window.lightboxRotate = function(direction, btn){
+        if (!slides.length || rotating) return;
         var s = slides[idx];
         var base = baseUrl(s.full);
         if (!base) return;
-        if (tools) tools.classList.add('is-busy');
+        setBusy(true, btn);
         var fd = new FormData();
         fd.append('src', base);
         fd.append('direction', direction);
@@ -105,8 +134,7 @@
             headers: {'X-CSRF-Token': window.LIGHTBOX_CSRF || ''},
             body: fd
         }).then(function(r){ return r.json(); }).then(function(d){
-            if (tools) tools.classList.remove('is-busy');
-            if (!d || !d.success) { alert((d && d.error) || 'Не удалось повернуть фото'); return; }
+            if (!d || !d.success) { setBusy(false); alert((d && d.error) || 'Не удалось повернуть фото'); return; }
             var newUrl = d.src;
             // Превью работы сервер пересобрал; нет превью — квадратик берёт само фото.
             var newThumb = d.thumb_src || newUrl;
@@ -124,9 +152,12 @@
             s.thumb = newThumb;
             var thumbImg = thumbs.querySelectorAll('.lightbox-thumb img')[idx];
             if (thumbImg) thumbImg.src = newThumb;
+            // Листнули на другое фото, пока сервер крутил, — ждать нечего.
+            if (slides[idx] === s) whenShown(function(){ setBusy(false); });
+            else setBusy(false);
             render();
         }).catch(function(){
-            if (tools) tools.classList.remove('is-busy');
+            setBusy(false);
             alert('Ошибка сети при повороте фото');
         });
     };
