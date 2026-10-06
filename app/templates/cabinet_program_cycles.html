@@ -76,6 +76,39 @@
                 {% endfor %}
             </select>
         </label>
+        {# Доступ по тарифам (владелец 06.10.2026: «с какой даты по какое
+           доступен ему данный цикл»). Все галочки и пустые даты — цикл открыт
+           всем тарифам в свои даты, так сохраняется без ограничения. Окно
+           решает только, когда тариф видит цикл; после «по» цикл у него в
+           архиве (`video_topics.tariff_closed_topic_ids`). Разметка строк —
+           общая со сроками по тарифам (`.prg-deadline-row`). #}
+        <div class="prg-field">
+            <span>Доступ по тарифам</span>
+            <div class="prg-blk-deadlines" data-c-tariffs>
+                <p class="prg-hint">Пустые даты – тариф видит цикл в его даты. После даты «по» цикл у тарифа уходит в архив: смотреть можно, сдавать нельзя.</p>
+                {% for tariff in cycle_tariffs %}
+                <div class="prg-deadline-row" data-c-tariff="{{ tariff }}">
+                    <label class="prg-field--row">
+                        <input type="checkbox" data-c-tariff-on checked
+                               aria-label="Цикл доступен тарифу {{ tariff }}">
+                        <span class="prg-deadline-name">{{ tariff }}</span>
+                    </label>
+                    <div class="prg-grid2">
+                        <label class="prg-field">
+                            <span>Доступен с</span>
+                            <input type="date" data-c-tariff-from
+                                   aria-label="Тариф {{ tariff }}: доступен с">
+                        </label>
+                        <label class="prg-field">
+                            <span>по</span>
+                            <input type="date" data-c-tariff-to
+                                   aria-label="Тариф {{ tariff }}: доступен по">
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>
@@ -105,6 +138,7 @@
                 <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
                 {% if not cycle.locks_next %}<span class="prg-badge">Дальше пускает без сдачи</span>{% endif %}
                 {% if cycle.stage_label %}<span class="prg-badge">{{ cycle.stage_label }}</span>{% endif %}
+                {% if cycle.tariff_access is not none %}<span class="prg-badge">Доступ по тарифам</span>{% endif %}
                 <h3>{{ cycle.label }}</h3>
                 {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
@@ -115,6 +149,15 @@
                     <span>период не задан — считается календарной неделей</span>
                     {% endif %}
                 </div>
+                {% if cycle.tariff_access is not none %}
+                <div class="prg-meta">
+                    {% for row in cycle.tariff_access %}
+                    <span>{{ row.tariff }}{% if row.starts_on %} с {{ row.starts_on }}{% endif %}{% if row.ends_on %} по {{ row.ends_on }}{% endif %}</span>
+                    {% else %}
+                    <span>Не доступен ни одному тарифу</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
             {# Названия кнопок — отзыв с теста 15.09.2026: «чем задания отличаются
                от править, если и то, и то ведёт в изменение блока». Каждая
@@ -174,12 +217,43 @@
         published: form.querySelector('[data-c-published]'),
         locksNext: form.querySelector('[data-c-locks-next]')
     };
+    var tariffRows = Array.prototype.slice.call(form.querySelectorAll('[data-c-tariff]'));
     var message = form.querySelector('[data-cycle-message]');
     var formTitle = form.querySelector('[data-cycle-form-title]');
     var resetBtn = form.querySelector('[data-cycle-reset]');
     // Карточка, из которой открыли правку: «Отмена» возвращает к ней, а не
     // оставляет человека наверху страницы искать, где он был.
     var returnTo = null;
+
+    // `access` — строки тарифов цикла или null, если цикл открыт всем.
+    function fillTariffs(access) {
+        var byTariff = {};
+        (access || []).forEach(function (row) { byTariff[row.tariff] = row; });
+        tariffRows.forEach(function (row) {
+            var saved = byTariff[row.getAttribute('data-c-tariff')];
+            row.querySelector('[data-c-tariff-on]').checked = access === null || !!saved;
+            row.querySelector('[data-c-tariff-from]').value = saved ? saved.starts_on : '';
+            row.querySelector('[data-c-tariff-to]').value = saved ? saved.ends_on : '';
+        });
+    }
+
+    // Все галочки и пустые даты — ограничения нет (null), иначе — список
+    // отмеченных тарифов с их датами.
+    function collectTariffs() {
+        var rows = tariffRows.map(function (row) {
+            return {
+                on: row.querySelector('[data-c-tariff-on]').checked,
+                tariff: row.getAttribute('data-c-tariff'),
+                starts_on: row.querySelector('[data-c-tariff-from]').value || null,
+                ends_on: row.querySelector('[data-c-tariff-to]').value || null
+            };
+        });
+        var open = rows.every(function (r) { return r.on && !r.starts_on && !r.ends_on; });
+        if (open) return null;
+        return rows.filter(function (r) { return r.on; }).map(function (r) {
+            return { tariff: r.tariff, starts_on: r.starts_on, ends_on: r.ends_on };
+        });
+    }
 
     function reset() {
         fields.id.value = '';
@@ -191,6 +265,7 @@
         fields.stage.value = fields.stage.getAttribute('data-c-stage-default') || '';
         fields.published.checked = true;
         fields.locksNext.checked = true;
+        fillTariffs(null);
         formTitle.textContent = 'Новый цикл';
         message.textContent = '';
     }
@@ -220,6 +295,7 @@
             fields.stage.value = data.stage_id || '';
             fields.published.checked = !!data.is_published;
             fields.locksNext.checked = data.locks_next !== false;
+            fillTariffs(data.tariff_access === undefined ? null : data.tariff_access);
             // Заголовок формы повторяет текст кнопки: человек нажал «Название и
             // даты» и должен увидеть его же там, куда его перебросило (отзыв с
             // теста 15.09.2026 — «я не поняла, куда мне жать»).
@@ -288,6 +364,11 @@
             message.textContent = 'Заполните обе даты периода.';
             return;
         }
+        var tariffAccess = collectTariffs();
+        if (tariffAccess && !tariffAccess.length) {
+            message.textContent = 'Отметьте хотя бы один тариф – иначе цикл никто не увидит.';
+            return;
+        }
         window.csrfFetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -298,7 +379,8 @@
                 ends_on: fields.end.value,
                 stage_id: fields.stage.value ? Number(fields.stage.value) : null,
                 is_published: fields.published.checked,
-                locks_next: fields.locksNext.checked
+                locks_next: fields.locksNext.checked,
+                tariff_access: tariffAccess
             })
         }).then(function (resp) {
             if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });

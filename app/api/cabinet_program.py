@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session as DBSession, aliased
 
-from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT
+from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT, tariff_choices
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
@@ -170,9 +170,11 @@ from app.services.video_topics import (
     get_assignee_ids,
     get_tag_ids,
     get_topic,
+    get_topic_tariff_windows,
     get_topic_tariffs,
     list_topics as list_week_topics,
     publish_topic,
+    set_topic_tariff_windows,
     set_topic_tariffs,
     unpublish_topic,
     update_topic,
@@ -657,6 +659,24 @@ def program_month(
 # календаря. Поэтому здесь именно создание, а не перенос формы.
 
 
+class CycleTariffWindowPayload(BaseModel):
+    """Строка «Доступ по тарифам» формы цикла (владелец 06.10.2026: «с какой
+    даты по какое доступен ему данный цикл»). Даты московские, из
+    <input type="date">; пусто — своей границы нет: «с» — с начала цикла,
+    «по» — до его конца."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tariff: str = Field(min_length=1, max_length=50)
+    starts_on: str | None = Field(default=None, max_length=32)
+    ends_on: str | None = Field(default=None, max_length=32)
+
+    @field_validator("tariff")
+    @classmethod
+    def validate_tariff(cls, value: str) -> str:
+        return _validate_tariffs([value])[0]
+
+
 class CyclePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -675,6 +695,13 @@ class CyclePayload(BaseModel):
     # Этап-родитель (владелец 24.09.2026). `None` — легаси-цикл без этапа,
     # как было до этой возможности.
     stage_id: int | None = Field(default=None, ge=1)
+    # Доступ по тарифам (владелец 06.10.2026). `None` — цикл видят все тарифы
+    # в его общие даты, как все циклы до этого дня. Список — только
+    # перечисленные тарифы, каждый в своём окне. Поле не прислано вовсе
+    # (вкладка открыта до выкатки) — доступ не трогать, как `period_id` у этапа.
+    tariff_access: list[CycleTariffWindowPayload] | None = Field(
+        default=None, max_length=len(TARIFFS)
+    )
 
     @field_validator("title")
     @classmethod
@@ -749,6 +776,70 @@ def _period_dates(starts_on: str, ends_on: str) -> tuple[datetime, datetime]:
 def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
     """Период цикла в московском времени — см. `_period_dates`."""
     return _period_dates(payload.starts_on, payload.ends_on)
+
+
+def _optional_day(raw: str | None, tariff: str) -> date | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    day = parse_day_iso(raw)
+    if day is None:
+        raise HTTPException(status_code=422, detail=f"Неверная дата у тарифа {tariff}")
+    return day
+
+
+def _cycle_tariff_windows(
+    payload: CyclePayload,
+) -> dict[str, tuple[datetime | None, datetime | None]] | None:
+    """Окна тарифов цикла в UTC — те же границы суток, что у самого цикла
+    (`_period_dates`): «с» — начало дня, «по» — конец дня включительно."""
+    if payload.tariff_access is None:
+        return None
+    windows: dict[str, tuple[datetime | None, datetime | None]] = {}
+    for row in payload.tariff_access:
+        if row.tariff in windows:
+            raise HTTPException(status_code=422, detail=f"Тариф {row.tariff} указан дважды")
+        start = _optional_day(row.starts_on, row.tariff)
+        end = _optional_day(row.ends_on, row.tariff)
+        if start is not None and end is not None and end < start:
+            raise HTTPException(
+                status_code=422, detail=f"У тарифа {row.tariff} дата «по» раньше даты «с»"
+            )
+        windows[row.tariff] = (
+            msk_midnight(start).astimezone(timezone.utc) if start is not None else None,
+            (msk_midnight(end) + timedelta(hours=23, minutes=59, seconds=59)).astimezone(
+                timezone.utc
+            ) if end is not None else None,
+        )
+    return windows
+
+
+def _apply_cycle_tariff_access(
+    db: DBSession, topic: LearningTopic, payload: CyclePayload, windows
+) -> None:
+    """`windows` разобраны до записи цикла: ошибка в датах тарифа не должна
+    оставлять наполовину сохранённый цикл."""
+    if "tariff_access" not in payload.model_fields_set:
+        return
+    set_topic_tariff_windows(db, topic, windows)
+
+
+def _cycle_tariff_rows(db: DBSession, topic: LearningTopic) -> list[dict] | None:
+    """Доступ по тарифам для формы и карточки цикла; `None` — открыт всем."""
+    if not topic.tariff_restricted:
+        return None
+    windows = get_topic_tariff_windows(db, topic.id)
+    return [
+        {
+            "tariff": tariff,
+            "starts_on": msk_date(opens_at).isoformat() if opens_at else "",
+            "ends_on": msk_date(closes_at).isoformat() if closes_at else "",
+        }
+        for tariff, (opens_at, closes_at) in sorted(
+            windows.items(),
+            key=lambda item: TARIFFS.index(item[0]) if item[0] in TARIFFS else len(TARIFFS),
+        )
+    ]
 
 
 def _cycle_video_count(db: DBSession, topic_id: int) -> int:
@@ -851,6 +942,7 @@ def program_cycles(
             "videos_count": _cycle_video_count(db, topic.id),
             "stage_id": topic.parent_id,
             "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
+            "tariff_access": _cycle_tariff_rows(db, topic),
         }
         for topic in list_week_topics(db)
         if (stage_filter is None or topic.parent_id == stage_filter["id"])
@@ -863,8 +955,14 @@ def program_cycles(
         if period_stage_ids is None or t.id in period_stage_ids
     ]
     in_context = stage_topic is not None or period_topic is not None
+    # Действующие тарифы плюс отработавшие, если они уже стоят у какого-то
+    # цикла: иначе пересохранение такого цикла молча сняло бы с него тариф.
+    cycle_tariffs = tariff_choices(*(
+        row["tariff"] for cycle in cycles for row in (cycle["tariff_access"] or [])
+    ))
     return templates.TemplateResponse(request, "cabinet_program_cycles.html",
         {"request": request, "user": user, "cycles": cycles, "stages": stages,
+         "cycle_tariffs": cycle_tariffs,
          "stage_filter": stage_filter,
          "period_filter": (
              {"id": period_topic.id, "label": cycle_label(db, period_topic)}
@@ -1185,6 +1283,7 @@ def create_program_cycle(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     opens_at, ends_at = _cycle_dates(payload)
+    tariff_windows = _cycle_tariff_windows(payload)
     stage = _resolve_stage(db, payload.stage_id)
     topic = create_topic(
         db,
@@ -1192,13 +1291,14 @@ def create_program_cycle(
         description=payload.description,
         opens_at=opens_at,
         ends_at=ends_at,
-        # Цикл виден всем ученикам: адресация внутри цикла идёт по блокам
-        # (тариф, предмет), а не по самой рамке.
+        # Цикл виден всем ученикам; сузить его можно только по тарифу
+        # (`tariff_access`, 06.10.2026), остальная адресация — по блокам.
         assign_to_all=True,
         user_id=user["user_id"],
         parent_id=stage.id if stage is not None else None,
     )
     topic.locks_next = payload.locks_next
+    _apply_cycle_tariff_access(db, topic, payload, tariff_windows)
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     db.commit()
@@ -1282,6 +1382,7 @@ def update_program_cycle(
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     opens_at, ends_at = _cycle_dates(payload)
+    tariff_windows = _cycle_tariff_windows(payload)
     stage = _resolve_stage(db, payload.stage_id)
     update_topic(
         topic,
@@ -1294,6 +1395,7 @@ def update_program_cycle(
         set_parent=True,
     )
     topic.locks_next = payload.locks_next
+    _apply_cycle_tariff_access(db, topic, payload, tariff_windows)
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     else:

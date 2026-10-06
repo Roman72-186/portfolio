@@ -63,6 +63,7 @@ from app.services.tracker import (
     effective_week_start,
     locked_cycle_ids,
 )
+from app.services.video_topics import tariff_closed_topic_ids
 
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
@@ -621,7 +622,7 @@ def cycle_is_archived_for_user(
     topic = db.get(LearningTopic, topic_id)
     if topic is None or topic.kind != TOPIC_KIND_WEEK:
         return False
-    if not _cycle_is_over(topic, today):
+    if not cycle_is_over_for_user(db, user_id, topic, today):
         return False
     current = effective_cycle(db, user_id, today)
     return current is None or current.id != topic.id
@@ -711,6 +712,17 @@ def _cycle_is_over(topic: LearningTopic, today: date) -> bool:
     return cycle_bounds(topic)[1] < today
 
 
+def cycle_is_over_for_user(
+    db: Session, user_id: int, topic: LearningTopic, today: date
+) -> bool:
+    """Цикл для ученика закончился: прошли его общие даты или окно его тарифа
+    (владелец 06.10.2026: после «по» цикл у тарифа уходит в архив). Этим
+    спрашивают архив, экран и пишущие роуты — одно правило на все три."""
+    return _cycle_is_over(topic, today) or topic.id in tariff_closed_topic_ids(
+        db, user_id, today
+    )
+
+
 def _archive_levels(
     db: Session, cycle: LearningTopic
 ) -> tuple[LearningTopic | None, LearningTopic | None]:
@@ -763,13 +775,17 @@ def archive_for_student(
     """
     debt = cycle_debt(db, user_id, today)
     locked_ids = {item.id for item in debt["locked"]} if debt else set()
+    # Окно тарифа закончилось (06.10.2026) — цикл в архиве, как закончившийся.
+    closed_ids = tariff_closed_topic_ids(db, user_id, today)
     periods: dict[int | None, dict] = {}
 
     for cycle in reversed(started_cycles(db, user_id, today)):
         if cycle.id in locked_ids:
             continue
         first, last = cycle_bounds(cycle)
-        if not (last < today or cycle_done_by_user(db, user_id, cycle)):
+        if not (
+            last < today or cycle.id in closed_ids or cycle_done_by_user(db, user_id, cycle)
+        ):
             continue
         steps = build_cycle_feed(
             db, user_id=user_id, user_tariff=user_tariff, start=first, end=last,
@@ -969,7 +985,7 @@ def feed_for_student(
         "is_archive": (
             chosen is not None
             and (current_topic is None or chosen.id != current_topic.id)
-            and _cycle_is_over(chosen, today)
+            and cycle_is_over_for_user(db, user_id, chosen, today)
         ),
         # Опрос ученик видит одной карточкой (владелец 30.09.2026) — и
         # считается он одним шагом, по последнему вопросу: иначе опрос из

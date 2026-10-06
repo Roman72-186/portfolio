@@ -7,7 +7,7 @@ Source of truth по тому, какие темы открыты ученику
 уровень куратора, и на билетах она уже прятала задания от учеников.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import or_, true
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ from app.models.learning_topic import (
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
-from app.services.tz import now_msk
+from app.services.tz import MSK_TZ, now_msk
 
 STUDENT_ROLE_RANK = 1
 
@@ -109,9 +109,19 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     )
     tariff, program_access_from = row if row is not None else (None, None)
     tariff = (tariff or "").strip().upper()
+    now = now_msk()
+    # Окно тарифа (владелец 06.10.2026): до «с» цикла у тарифа нет. «По» здесь
+    # не проверяется — после него цикл уходит в архив, а не пропадает
+    # (`tariff_closed_topic_ids`).
     tariff_ok_topic_ids = (
         db.query(LearningTopicTariff.topic_id)
-        .filter(LearningTopicTariff.tariff == tariff)
+        .filter(
+            LearningTopicTariff.tariff == tariff,
+            or_(
+                LearningTopicTariff.opens_at.is_(None),
+                LearningTopicTariff.opens_at <= now,
+            ),
+        )
         .scalar_subquery()
     )
     rows = (
@@ -119,7 +129,7 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
         .filter(
             LearningTopic.deleted_at.is_(None),
             LearningTopic.is_published.is_(True),
-            LearningTopic.opens_at <= now_msk(),
+            LearningTopic.opens_at <= now,
             or_(
                 LearningTopic.assign_to_all.is_(True),
                 LearningTopic.id.in_(tagged_topic_ids),
@@ -213,9 +223,11 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
             User.program_access_from <= topic.ends_at,
         ))
     if topic.tariff_restricted:
+        # Только тарифы, чьё окно уже открылось, — зеркало `accessible_topic_ids`.
+        now = now_msk()
         tariffs = [
-            row[0] for row in
-            db.query(LearningTopicTariff.tariff).filter(LearningTopicTariff.topic_id == topic_id).all()
+            tariff for tariff, (window_opens, _) in get_topic_tariff_windows(db, topic_id).items()
+            if window_opens is None or _aware(window_opens) <= now
         ]
         students = students.filter(User.tariff.in_(tariffs or ()))
 
@@ -361,6 +373,90 @@ def set_topic_tariffs(
         for tariff in dict.fromkeys(t.strip().upper() for t in tariffs if t.strip()):
             db.add(LearningTopicTariff(topic_id=topic.id, tariff=tariff))
     db.flush()
+
+
+TariffWindow = tuple[datetime | None, datetime | None]
+
+
+def _aware(value: datetime) -> datetime:
+    """SQLite в тестах теряет зону у `DateTime(timezone=True)` — читаем как UTC,
+    тем же приёмом, что `saw_topic_period`."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def get_topic_tariff_windows(db: Session, topic_id: int) -> dict[str, TariffWindow]:
+    """Тарифы темы с окном доступа: `{тариф: (с, по)}`, `None` — без границы.
+
+    Окно заводит форма цикла (владелец 06.10.2026). У прочих тем обе границы
+    пустые, и словарь просто повторяет `get_topic_tariffs`.
+    """
+    rows = (
+        db.query(
+            LearningTopicTariff.tariff,
+            LearningTopicTariff.opens_at,
+            LearningTopicTariff.closes_at,
+        )
+        .filter(LearningTopicTariff.topic_id == topic_id)
+        .all()
+    )
+    return {tariff: (opens_at, closes_at) for tariff, opens_at, closes_at in rows}
+
+
+def set_topic_tariff_windows(
+    db: Session, topic: LearningTopic, windows: dict[str, TariffWindow] | None
+) -> None:
+    """Переписать доступность цикла по тарифам целиком.
+
+    `None` — ограничения нет, цикл видят все тарифы в его общие даты. Словарь —
+    цикл видят только перечисленные тарифы, каждый в своём окне; пустой
+    словарь — скрыт от всех, та же договорённость, что у `tariff_restricted`
+    (владелец 30.08.2026). Строки пишет тот же путь, что `set_topic_tariffs`:
+    сначала снести, потом вставить, хвостов прошлого состояния не остаётся.
+    """
+    topic.tariff_restricted = windows is not None
+    db.query(LearningTopicTariff).filter(
+        LearningTopicTariff.topic_id == topic.id
+    ).delete(synchronize_session=False)
+    for tariff, (opens_at, closes_at) in (windows or {}).items():
+        db.add(LearningTopicTariff(
+            topic_id=topic.id, tariff=tariff, opens_at=opens_at, closes_at=closes_at,
+        ))
+    db.flush()
+
+
+def tariff_window_closed(window: TariffWindow, today: date) -> bool:
+    """Окно тарифа закончилось: день «по» уже прошёл (московские даты)."""
+    closes_at = window[1]
+    return closes_at is not None and _aware(closes_at).astimezone(MSK_TZ).date() < today
+
+
+def tariff_closed_topic_ids(db: Session, user_id: int, today: date) -> set[int]:
+    """Темы, у которых окно тарифа ученика уже закончилось (владелец 06.10.2026:
+    после «по» цикл у тарифа — в архиве).
+
+    Тема при этом остаётся в `accessible_topic_ids`: архиву и карусели нужен
+    сам цикл. Что «закончилось» значит для ленты, долга и записи, решают
+    `tracker.effective_cycle`/`cycle_debt` и `cycle_feed`, спрашивая отсюда.
+    """
+    tariff = (
+        db.query(User.tariff).filter(User.id == user_id).scalar() or ""
+    ).strip().upper()
+    if not tariff:
+        return set()
+    rows = (
+        db.query(LearningTopicTariff.topic_id, LearningTopicTariff.closes_at)
+        .join(LearningTopic, LearningTopic.id == LearningTopicTariff.topic_id)
+        .filter(
+            LearningTopicTariff.tariff == tariff,
+            LearningTopicTariff.closes_at.is_not(None),
+            LearningTopic.tariff_restricted.is_(True),
+        )
+        .all()
+    )
+    return {
+        topic_id for topic_id, closes_at in rows
+        if tariff_window_closed((None, closes_at), today)
+    }
 
 
 def ambiguous_tag_names(db: Session, tag_ids: list[int]) -> list[str]:

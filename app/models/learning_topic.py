@@ -155,6 +155,16 @@ class LearningTopicTariff(Base):
     механику «уровень ученика внутри тарифа» (созвон 26.08.2026): к паре
     можно будет добавить nullable `min_level` одним `ALTER TABLE ADD COLUMN`,
     без разрушительной миграции. Саму механику уровней здесь не строим.
+
+    **Окно доступа к циклу** (владелец 06.10.2026: «с какой даты по какое
+    доступен ему данный цикл») — `opens_at`/`closes_at` строки. Цикл при этом
+    идёт в свои общие даты (`LearningTopic.opens_at`/`ends_at`), окно решает
+    только, когда его видит ученик этого тарифа: до `opens_at` цикла у него
+    нет (`accessible_topic_ids`), после `closes_at` цикл у него в архиве —
+    смотреть можно, делать нельзя, и долгом он больше не держит
+    (`video_topics.tariff_closed_topic_ids`). NULL — своей границы нет. Окно
+    заполняет только форма цикла; у служебных тем заданий и тем видео обе
+    колонки пустые.
     """
 
     __tablename__ = "learning_topic_tariffs"
@@ -163,6 +173,8 @@ class LearningTopicTariff(Base):
         ForeignKey("learning_topics.id", ondelete="CASCADE"), primary_key=True
     )
     tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+    opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_learning_topic_tariffs_tariff", "tariff"),

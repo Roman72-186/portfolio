@@ -67,6 +67,7 @@ from app.services.video_topics import (
     get_tag_ids as topic_tag_ids,
     set_topic_assignees,
     set_topic_tags,
+    tariff_closed_topic_ids,
     topic_audience_user_ids,
 )
 
@@ -774,10 +775,15 @@ def cycle_for_day(db: Session, user_id: int, day: date) -> LearningTopic | None:
     случаев: при пересечении **эта функция** берёт позже начавшийся цикл (он
     новее и ближе к тому, чем ученик занят сейчас), в зазоре — `None`, и
     решение, что показать в этом случае, принимает экран, а не резолвер.
+
+    Цикл, чьё окно тарифа к этому дню закончилось (владелец 06.10.2026), у
+    ученика в архиве и идущим не считается, даже если общие даты ещё идут.
     """
+    closed = tariff_closed_topic_ids(db, user_id, day)
     covering = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= day <= cycle_bounds(topic)[1]
+        and topic.id not in closed
     ]
     return covering[-1] if covering else None
 
@@ -867,12 +873,19 @@ def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | N
     `cycle_debt`. Иначе ученик стоял бы на нём, а запирающий долг дальше по
     списку стал бы архивом без кнопки «Завершить задание» и запер бы
     программу навсегда.
+
+    По той же причине пропускается цикл, чьё окно тарифа закончилось
+    (владелец 06.10.2026: после «по» цикл у тарифа в архиве): архив только
+    для просмотра, и стоящий на нём ученик застрял бы.
     """
+    closed = tariff_closed_topic_ids(db, user_id, today)
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for topic in started:
+        if topic.id in closed:
+            continue
         if topic.locks_next and not is_cycle_complete(db, user_id, topic):
             return topic
     return cycle_for_day(db, user_id, today)
@@ -898,7 +911,9 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
 
     Запирает только цикл с `locks_next=True` (галочка в настройке цикла,
     владелец 03.10.2026). Незакрытый цикл без неё долгом не считается: поиск
-    идёт дальше, к первому запирающему.
+    идёт дальше, к первому запирающему. Цикл с закончившимся окном тарифа
+    (06.10.2026) долгом тоже не считается — он у ученика в архиве, закрыть
+    его там нечем, то же правило, что в `effective_cycle`.
     """
     rank = (
         db.query(Role.rank)
@@ -908,12 +923,13 @@ def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
     )
     if rank != STUDENT_ROLE_RANK:
         return None
+    closed = tariff_closed_topic_ids(db, user_id, today)
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for position, topic in enumerate(started):
-        if not topic.locks_next:
+        if not topic.locks_next or topic.id in closed:
             continue
         missing = missing_required_tasks(db, user_id, topic)
         if missing:
