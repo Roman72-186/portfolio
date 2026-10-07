@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}Оплата списком{% endblock %}
+{% block extra_styles %}
+{# Своих стилей нет: карточка и таблица — скоуп «Назначить теги»
+   (`superadmin_forms_ios.css`), метки, выбор файла и сообщения — `base.css`. #}
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=11">
+{% endblock %}
+{% block content %}
+{% set people_edit = can(user, "people:students") %}
+<div class="su-wrap ios-sa-tags">
+
+    <div class="su-header">
+        <a href="/cabinet/superadmin/users" class="back-link">← Управление пользователями</a>
+        <h1 class="su-title">Оплата списком</h1>
+    </div>
+
+    {% if people_edit %}
+    <div class="bulk-wrap">
+        <h2 class="bulk-title">Список от школы в Excel</h2>
+        <p class="bulk-not-found">
+            Нужны колонки «Имя» и «Фамилия» (или одна «ФИО»), «Тариф» и «Сумма».
+            Ученика ищем по имени и фамилии. Если сумма равна цене тарифа, ученику
+            ставится набор «до 01.09» или «с 01.09». Если не равна – она становится
+            его личной ценой. Окно оплаты и оплаченный месяц остаются как были.
+        </p>
+        <div class="bulk-input-row">
+            <div class="file-pick">
+                <input id="payImportFile" class="file-pick-input" type="file"
+                       accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <label class="btn-outline file-pick-btn" for="payImportFile">Выбрать файл</label>
+                <p class="file-pick-names" id="payImportName">Файл .xlsx, до 2 МБ</p>
+            </div>
+            <button type="button" class="btn-blue btn-save" id="payImportCheck" disabled>Проверить</button>
+        </div>
+        <div class="bulk-result" id="payImportResult" aria-live="polite"></div>
+    </div>
+    {% else %}
+    <div class="tags-empty">Загружать список могут те, кому открыта правка учеников в «Людях».</div>
+    {% endif %}
+</div>
+
+{% if people_edit %}
+<script>
+(function () {
+    const STUDENTS = {{ students|tojson }};
+    const STATUS = {
+        ready:     ['Готово', 'tag-pill--blue'],
+        same:      ['Уже записано', 'tag-pill-muted'],
+        tariff:    ['Другой тариф', 'tag-pill--orange'],
+        not_found: ['Не найден', 'tag-pill--orange'],
+        ambiguous: ['Однофамильцы', 'tag-pill--orange'],
+        duplicate: ['Повтор', 'tag-pill--orange'],
+        skipped:   ['Пропуск', 'tag-pill-muted'],
+        error:     ['Ошибка', 'tag-pill--pink'],
+    };
+    // Эти строки без выбора ученика не записать.
+    const NEEDS_PICK = ['not_found', 'ambiguous', 'duplicate'];
+    // Эти строки записывать нечего или нельзя.
+    const NO_WRITE = ['same', 'skipped', 'error'];
+
+    const fileInput = document.getElementById('payImportFile');
+    const fileName = document.getElementById('payImportName');
+    const checkBtn = document.getElementById('payImportCheck');
+    const result = document.getElementById('payImportResult');
+    let applyBtn = null;
+
+    fileInput.addEventListener('change', function () {
+        const file = fileInput.files[0];
+        fileName.textContent = file ? file.name : 'Файл .xlsx, до 2 МБ';
+        checkBtn.disabled = !file;
+        result.innerHTML = '';
+    });
+
+    function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function message(cls, text) {
+        result.innerHTML = '';
+        result.appendChild(el('div', 'alert ' + cls, text));
+    }
+
+    function post(url, extra) {
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
+        return window.csrfFetch(url, { method: 'POST', body: fd })
+            .then(function (resp) {
+                return resp.json().catch(function () { return {}; })
+                    .then(function (body) { return { resp: resp, body: body }; });
+            })
+            .then(function (r) {
+                if (!r.resp.ok || !r.body.ok) {
+                    const reason = window.csrfMessage(r.body, '');
+                    throw new Error(typeof reason === 'string' && reason ? reason : 'Не получилось. Попробуйте ещё раз.');
+                }
+                return r.body;
+            });
+    }
+
+    function pickSelect(row) {
+        const select = el('select', 'form-select');
+        select.setAttribute('aria-label', 'Ученик для строки ' + row.line);
+        select.appendChild(new Option('Выберите ученика', ''));
+        const first = row.candidates.length ? row.candidates : [];
+        const firstIds = first.map(function (s) { return s.id; });
+        first.concat(STUDENTS.filter(function (s) { return firstIds.indexOf(s.id) < 0; }))
+            .forEach(function (s) { select.appendChild(new Option(s.name + ' · id ' + s.id, s.id)); });
+        return select;
+    }
+
+    function updateApply() {
+        if (!applyBtn) return;
+        const n = result.querySelectorAll('input[data-line]:checked').length;
+        applyBtn.textContent = 'Записать отмеченные (' + n + ')';
+        applyBtn.disabled = n === 0;
+    }
+
+    function render(data) {
+        result.innerHTML = '';
+        const table = el('table', 'bulk-table');
+        table.innerHTML = '<thead><tr><th>Строка в файле</th><th>Ученик</th><th>Что будет</th><th>Записать</th></tr></thead>';
+        const tbody = el('tbody');
+
+        data.rows.forEach(function (row) {
+            const tr = el('tr');
+            const status = STATUS[row.status] || ['?', 'tag-pill-muted'];
+
+            const fromFile = el('td');
+            fromFile.appendChild(el('div', 'u-name', row.line + '. ' + (row.name || '–')));
+            fromFile.appendChild(el('div', 'u-meta', [row.tariff, row.amount].filter(Boolean).join(' · ')));
+            tr.appendChild(fromFile);
+
+            const who = el('td');
+            let select = null;
+            if (NEEDS_PICK.indexOf(row.status) >= 0) {
+                select = pickSelect(row);
+                who.appendChild(select);
+            } else if (row.student) {
+                who.appendChild(el('div', 'u-name', row.student.name));
+                who.appendChild(el('div', 'u-meta', row.student.tariff + ' · id ' + row.student.id));
+            } else {
+                who.textContent = '–';
+            }
+            tr.appendChild(who);
+
+            const what = el('td');
+            what.appendChild(el('span', 'tag-pill ' + status[1], status[0]));
+            (row.changes || []).forEach(function (c) { what.appendChild(el('div', 'u-meta', c)); });
+            if (row.note) what.appendChild(el('div', 'u-meta', row.note));
+            tr.appendChild(what);
+
+            const take = el('td');
+            if (NO_WRITE.indexOf(row.status) < 0) {
+                const cb = el('input');
+                cb.type = 'checkbox';
+                cb.dataset.line = row.line;
+                cb.setAttribute('aria-label', 'Записать строку ' + row.line);
+                if (select) {
+                    cb.disabled = true;
+                    select.addEventListener('change', function () {
+                        cb.dataset.userId = select.value;
+                        cb.disabled = !select.value;
+                        cb.checked = !!select.value;
+                        updateApply();
+                    });
+                } else {
+                    cb.dataset.userId = row.student.id;
+                    cb.checked = row.status === 'ready';
+                }
+                cb.addEventListener('change', updateApply);
+                take.appendChild(cb);
+            }
+            tr.appendChild(take);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        const scroll = el('div', 'table-scroll');
+        scroll.appendChild(table);
+        result.appendChild(scroll);
+
+        const c = data.counts || {};
+        const asks = (c.tariff || 0) + (c.not_found || 0) + (c.ambiguous || 0) + (c.duplicate || 0);
+        if (asks) {
+            result.appendChild(el('p', 'bulk-not-found',
+                'Строки с другим тарифом не отмечены: если всё верно, поставьте галочку. ' +
+                'Ненайденным и однофамильцам выберите ученика из списка.'));
+        }
+        applyBtn = el('button', 'btn-blue btn-save');
+        applyBtn.type = 'button';
+        applyBtn.addEventListener('click', apply);
+        result.appendChild(applyBtn);
+        updateApply();
+    }
+
+    function apply() {
+        const choices = Array.prototype.map.call(
+            result.querySelectorAll('input[data-line]:checked'),
+            function (cb) { return { line: Number(cb.dataset.line), user_id: Number(cb.dataset.userId) }; }
+        );
+        applyBtn.disabled = true;
+        post('/cabinet/superadmin/payment-import/apply', { choices: JSON.stringify(choices) })
+            .then(function (data) {
+                message('alert-success', 'Записано: ' + data.written + '. Уже было так: ' + data.unchanged + '.');
+                if (data.skipped.length) {
+                    const list = el('ul', 'bulk-not-found');
+                    data.skipped.forEach(function (s) { list.appendChild(el('li', '', s)); });
+                    result.appendChild(el('p', 'bulk-not-found', 'Не записаны:'));
+                    result.appendChild(list);
+                }
+            })
+            .catch(function (err) {
+                applyBtn.disabled = false;
+                result.appendChild(el('div', 'alert alert-error', err.message));
+            });
+    }
+
+    checkBtn.addEventListener('click', function () {
+        if (!fileInput.files[0]) return;
+        checkBtn.disabled = true;
+        result.innerHTML = '';
+        result.appendChild(el('div', 'spinner'));
+        post('/cabinet/superadmin/payment-import/preview')
+            .then(render)
+            .catch(function (err) { message('alert-error', err.message); })
+            .then(function () { checkBtn.disabled = false; });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

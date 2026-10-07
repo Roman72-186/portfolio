@@ -103,6 +103,11 @@
 .ios-sa-tags .bulk-table tr:hover td { background: rgba(60,60,67,0.04); }
 .ios-sa-tags .bulk-table input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
 .ios-sa-tags .bulk-not-found { margin-top: 10px; font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
+/* «Оплата списком» (superadmin_payment_import.html) — тот же скоуп. В таблице
+   предпросмотра выбор ученика: на телефоне таблица сжималась и список
+   превращался в кнопку-стрелку, поэтому у неё своя ширина, а прокрутку
+   вбок даёт обёртка `.table-scroll` из base.css. */
+.ios-sa-tags .table-scroll > .bulk-table { min-width: 640px; }
 
 .ios-sa-tags .tags-table-wrap {
     background: var(--ios-card-bg); border: none; border-radius: 16px;
