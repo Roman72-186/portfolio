@@ -39,26 +39,30 @@ def test_dashboard_counts_students_not_staff(admin_client, db, user_factory):
     assert "ещё 1 заблокирован" in text
 
 
-def test_dashboard_works_by_type_and_this_month_counts(admin_client, db):
-    """works_by_type/total_works/works_this_month считают по status=success и месяцу."""
-    client, admin = admin_client
+def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_factory):
+    """works_by_type/total_works/works_this_month считают по status=success и месяцу.
+
+    Работы — ученика: с 07.10.2026 дашборд считает только учеников в учёте
+    (`report_scope`), работы сотрудника в цифры не входят."""
+    client, _admin = admin_client
+    student = user_factory(vk_id=200_101, name="Student Works", role_name="ученик")
     now = datetime.now(timezone.utc)
     last_month = now.replace(day=1) - timedelta(days=1)
 
     db.add_all([
-        Work(user_id=admin.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
              filename="b1.jpg", status="success", created_at=now),
-        Work(user_id=admin.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
              filename="b2.jpg", status="success", created_at=now),
-        Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
              filename="m1.jpg", status="success", created_at=now, score=Decimal("80")),
-        Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
              filename="m2.jpg", status="success", created_at=now),  # unscored
         # Прошлый месяц — не должен попасть в works_this_month, но должен в total_works.
-        Work(user_id=admin.id, work_type=WORK_TYPE_AFTER, month="апрель", year=last_month.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_AFTER, month="апрель", year=last_month.year,
              filename="a1.jpg", status="success", created_at=last_month),
         # failed — не должен попасть никуда.
-        Work(user_id=admin.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
              filename="failed.jpg", status="failed", created_at=now),
     ])
     db.commit()
@@ -145,14 +149,15 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
 # Разбор дашборда 28.09.2026 (/critique)
 # ---------------------------------------------------------------------------
 
-def test_average_score_counts_only_mock_exams(admin_client, db):
+def test_average_score_counts_only_mock_exams(admin_client, db, user_factory):
     """«Средний балл за пробники» раньше брал баллы всех работ подряд."""
-    client, admin = admin_client
+    client, _admin = admin_client
+    student = user_factory(vk_id=200_102, name="Student Score", role_name="ученик")
     now = datetime.now(timezone.utc)
     db.add_all([
-        Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
              filename="m.jpg", status="success", created_at=now, score=Decimal("60")),
-        Work(user_id=admin.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+        Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
              filename="b.jpg", status="success", created_at=now, score=Decimal("100")),
     ])
     db.commit()

@@ -18,6 +18,7 @@ from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
+from app.services.report_scope import reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
     BlockViewer, completed_after_deadline, feed_visible_blocks, get_audiences,
@@ -74,8 +75,9 @@ def get_tariff_registration_stats(
 ) -> TariffRegistrationStats:
     """Count student registrations since tariff tracking started in Moscow time.
 
-    The metric records registrations, so inactive, archived and soft-deleted
-    students remain in the aggregate. Staff accounts never enter it.
+    Считаются только ученики в учёте (`report_scope`, владелец 07.10.2026):
+    заблокированные, архивные, удалённые и с истёкшей подпиской выпадают и из
+    прошлых регистраций. Сотрудники сюда не попадают никогда.
     """
     period_from = period_from or REGISTRATION_STATS_SINCE
     query = (
@@ -92,7 +94,7 @@ def get_tariff_registration_stats(
         .filter(
             Role.rank == 1,
             User.created_at >= msk_midnight(period_from),
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            User.id.in_(reportable_student_ids(db)),
         )
     )
     if period_to:
@@ -295,15 +297,7 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
 def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, include_assignments: bool = False) -> dict:
     """Return per-student lifecycle metrics and the append-only action journal."""
     students = (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(
-            Role.rank == 1,
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-            User.is_active.is_(True),
-            User.deleted_at.is_(None),
-            User.archived_at.is_(None),
-        )
+        reportable_students_q(db)
         .order_by(User.last_name, User.first_name, User.id)
         .all()
     )
@@ -415,8 +409,9 @@ def _assignment_scores(db: DBSession, student_ids: list[int], assignments: list[
 
     Задания и подписи — из `_assignment_activity`, своей выборки «какие
     задания открыты» здесь нет. Считаются все сдавшие из строк сводки, без
-    фильтра `eligible`: у пробника с кончившимся доступом работа сдана и
-    оценена, и в распределении балл быть должен. Само распределение по
+    фильтра `eligible`. Строки сводки — ученики в учёте (`report_scope`), так
+    что с 07.10.2026 балл ученика с истёкшей подпиской сюда не входит
+    (владелец: «только с активной подпиской»). Само распределение по
     баллам строит страница из `scored` — так же, как разбивку по тарифам
     в «Учениках поимённо». Задание без единого балла не отдаётся.
     """
@@ -515,8 +510,10 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
     (`docs/invariants/portfolio.md`), а кнопка на дашборде им управляла.
 
     Всё учебное считается по ученикам (ранг 1): в «Учениках» и «Новых
-    учениках» сотрудники не нужны. Аккаунт владельца (`REPORT_EXCLUDED_USER_IDS`)
-    исключён отовсюду.
+    учениках» сотрудники не нужны. Ученики — только те, кто в учёте
+    (`report_scope`: без заблокированных, удалённых, с истёкшей подпиской и
+    служебных). Заблокированные показаны отдельной подписью «ещё N», в число
+    учеников не входят.
 
     Очереди пробников на дашборде нет (владелец 29.09.2026 снял блок «Ждёт
     проверки» вместе со ссылками на проверку, билеты и статистику пробников).
@@ -527,30 +524,39 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
     from app.models.work import WORK_TYPE_MOCK_EXAM
 
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-    not_owner = User.id.notin_(REPORT_EXCLUDED_USER_IDS)
+    reportable_ids = reportable_student_ids(db, now)
+    students_active = reportable_students_q(db, now).count()
 
     role_rows = (
         db.query(Role.display_name, Role.rank, func.count(User.id).label("cnt"))
-        .outerjoin(User, (User.role_id == Role.id) & (User.is_active == True) & not_owner)  # noqa: E712
+        .outerjoin(User, (User.role_id == Role.id) & (User.is_active == True))  # noqa: E712
         .group_by(Role.id, Role.display_name, Role.rank)
         .order_by(Role.rank)
         .all()
     )
-    role_breakdown = [{"name": r.display_name, "rank": r.rank, "count": r.cnt} for r in role_rows]
-    students_active = sum(r["count"] for r in role_breakdown if r["rank"] == 1)
+    # Строку учеников считает общее правило, остальные роли — по `is_active`.
+    role_breakdown = [
+        {"name": r.display_name, "rank": r.rank, "count": students_active if r.rank == 1 else r.cnt}
+        for r in role_rows
+    ]
 
-    student_filter = (
+    students_blocked = (
         db.query(User.id)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, not_owner)
-    )
-    students_blocked = (
-        student_filter.filter(User.is_active == False, User.archived_at.is_(None))  # noqa: E712
+        .filter(
+            Role.rank == 1,
+            User.is_active == False,  # noqa: E712
+            User.archived_at.is_(None),
+            User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .count()
     )
-    new_students_month = student_filter.filter(User.created_at >= month_start).count()
+    new_students_month = (
+        reportable_students_q(db, now).filter(User.created_at >= month_start).count()
+    )
 
-    works = db.query(Work).filter(Work.status == "success", Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+    works = db.query(Work).filter(Work.status == "success", Work.user_id.in_(reportable_ids))
     works_by_type = dict(
         works.with_entities(Work.work_type, func.count(Work.id)).group_by(Work.work_type).all()
     )
@@ -574,8 +580,7 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
         .outerjoin(
             StudentAlias,
             (StudentAlias.curator_id == User.id)
-            & (StudentAlias.is_active == True)  # noqa: E712
-            & StudentAlias.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            & StudentAlias.id.in_(reportable_ids),
         )
         .filter(Role.rank == 2, User.is_active == True)  # noqa: E712
         .group_by(User.id, User.first_name, User.last_name, User.name, User.photo_url)

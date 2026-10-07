@@ -5,7 +5,7 @@ from typing import Optional, TypedDict
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS
 from app.models.feature_period import FeaturePeriod
 from app.models.role import Role
 from app.models.task_block import TaskBlock, TaskBlockSubmission
@@ -13,6 +13,7 @@ from app.models.tracker import TrackerTask
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.feature_periods import get_active_period
+from app.services.report_scope import reportable_student_ids
 from app.services.tz import msk_midnight
 
 
@@ -44,7 +45,7 @@ def _student_total(db: DBSession, curator_id: Optional[int] = None) -> int:
         .filter(
             Role.rank == 1,
             User.is_active == True,  # noqa: E712
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            User.id.in_(reportable_student_ids(db)),
         )
     )
     if curator_id is not None:
@@ -86,7 +87,7 @@ def mock_period_subject_stats(
             Work.subject.in_(MOCK_SUBJECTS),
             Work.created_at >= start,
             Work.created_at < end,
-            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            Work.user_id.in_(reportable_student_ids(db)),
         )
     )
     if curator_id is not None:
@@ -136,7 +137,7 @@ def score_curve_12m(db: DBSession) -> list[CurvePoint]:
             Work.score.isnot(None),
             Work.subject.in_(MOCK_SUBJECTS),
             Work.created_at >= window_start,
-            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            Work.user_id.in_(reportable_student_ids(db)),
         )
         .group_by(year_col, month_col, Work.subject)
         .all()
@@ -232,7 +233,7 @@ def curator_avg_scores(
             Work.score.isnot(None),
             Work.subject.in_(MOCK_SUBJECTS),
             User.curator_id == curator_id,
-            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            Work.user_id.in_(reportable_student_ids(db)),
         )
         .group_by(Work.subject)
         .all()

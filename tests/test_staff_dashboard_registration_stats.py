@@ -22,6 +22,8 @@ from app.services.tz import msk_midnight
 def test_tariff_registration_stats_use_tracking_window_and_student_role(
     db, user_factory
 ):
+    """С 07.10.2026 регистрации — только ученики в учёте (`report_scope`):
+    заблокированный, архивный, удалённый и с истёкшей подпиской выпадают."""
     cutoff = msk_midnight(REGISTRATION_STATS_SINCE)
 
     self_student = user_factory(vk_id=810_001, tariff=TARIFF_SELF)
@@ -34,6 +36,10 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
     )
     archived_student = user_factory(vk_id=810_006, tariff=TARIFF_SELF)
     archived_student.archived_at = cutoff
+    deleted_student = user_factory(vk_id=810_010, tariff=TARIFF_SELF)
+    deleted_student.deleted_at = cutoff
+    expired_student = user_factory(vk_id=810_011, tariff=TARIFF_CONFIDENT_MAX)
+    expired_student.access_until = datetime.now(timezone.utc) - timedelta(hours=1)
     staff = user_factory(
         vk_id=810_007, tariff=TARIFF_CONFIDENT_MAX, role_name="админ"
     )
@@ -57,6 +63,8 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
         no_tariff_student,
         inactive_student,
         archived_student,
+        deleted_student,
+        expired_student,
         staff,
         legacy_student,
     ):
@@ -68,13 +76,15 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
 
     assert stats["since_label"] == "19.09.2026"  # начало учёта сдвинуто на 19.09 коммитом e2785d7
     assert {item["tariff"]: item["count"] for item in stats["by_tariff"]} == {
-        TARIFF_SELF: 2,
-        TARIFF_WITH_YOU: 2,
+        TARIFF_SELF: 1,
+        TARIFF_WITH_YOU: 1,
         TARIFF_CONFIDENT_MAX: 1,
     }
     assert stats["without_tariff"] == 1
-    assert stats["total"] == 6
-    assert len(stats["students"]) == 7  # шесть в сводке + legacy для проверки
+    assert stats["total"] == 4
+    assert len(stats["students"]) == 5  # четыре в сводке + legacy для проверки
+    gone = {inactive_student.id, archived_student.id, deleted_student.id, expired_student.id}
+    assert not gone & {student["id"] for student in stats["students"]}
     tariff_labels = [student["tariff_label"] for student in stats["students"]]
     assert tariff_labels == sorted(tariff_labels, key=str.casefold)
     assert stats["students"][-1]["username"] == "@self_student"
@@ -312,19 +322,22 @@ def test_scores_give_distribution_inputs_avg_and_median(db, user_factory):
     assert item["scorers"] == {first.id: "Иванова Анна"}
 
 
-def test_scores_count_student_with_expired_access(db, user_factory):
-    """Доступ кончился, а работа сдана и оценена — балл в распределении есть:
-    `eligible` («кому положено сдавать») к баллам не применяется."""
+def test_scores_skip_student_with_expired_access(db, user_factory):
+    """Подписка кончилась — балла в распределении нет, хотя работа сдана и
+    оценена (владелец 07.10.2026: «только с активной подпиской»). До этого,
+    с 03.10.2026, такой балл намеренно входил в распределение."""
+    active = user_factory(vk_id=810_411, name="Active")
     expired = user_factory(vk_id=810_410, name="Expired")
     expired.access_until = datetime.now(timezone.utc) - timedelta(days=6)
     block = _control(db)
+    _scored(db, block, active, 60)
     _scored(db, block, expired, 70)
     db.commit()
 
     overview = get_student_activity_overview(db, include_assignments=True)
 
-    assert expired.id not in overview["assignments"][0]["eligible"]
-    assert overview["scores"][0]["scored"] == {expired.id: 70}
+    assert expired.id not in {student["id"] for student in overview["students"]}
+    assert overview["scores"][0]["scored"] == {active.id: 60}
 
 
 def test_scores_skip_archived_students_and_blocks_without_scores(db, user_factory):

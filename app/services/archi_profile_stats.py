@@ -13,6 +13,7 @@ from app.models.task_block import TaskBlockResponse
 from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.services.archi_profile import result_for_answers
+from app.services.report_scope import reportable_student_id_set
 from app.services.tracker import task_audience_user_ids
 from app.services.tz import msk_text
 from sqlalchemy.orm import Session
@@ -54,6 +55,10 @@ def diagnostic_stats(db: Session, task: TrackerTask, *, only_user_id: int | None
     audience_ids = task_audience_user_ids(db, task.id) - REPORT_EXCLUDED_USER_IDS
     if only_user_id is not None:
         audience_ids &= {only_user_id}
+    else:
+        # По всей школе — только ученики в учёте (`report_scope`); карточку
+        # одного ученика открывают и у архивного, там он считается сам.
+        audience_ids &= reportable_student_id_set(db)
     students = (
         db.query(User).filter(User.id.in_(audience_ids)).all()
         if audience_ids else []

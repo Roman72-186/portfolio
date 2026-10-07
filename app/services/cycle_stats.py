@@ -14,37 +14,25 @@ from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
-from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS
+from app.constants import TARIFFS
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
-from app.models.role import Role
 from app.models.student_reminder import KIND_CYCLE_DEBT, StudentReminder
 from app.models.task_block import TaskBlock, TaskBlockState
 from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.services.program import day_bounds, msk_date
+from app.services.report_scope import reportable_students_q
 from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.tz import now_msk
 from app.services.video_topics import get_topic_tariff_windows, saw_topic_period
 
 
-def active_students(db: Session) -> list[User]:
-    """Ученики, которых имеет смысл считать: активные, не удалённые, не в архиве.
-
-    Тот же отбор, что в `contacts.py` — второго определения «действующего
-    ученика» в проекте заводить не нужно.
-    """
-    return (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(
-            Role.rank == 1,
-            User.deleted_at.is_(None),
-            User.archived_at.is_(None),
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-        )
-        .all()
-    )
+def active_students(db: Session, now: datetime | None = None) -> list[User]:
+    """Ученики, которых имеет смысл считать — общее правило статистики
+    (`report_scope`): без заблокированных, удалённых, с истёкшей подпиской
+    и служебных."""
+    return reportable_students_q(db, now).all()
 
 
 def _cycle_tasks(db: Session, topic_id: int, first: date, last: date) -> list[TrackerTask]:
@@ -191,13 +179,15 @@ def _tariff_windows(db: Session, topic: LearningTopic) -> dict | None:
     return get_topic_tariff_windows(db, topic.id) if topic.tariff_restricted else None
 
 
-def _audience(db: Session, topic: LearningTopic) -> list[User]:
+def _audience(
+    db: Session, topic: LearningTopic, now: datetime | None = None
+) -> list[User]:
     """Ученики, которым цикл был виден. Пришедший после его конца цикла не
     видит (владелец 29.09.2026) — и в «не сдали» его считать нельзя. Так же
     не считается тариф, которому цикл закрыт или чьё окно ещё не открылось
     (06.10.2026) — то же правило, что `accessible_topic_ids`."""
     windows = _tariff_windows(db, topic)
-    now = now_msk()
+    opened_by = now_msk()
 
     def tariff_saw(student: User) -> bool:
         if windows is None:
@@ -206,10 +196,10 @@ def _audience(db: Session, topic: LearningTopic) -> list[User]:
         if window is None:
             return False
         opens_at = _utc(window[0])
-        return opens_at is None or opens_at <= now
+        return opens_at is None or opens_at <= opened_by
 
     return [
-        student for student in active_students(db)
+        student for student in active_students(db, now)
         if saw_topic_period(student.program_access_from, topic) and tariff_saw(student)
     ]
 
@@ -241,18 +231,16 @@ def cycle_debtors(
     """Кто цикл не закрыл (владелец 30.09.2026): ученик, задачи, которых не
     хватает, и напоминали ли ему сегодня.
 
-    Отбор — те же ученики, что в статистике, минус истёкший доступ: новенький
-    после пробного периода заблокирован, писать ему «закрой цикл» бессмысленно.
-    Пустой цикл должников не имеет — как и прошедших (см. `cycle_stats`).
+    Отбор — те же ученики, что в статистике: истёкший доступ отсекает уже
+    `report_scope` — новенький после пробного периода заблокирован, писать
+    ему «закрой цикл» бессмысленно. Пустой цикл должников не имеет — как и
+    прошедших (см. `cycle_stats`).
     """
     now = _utc(now) or datetime.now(timezone.utc)
     first, last = cycle_bounds(topic)
     if not _cycle_tasks(db, topic.id, first, last):
         return []
-    students = [
-        student for student in _audience(db, topic)
-        if not (student.access_until is not None and _utc(student.access_until) <= now)
-    ]
+    students = _audience(db, topic, now)
     missing = _missing_by_student(db, topic, students)
     debtors = [student for student in students if missing[student.id]]
     reminded: set[int] = set()

@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
@@ -41,6 +40,7 @@ from app.models.video_watch_event import VideoWatchEvent
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.program import day_bounds, week_start
+from app.services.report_scope import reportable_students_q
 from app.services.tracker import accessible_task_entries, effective_week_start
 from app.services.tz import MSK_TZ, msk_midnight
 from app.services.video_progress import watch_threshold_seconds
@@ -128,16 +128,8 @@ def _student_name(first_name, last_name, name) -> str:
 
 
 def _active_students_q(db: DBSession):
-    return (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(
-            Role.rank == 1,
-            User.is_active == True,  # noqa: E712
-            User.deleted_at.is_(None),
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-        )
-    )
+    """Ученики в учёте — правило одно на всю статистику (`report_scope`)."""
+    return reportable_students_q(db)
 
 
 def _student_ids(db: DBSession):
@@ -207,7 +199,7 @@ def get_curator_review_speed(db: DBSession) -> list[dict]:
         .filter(
             Work.scored_at.isnot(None),
             Work.scored_by_id.isnot(None),
-            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            Work.user_id.in_(_student_ids(db)),
         )
         .all()
     )
@@ -278,7 +270,7 @@ def get_revision_stats(db: DBSession) -> dict:
         .filter(
             ExamCycle.revision_requested_at.isnot(None),
             ExamCycle.revision_done_at.is_(None),
-            ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            ExamCycle.user_id.in_(_student_ids(db)),
         )
         .order_by(ExamCycle.revision_requested_at.asc())
         .limit(100)
@@ -297,7 +289,7 @@ def get_revision_stats(db: DBSession) -> dict:
         db.query(ExamCycle.revision_requested_at, ExamCycle.revision_done_at)
         .filter(
             ExamCycle.revision_done_at.isnot(None),
-            ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            ExamCycle.user_id.in_(_student_ids(db)),
         )
         .all()
     )
@@ -360,7 +352,7 @@ def get_mock_attempt_stats(db: DBSession) -> dict:
         MockExamAttempt.completed_at,
         MockExamAttempt.expired_at,
         MockExamAttempt.subject,
-    ).filter(MockExamAttempt.user_id.notin_(REPORT_EXCLUDED_USER_IDS)).all()
+    ).filter(MockExamAttempt.user_id.in_(_student_ids(db))).all()
     total = len(rows)
     completed = [(r.started_at, r.completed_at) for r in rows if r.completed_at is not None]
     expired = sum(1 for r in rows if r.expired_at is not None and r.completed_at is None)
@@ -389,7 +381,7 @@ def get_cycle_duration_stats(db: DBSession) -> dict:
     """Длительность цикла Пробника: от старта (дата, 00:00 MSK) до закрытия."""
     rows = (
         db.query(ExamCycle.started_at, ExamCycle.closed_at)
-        .filter(ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .filter(ExamCycle.user_id.in_(_student_ids(db)))
         .all()
     )
     open_count = sum(1 for r in rows if r.closed_at is None)
@@ -438,14 +430,14 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
     for fb_id, curator_id, started in (
         db.query(Feedback.id, Feedback.curator_id, Work.created_at)
         .join(Work, Feedback.work_id == Work.id)
-        .filter(Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .filter(Work.user_id.in_(_student_ids(db)))
         .all()
     ):
         dialogs.append(("mock", fb_id, curator_id, started))
     for fb_id, curator_id, started in (
         db.query(TaskBlockFeedback.id, TaskBlockFeedback.curator_id, TaskBlockSubmission.submitted_at)
         .join(TaskBlockSubmission, TaskBlockFeedback.submission_id == TaskBlockSubmission.id)
-        .filter(TaskBlockSubmission.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .filter(TaskBlockSubmission.user_id.in_(_student_ids(db)))
         .all()
     ):
         dialogs.append(("block", fb_id, curator_id, started))
@@ -474,7 +466,7 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
         db.query(FeedbackRating.curator_id, FeedbackRating.score)
         .filter(
             FeedbackRating.curator_id.isnot(None),
-            FeedbackRating.student_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            FeedbackRating.student_id.in_(_student_ids(db)),
         )
         .all()
     ):
@@ -517,7 +509,7 @@ def get_feedback_rating_by_task(db: DBSession) -> list[dict]:
         )
         .filter(
             FeedbackRating.curator_id.isnot(None),
-            FeedbackRating.student_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            FeedbackRating.student_id.in_(_student_ids(db)),
         )
         .all()
     )
@@ -573,7 +565,7 @@ def get_feedback_rating_by_task(db: DBSession) -> list[dict]:
 def get_retake_stats(db: DBSession) -> dict:
     """Пересдачи и доработки: доля отправленных на отработку/доработку,
     среднее число попыток в цикле."""
-    reportable = Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS)
+    reportable = Work.user_id.in_(_student_ids(db))
     mock_total = (
         db.query(Work)
         .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success", reportable)
@@ -617,7 +609,7 @@ def get_login_link_stats(db: DBSession) -> dict:
     """
     rows = (
         db.query(LoginToken.created_at, LoginToken.used_at, LoginToken.revoked_at)
-        .filter(LoginToken.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .filter(LoginToken.user_id.in_(_student_ids(db)))
         .all()
     )
     total = len(rows)
@@ -641,7 +633,7 @@ def get_self_score_stats(db: DBSession) -> dict:
         .filter(
             Work.student_score.isnot(None),
             Work.score.isnot(None),
-            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+            Work.user_id.in_(_student_ids(db)),
         )
         .all()
     )
