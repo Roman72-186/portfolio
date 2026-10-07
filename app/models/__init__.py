@@ -41,6 +41,8 @@ from app.models.task_block import (
     TaskBlockState,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
+    TaskBlockSubmissionChange,
+    TaskBlockSubmissionChangeImage,
     TaskBlockLevel,
     TaskBlockStudent,
     TaskBlockTariff,

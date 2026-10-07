@@ -1045,3 +1045,53 @@ class TaskBlockSubmissionImage(Base):
     __table_args__ = (
         Index("ix_task_block_submission_images_order", "submission_id", "sort_order"),
     )
+
+
+# Что ученик сделал с уже сданной работой. Три пути правки сдачи — три вида.
+CHANGE_REPLACE = "replace"   # «Заменить фото»: все фото разом
+CHANGE_DELETE = "delete"     # удалил одно фото
+CHANGE_ADD = "add"           # догрузил фото к сданной работе
+SUBMISSION_CHANGE_KINDS = (CHANGE_REPLACE, CHANGE_DELETE, CHANGE_ADD)
+
+
+class TaskBlockSubmissionChange(Base):
+    """Одна правка уже сданной работы (владелец 07.10.2026: «нужно
+    фиксировать сколько и когда были замены фото в заданиях»).
+
+    Пишется, только если работа на момент правки была сдана
+    (`submitted_at`): догрузка неполной сдачи «2 из 3» — ещё сдача, а не
+    замена. Видна проверяющему в карточке проверки вместе с прежними фото
+    (`TaskBlockSubmissionChangeImage`). Время первой сдачи здесь не
+    дублируется — его хранит отметка блока `TaskBlockState.completed_at`.
+    """
+
+    __tablename__ = "task_block_submission_changes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    submission_id: Mapped[int] = mapped_column(
+        ForeignKey("task_block_submissions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    photos_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    photos_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class TaskBlockSubmissionChangeImage(Base):
+    """Фото, которое правка убрала из работы. Файл в S3 не удаляется
+    (`delete_submission_images`), здесь остаётся ссылка на него — иначе
+    проверяющему нечего показать в «было»."""
+
+    __tablename__ = "task_block_submission_change_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    change_id: Mapped[int] = mapped_column(
+        ForeignKey("task_block_submission_changes.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    image_s3_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

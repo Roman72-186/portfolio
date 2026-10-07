@@ -40,7 +40,8 @@ from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, Learnin
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_COMPARE, BLOCK_LINK, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
-    BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
+    BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, CHANGE_ADD, CHANGE_DELETE, CHANGE_REPLACE,
+    MAX_BLOCKS,
     QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
     TaskBlockSubmissionImage,
@@ -78,6 +79,9 @@ from app.services.portfolio_window import (
 )
 from app.services.point_a import point_a_level, student_point_a
 from app.services.stats import avg_score_by_subject_all_time
+from app.services.submission_changes import (
+    photo_snapshot as submission_photo_snapshot, record_change as record_submission_change,
+)
 from app.services.submission_edit import (
     block_work_reason, deadline_reason, late_first_submission,
 )
@@ -1475,6 +1479,11 @@ async def upload_task_block_work(
     if err:
         _refused("валидация файлов", err)
         return JSONResponse({"ok": False, "error": err}, status_code=422)
+    # Правка сданной работы пишется в историю (владелец 07.10.2026). Снимок
+    # до правки: ниже `mark_task_block_submitted` перепишет `submitted_at`, а
+    # замена сотрёт строки старых фото.
+    was_submitted = submission.submitted_at is not None
+    before = submission_photo_snapshot(db, submission.id) if was_submitted else []
     if replacing:
         delete_task_block_submission_images(db, submission.id)
 
@@ -1508,6 +1517,13 @@ async def upload_task_block_work(
     elif created and comment is not None:
         # Описание, набранное к первой части фото, не должно теряться.
         submission.comment = comment.strip() or None
+    if created:
+        record_submission_change(
+            db, submission=submission, was_submitted=was_submitted,
+            kind=CHANGE_REPLACE if replacing else CHANGE_ADD,
+            photos_before=len(before), photos_after=existing + created,
+            removed=before if replacing else (),
+        )
     db.commit()
     return JSONResponse({"ok": True, "created": created})
 
@@ -1591,8 +1607,14 @@ def delete_task_block_image(
             {"ok": False, "error": "Чтобы поменять фото, нажми «Заменить фото»."},
             status_code=409,
         )
-    if count_task_block_submission_images(db, submission.id) <= 1:
+    photos_before = count_task_block_submission_images(db, submission.id)
+    if photos_before <= 1:
         return JSONResponse({"ok": False, "error": "Нельзя удалить последнее фото. Сначала загрузи замену."}, status_code=409)
+    record_submission_change(
+        db, submission=submission, was_submitted=submission.submitted_at is not None,
+        kind=CHANGE_DELETE, photos_before=photos_before, photos_after=photos_before - 1,
+        removed=[(image.image_s3_url, image.image_s3_path)],
+    )
     db.delete(image)
     db.commit()
     return JSONResponse({"ok": True})

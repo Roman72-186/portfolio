@@ -64,6 +64,7 @@ from app.services.task_block_feedback import (
     serialize_messages,
     student_can_reply,
 )
+from app.services.submission_changes import change_history
 from app.services.task_blocks import list_submission_images
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import validate_video_link
@@ -158,6 +159,11 @@ def _render(
         "student": student,
         "submission": submission,
         "submission_images": list_submission_images(db, submission.id),
+        # Сколько и когда ученик менял сданную работу и что было до правки
+        # (владелец 07.10.2026) — для проверяющего, ученику не показываем.
+        "change_history": (
+            change_history(db, submission) if viewer_role != "student" else None
+        ),
         "block": block,
         "task": task,
         "messages": serialize_messages(messages, names),

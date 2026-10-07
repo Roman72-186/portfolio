@@ -28,6 +28,28 @@
             {% endfor %}
         </div>
         {% endif %}
+        {% if change_history %}
+        <p class="card-desc">{% if change_history.first_submitted_at %}Сдано впервые {{ change_history.first_submitted_at | msk_text }}. {% endif %}После сдачи работу меняли {{ change_history.count }} {{ change_history.count | plural('раз', 'раза', 'раз') }}.</p>
+        <details class="cmp-steps">
+            <summary>История изменений</summary>
+            <ol class="cmp-steps-list">
+                {% for change in change_history.changes %}
+                <li>
+                    <p class="cmp-step-num">{{ change.created_at | msk_text }} – {{ change.label }}: было {{ change.photos_before }}, стало {{ change.photos_after }}{% if change.removed %}. Прежние фото:{% endif %}</p>
+                    {% if change.removed %}
+                    <div class="photo-grid" data-gallery="submission-{{ submission.id }}-change-{{ change.id }}">
+                        {% for image in change.removed %}
+                        <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть прежнее фото">
+                            <img src="{{ image.image_s3_url }}" alt="Фото до изменения" loading="lazy">
+                        </button>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ol>
+        </details>
+        {% endif %}
         {% if submission.review_comment %}
         <div class="alert alert-success">
             <strong>Ранее сохранённый комментарий</strong>
