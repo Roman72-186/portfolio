@@ -33,6 +33,11 @@
    всем» (`cycle_stats.remind_cycle_debtors`): в один день одно сообщение.
    Долги со сроком до 06.10.2026 («Предобучение») автоматически не
    напоминаются (`CYCLE_DEBT_REMINDERS_SINCE`).
+6. **Окно оплаты** (заказчик 30.09.2026: «напоминание, что пора оплатить»).
+   В первый день окна должного месяца, не раньше `PAY_WINDOW_HOUR` по
+   Москве — в этот день появляется кнопка «Оплатить» (`payments.can_pay_now`).
+   Одно на месяц. Пока Продамус не настроен, не шлём: кнопки нет, звать
+   некуда. Оплатившему месяц не придёт — должным станет следующий.
 
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
@@ -67,6 +72,7 @@ from app.models.student_reminder import (
     KIND_DEADLINE_24H,
     KIND_NEW_TASK,
     KIND_NEW_VIDEO,
+    KIND_PAY_WINDOW,
     StudentReminder,
 )
 from app.models.task_block import (
@@ -110,6 +116,7 @@ from app.services.tracker import (
 )
 from app.services.video_topics import cycle_tariff_closes
 from app.services.tz import MSK_TZ
+from app.services import payments
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +149,9 @@ CYCLE_DEBT_DAILY_HOUR = 10
 # ломается от переименования и не требует id в коде.
 CYCLE_DEBT_REMINDERS_SINCE = datetime(2026, 10, 6, tzinfo=MSK_TZ)
 
+# Окно оплаты открывается в полночь; напоминание — с этого часа МСК первого дня.
+PAY_WINDOW_HOUR = 10
+
 
 def _utc(value: datetime | None) -> datetime | None:
     """Наивное время из базы — UTC (SQLite в тестах отдаёт без таймзоны)."""
@@ -172,6 +182,7 @@ class _Item:
     moment: datetime | None = None  # срок сдачи или конец доступа
     has_video: bool = False
     tasks: list[str] | None = None  # долг цикла: незакрытые обязательные
+    amount_kop: int | None = None   # окно оплаты: сумма месяца
 
 
 # Кто вообще получает — `tracker.program_students` / `program_learners`,
@@ -493,6 +504,28 @@ def _collect_cycle_debts(
 
 # ── Сборка сообщений ────────────────────────────────────────────────────────
 
+# ── 6. Окно оплаты ──────────────────────────────────────────────────────────
+
+def _collect_pay_window(
+    db: Session, students: dict[int, User], now: datetime,
+    items: dict[int, list[_Item]],
+) -> None:
+    if not payments.payments_configured():
+        return
+    for uid, user in students.items():
+        if not payments.has_window(user):
+            continue
+        period = payments.due_period(user, now)
+        opens = payments.window_opens_at(user, period) + timedelta(hours=PAY_WINDOW_HOUR)
+        cutoff = payments.window_cutoff(user, period)
+        if not opens <= now < cutoff:
+            continue
+        items[uid].append(_Item(
+            kind=KIND_PAY_WINDOW, ref=period.isoformat(), title=payments.period_label(period),
+            moment=cutoff, amount_kop=payments.price_kop(db, user),
+        ))
+
+
 def _titles(items: list[_Item]) -> str:
     lines = [f"«{item.title}»" for item in items[:SUMMARY_LIMIT]]
     rest = len(items) - SUMMARY_LIMIT
@@ -552,6 +585,17 @@ def _cycle_debt_message(item: _Item) -> tuple[str, str]:
     return title, f"{text} Срок цикла прошёл – сданное сейчас запишется как сданное позже."
 
 
+def _pay_window_message(item: _Item) -> tuple[str, str]:
+    """Последний день окна — сутки до отсечки: отсечка утром после окна."""
+    month = item.title.split()[0]
+    last_day = (_utc(item.moment).astimezone(MSK_TZ) - timedelta(days=1)).strftime("%d.%m")
+    amount = f"Сумма – {payments.rub_text(item.amount_kop)}. " if item.amount_kop else ""
+    return (
+        f"Пора оплатить обучение за {month}",
+        f"{amount}Оплати до {last_day} включительно: кнопка «Оплатить» в «Личной информации».",
+    )
+
+
 @dataclass
 class _Named:
     """`reminder_message` ждёт задания, ему нужно только название."""
@@ -572,6 +616,8 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
     for item in items:
         if item.kind in (KIND_CYCLE_CLOSING_3H, KIND_CYCLE_DEBT):
             out.append(_cycle_debt_message(item))
+        elif item.kind == KIND_PAY_WINDOW:
+            out.append(_pay_window_message(item))
     return out
 
 
@@ -584,6 +630,7 @@ def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     _collect_deadlines(db, learners, now, raw)
     _collect_access(students, now, raw)
     _collect_cycle_debts(db, learners, now, raw)
+    _collect_pay_window(db, students, now, raw)
 
     all_items = [item for bucket in raw.values() for item in bucket]
     sent = set()

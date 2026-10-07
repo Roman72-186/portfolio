@@ -561,3 +561,41 @@ def test_card_payment_archived_read_only(db, client, session_factory, card, user
     resp = client.post(f"/cabinet/superadmin/users/{card['student'].id}/payment", data=_payment_form())
 
     assert resp.status_code == 409
+
+
+# ── Напоминание в первый день окна (`student_reminders.py`, вид 6) ──────────
+
+def _pay_reminders(db, user_id):
+    return [n for n in db.query(Notification).filter(Notification.user_id == user_id)
+            if n.title.startswith("Пора оплатить")]
+
+
+def test_pay_window_reminder_once_on_first_day(db, prices, payer, prodamus):
+    from app.services.student_reminders import run_student_reminders
+
+    run_student_reminders(db, _msk(2026, 10, 10, 9, 30))   # окно открылось, но ещё рано
+    assert _pay_reminders(db, payer.id) == []
+
+    run_student_reminders(db, _msk(2026, 10, 10, 10, 0))
+    run_student_reminders(db, _msk(2026, 10, 12, 10, 0))   # второй раз — тишина
+    notes = _pay_reminders(db, payer.id)
+    assert [(n.title, n.text) for n in notes] == [(
+        "Пора оплатить обучение за октябрь",
+        "Сумма – 13 255 ₽. Оплати до 15.10 включительно: кнопка «Оплатить» в «Личной информации».",
+    )]
+
+
+def test_pay_window_reminder_skips_paid_and_unconfigured(db, prices, payer, user_factory, prodamus, monkeypatch):
+    from app.services.student_reminders import run_student_reminders
+
+    chief = user_factory(vk_id=970_101, name="Главный", is_admin=True, role_name="админ")
+    ps.apply_payment_settings(db, chief.id, payer, window_start=10, window_end=15,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=date(2026, 10, 1))
+    db.commit()
+    run_student_reminders(db, _msk(2026, 10, 10, 12, 0))
+    assert _pay_reminders(db, payer.id) == []
+
+    # Без настроек Продамуса кнопки нет — и звать некуда.
+    monkeypatch.setattr(settings, "prodamus_secret_key", "")
+    run_student_reminders(db, _msk(2026, 11, 10, 12, 0))
+    assert _pay_reminders(db, payer.id) == []
