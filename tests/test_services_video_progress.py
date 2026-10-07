@@ -445,6 +445,36 @@ def test_seek_back_does_not_warn():
     assert _decide_paused(_row(300.0, 300.0), 100.0).skipped is False
 
 
+def test_resume_jump_into_credited_part_does_not_warn():
+    """Прод 06.10.2026: продолжение с места остановки выглядит как прыжок
+    0→242 — плеер на старте присылает 0. Эти секунды уже засчитаны, ученик
+    ничего не пропускал, предупреждать нельзя. Засчитывается при этом
+    столько же, сколько раньше."""
+    decision = _decide(_row(0.0, 258.0), 242.0, after=6)
+    assert decision.skipped is False
+    assert decision.skipped_seconds > 0
+    assert decision.watched_seconds == 258.0 + 6 * 2.25 + 5
+
+
+def test_second_player_of_same_video_does_not_warn():
+    """Владелец 06.10.2026, две вкладки одного ролика: позиции «пилой»
+    66→122. Второй плеер впереди, но внутри засчитанного — не перемотка."""
+    assert _decide(_row(66.0, 140.0), 122.0).skipped is False
+
+
+def test_skip_beyond_credited_part_still_warns():
+    """Прыжок дальше засчитанного — перемотка, как и раньше."""
+    assert _decide(_row(0.0, 258.0), 500.0, after=6).skipped is True
+
+
+def test_skip_in_fresh_pass_after_completion_warns():
+    """Новый проход после зачёта (ролик поставлен в новое занятие)
+    считается с нуля — накопленные за прошлые проходы секунды перемотку не
+    прикрывают."""
+    row = _row(10.0, 620.0, completed=True, last_pass=600.0)
+    assert _decide(row, 400.0).skipped is True
+
+
 def test_completing_heartbeat_does_not_warn():
     """Зачёт важнее: если просмотр засчитан, о перескоке не говорим."""
     decision = _decide(_row(500.0, 565.0), 590.0, after=1)

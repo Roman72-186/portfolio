@@ -207,10 +207,25 @@ def evaluate_watch(
         playback_active=playback_active or ended,
         now=now,
     )
-    skipped = skipped_seconds >= VIDEO_WATCH_SKIP_NOTICE_SECONDS
     credited = watched
+    credited_before = previous.watched_seconds if previous is not None else 0.0
     if previous is not None and previous.completed_at is not None:
         credited = max(0.0, watched - previous.last_completion_watched_seconds)
+        credited_before = max(
+            0.0, previous.watched_seconds - previous.last_completion_watched_seconds
+        )
+    # Предупреждаем, только если позиция ушла дальше уже засчитанного в этом
+    # проходе. Скачок внутрь засчитанного — не перемотка: так выглядит
+    # продолжение с места остановки (плеер на старте присылает 0, через
+    # 10 секунд — прежнее место) и второй плеер того же ролика, чья позиция
+    # отстаёт. Прод 06.10.2026: 27 таких «прыжков с нуля» у 16 учеников и
+    # «пила» 46→110, 56→110 у владельца с двумя вкладками — каждый раз
+    # ученик читал «Перемотанный кусок не засчитается», хотя ничего не
+    # пропускал. Засчитываются секунды при этом так же строго.
+    skipped = (
+        skipped_seconds >= VIDEO_WATCH_SKIP_NOTICE_SECONDS
+        and position_seconds > credited_before + VIDEO_WATCH_SKIP_NOTICE_SECONDS
+    )
     if duration_seconds is None or duration_seconds <= 0:
         return WatchDecision(
             watched, credited, None, False, False, skipped, skipped_seconds

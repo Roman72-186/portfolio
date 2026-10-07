@@ -99,6 +99,26 @@ def test_player_reports_success_only_after_server_confirmation():
     assert pause_handler.index("saveProgress") < pause_handler.index("setPlaying(false)")
 
 
+def test_player_infers_playback_from_position_without_play_event():
+    """Прод 06.10.2026, ученица id 229: событие `play` от Bunny не дошло, два
+    ролика на 1× ушли с `playback_active=false`, сервер срезал всё. Плеер
+    считает ролик играющим и по ровному ходу позиции; серия обрывается
+    скачком (перемотка) и паузой."""
+    source = _read("app/static/js/video-player.js")
+
+    timeupdate = source.split("player.on('timeupdate'", 1)[1].split("});", 1)[0]
+    assert "noteTick(timing.seconds) && !isPlaying) markPlaying()" in timeupdate
+    # Скорость шага ограничена теми же 2,25×, что у сервера: скачок ползунком
+    # серию не продолжает.
+    assert "step <= elapsed * 2.25 + 0.5" in source
+    play = source.split("player.on('play'", 1)[1].split("});", 1)[0]
+    assert "markPlaying()" in play
+    pause = source.split("player.on('pause'", 1)[1].split("});", 1)[0]
+    assert "resetAdvance()" in pause
+    mark = source.split("function markPlaying()", 1)[1].split("}", 1)[0]
+    assert "setPlaying(true)" in mark and "saveProgress(true, false, false)" in mark
+
+
 def test_idle_player_does_not_reload_while_another_plays():
     """Прод 06.10.2026, жалоба «видео зависает каждые две минуты»: соседний
     плеер раз в 5 минут перезагружал плеер Bunny ради свежей ссылки и отнимал

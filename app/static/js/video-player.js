@@ -779,10 +779,54 @@
                 }, keepalive);
             }
 
+            // Ролик пошёл: общий признак «играет», обложка прочь и серверная
+            // точка отсчёта. Без неё короткий ролик успевал закончиться до
+            // первого 10-секундного heartbeat и навсегда оставался с
+            // watched_seconds=0. Точка при каждом возобновлении ещё и отсекает
+            // время, проведённое на паузе.
+            function markPlaying() {
+                setPlaying(true);
+                hasEverPlayed = true;
+                hideCover();
+                saveProgress(true, false, false);
+            }
+
+            // Событие `play` от Bunny доходит не всегда (прод 06.10.2026,
+            // ученица id 229: два ролика целиком на 1×, все отметки с
+            // `playback_active=false`, засчитано 3 секунды из 576 и 23 из 399,
+            // кружок отказан трижды). Поэтому «играет» выводим и из самой
+            // позиции: она ровно идёт вперёд не медленнее, чем позволяют
+            // 2,25× плеера, `PLAYBACK_PROOF_MS` подряд. Перемотка ползунком —
+            // один большой скачок, она серию обрывает, и защита от перемотки
+            // не слабеет.
+            var PLAYBACK_PROOF_MS = 2000;
+            var advanceStartedAt = null;
+            var lastTickSeconds = null;
+            var lastTickAt = null;
+            function resetAdvance() {
+                advanceStartedAt = null;
+                lastTickSeconds = null;
+                lastTickAt = null;
+            }
+            function noteTick(seconds) {
+                var now = Date.now();
+                if (lastTickSeconds !== null) {
+                    var step = seconds - lastTickSeconds;
+                    var elapsed = (now - lastTickAt) / 1000;
+                    var steady = step > 0 && elapsed > 0 && elapsed <= 3 && step <= elapsed * 2.25 + 0.5;
+                    if (!steady) advanceStartedAt = null;
+                    else if (advanceStartedAt === null) advanceStartedAt = lastTickAt;
+                }
+                lastTickSeconds = seconds;
+                lastTickAt = now;
+                return advanceStartedAt !== null && now - advanceStartedAt >= PLAYBACK_PROOF_MS;
+            }
+
             function attachPlayer() {
                 var generation = ++playerGeneration;
                 var player = new window.playerjs.Player(iframe);
                 activePlayer = player;
+                resetAdvance();
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
@@ -818,6 +862,7 @@
                     if (!timing || timing.seconds === null) return;
                     currentSeconds = timing.seconds;
                     if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
+                    if (noteTick(timing.seconds) && !isPlaying) markPlaying();
                     if (Date.now() - lastAutomaticSaveAt >= 10000) {
                         lastAutomaticSaveAt = Date.now();
                         saveProgress(false, false, false);
@@ -825,14 +870,7 @@
                 });
                 player.on('play', function () {
                     if (generation !== playerGeneration) return;
-                    setPlaying(true);
-                    hasEverPlayed = true;
-                    hideCover();
-                    // Каждый play создаёт серверную точку отсчёта. Без неё короткий
-                    // ролик успевал закончиться до первого 10-секундного heartbeat и навсегда
-                    // оставался с watched_seconds=0. Точка при каждом возобновлении ещё и
-                    // отсекает время, проведённое на паузе.
-                    saveProgress(true, false, false);
+                    markPlaying();
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;
@@ -840,6 +878,9 @@
                     // воспроизведения должен попасть в тело запроса до смены состояния.
                     saveProgress(true, false, false);
                     setPlaying(false);
+                    // Иначе первые тики после следующего «плей» сочтутся
+                    // продолжением старой серии.
+                    resetAdvance();
                 });
                 player.on('seeked', function () {
                     if (generation !== playerGeneration) return;
