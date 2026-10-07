@@ -1581,14 +1581,52 @@ function buildStatsDiagnostics(sc) {
     }).join('') + '</ul>';
 }
 
+function mmss(seconds) {
+    var s = Math.max(0, Math.round(seconds || 0));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// Ролик глазами разбора жалобы «смотрела, а не засчитало» (владелец 07.10.2026):
+// засчитано и сколько нужно, что не засчитано и почему, отказы кружка,
+// последние события. Скачок внутрь уже засчитанного — не потеря, он серым.
 function buildStatsVideos(sc) {
     var rows = sc.videos || [];
     if (!rows.length) return '';
     return '<ul class="activity-feed">' + rows.map(function(v) {
-        var badges = statsBadge(v.completed ? 'Досмотрел' : 'Смотрел', v.completed ? 'ok' : '');
-        if (v.avg_share_pct != null) badges += statsBadge('Просмотрено ' + v.avg_share_pct + '%');
+        var badges = '';
+        if (v.watch_state === 'completed') {
+            badges += statsBadge('Засчитан' + (v.completed_at ? ' ' + v.completed_at : ''), 'ok');
+        } else if (v.watch_state === 'watching') {
+            badges += statsBadge(v.needed_seconds != null
+                ? 'Засчитано ' + mmss(v.credited_seconds) + ' из ' + mmss(v.needed_seconds)
+                : 'Смотрел');
+        } else {
+            badges += statsBadge('Не запускал');
+        }
+        (v.losses || []).forEach(function(l) {
+            badges += statsBadge(l.label + ': не засчитано ' + mmss(l.seconds), 'no');
+        });
+        if (v.harmless_seconds) badges += statsBadge('Повторно засчитанное: ' + mmss(v.harmless_seconds) + ' – не потеря');
+        if (v.refusals) badges += statsBadge('Кружок не поставлен: ' + v.refusals + ' раз', 'no');
         if (v.opens) badges += statsBadge('Открывал за ' + sc.video_days + ' дней: ' + v.opens);
-        return statsRow(v.title, badges);
+        var when = v.last_watch ? 'смотрел ' + v.last_watch : '';
+        var html = '<li class="activity-feed-item"><span class="activity-feed-text"><b>' + esc(v.title) + '</b>'
+            + (when ? ' · ' + esc(when) : '')
+            + '<span class="profile-status-badges">' + badges + '</span>';
+        if (v.last_refusal) {
+            html += '<span class="profile-field-label">Последний отказ кружка ' + esc(v.last_refusal.at)
+                + ': ' + esc(v.last_refusal.text) + '</span>';
+        }
+        var history = v.history || [];
+        if (history.length) {
+            html += '<details class="cmp-steps"><summary>Последние события: ' + history.length + '</summary>'
+                + '<ul class="activity-feed">' + history.map(function(e) {
+                    return '<li class="activity-feed-item' + (e.harmless ? ' activity-feed-item--staff' : '') + '">'
+                        + '<span class="activity-feed-time">' + esc(e.at) + '</span>'
+                        + '<span class="activity-feed-text">' + esc(e.text) + '</span></li>';
+                }).join('') + '</ul></details>';
+        }
+        return html + '</span></li>';
     }).join('') + '</ul>';
 }
 

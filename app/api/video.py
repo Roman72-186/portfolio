@@ -36,6 +36,7 @@ from app.services.video_catalog import (
     legacy_pilot_video,
     list_published_videos,
 )
+from app.services.video_watch_events import cut_event, record as record_watch_event
 from app.services.video_progress import (
     get_resume_position,
     get_video_progress,
@@ -750,6 +751,7 @@ def _save_progress(
     )
     watched_seconds = decision.watched_seconds
     completed = decision.completed
+    cut = None
     if decision.skipped_seconds >= 1:
         # Каждый срезанный кусок — в лог (владелец 06.10.2026): по паузе между
         # отметками и флагу воспроизведения видно, перемотка это или сеть.
@@ -758,6 +760,20 @@ def _save_progress(
         if updated_at is not None and updated_at.tzinfo is None:
             updated_at = updated_at.replace(tzinfo=timezone.utc)
         gap = (datetime.now(timezone.utc) - updated_at).total_seconds() if updated_at else None
+        # И строкой в базу с причиной (07.10.2026) — для статистики в карточке
+        # ученика. Собирается до сохранения: после него `existing` уже новая.
+        cut = cut_event(
+            user_id=user["user_id"],
+            video_id=bunny_video_id,
+            position_from=existing.position_seconds,
+            position_to=payload.position_seconds,
+            skipped_seconds=decision.skipped_seconds,
+            gap_seconds=gap,
+            playing=payload.playback_active or payload.ended,
+            credited_before=decision.credited_before,
+            watched_seconds=watched_seconds,
+            duration_seconds=duration,
+        )
         logger.warning(
             "Видео: кусок не засчитан | user=%s | video=%s | позиция %.0f→%.0f"
             " | срезано=%.0f | пауза между отметками=%s | играло=%s | засчитано всего=%.0f",
@@ -782,6 +798,9 @@ def _save_progress(
         logger.exception("Video progress save failed for user_id=%s", user["user_id"])
         db.rollback()
         return JSONResponse({"ok": False, "error": "save_failed"}, status_code=503)
+
+    if cut is not None:
+        record_watch_event(db, cut)
 
     if completed and not was_completed and topic_id is not None:
         _close_video_task_once(db, user_id=user["user_id"], topic_id=topic_id)

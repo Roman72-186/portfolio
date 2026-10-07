@@ -37,11 +37,23 @@ from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
+from app.models.video_watch_event import VideoWatchEvent
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.program import day_bounds, week_start
 from app.services.tracker import accessible_task_entries, effective_week_start
 from app.services.tz import MSK_TZ, msk_midnight
+from app.services.video_progress import watch_threshold_seconds
+from app.services.video_watch_events import (
+    CUT_LABELS,
+    CUT_NETWORK,
+    CUT_PAUSED_PLAYING,
+    CUT_SEEK,
+    HARMLESS_CUTS,
+    KIND_CUT,
+    KIND_REFUSAL,
+    refusal_text,
+)
 
 # Дата деплоя миграций — раньше неё новых таймстемпов не существует
 ACTIVITY_STATS_START = datetime(2026, 7, 11, tzinfo=timezone.utc)
@@ -840,6 +852,8 @@ def get_video_watch_stats(
             VideoProgress.watched_seconds,
             VideoProgress.duration_seconds,
             VideoProgress.completed_at,
+            VideoProgress.last_completed_at,
+            VideoProgress.updated_at,
         )
         .filter(VideoProgress.user_id.in_(student_ids))
         .all()
@@ -873,6 +887,13 @@ def get_video_watch_stats(
             agg["shares"].append(share)
     for vid in opens:
         _video(vid)  # плеер открывали, но позиция ещё не сохранялась
+    # Один ученик (карточка): почему не засчитано — по каждому ролику
+    # (владелец 07.10.2026). На странице школы этих полей нет, там своя
+    # карточка `get_video_loss_stats`.
+    details = _video_event_details(db, student_id) if student_id is not None else {}
+    for vid in details:
+        _video(vid)  # кружок отказал, а ролик не запускался
+    own = {r.video_id: r for r in rows} if student_id is not None else {}
 
     titles = {}
     if by_video:
@@ -884,14 +905,22 @@ def get_video_watch_stats(
     videos = []
     for vid, agg in by_video.items():
         shares = agg["shares"]
-        videos.append({
+        item = {
             "title": titles.get(vid) or "Ролик вне каталога",
             "viewers": agg["viewers"],
             "completed": agg["completed"],
             "avg_share_pct": round(100 * sum(shares) / len(shares)) if shares else None,
             "opens": opens.get(vid, 0),
-        })
-    videos.sort(key=lambda v: (v["viewers"], v["opens"]), reverse=True)
+        }
+        if student_id is not None:
+            item.update(_own_watch(own.get(vid)))
+            item.update(details.get(vid) or _empty_video_details())
+        videos.append(item)
+    if student_id is not None:
+        # У одного ученика — свежие сверху: жалоба обычно про вчерашний ролик.
+        videos.sort(key=lambda v: v.pop("sort_at"), reverse=True)
+    else:
+        videos.sort(key=lambda v: (v["viewers"], v["opens"]), reverse=True)
 
     all_shares = [s for s in (_share(r) for r in rows) if s is not None]
     return {
@@ -902,6 +931,242 @@ def get_video_watch_stats(
         "avg_share_pct": round(100 * sum(all_shares) / len(all_shares)) if all_shares else None,
         "opens_total": sum(opens.values()),
         "videos": videos[:30],
+    }
+
+
+# Сколько последних событий незачёта ученика читать для хронологии карточки
+# и сколько показывать под одним роликом. Число запросов от объёма истории не
+# растёт: выборки ограничены, агрегат — один GROUP BY.
+VIDEO_EVENT_HISTORY_LIMIT = 80
+VIDEO_EVENT_HISTORY_PER_VIDEO = 8
+VIDEO_REFUSAL_SCAN_LIMIT = 200
+_NEVER = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _when_msk(value: datetime | None) -> str | None:
+    value = _msk(value)
+    return value.strftime("%d.%m.%Y %H:%M") if value else None
+
+
+def _mmss(seconds: float | None) -> str:
+    seconds = int(round(seconds or 0))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def _empty_video_details() -> dict:
+    return {
+        "lost_seconds": 0,
+        "losses": [],
+        "harmless_seconds": 0,
+        "refusals": 0,
+        "last_refusal": None,
+        "history": [],
+    }
+
+
+def _own_watch(row) -> dict:
+    """Засчитано и нужно по ролику одного ученика — по его `VideoProgress`."""
+    if row is None:
+        return {
+            "watch_state": "not_started", "credited_seconds": 0, "needed_seconds": None,
+            "completed_at": None, "last_watch": None, "sort_at": _NEVER,
+        }
+    completed_at = row.last_completed_at or row.completed_at
+    needed = watch_threshold_seconds(row.duration_seconds) if row.duration_seconds else None
+    return {
+        # У засчитанного ролика страница пишет дату зачёта, а не «засчитано
+        # 0:30 из 9:30» нового прохода — то читалось бы как незачёт.
+        "watch_state": "completed" if completed_at else "watching",
+        "credited_seconds": round(float(row.watched_seconds or 0)),
+        "needed_seconds": round(needed) if needed is not None else None,
+        "completed_at": _when_msk(completed_at),
+        "last_watch": _when_msk(row.updated_at),
+        "sort_at": _utc(row.updated_at) or _NEVER,
+    }
+
+
+def _video_event_text(event: VideoWatchEvent) -> str:
+    if event.kind == KIND_REFUSAL:
+        return "Кружок не поставлен: " + refusal_text(event)
+    text = (
+        f"{CUT_LABELS.get(event.reason, event.reason)}: {_mmss(event.position_from)}"
+        f" → {_mmss(event.position_to)}, не засчитано {_mmss(event.skipped_seconds)}"
+    )
+    if event.reason in HARMLESS_CUTS:
+        text += " (уже было засчитано — не потеря)"
+    return text
+
+
+def _video_event_details(db: DBSession, student_id: int) -> dict[str, dict]:
+    """Срезы и отказы кружка одного ученика по роликам (`VideoWatchEvent`).
+
+    Потери — только настоящие, `HARMLESS_CUTS` отдельно: скачок внутрь уже
+    засчитанного ничего не отнимает, а по секундам это больше половины всех
+    срезов (прод 06.10.2026)."""
+    details: dict[str, dict] = {}
+    losses: dict[str, dict[str, list]] = defaultdict(dict)
+
+    def _d(vid: str) -> dict:
+        return details.setdefault(vid, _empty_video_details())
+
+    agg = (
+        db.query(
+            VideoWatchEvent.video_id,
+            VideoWatchEvent.kind,
+            VideoWatchEvent.reason,
+            func.count(VideoWatchEvent.id),
+            func.coalesce(func.sum(VideoWatchEvent.skipped_seconds), 0.0),
+        )
+        .filter(VideoWatchEvent.user_id == student_id)
+        .group_by(VideoWatchEvent.video_id, VideoWatchEvent.kind, VideoWatchEvent.reason)
+        .all()
+    )
+    for vid, kind, reason, count, seconds in agg:
+        d = _d(vid)
+        seconds = float(seconds or 0)
+        if kind == KIND_REFUSAL:
+            d["refusals"] += count
+        elif reason in HARMLESS_CUTS:
+            d["harmless_seconds"] += seconds
+        else:
+            d["lost_seconds"] += seconds
+            losses[vid][reason] = [count, seconds]
+
+    refusals = (
+        db.query(VideoWatchEvent)
+        .filter(VideoWatchEvent.user_id == student_id, VideoWatchEvent.kind == KIND_REFUSAL)
+        .order_by(VideoWatchEvent.created_at.desc(), VideoWatchEvent.id.desc())
+        .limit(VIDEO_REFUSAL_SCAN_LIMIT)
+        .all()
+    )
+    for e in refusals:
+        d = _d(e.video_id)
+        if d["last_refusal"] is None:
+            d["last_refusal"] = {"text": refusal_text(e), "at": _when_msk(e.created_at)}
+
+    recent = (
+        db.query(VideoWatchEvent)
+        .filter(VideoWatchEvent.user_id == student_id)
+        .order_by(VideoWatchEvent.created_at.desc(), VideoWatchEvent.id.desc())
+        .limit(VIDEO_EVENT_HISTORY_LIMIT)
+        .all()
+    )
+    for e in recent:
+        d = _d(e.video_id)
+        if len(d["history"]) < VIDEO_EVENT_HISTORY_PER_VIDEO:
+            d["history"].append({
+                "at": _when_msk(e.created_at),
+                "text": _video_event_text(e),
+                "harmless": e.kind == KIND_CUT and e.reason in HARMLESS_CUTS,
+                "refusal": e.kind == KIND_REFUSAL,
+            })
+
+    for vid, d in details.items():
+        d["losses"] = [
+            {"label": CUT_LABELS.get(reason, reason), "count": count, "seconds": round(seconds)}
+            for reason, (count, seconds) in sorted(
+                losses[vid].items(), key=lambda kv: kv[1][1], reverse=True,
+            )
+        ]
+        d["lost_seconds"] = round(d["lost_seconds"])
+        d["harmless_seconds"] = round(d["harmless_seconds"])
+    return details
+
+
+# Окно карточки «Незачёт видео» на «Статистике активности».
+VIDEO_LOSS_DAYS = 7
+VIDEO_LOSS_TOP = 15
+
+
+def get_video_loss_stats(db: DBSession, days: int = VIDEO_LOSS_DAYS) -> dict:
+    """Незачёт видео по школе за `days` дней (владелец 07.10.2026): сколько
+    минут ролика срезано и почему, сколько раз отказал кружок, у кого больше
+    всего.
+
+    «Плеер считал паузой» — сигнал сбоя самого плеера: после починки
+    07.10.2026 (`b30fe01`) колонка должна стоять в нуле. Скачки внутрь
+    засчитанного (продолжение, второй плеер) потерей не считаются и идут
+    отдельной колонкой.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(
+            VideoWatchEvent.user_id,
+            VideoWatchEvent.kind,
+            VideoWatchEvent.reason,
+            VideoWatchEvent.skipped_seconds,
+            VideoWatchEvent.created_at,
+        )
+        .filter(
+            VideoWatchEvent.user_id.in_(_student_ids(db)),
+            VideoWatchEvent.created_at >= since,
+        )
+        .all()
+    )
+
+    def _blank() -> dict:
+        return {
+            "lost": 0.0, CUT_PAUSED_PLAYING: 0.0, CUT_SEEK: 0.0, CUT_NETWORK: 0.0,
+            "harmless": 0.0, "refusals": 0,
+        }
+
+    totals = _blank()
+    by_day: dict = defaultdict(_blank)
+    by_user: dict[int, dict] = defaultdict(_blank)
+    for r in rows:
+        for bucket in (totals, by_day[_msk(r.created_at).date()], by_user[r.user_id]):
+            if r.kind == KIND_REFUSAL:
+                bucket["refusals"] += 1
+                continue
+            seconds = float(r.skipped_seconds or 0)
+            if r.reason in HARMLESS_CUTS:
+                bucket["harmless"] += seconds
+                continue
+            bucket["lost"] += seconds
+            if r.reason in bucket:
+                bucket[r.reason] += seconds
+
+    def _minutes(bucket: dict) -> dict:
+        # Секунды → минуты для показа; отказы — штуки, как есть.
+        return {
+            key: value if key == "refusals" else round(value / 60)
+            for key, value in bucket.items()
+        }
+
+    top_ids = [
+        uid for uid, b in sorted(
+            by_user.items(), key=lambda kv: (kv[1]["lost"], kv[1]["refusals"]), reverse=True,
+        )
+        if b["lost"] >= 60 or b["refusals"]
+    ][:VIDEO_LOSS_TOP]
+    # Ник зашифрован (`EncryptedString`) — читается только через ORM.
+    people = (
+        {u.id: u for u in db.query(User).filter(User.id.in_(top_ids)).all()}
+        if top_ids else {}
+    )
+    students = [
+        {
+            "id": uid,
+            "name": _student_name(people[uid].first_name, people[uid].last_name, people[uid].name),
+            "username": (
+                f"@{people[uid].tg_username.strip().lstrip('@')}"
+                if people[uid].tg_username else "Не указан"
+            ),
+            "url": f"/cabinet/students?student={uid}&tab=statistics",
+            **_minutes(by_user[uid]),
+        }
+        for uid in top_ids
+        if uid in people
+    ]
+
+    return {
+        "days": days,
+        "totals": _minutes(totals),
+        "by_day": [
+            {"day": day.strftime("%d.%m"), **_minutes(bucket)}
+            for day, bucket in sorted(by_day.items(), reverse=True)
+        ],
+        "students": students,
     }
 
 

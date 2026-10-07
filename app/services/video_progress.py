@@ -181,6 +181,10 @@ class WatchDecision:
     # Сколько секунд ролика этот heartbeat не засчитал из прироста позиции —
     # для лога, в том числе мелкие срезы от задержек сети.
     skipped_seconds: float = 0.0
+    # Засчитано в этом проходе до этого heartbeat'а. Позиция не дальше него —
+    # скачок внутрь уже засчитанного (продолжение, второй плеер), а не потеря;
+    # по нему причину среза раскладывает `video_watch_events.classify_cut`.
+    credited_before: float = 0.0
 
 
 def evaluate_watch(
@@ -228,14 +232,15 @@ def evaluate_watch(
     )
     if duration_seconds is None or duration_seconds <= 0:
         return WatchDecision(
-            watched, credited, None, False, False, skipped, skipped_seconds
+            watched, credited, None, False, False, skipped, skipped_seconds,
+            credited_before,
         )
     threshold = watch_threshold_seconds(duration_seconds)
     reached = ended or position_seconds >= threshold
     completed = reached and credited >= threshold
     return WatchDecision(
         watched, credited, threshold, reached, completed,
-        skipped and not completed, skipped_seconds,
+        skipped and not completed, skipped_seconds, credited_before,
     )
 
 

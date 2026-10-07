@@ -151,6 +151,16 @@ from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 from app.services.video_catalog import get_published_video
 from app.services.video_progress import get_video_progress, watch_threshold_seconds
+from app.services.video_watch_events import (
+    REFUSAL_BELOW_THRESHOLD,
+    REFUSAL_COMPLETED_BEFORE_BLOCK,
+    REFUSAL_NO_DURATION,
+    REFUSAL_NO_VIDEO,
+    REFUSAL_NOT_STARTED,
+    record as record_watch_event,
+    refusal_event,
+    refusal_reason,
+)
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import format_rich_text, templates
 
@@ -545,27 +555,38 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
 
 def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
     """Почему кружок видео-блока не поставлен — строка для лога (владелец
-    06.10.2026). До этого отказ уходил ученику кодом `not_watched` и нигде не
-    оставался: на жалобу «смотрела до конца, а не засчитало» ответить было
-    нечем, кроме гипотез. Те же условия, что у `_video_block_watched`."""
+    06.10.2026) и строка `VideoWatchEvent` для статистики карточки (07.10.2026).
+    До этого отказ уходил ученику кодом `not_watched` и нигде не оставался: на
+    жалобу «смотрела до конца, а не засчитало» ответить было нечем, кроме
+    гипотез. Причину выбирает `video_watch_events.refusal_reason` — те же
+    условия, что у `_video_block_watched`."""
     video = db.get(LearningVideo, block.video_id) if block.video_id else None
-    if video is None:
+    progress = (
+        get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
+        if video is not None else None
+    )
+    duration = video.duration_seconds if video is not None else None
+    reason = refusal_reason(progress, video_exists=video is not None, duration_seconds=duration)
+    if video is not None:
+        record_watch_event(db, refusal_event(
+            progress, user_id=user_id, video_id=video.bunny_video_id,
+            block_id=block.id, reason=reason, duration_seconds=duration,
+        ))
+    if reason == REFUSAL_NO_VIDEO:
         return "ролика нет"
-    progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
-    if progress is None:
+    if reason == REFUSAL_NOT_STARTED:
         return "ролик не запускался"
-    duration = video.duration_seconds
     numbers = (
         f"позиция={progress.position_seconds:.0f} | честных={progress.watched_seconds:.0f}"
         f" | длительность={duration or 0:.0f}"
     )
-    if progress.last_completed_at or progress.completed_at:
+    if reason == REFUSAL_COMPLETED_BEFORE_BLOCK:
         # Засчитан раньше, чем блок появился: в новом занятии нужен новый проход.
         return "засчитан до создания блока, нужен новый проход | " + numbers
-    if not duration:
+    if reason == REFUSAL_NO_DURATION:
         return "у ролика нет длительности | " + numbers
     threshold = watch_threshold_seconds(duration)
-    if progress.position_seconds < threshold:
+    if reason == REFUSAL_BELOW_THRESHOLD:
         return f"не досмотрел до порога {threshold:.0f} | " + numbers
     return f"дошёл до конца, но пропустил {threshold - progress.watched_seconds:.0f} с | " + numbers
 
@@ -1273,9 +1294,11 @@ def confirm_video_block_watched(
     if _video_block_requires_completion(db, task, block, user) and not _video_block_watched(
         db, block, user["user_id"]
     ):
+        # Причину пишет и в базу (статистика карточки), поэтому вызов отдельно.
+        refusal = _video_watch_refusal(db, block, user["user_id"])
         log.warning(
             "Видео не засчитано, кружок не поставлен | block=%s | user=%s | причина=%s",
-            block_id, user["user_id"], _video_watch_refusal(db, block, user["user_id"]),
+            block_id, user["user_id"], refusal,
         )
         return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")

@@ -432,6 +432,61 @@
         </div>
     </details>
 
+    <!-- Незачёт видео (07.10.2026): срезы по причинам и отказы кружка -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Незачёт видео</h2><span class="ss-acc-badge">за {{ video_loss.days }} дн. · потеряно {{ video_loss.totals.lost }} мин · отказов кружка {{ video_loss.totals.refusals }}</span></summary>
+        <div class="ss-acc-body">
+            {% if video_loss.by_day %}
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.lost }}</div><div class="ss-stat-lbl">Минут не засчитано</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.paused_playing }}</div><div class="ss-stat-lbl">Из них плеер считал паузой — сбой плеера, должно быть 0</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.seek }}</div><div class="ss-stat-lbl">Перемотка</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.refusals }}</div><div class="ss-stat-lbl">Отказов кружка</div></div>
+            </div>
+            <p class="ss-dim-sm">Продолжение с места остановки и скачки по уже просмотренному (второй плеер того же ролика, перемотка внутри засчитанного) потерей не считаются: эти секунды засчитаны раньше. Они в колонке «Не потеря».</p>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>День</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Сеть</th><th class="ss-ta-r">Не потеря</th><th class="ss-ta-r">Отказы кружка</th></tr></thead>
+                    <tbody>
+                    {% for d in video_loss.by_day %}
+                    <tr>
+                        <td data-label="День" class="ss-bold">{{ d.day }}</td>
+                        <td data-label="Не засчитано, мин" class="ss-ta-r">{{ d.lost }}</td>
+                        <td data-label="Плеер считал паузой" class="ss-ta-r">{{ d.paused_playing }}</td>
+                        <td data-label="Перемотка" class="ss-ta-r">{{ d.seek }}</td>
+                        <td data-label="Сеть" class="ss-ta-r">{{ d.network }}</td>
+                        <td data-label="Не потеря" class="ss-ta-r">{{ d.harmless }}</td>
+                        <td data-label="Отказы кружка" class="ss-ta-r">{{ d.refusals }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if video_loss.students %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">У кого больше всего не засчитано</div>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Отказы кружка</th></tr></thead>
+                        <tbody>
+                        {% for st in video_loss.students %}
+                        <tr>
+                            <td data-label="Ученик"><a class="ss-link ss-bold" href="{{ st.url }}">{{ st.name }}</a><br><span class="ss-dim-sm">{{ tg_copy(st.username) }}</span></td>
+                            <td data-label="Не засчитано, мин" class="ss-ta-r">{{ st.lost }}</td>
+                            <td data-label="Плеер считал паузой" class="ss-ta-r">{{ st.paused_playing }}</td>
+                            <td data-label="Перемотка" class="ss-ta-r">{{ st.seek }}</td>
+                            <td data-label="Отказы кружка" class="ss-ta-r">{{ st.refusals }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+            {% else %}<div class="ss-empty">За {{ video_loss.days }} дней всё засчитано</div>{% endif %}
+        </div>
+    </details>
+
     <!-- Задания программы -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Задания учебной программы</h2><span class="ss-acc-badge">{{ task_progress.done }} закрыто · {{ task_progress.in_work }} в работе · {{ task_progress.overdue }} просрочено</span></summary>

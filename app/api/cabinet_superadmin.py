@@ -1313,6 +1313,7 @@ def superadmin_activity(
         get_submission_stats,
         get_timed_stats,
         get_task_progress_stats,
+        get_video_loss_stats,
         get_video_watch_stats,
     )
 
@@ -1336,6 +1337,8 @@ def superadmin_activity(
         "diagnostics": get_diagnostic_stats(db),
         "student_events": get_student_event_stats(db),
         "video_watch": get_video_watch_stats(db),
+        # Незачёт видео: срезы по причинам и отказы кружка (07.10.2026).
+        "video_loss": get_video_loss_stats(db),
         "task_progress": get_task_progress_stats(db),
         "submissions": get_submission_stats(db),
         # Сдано до и после срока (владелец 27.09.2026).
