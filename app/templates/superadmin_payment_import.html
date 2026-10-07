@@ -21,8 +21,31 @@
             Нужны колонки «Имя» и «Фамилия» (или одна «ФИО»), «Тариф» и «Сумма».
             Ученика ищем по имени и фамилии. Если сумма равна цене тарифа, ученику
             ставится набор «до 01.09» или «с 01.09». Если не равна – она становится
-            его личной ценой. Окно оплаты и оплаченный месяц остаются как были.
+            его личной ценой.
         </p>
+    </div>
+
+    <div class="su-filters" id="payImportDefaults">
+        <p class="bulk-not-found">
+            Окна оплаты и оплаченного месяца в файле нет. Заполните их здесь – они
+            достанутся ученикам, у которых этих данных ещё нет. Кому окно уже
+            поставили в карточке, у тех оно не изменится.
+        </p>
+        <label>
+            Окно с
+            <input type="number" id="payImportStart" min="1" max="28" inputmode="numeric" placeholder="10">
+        </label>
+        <label>
+            по
+            <input type="number" id="payImportEnd" min="1" max="28" inputmode="numeric" placeholder="15">
+        </label>
+        <label>
+            Оплачен месяц
+            <input type="month" id="payImportMonth">
+        </label>
+    </div>
+
+    <div class="bulk-wrap">
         <div class="bulk-input-row">
             <div class="file-pick">
                 <input id="payImportFile" class="file-pick-input" type="file"
@@ -62,6 +85,11 @@
     const fileName = document.getElementById('payImportName');
     const checkBtn = document.getElementById('payImportCheck');
     const result = document.getElementById('payImportResult');
+    const defaultInputs = {
+        window_start: document.getElementById('payImportStart'),
+        window_end: document.getElementById('payImportEnd'),
+        paid_month: document.getElementById('payImportMonth'),
+    };
     let applyBtn = null;
 
     fileInput.addEventListener('change', function () {
@@ -69,6 +97,10 @@
         fileName.textContent = file ? file.name : 'Файл .xlsx, до 2 МБ';
         checkBtn.disabled = !file;
         result.innerHTML = '';
+    });
+    // Предпросмотр посчитан под старые окно и месяц — после правки его не показываем.
+    Object.keys(defaultInputs).forEach(function (k) {
+        defaultInputs[k].addEventListener('input', function () { result.innerHTML = ''; });
     });
 
     function el(tag, cls, text) {
@@ -86,6 +118,7 @@
     function post(url, extra) {
         const fd = new FormData();
         fd.append('file', fileInput.files[0]);
+        Object.keys(defaultInputs).forEach(function (k) { fd.append(k, defaultInputs[k].value.trim()); });
         Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
         return window.csrfFetch(url, { method: 'POST', body: fd })
             .then(function (resp) {

@@ -11,7 +11,9 @@
 
 Писать — только через `payments.apply_payment_settings`, одну точку ручной
 настройки оплаты (журнал, проверки, правило «оплачено по»). Окно и
-оплаченный месяц файл не несёт — у ученика они остаются как были.
+оплаченный месяц файл не несёт. Их можно задать на всю загрузку
+(`Defaults`), и тогда они заполнят только пустые поля: окно, поставленное
+ученику в карточке, загрузка не перетирает.
 
 Что делаем с суммой. Совпала с ценой справочника для тарифа ученика в одном
 из наборов — ставим этот набор и снимаем свою цену: подорожание набора тогда
@@ -22,6 +24,7 @@
 import io
 import re
 from dataclasses import dataclass, field
+from datetime import date
 
 from sqlalchemy.orm import Session as DBSession
 
@@ -65,6 +68,25 @@ class SheetRow:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class Defaults:
+    """Окно и оплаченный месяц на всю загрузку — только в пустые поля ученика."""
+    window_start: int | None = None
+    window_end: int | None = None
+    paid_through: date | None = None
+
+
+@dataclass
+class Target:
+    """Настройки оплаты, которые строка запишет ученику."""
+    window_start: int | None
+    window_end: int | None
+    cohort: str
+    price_kop: int | None
+    paid_through: date | None
+    note: str = ""
+
+
 @dataclass
 class RowResult:
     row: SheetRow
@@ -72,9 +94,22 @@ class RowResult:
     student: User | None = None
     candidates: list[User] = field(default_factory=list)
     note: str = ""
-    cohort: str = ""
-    price_kop: int | None = None
+    target: Target | None = None
     changes: list[str] = field(default_factory=list)
+
+
+def parse_defaults(start: str, end: str, month: str) -> Defaults:
+    """Общие значения с формы. Плохие — `payments.PaymentSettingsError`."""
+    days = []
+    for raw in (start, end):
+        text = (raw or "").strip()
+        if text and not text.isdigit():
+            raise payments.PaymentSettingsError("День окна оплаты – число от 1 до 28")
+        days.append(int(text) if text else None)
+    error = payments.validate_window(*days)
+    if error:
+        raise payments.PaymentSettingsError(error)
+    return Defaults(days[0], days[1], payments.parse_paid_month(month))
 
 
 # ---------------------------------------------------------------------------
@@ -279,17 +314,47 @@ def plan_settings(db: DBSession, student: User, amount_kop: int) -> tuple[str, i
     return current, amount_kop
 
 
-def _change_texts(student: User, cohort: str, price_kop: int | None) -> list[str]:
+def plan_target(db: DBSession, student: User, amount_kop: int, defaults: Defaults) -> Target:
+    """Всё, что строка запишет: сумма из файла плюс общие окно и месяц в пустые поля."""
+    cohort, price_kop = plan_settings(db, student, amount_kop)
+    if payments.has_window(student):
+        start, end = student.pay_window_start, student.pay_window_end
+    else:
+        start, end = defaults.window_start, defaults.window_end
+    paid = payments.paid_month(student)
+    note = ""
+    if paid is None and defaults.paid_through:
+        if start and end:
+            paid = defaults.paid_through
+        else:
+            note = "Окна оплаты нет – оплаченный месяц не поставлен"
+    return Target(start, end, cohort, price_kop, paid, note)
+
+
+def _window_text(start: int | None, end: int | None) -> str:
+    return f"{start}–{end}" if start and end else "–"
+
+
+def _change_texts(student: User, target: Target) -> list[str]:
     changes = []
-    old_cohort = student.pay_cohort or ""
-    if old_cohort != cohort:
+    old_window = (student.pay_window_start, student.pay_window_end)
+    if old_window != (target.window_start, target.window_end):
         changes.append(
-            f"набор: {COHORT_LABELS.get(old_cohort, '–')} → {COHORT_LABELS.get(cohort, '–')}"
+            f"окно: {_window_text(*old_window)} → {_window_text(target.window_start, target.window_end)}"
         )
-    if student.pay_price_kop != price_kop:
+    old_cohort = student.pay_cohort or ""
+    if old_cohort != target.cohort:
+        changes.append(
+            f"набор: {COHORT_LABELS.get(old_cohort, '–')} → {COHORT_LABELS.get(target.cohort, '–')}"
+        )
+    if student.pay_price_kop != target.price_kop:
         old = payments.rub_text(student.pay_price_kop) if student.pay_price_kop else "по справочнику"
-        new = payments.rub_text(price_kop) if price_kop else "по справочнику"
+        new = payments.rub_text(target.price_kop) if target.price_kop else "по справочнику"
         changes.append(f"своя цена: {old} → {new}")
+    old_month = payments.paid_month(student)
+    if target.paid_through and old_month != target.paid_through:
+        old = payments.period_label(old_month) if old_month else "–"
+        changes.append(f"оплачено по: {old} → {payments.period_label(target.paid_through)}")
     return changes
 
 
@@ -297,25 +362,27 @@ def _tariff_text(code: str | None) -> str:
     return TARIFF_DISPLAY.get(code or "", code or "–")
 
 
-def _fill(db: DBSession, result: RowResult, student: User) -> None:
+def _fill(db: DBSession, result: RowResult, student: User, defaults: Defaults) -> None:
     """Статус и изменения для строки с известным учеником."""
     row = result.row
     result.student = student
-    result.cohort, result.price_kop = plan_settings(db, student, row.amount_kop)
-    result.changes = _change_texts(student, result.cohort, result.price_kop)
+    result.target = plan_target(db, student, row.amount_kop, defaults)
+    result.changes = _change_texts(student, result.target)
+    result.note = result.target.note
     if row.tariff and row.tariff != student.tariff:
         result.status = ROW_TARIFF
-        result.note = (
+        tariff_note = (
             f"В файле тариф «{_tariff_text(row.tariff)}», на платформе – "
             f"«{_tariff_text(student.tariff)}». Тариф загрузка не меняет"
         )
+        result.note = ". ".join(filter(None, [tariff_note, result.note]))
     elif result.changes:
         result.status = ROW_READY
     else:
         result.status = ROW_SAME
 
 
-def build_preview(db: DBSession, rows: list[SheetRow]) -> list[RowResult]:
+def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defaults()) -> list[RowResult]:
     """Что произойдёт с каждой строкой. Ничего не пишет."""
     students = load_students(db)
     index = [(key, s) for s in students for key in _student_keys(s)]
@@ -346,7 +413,7 @@ def build_preview(db: DBSession, rows: list[SheetRow]) -> list[RowResult]:
             result.note = "Этот ученик уже есть выше в файле"
         else:
             taken.add(writable[0].id)
-            _fill(db, result, writable[0])
+            _fill(db, result, writable[0], defaults)
     return results
 
 
@@ -367,6 +434,7 @@ def apply_import(
     performed_by_id: int,
     rows: list[SheetRow],
     choices: dict[int, int],
+    defaults: Defaults = Defaults(),
 ) -> ApplySummary:
     """Записать строки из `choices` («номер строки → id ученика»). Не коммитит.
 
@@ -394,15 +462,15 @@ def apply_import(
             summary.skipped.append(f"Строка {line}: {display_name(student)} уже записан выше")
             continue
         used.add(student.id)
-        cohort, price_kop = plan_settings(db, student, row.amount_kop)
+        target = plan_target(db, student, row.amount_kop, defaults)
         try:
             changed = payments.apply_payment_settings(
                 db, performed_by_id, student,
-                window_start=student.pay_window_start,
-                window_end=student.pay_window_end,
-                cohort=cohort,
-                price_kop=price_kop,
-                paid_through=payments.paid_month(student),
+                window_start=target.window_start,
+                window_end=target.window_end,
+                cohort=target.cohort,
+                price_kop=target.price_kop,
+                paid_through=target.paid_through,
             )
         except payments.PaymentSettingsError as exc:
             summary.skipped.append(f"Строка {line}: {exc}")

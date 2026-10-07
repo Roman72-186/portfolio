@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
 from app.services import payment_import as pi
+from app.services import payments
 from app.services.user_management import _invalidate_user_sessions
 from app.tmpl import templates
 
@@ -26,6 +27,13 @@ async def _read_rows(file: UploadFile) -> list[pi.SheetRow]:
     try:
         return pi.parse_workbook(data)
     except pi.ImportFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+def _defaults(start: str, end: str, month: str) -> pi.Defaults:
+    try:
+        return pi.parse_defaults(start, end, month)
+    except payments.PaymentSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
@@ -53,10 +61,17 @@ async def payment_import_preview(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     file: UploadFile = File(...),
+    window_start: str = Form(""),
+    window_end: str = Form(""),
+    paid_month: str = Form(""),
 ):
-    """Что произойдёт с каждой строкой файла. В базу не пишет."""
+    """Что произойдёт с каждой строкой файла. В базу не пишет.
+
+    Окно и оплаченный месяц с формы — общие на загрузку, ложатся только в
+    пустые поля ученика."""
+    defaults = _defaults(window_start, window_end, paid_month)
     rows = await _read_rows(file)
-    results = pi.build_preview(db, rows)
+    results = pi.build_preview(db, rows, defaults)
     return JSONResponse({"ok": True, "rows": pi.preview_json(results), "counts": pi.counts(results)})
 
 
@@ -67,11 +82,15 @@ async def payment_import_apply(
     _csrf: Annotated[None, Depends(require_csrf)],
     file: UploadFile = File(...),
     choices: str = Form(""),
+    window_start: str = Form(""),
+    window_end: str = Form(""),
+    paid_month: str = Form(""),
 ):
     """Записать отмеченные строки. `choices` — JSON `[{"line": 5, "user_id": 12}]`.
 
     Файл приходит второй раз и разбирается заново: что записать, решает сервер
     по файлу, от браузера берём только выбор человека."""
+    defaults = _defaults(window_start, window_end, paid_month)
     rows = await _read_rows(file)
     try:
         picked = {int(c["line"]): int(c["user_id"]) for c in json.loads(choices or "[]")}
@@ -80,7 +99,7 @@ async def payment_import_apply(
     if not picked:
         raise HTTPException(status_code=400, detail="Не отмечено ни одной строки")
 
-    summary = pi.apply_import(db, user["user_id"], rows, picked)
+    summary = pi.apply_import(db, user["user_id"], rows, picked, defaults)
     db.commit()
     for student_id in summary.changed_ids:
         _invalidate_user_sessions(db, student_id)

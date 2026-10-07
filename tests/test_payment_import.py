@@ -55,8 +55,8 @@ def make_student(db, user_factory):
     return _make
 
 
-def _preview(db, rows):
-    results = pi.build_preview(db, pi.parse_workbook(_xlsx(rows)))
+def _preview(db, rows, defaults=pi.Defaults()):
+    results = pi.build_preview(db, pi.parse_workbook(_xlsx(rows)), defaults)
     return {r.row.line: r for r in results}
 
 
@@ -117,7 +117,7 @@ def test_sum_equal_to_reference_sets_cohort(db, prices, make_student):
     row = _preview(db, [HEADER, ["анна", "ИВАНОВА", "Я с вами", 13255]])[2]
 
     assert (row.status, row.student.id) == (pi.ROW_READY, anna.id)
-    assert (row.cohort, row.price_kop) == (COHORT_FROM, None)
+    assert (row.target.cohort, row.target.price_kop) == (COHORT_FROM, None)
     assert row.changes == ["набор: – → с 01.09.2026"]
 
 
@@ -126,7 +126,7 @@ def test_sum_off_reference_becomes_own_price(db, prices, make_student):
 
     row = _preview(db, [HEADER, ["Анна", "Иванова", "Я с вами", 12000]])[2]
 
-    assert (row.status, row.cohort, row.price_kop) == (pi.ROW_READY, COHORT_BEFORE, 1200000)
+    assert (row.status, row.target.cohort, row.target.price_kop) == (pi.ROW_READY, COHORT_BEFORE, 1200000)
     assert row.changes == ["своя цена: по справочнику → 12 000 ₽"]
 
 
@@ -139,7 +139,7 @@ def test_same_price_in_both_cohorts(db, prices, make_student):
     # Набор стоит — он и остаётся, менять нечего.
     assert (rows[2].status, rows[2].student.id) == (pi.ROW_SAME, with_cohort.id)
     # Набора нет, а сумма подходит к обоим — набор не угадываем, цена своя.
-    assert (rows[3].student.id, rows[3].cohort, rows[3].price_kop) == (without.id, "", 677500)
+    assert (rows[3].student.id, rows[3].target.cohort, rows[3].target.price_kop) == (without.id, "", 677500)
 
 
 def test_order_of_name_and_yo_do_not_matter(db, prices, make_student):
@@ -212,6 +212,77 @@ def test_preview_writes_nothing(db, prices, make_student):
 
     assert (anna.pay_cohort, anna.pay_price_kop) in ((None, None), ("", None))
     assert db.query(AuditLog).filter(AuditLog.action == "payment_settings_change").count() == 0
+
+
+# ── Общие окно и месяц ───────────────────────────────────────────────────────
+
+OCTOBER = date(2026, 10, 1)
+
+
+@pytest.mark.parametrize("start, end, month, expected", [
+    ("", "", "", pi.Defaults()),
+    ("10", "15", "2026-10", pi.Defaults(10, 15, OCTOBER)),
+    ("", "", "2026-10", pi.Defaults(None, None, OCTOBER)),
+])
+def test_parse_defaults(start, end, month, expected):
+    assert pi.parse_defaults(start, end, month) == expected
+
+
+@pytest.mark.parametrize("start, end, month", [("10", "", ""), ("15", "10", ""), ("x", "15", ""), ("10", "15", "окт")])
+def test_parse_defaults_refuses(start, end, month):
+    with pytest.raises(ps.PaymentSettingsError):
+        pi.parse_defaults(start, end, month)
+
+
+def test_defaults_fill_only_empty_fields(db, prices, make_student, user_factory):
+    chief = user_factory(vk_id=981_010, name="Главный", is_admin=True, role_name="админ")
+    fresh = make_student("Анна", "Иванова")
+    own = make_student("Борис", "Смирнов")
+    ps.apply_payment_settings(db, chief.id, own, window_start=20, window_end=25,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=date(2026, 9, 1))
+    db.commit()
+    defaults = pi.Defaults(10, 15, OCTOBER)
+
+    rows = _preview(db, [HEADER, ["Анна", "Иванова", "Я с вами", 13255], ["Борис", "Смирнов", "Я с вами", 13255]],
+                    defaults)
+
+    assert rows[2].changes == ["окно: – → 10–15", "набор: – → с 01.09.2026", "оплачено по: – → октябрь 2026"]
+    # Своё окно и свой месяц из карточки загрузка не перетирает.
+    assert rows[3].status == pi.ROW_SAME
+
+    file_rows = pi.parse_workbook(_xlsx([HEADER, ["Анна", "Иванова", "Я с вами", 13255]]))
+    pi.apply_import(db, chief.id, file_rows, {2: fresh.id}, defaults)
+    db.commit()
+    db.refresh(fresh)
+    assert (fresh.pay_window_start, fresh.pay_window_end) == (10, 15)
+    assert ps.paid_month(fresh) == OCTOBER
+    assert fresh.paid_until == ps.paid_until_after(fresh, OCTOBER)
+
+
+def test_month_without_window_is_not_set(db, prices, make_student):
+    make_student("Анна", "Иванова")
+
+    row = _preview(db, [HEADER, ["Анна", "Иванова", "Я с вами", 13255]], pi.Defaults(None, None, OCTOBER))[2]
+
+    assert row.target.paid_through is None
+    assert row.note == "Окна оплаты нет – оплаченный месяц не поставлен"
+
+
+def test_routes_pass_defaults_and_refuse_bad_ones(db, client, session_factory, prices, make_student, staff):
+    anna = make_student("Анна", "Иванова")
+    client.cookies.set("session_id", session_factory(staff["chief"]).id)
+    rows = [HEADER, ["Анна", "Иванова", "Я с вами", 13255]]
+    form = {"window_start": "10", "window_end": "15", "paid_month": "2026-10"}
+
+    bad = client.post("/cabinet/superadmin/payment-import/preview", files=_upload(rows),
+                      data={**form, "window_end": "5"})
+    applied = client.post("/cabinet/superadmin/payment-import/apply", files=_upload(rows),
+                          data={**form, "choices": json.dumps([{"line": 2, "user_id": anna.id}])})
+
+    assert bad.status_code == 400
+    assert applied.status_code == 200, applied.text
+    db.refresh(anna)
+    assert (anna.pay_window_start, ps.paid_month(anna)) == (10, OCTOBER)
 
 
 # ── Запись ───────────────────────────────────────────────────────────────────
