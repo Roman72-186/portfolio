@@ -45,6 +45,7 @@ from app.services import drive as drive_service
 from app.services.navigation import can_open_3dlab
 from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
+from app.services import broadcast_delivery
 from app.services import telegram as telegram_service
 from app.services.user_management import open_program_from_now
 
@@ -784,9 +785,27 @@ class _TgMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class _TgCallbackMessage(BaseModel):
+    message_id: int
+    chat: _TgChat
+
+
+class _TgCallback(BaseModel):
+    """Нажатие инлайн-кнопки — сейчас только «Отправить» под проверкой
+    рассылки (`services/broadcast_delivery.py`). Приходит, только если вебхук
+    зарегистрирован с `callback_query` (`scripts/set_telegram_webhook.py`)."""
+    id: str
+    from_user: _TgFrom = Field(alias="from")
+    data: str | None = None
+    message: _TgCallbackMessage | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TelegramUpdate(BaseModel):
     update_id: int
     message: _TgMessage | None = None
+    callback_query: _TgCallback | None = None
 
 
 # Единый контакт поддержки — тот же, что и на login.html/404.html.
@@ -994,6 +1013,7 @@ async def telegram_webhook(
     request: Request,
     db: Annotated[DBSession, Depends(get_db)],
     _: Annotated[None, Depends(require_telegram_webhook_secret)],
+    background_tasks: BackgroundTasks,
 ):
     try:
         body = await request.json()
@@ -1004,8 +1024,35 @@ async def telegram_webhook(
 
     if update.message is not None and update.message.text:
         await _handle_telegram_message(db, update.message)
+    if update.callback_query is not None:
+        await _handle_broadcast_callback(update.callback_query, background_tasks)
 
     return {"ok": True}
+
+
+async def _handle_broadcast_callback(callback: _TgCallback, background_tasks: BackgroundTasks) -> None:
+    """«Отправить N ученикам» под проверкой рассылки.
+
+    Пускает только нажатие в том личном чате, куда ушла проверка, с токеном
+    этой проверки и пока версия не менялась — решает
+    `broadcast_delivery.approve_from_telegram`. Ответ на кнопку обязателен:
+    без него у человека крутятся часики.
+    """
+    parsed = broadcast_delivery.parse_callback(callback.data)
+    if parsed is None:
+        await broadcast_delivery.answer_callback(callback.id, "")
+        return
+    broadcast_id, token = parsed
+    chat_id = callback.message.chat.id if callback.message else None
+    if chat_id is None or chat_id != callback.from_user.id:
+        await broadcast_delivery.answer_callback(callback.id, "Откройте рассылку на сайте")
+        return
+    started, text = broadcast_delivery.approve_from_telegram(broadcast_id, token, chat_id)
+    await broadcast_delivery.answer_callback(callback.id, text)
+    if not started:
+        return
+    await broadcast_delivery.close_preview_buttons(chat_id, callback.message.message_id, text)
+    background_tasks.add_task(broadcast_delivery.run_broadcast, broadcast_id)
 
 
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 """Register the Telegram bot webhook with Telegram.
 
 Run inside the Docker container on the server, once after each deploy where
-TELEGRAM_BOT_TOKEN or TELEGRAM_WEBHOOK_SECRET changes:
+TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET or `allowed_updates` below changes
+(08.10.2026 — добавлен callback_query для кнопок рассылок):
     docker exec portfolio-saas-app-1 python scripts/set_telegram_webhook.py
 
 Telegram calls back on POST /auth/telegram/webhook — the app validates the
@@ -38,7 +39,10 @@ def main() -> None:
         json={
             "url": webhook_url,
             "secret_token": secret,
-            "allowed_updates": ["message"],
+            # callback_query — кнопка «Отправить» под проверкой рассылки
+            # (с 08.10.2026, `services/broadcast_delivery.py`). Без неё
+            # нажатие до приложения не доходит, отправка — только с сайта.
+            "allowed_updates": ["message", "callback_query"],
         },
         timeout=15.0,
     )

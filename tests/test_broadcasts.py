@@ -444,3 +444,54 @@ def test_draft_status_default(db, user_factory):
     db.add(broadcast)
     db.commit()
     assert broadcast.status == STATUS_DRAFT and broadcast.text == ""
+
+
+# ── Кнопка «Отправить» в Telegram (вебхук) ──────────────────────────────────
+
+WEBHOOK_SECRET = "broadcast-test-secret"
+
+
+def _press(client, data: str, *, chat=ADMIN_CHAT, from_id=ADMIN_CHAT):
+    return client.post(
+        "/auth/telegram/webhook",
+        json={
+            "update_id": 1,
+            "callback_query": {
+                "id": "cb1",
+                "from": {"id": from_id},
+                "data": data,
+                "message": {"message_id": 77, "chat": {"id": chat}},
+            },
+        },
+        headers={"X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET},
+    )
+
+
+def test_webhook_button_sends_broadcast(gp_client, db, student, fake_tg, monkeypatch):
+    from app.config import settings as app_settings
+    monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    _save(client, bid, action="preview")
+    db.expire_all()
+    token = db.get(Broadcast, bid).preview_token
+
+    assert _press(client, f"bc:{bid}:{token}", chat=999, from_id=999).status_code == 200
+    db.expire_all()
+    assert db.get(Broadcast, bid).status == STATUS_DRAFT  # чужой чат — нет
+
+    assert _press(client, f"bc:{bid}:{token}").status_code == 200
+    db.expire_all()
+    assert db.get(Broadcast, bid).status == STATUS_SENT
+    assert [m for m, _, _ in fake_tg.to(101)] == ["sendMessage"]
+    answers = [d for m, d, _ in fake_tg.calls if m == "answerCallbackQuery"]
+    assert "1 ученику" in answers[-1]["text"]
+    assert any(m == "editMessageReplyMarkup" for m, _, _ in fake_tg.calls)
+
+
+def test_webhook_ignores_unknown_buttons(client, fake_tg, monkeypatch):
+    from app.config import settings as app_settings
+    monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
+    assert _press(client, "что-то-другое").status_code == 200
+    assert [m for m, _, _ in fake_tg.calls] == ["answerCallbackQuery"]
