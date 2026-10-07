@@ -46,6 +46,7 @@ from app.models.tracker import (
     TrackerTaskTag,
 )
 from app.models.user import User
+from app.services.access_state import access_open_clause
 from app.services.program import (
     MONTH_NAMES,
     day_bounds,
@@ -1172,7 +1173,8 @@ def program_students(db: Session, now: datetime) -> dict[int, User]:
             User.is_active.is_(True),
             User.deleted_at.is_(None),
             User.archived_at.is_(None),
-            or_(User.access_until.is_(None), User.access_until > now),
+            # Пробный и оплаченный сроки — `services/access_state.py`.
+            access_open_clause(now),
             # Служебные аккаунты (владелец 29.09.2026) — к «службе заботы»
             # привязан рабочий Telegram Лизы, и «Новое задание» от каждого
             # цикла шло бы ей как ученице. Ответы преподавателя и оценки —

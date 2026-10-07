@@ -4,7 +4,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=2">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=18">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=19">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -19,6 +19,10 @@
     <div class="prs-saved">Личные данные сохранены.</div>
     {% endif %}
 
+    {% if paid_return %}
+    <div class="prs-saved">Спасибо! Как только Продамус подтвердит оплату, придёт уведомление и доступ продлится. Обычно это занимает минуту.</div>
+    {% endif %}
+
     {% if user.access_expired %}
     <div class="prs-access-closed">
         <h2>Доступ закрыт</h2>
@@ -27,11 +31,14 @@
             Чтобы вернуться к урокам и заданиям, оплати обучение – доступ откроется снова.
         </p>
         <div class="prs-access-closed-actions">
-            {% if payment_url %}
+            {% if payment and payment.has_price %}
+            <button type="button" class="btn-blue" data-pay-button>Оплатить {{ payment.amount_text }}</button>
+            {% elif payment_url %}
             <a href="{{ payment_url }}" target="_blank" rel="noopener noreferrer" class="btn-blue">Оплатить обучение</a>
             {% endif %}
             <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
         </div>
+        <p class="prs-pay-error" data-pay-error hidden></p>
     </div>
     {% elif user.tg_username_mismatch %}
     <div class="prs-access-closed">
@@ -43,6 +50,26 @@
         <div class="prs-access-closed-actions">
             <a href="/cabinet/personal/contacts" class="btn-blue">Обновить ник в Telegram</a>
         </div>
+    </div>
+    {% endif %}
+
+    {% if payment and not user.access_expired %}
+    <div class="prs-access-closed">
+        <h2>Оплата за {{ payment.month }}</h2>
+        {% if not payment.has_price %}
+        <p>Сумма для тебя пока не указана. Напиши в поддержку – её проставят, и здесь появится кнопка оплаты.</p>
+        {% elif payment.overdue %}
+        <p>Окно оплаты закончилось {{ payment.until_text }}. Оплати {{ payment.amount_text }}, чтобы доступ к урокам не закрылся.</p>
+        {% else %}
+        <p>{{ payment.amount_text }}, оплатить до {{ payment.until_text }} включительно.</p>
+        {% endif %}
+        <div class="prs-access-closed-actions">
+            {% if payment.has_price %}
+            <button type="button" class="btn-blue" data-pay-button>Оплатить</button>
+            {% endif %}
+            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
+        </div>
+        <p class="prs-pay-error" data-pay-error hidden></p>
     </div>
     {% endif %}
 
@@ -192,4 +219,39 @@
 {% set onboarding_access_until_text = access_until_text %}
 {% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/hint.js?v=1"></script>
+{% if payment and payment.has_price %}
+<script>
+(function () {
+    // «Оплатить»: сервер создаёт ссылку Продамуса на должный месяц
+    // (`POST /cabinet/personal/pay`), страница уходит на неё. Ключ CSRF —
+    // свежий через csrfFetch: вкладка на телефоне живёт сутками.
+    document.querySelectorAll('[data-pay-button]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var errorBox = document.querySelector('[data-pay-error]');
+            button.disabled = true;
+            window.csrfFetch('/cabinet/personal/pay', {method: 'POST'})
+                .then(function (resp) {
+                    return resp.json().catch(function () { return {}; }).then(function (body) {
+                        return {ok: resp.ok, body: body};
+                    });
+                })
+                .then(function (result) {
+                    if (result.ok && result.body.url) {
+                        window.location.href = result.body.url;
+                        return;
+                    }
+                    throw new Error(result.body.error || result.body.detail || 'Не получилось открыть оплату. Обнови страницу и попробуй ещё раз.');
+                })
+                .catch(function (err) {
+                    button.disabled = false;
+                    if (errorBox) {
+                        errorBox.textContent = err.message || 'Нет связи. Попробуй ещё раз.';
+                        errorBox.hidden = false;
+                    }
+                });
+        });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

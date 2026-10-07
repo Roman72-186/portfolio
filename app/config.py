@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""   # для deep-link t.me/<username>?start=...
     telegram_channel_id: int = 0      # закрытый канал, членство проверяет getChatMember
     telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
+
+    # Ежемесячная оплата через Продамус (`app/services/payments.py`). Пусто —
+    # кнопки «Оплатить» нет, вебхук отвечает 503. Значения вносит владелец в
+    # `.env.prod`, ключ — из «Настроек» платёжной страницы.
+    prodamus_form_url: str = ""    # https://<имя>.payform.ru/
+    prodamus_secret_key: str = ""
+    # Закрывать ли кабинет по неоплате (`User.paid_until`). Выключено, пока
+    # заказчик не просмотрит первый список должников (план, «Запуск»).
+    payments_block_enabled: bool = False
     telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
     # Служебный топик для оценок ОС (ОС, фаза 2; владелец 01.10.2026, О17):
     # общая группа команды без учеников, бот в ней состоит. Значения вносит

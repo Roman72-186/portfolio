@@ -13,6 +13,7 @@ from app.csrf import validate_csrf_token
 from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
+from app.services.access_state import access_expired as user_access_expired
 from app.services.portfolio_window import intake_portfolio_gate_required
 from app.services.rbac import (
     MODERATOR_ROLE_NAME,
@@ -254,9 +255,9 @@ def get_current_user(
     #
     # Срок держит только учеников (`role_rank == 1`): случайная дата на строке
     # сотрудника не должна запирать кабинет куратору.
-    access_expired = False
-    if role_rank == 1 and user.access_until is not None:
-        access_expired = _as_utc(user.access_until) <= now
+    # Сроков два — пробный (`access_until`) и оплаченный (`paid_until`), правило
+    # одно: `services/access_state.py`.
+    access_expired = role_rank == 1 and user_access_expired(user, now)
     if access_expired and not is_path_allowed_when_access_expired(request.url.path):
         raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
 

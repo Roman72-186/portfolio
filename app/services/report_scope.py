@@ -11,9 +11,9 @@
 - `archived_at` пуст — архив прошлого потока; он тоже снимает `is_active`,
   но это отдельное состояние со своей колонкой, проверяется явно;
 - `deleted_at` пуст;
-- подписка активна: `access_until` пуст (бессрочно, так живут действующие
-  ученики) или ещё не наступил — тот же срок, что запирает кабинет
-  в `dependencies.get_current_user`;
+- подписка активна: ни пробный срок (`access_until`), ни оплаченный
+  (`paid_until`, при включённой блокировке) не наступили — то же правило,
+  что запирает кабинет, `services/access_state.py`;
 - не служебный аккаунт (`REPORT_EXCLUDED_USER_IDS`).
 
 До 07.10.2026 каждый сервис статистики отбирал учеников сам, и отборы
@@ -29,12 +29,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.role import Role
 from app.models.user import User
+from app.services.access_state import access_open_clause
 
 
 def reportable_students_q(db: Session, now: datetime | None = None):
@@ -48,7 +48,7 @@ def reportable_students_q(db: Session, now: datetime | None = None):
             User.is_active == True,  # noqa: E712
             User.archived_at.is_(None),
             User.deleted_at.is_(None),
-            or_(User.access_until.is_(None), User.access_until > now),
+            access_open_clause(now),
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )

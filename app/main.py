@@ -23,6 +23,7 @@ from app.api import cabinet_learning, cabinet_personal, cabinet_tracker_admin, c
 from app.api import cabinet_digest_admin, cabinet_goal_admin
 from app.api import cabinet_tracker
 from app.api import homework_submission
+from app.api import payments as payments_router
 from app.api import lab_assets
 from app.api import student_review
 from app.api import task_block_feedback
@@ -398,6 +399,7 @@ app.include_router(cabinet_point_a.router)
 app.include_router(cabinet_point_a_audio.router)
 app.include_router(cabinet_staff_notifications.router)
 app.include_router(cabinet_access_admin.router)
+app.include_router(payments_router.router)
 
 
 @app.get("/health")

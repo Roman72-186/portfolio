@@ -159,6 +159,25 @@ class User(Base):
     program_access_from: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Ежемесячная оплата (`app/services/payments.py`, 07.10.2026). Окно оплаты
+    # — дни месяца «с» и «по» (крайний ≤ 28, чтобы окно было в любом месяце);
+    # пусто — ученик вне автоматической оплаты, так живут все до импорта
+    # списка от заказчика. Набор (`payment.COHORT_*`) выбирает колонку
+    # справочника цен; индивидуальная цена в копейках его перекрывает.
+    pay_window_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pay_window_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pay_cohort: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    pay_price_kop: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # До какого момента оплачено: отсечка после окна следующего месяца.
+    # Наступила — кабинет закрывается так же, как по `access_until`, но
+    # только при включённой блокировке (`settings.payments_block_enabled`).
+    # Отдельно от `access_until` намеренно: та дата в шести местах значит
+    # «новичок пробного набора» (лента, блоки, анкета, фильтр), и платящий
+    # ученик не должен им становиться. Правило «закрыт ли кабинет» одно —
+    # `services/access_state.py`.
+    paid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

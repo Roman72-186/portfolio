@@ -28,11 +28,11 @@
 реальный сценарий.
 """
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import (
@@ -42,6 +42,7 @@ from app.api.cabinet_student import (
     needs_profile_setup,
 )
 from app.cache import invalidate_session
+from app.config import settings
 from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL, TIMEZONES
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -50,6 +51,7 @@ from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
 from app.models.task_block import TaskBlock, TaskBlockResponse
 from sqlalchemy import or_
 from app.services.archi_profile import result_for_answers
+from app.services import payments as payment_service
 from app.services.skills_history import skills_history
 from app.services import telegram as telegram_service
 from app.services.tz import msk_text, today_msk
@@ -133,12 +135,45 @@ def cabinet_personal(
         "saved": request.query_params.get("saved") == "1",
         "support_url": SUPPORT_URL,
         "payment_url": PAYMENT_URL,
+        # Ежемесячная оплата (`services/payments.py`): блок с кнопкой
+        # «Оплатить» с первого дня окна; `None` — блока нет.
+        "payment": payment_service.student_payment_view(
+            db, db.get(User, user["user_id"]), datetime.now(timezone.utc),
+        ),
+        "paid_return": request.query_params.get("paid") == "1",
         "access_until_text": msk_text(user.get("access_until")),
         # Динамика самооценки навыков (владелец 03.09.2026): «в начале
         # обучения было так, в середине уже вот так» — сравнение по датам.
         "skills": skills_history(db, user["user_id"]),
         "diagnostic_results": diagnostic_results,
     })
+
+
+@router.post("/personal/pay")
+def cabinet_personal_pay(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_csrf)],
+):
+    """Кнопка «Оплатить»: ссылка Продамуса на должный месяц.
+
+    Открыт и при закрытом доступе — адрес под `/cabinet/personal`, иначе
+    должнику нечем было бы заплатить. Ответ — JSON с адресом, страница
+    уводит на него сама (ключ CSRF берётся свежим, `csrfFetch`).
+    """
+    if user.get("impersonated_by_id"):
+        # Сотрудник «глазами ученика» не должен создавать ученику заказы.
+        return JSONResponse({"error": "В режиме просмотра оплата недоступна"}, status_code=403)
+    student = db.get(User, user["user_id"])
+    try:
+        payment = payment_service.get_or_create_payment(
+            db, student, datetime.now(timezone.utc), f"https://{settings.domain}",
+        )
+    except payment_service.PaymentUnavailable as exc:
+        db.rollback()
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    db.commit()
+    return JSONResponse({"url": payment.link_url})
 
 
 def _contacts_ctx(request, user, errors=None, form=None):

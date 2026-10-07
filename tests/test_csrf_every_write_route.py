@@ -34,6 +34,7 @@ NO_CSRF_BY_DESIGN = {
     "/login": "сессии ещё нет — ключ не к чему привязать",
     "/logout": "выход; прикрыт SameSite=lax, подделка только разлогинит",
     "/auth/telegram/webhook": "зовёт Telegram, сверка секрета в заголовке",
+    "/payments/prodamus/webhook": "зовёт сервер Продамуса, сверка подписи в заголовке Sign",
     "/auth/internal/issue-link": "межсервисный вызов по внутреннему ключу",
     "/auth/internal/sso/verify": "межсервисный вызов по внутреннему ключу",
     "/cabinet/superadmin/impersonate/stop": (

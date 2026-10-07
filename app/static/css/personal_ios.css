@@ -320,6 +320,10 @@
     color: var(--warning-ink);
     margin: 0 0 8px;
 }
+.ios-personal .prs-access-closed .prs-pay-error {
+    margin: 12px 0 0;
+    color: var(--error);
+}
 .ios-personal .prs-access-closed p {
     font-size: 14px;
     line-height: 1.6;
@@ -331,7 +335,8 @@
     flex-wrap: wrap;
     gap: 10px;
 }
-.ios-personal .prs-access-closed-actions > a {
+.ios-personal .prs-access-closed-actions > a,
+.ios-personal .prs-access-closed-actions > button {
     flex: 1 1 200px;
     justify-content: center;
     text-align: center;
