@@ -850,6 +850,7 @@ def get_video_watch_stats(
             VideoProgress.user_id,
             VideoProgress.video_id,
             VideoProgress.watched_seconds,
+            VideoProgress.covered_seconds,
             VideoProgress.duration_seconds,
             VideoProgress.completed_at,
             VideoProgress.last_completed_at,
@@ -866,11 +867,14 @@ def get_video_watch_stats(
     )
 
     def _share(r) -> float | None:
-        # watched_seconds копит реальное время и при пересмотре перерастает
-        # длину ролика — доля не выше 100%.
+        # Доля — сколько разных секунд ролика просмотрено (покрытие прохода,
+        # 07.10.2026), а не сумма: пересмотр начала долю не растит. Засчитанный
+        # ролик — целиком: после зачёта покрытие копит уже новый проход.
         if not r.duration_seconds:
             return None
-        return min(float(r.watched_seconds or 0) / float(r.duration_seconds), 1.0)
+        if r.completed_at is not None:
+            return 1.0
+        return min(float(r.covered_seconds or 0) / float(r.duration_seconds), 1.0)
 
     by_video: dict[str, dict] = {}
 
@@ -977,7 +981,7 @@ def _own_watch(row) -> dict:
         # У засчитанного ролика страница пишет дату зачёта, а не «засчитано
         # 0:30 из 9:30» нового прохода — то читалось бы как незачёт.
         "watch_state": "completed" if completed_at else "watching",
-        "credited_seconds": round(float(row.watched_seconds or 0)),
+        "credited_seconds": round(float(row.covered_seconds or 0)),
         "needed_seconds": round(needed) if needed is not None else None,
         "completed_at": _when_msk(completed_at),
         "last_watch": _when_msk(row.updated_at),

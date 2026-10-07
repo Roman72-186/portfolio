@@ -46,7 +46,10 @@ CUT_LABELS = {
 # Скачок внутрь уже засчитанного: секунды засчитаны раньше, просмотр от
 # такого среза не теряет ничего. Прод 06.10.2026: больше половины срезанных
 # секунд за день — эти два класса, и в одной цифре с настоящими потерями они
-# пугали бы минутами, которые ни на что не влияют.
+# пугали бы минутами, которые ни на что не влияют. С переходом на отрезки
+# (07.10.2026) новые строки этих классов не пишутся: срез — только
+# непросмотренные секунды, а прыжок внутрь просмотренного их не даёт. Класс
+# остался для строк до перехода.
 HARMLESS_CUTS = frozenset({CUT_RESUME, CUT_INSIDE_CREDITED})
 # Сбой плеера, а не поведение ученика: после починки 07.10.2026 (`b30fe01`,
 # «играет» по ходу позиции) класс должен уйти в ноль. Не ушёл — плеер снова
@@ -84,7 +87,7 @@ def classify_cut(
     skipped_seconds: float,
     gap_seconds: float | None,
     playing: bool,
-    credited_before: float,
+    credited_before: float | None = None,
 ) -> str:
     """Причина срезанного куска. Порядок проверки важен.
 
@@ -102,6 +105,10 @@ def classify_cut(
        различить (прод: 97→955 при засчитанных 1062), поэтому класс один. То же
        условие, что не даёт `evaluate_watch` предупреждать о перемотке.
     4. Остальное — перемотка вперёд.
+
+    Шаг 3 — только для строк до перехода на отрезки (`credited_before` даёт
+    перенос журнала): с 07.10.2026 срез уже несёт только непросмотренные
+    секунды, и прыжок внутрь просмотренного срезом не бывает.
     """
     delta = position_to - position_from
     if (
@@ -115,7 +122,7 @@ def classify_cut(
         return CUT_PAUSED_PLAYING
     if playing and skipped_seconds < VIDEO_WATCH_SKIP_NOTICE_SECONDS:
         return CUT_NETWORK
-    if position_to <= credited_before + VIDEO_WATCH_SKIP_NOTICE_SECONDS:
+    if credited_before is not None and position_to <= credited_before + VIDEO_WATCH_SKIP_NOTICE_SECONDS:
         if position_from <= RESUME_START_MAX_SECONDS:
             return CUT_RESUME
         return CUT_INSIDE_CREDITED
@@ -131,12 +138,11 @@ def cut_event(
     skipped_seconds: float,
     gap_seconds: float | None,
     playing: bool,
-    credited_before: float,
     watched_seconds: float,
     duration_seconds: float | None,
 ) -> VideoWatchEvent:
-    """Строка среза — собирается до сохранения прогресса: после него строка
-    `VideoProgress` уже новая, и позицию «откуда» взять негде."""
+    """Строка среза. `position_from` — прошлая отметка того же сеанса плеера,
+    `watched_seconds` — покрытие прохода после отметки."""
     return VideoWatchEvent(
         user_id=user_id,
         video_id=video_id,
@@ -147,7 +153,6 @@ def cut_event(
             skipped_seconds=skipped_seconds,
             gap_seconds=gap_seconds,
             playing=playing,
-            credited_before=credited_before,
         ),
         position_from=position_from,
         position_to=position_to,
@@ -196,7 +201,9 @@ def refusal_event(
         kind=KIND_REFUSAL,
         reason=reason,
         position_to=progress.position_seconds if progress is not None else None,
-        watched_seconds=progress.watched_seconds if progress is not None else None,
+        # Покрытие прохода на момент отказа — по нему `refusal_text` считает,
+        # сколько не хватило.
+        watched_seconds=progress.covered_seconds if progress is not None else None,
         duration_seconds=duration_seconds,
     )
 
@@ -231,5 +238,5 @@ def refusal_text(event: VideoWatchEvent) -> str:
         )
     if event.reason == REFUSAL_SHORTFALL and duration:
         missing = watch_threshold_seconds(duration) - (event.watched_seconds or 0)
-        return f"Дошёл до конца, но не хватило {_mmss(max(0.0, missing))} честного просмотра"
+        return f"Дошёл до конца, но не досмотрел {_mmss(max(0.0, missing))} – пропущенные куски"
     return label

@@ -27,6 +27,14 @@ class VideoProgress(Base):
     # что плеер сообщил позицию у конца. См. app/services/video_progress.py
     # ::compute_watched_seconds.
     watched_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # С 07.10.2026 зачёт решает не `watched_seconds` (сумма за всё время, она
+    # осталась для статистики), а покрытие текущего прохода: сколько разных
+    # секунд ролика просмотрено, по отрезкам `VideoWatchSegment`. Здесь — его
+    # кэш, чтобы кружок, карточка и статистика читали одну строку. При зачёте
+    # обнуляется: следующий просмотр — новый проход.
+    covered_seconds: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0, server_default="0"
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # completed_at keeps the first successful watch for historical reporting;
     # last_completed_at scopes a later rewatch to a newly created task block.

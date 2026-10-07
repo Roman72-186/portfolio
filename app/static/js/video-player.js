@@ -641,6 +641,15 @@
             }
 
             var resumeSeconds = data.resume_position_seconds || 0;
+            // Номер сеанса — этого экземпляра плеера (07.10.2026). Сервер
+            // сравнивает отметку с прошлой отметкой того же сеанса и склеивает
+            // просмотренные отрезки всех сеансов: второй плеер того же ролика
+            // больше не срезает первому честный кусок. При `reattachPlayer`
+            // номер прежний — это та же вкладка, плеер пересоздаётся только
+            // ради свежей ссылки; разрыв в позиции сервер увидит сам.
+            var sessionId = (window.crypto && typeof window.crypto.randomUUID === 'function')
+                ? window.crypto.randomUUID()
+                : 's-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
             var currentSeconds = resumeSeconds;
             var durationSeconds = null;
             var lastSavedSeconds = resumeSeconds;
@@ -712,7 +721,8 @@
                         position_seconds: progress.position_seconds,
                         duration_seconds: progress.duration_seconds,
                         playback_active: Boolean(progress.playback_active),
-                        ended: Boolean(progress.ended)
+                        ended: Boolean(progress.ended),
+                        session_id: sessionId
                     })
                 }).then(function (response) {
                     if (response.status === 401) { savingDisabled = true; throw new Error('session_expired'); }
@@ -847,12 +857,19 @@
                         }
                         // Только при первой загрузке: после переподключения
                         // плеера позиция уже своя, а после зачёта подсказка лжёт.
-                        if (data.resume_to_finish && watchRequired && !finishHintShown
-                            && !completionReported && durationSeconds) {
-                            var left = Math.max(0, durationSeconds - currentSeconds);
+                        // Сервер поставил на первый пропущенный кусок
+                        // (`video_progress.py::resume_gap`, 07.10.2026).
+                        var gap = data.resume_gap;
+                        if (gap && watchRequired && !finishHintShown && !completionReported) {
                             finishHintShown = true;
-                            setStatus('Чтобы просмотр засчитался, досмотри отсюда до конца – это '
-                                + (left < 60 ? 'меньше минуты' : Math.ceil(left / 60) + ' мин') + '.', false);
+                            if (gap.parts <= 1 || gap.end - gap.start >= gap.missing) {
+                                setStatus('Чтобы просмотр засчитался, досмотри кусок с '
+                                    + formatTime(gap.start) + ' до ' + formatTime(gap.end) + '.', false);
+                            } else {
+                                setStatus('Чтобы просмотр засчитался, досмотри пропущенные куски – это '
+                                    + (gap.missing < 60 ? 'меньше минуты' : Math.ceil(gap.missing / 60) + ' мин')
+                                    + '. Первый начинается с ' + formatTime(gap.start) + '.', false);
+                            }
                         }
                     });
                 });

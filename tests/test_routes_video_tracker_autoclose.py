@@ -19,16 +19,15 @@ VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
 
 
 def _seed_watch_time(db, *, user_id: int, video_id: str, watched_seconds: float) -> None:
-    """Симулирует, что ученик уже реально смотрел ролик какое-то время —
-    защита от перемотки (владелец 05.09.2026) требует накопленного времени
-    просмотра, а не только позицию у конца ролика в одном heartbeat'е."""
-    db.add(
-        VideoProgress(
-            user_id=user_id, video_id=video_id,
-            position_seconds=watched_seconds, watched_seconds=watched_seconds,
-        )
+    """Симулирует, что ученик уже посмотрел ролик с начала до этого места —
+    защита от перемотки (владелец 05.09.2026) требует просмотренного куска, а
+    не только позицию у конца ролика в одном heartbeat'е."""
+    from tests.test_routes_video import seed_video_watch
+
+    seed_video_watch(
+        db, user_id=user_id, video_id=video_id,
+        position=watched_seconds, covered=watched_seconds,
     )
-    db.commit()
 
 
 def _configure_bunny(monkeypatch) -> None:

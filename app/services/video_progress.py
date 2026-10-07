@@ -1,5 +1,6 @@
 """Read and atomically upsert per-user video playback progress."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -9,11 +10,13 @@ from sqlalchemy.orm import Session as DBSession
 from app.constants import (
     VIDEO_WATCH_MAX_PLAYBACK_RATE,
     VIDEO_WATCH_NETWORK_SLACK_SECONDS,
+    VIDEO_WATCH_SEGMENT_JOIN_SECONDS,
     VIDEO_WATCH_SKIP_NOTICE_SECONDS,
     VIDEO_WATCH_TAIL_SECONDS,
 )
 from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
+from app.models.video_watch_segment import VideoWatchSegment
 
 
 def log_video_view(db: DBSession, *, user_id: int, video_id: str) -> None:
@@ -44,38 +47,172 @@ def get_video_progress(
     return db.get(VideoProgress, (user_id, video_id))
 
 
-# Запас к недостающим секундам при возврате к незасчитанному ролику: первый
-# кусок после «плей» и задержки сети съедают несколько секунд.
-RESUME_SHORTFALL_MARGIN_SECONDS = 15.0
+# --- отрезки просмотра (07.10.2026) -----------------------------------------
+# Зачёт считает покрытие текущего прохода — сколько разных секунд ролика
+# просмотрено, — а не сумму проигранных секунд. Модель и почему — в докстринге
+# `models/video_watch_segment.py`, план — `plans/2026-10-07-apparchi-видео-отрезки.md`.
+
+# Сеанс отметок старого скрипта без номера (вкладки, открытые до выкатки).
+LEGACY_SESSION_ID = ""
+# Секунды, накопленные до перехода на отрезки (миграция `b123ee32347b`).
+MIGRATED_SESSION_ID = "migrated"
+
+Interval = tuple[float, float]
+
+
+def merge_segments(
+    intervals: Iterable[Interval], *, duration_seconds: float | None = None
+) -> list[Interval]:
+    """Склейка отрезков: наложения считаются один раз, зазор до
+    `VIDEO_WATCH_SEGMENT_JOIN_SECONDS` дырой не считается. Отрезки обрезаются
+    по ролику; пустые выпадают."""
+    upper = duration_seconds if duration_seconds and duration_seconds > 0 else None
+    items = sorted(
+        (max(0.0, start), end if upper is None else min(end, upper))
+        for start, end in intervals
+    )
+    merged: list[Interval] = []
+    for start, end in items:
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1] + VIDEO_WATCH_SEGMENT_JOIN_SECONDS:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def coverage_seconds(merged: list[Interval]) -> float:
+    return sum(end - start for start, end in merged)
+
+
+def uncovered_seconds(merged: list[Interval], start: float, end: float) -> float:
+    """Сколько секунд из [start, end] не покрыто склейкой."""
+    if end <= start:
+        return 0.0
+    covered = sum(
+        max(0.0, min(end, b) - max(start, a)) for a, b in merged
+    )
+    return max(0.0, (end - start) - covered)
+
+
+def missing_parts(merged: list[Interval], duration_seconds: float) -> list[Interval]:
+    """Непросмотренные куски ролика по порядку — дыры склейки и хвост."""
+    gaps: list[Interval] = []
+    cursor = 0.0
+    for start, end in merged:
+        if start - cursor > VIDEO_WATCH_SEGMENT_JOIN_SECONDS:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration_seconds - cursor > VIDEO_WATCH_SEGMENT_JOIN_SECONDS:
+        gaps.append((cursor, duration_seconds))
+    return gaps
+
+
+def lock_video_progress(
+    db: DBSession, *, user_id: int, video_id: str
+) -> VideoProgress | None:
+    """Строка пары под блокировкой до коммита: отметки двух плееров одной пары
+    иначе читали бы одно и то же покрытие и затирали бы друг другу кэш.
+    SQLite блокировку игнорирует."""
+    return (
+        db.query(VideoProgress)
+        .filter(VideoProgress.user_id == user_id, VideoProgress.video_id == video_id)
+        .with_for_update()
+        .populate_existing()
+        .one_or_none()
+    )
+
+
+def pass_segments(db: DBSession, *, user_id: int, video_id: str) -> list[VideoWatchSegment]:
+    """Отрезки текущего прохода пары — после зачёта их стирает
+    `apply_watch_segments`, поэтому «текущий проход» — это все строки."""
+    return (
+        db.query(VideoWatchSegment)
+        .filter(VideoWatchSegment.user_id == user_id, VideoWatchSegment.video_id == video_id)
+        .order_by(VideoWatchSegment.id)
+        .all()
+    )
+
+
+def session_segment(
+    segments: list[VideoWatchSegment], session_id: str
+) -> VideoWatchSegment | None:
+    """Последний отрезок сеанса — от него считается следующая отметка."""
+    for segment in reversed(segments):
+        if segment.session_id == session_id:
+            return segment
+    return None
 
 
 def watch_shortfall_seconds(progress: VideoProgress | None) -> float:
-    """Сколько честных секунд не хватает до зачёта, если ученик уже дошёл до
-    порога, а просмотр не засчитан; иначе 0. По нему `get_resume_position`
-    сдвигает ученика назад, а плеер говорит, зачем (05.10.2026)."""
+    """Сколько просмотра не хватает до зачёта, если ученик уже дошёл до
+    порога, а просмотр не засчитан; иначе 0. По нему `resume_gap` ставит
+    ученика на первый пропущенный кусок, а плеер говорит, зачем (05.10.2026,
+    с 07.10.2026 — по покрытию)."""
     if progress is None or progress.completed_at is not None or not progress.duration_seconds:
         return 0.0
     threshold = watch_threshold_seconds(progress.duration_seconds)
     if progress.position_seconds < threshold:
         return 0.0
-    return max(0.0, threshold - progress.watched_seconds)
+    return max(0.0, threshold - (progress.covered_seconds or 0.0))
 
 
-def get_resume_position(progress: VideoProgress | None) -> float:
-    if progress is None or progress.position_seconds < 5:
+# На сколько раньше пропущенного куска ставить ученика. Отрезок открывается
+# первой отметкой после «плей», а если событие `play` не дошло, плеер выводит
+# «играет» из хода позиции за 2 с (до 4,5 с ролика на 2,25×) — без запаса
+# начало дыры так и осталось бы непросмотренным.
+RESUME_GAP_LEAD_SECONDS = 5.0
+
+
+def resume_gap(
+    progress: VideoProgress | None, segments: list[VideoWatchSegment] | None
+) -> dict | None:
+    """Первый пропущенный кусок, если ученик дошёл до порога без зачёта:
+    `start`/`end` куска, `missing` — сколько всего досмотреть, `parts` — сколько
+    кусков пропущено. Иначе None."""
+    missing = watch_shortfall_seconds(progress)
+    if missing <= 0 or segments is None:
+        return None
+    duration = progress.duration_seconds
+    merged = merge_segments(
+        ((s.start_seconds, s.end_seconds) for s in segments), duration_seconds=duration
+    )
+    gaps = missing_parts(merged, duration)
+    if not gaps:
+        return None
+    start, end = gaps[0]
+    return {
+        "start": round(start, 1),
+        "end": round(end, 1),
+        "missing": round(missing, 1),
+        "parts": len(gaps),
+    }
+
+
+def load_resume(db: DBSession, progress: VideoProgress | None) -> tuple[float, dict | None]:
+    """Позиция возврата и пропущенный кусок — отрезки читаются, только когда
+    ученик дошёл до порога без зачёта."""
+    segments = None
+    if watch_shortfall_seconds(progress) > 0:
+        segments = pass_segments(db, user_id=progress.user_id, video_id=progress.video_id)
+    gap = resume_gap(progress, segments)
+    return get_resume_position(progress, gap), gap
+
+
+def get_resume_position(progress: VideoProgress | None, gap: dict | None = None) -> float:
+    if progress is None:
+        return 0.0
+    # Дошёл до порога, а покрытия не хватает — ставим на первый пропущенный
+    # кусок (развилка 4, владелец 07.10.2026). До этого ставили «за столько
+    # секунд до конца, сколько не хватает» (05.10.2026, прод: 66 пар застряли
+    # петлёй «досмотрела 5 секунд, обновила — снова в конце»), но досмотр
+    # хвоста не закрывает дыру в середине ролика.
+    if gap is not None:
+        return round(max(0.0, gap["start"] - RESUME_GAP_LEAD_SECONDS), 1)
+    if progress.position_seconds < 5:
         return 0.0
     duration = progress.duration_seconds
-    # Позиция за порогом, а просмотр не засчитан — честных секунд не хватило
-    # (перемотка, обрыв сети, второе устройство). Прод 05.10.2026: ученица в
-    # 5 секундах от конца 20-минутного ролика, засчитано 1106 из нужных 1224.
-    # Возврат на ту же позицию давал петлю: досмотрела 5 секунд, порога нет,
-    # обновила страницу — снова в конце (так застряли 66 пар ученик×ролик).
-    # Засчитывается любое проигранное время, поэтому ставим ученика ровно за
-    # столько секунд до конца, сколько не хватает, — досмотрел до конца, и
-    # зачёт есть. Правило зачёта при этом не мягче.
-    missing = watch_shortfall_seconds(progress)
-    if missing > 0:
-        return round(max(0.0, duration - missing - RESUME_SHORTFALL_MARGIN_SECONDS), 1)
     # Засчитанный ролик, досмотренный до конца, начинается сначала. Позицию
     # рядом с концом сохраняем: ученик мог уйти за несколько секунд до `ended`.
     if duration is not None and progress.position_seconds >= duration:
@@ -93,74 +230,6 @@ def view_state(progress: VideoProgress | None) -> str:
     return "started" if get_resume_position(progress) >= 5 else "new"
 
 
-def compute_watched_seconds(
-    previous: VideoProgress | None,
-    *,
-    position_seconds: float,
-    playback_active: bool,
-    now: datetime | None = None,
-) -> float:
-    """Засчитанные секунды ролика — сумма честных приростов позиции между
-    соседними heartbeat'ами.
-
-    Засчитываются секунды ролика, а не секунды на часах (владелец 24.09.2026:
-    «ускорение засчитывать»): 10 минут на 2× дают 10 минут. До этого
-    засчитывалось реальное время, и ускоренный просмотр за один проход
-    порога не набирал.
-
-    Прирост засчитывается не больше, чем ролик физически мог проиграть за
-    промежуток между запросами на максимальной скорости плеера, плюс запас на
-    задержку сети. Перемотка поэтому даёт не больше честного просмотра на
-    2,25×, а пауза, спящая вкладка и перемотка назад не дают ничего: позиция
-    не растёт или воспроизведение не активно.
-
-    Кусок урезается, а не выбрасывается целиком (проверка владельца
-    24.09.2026): на 2× heartbeat раз в 10 секунд приносит 20 секунд ролика, и
-    задержка одного запроса в сети делала следующий «слишком ранним» — весь
-    кусок пропадал как перемотка, засчитывалось 65–85% вместо 100%.
-    """
-    return _credit_step(
-        previous,
-        position_seconds=position_seconds,
-        playback_active=playback_active,
-        now=now,
-    )[0]
-
-
-def _credit_step(
-    previous: VideoProgress | None,
-    *,
-    position_seconds: float,
-    playback_active: bool,
-    now: datetime | None,
-) -> tuple[float, float]:
-    """Засчитанные секунды после heartbeat'а и сколько секунд ролика ученик
-    перескочил вперёд с прошлого — их не засчитали.
-
-    Перескок считается и на паузе: позиция ушла вперёд без проигрывания —
-    перемотка целиком (06.10.2026, для предупреждения ученику)."""
-    if previous is None:
-        return 0.0, 0.0
-    watched = previous.watched_seconds
-    position_delta = position_seconds - previous.position_seconds
-    if position_delta <= 0:
-        return watched, 0.0
-    if not playback_active:
-        return watched, position_delta
-    now = now or datetime.now(timezone.utc)
-    updated_at = previous.updated_at
-    if updated_at is None:
-        return watched, 0.0
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=timezone.utc)
-    gap = (now - updated_at).total_seconds()
-    if gap <= 0:
-        return watched, 0.0
-    allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_NETWORK_SLACK_SECONDS
-    credited = min(position_delta, allowed)
-    return watched + credited, position_delta - credited
-
-
 def watch_threshold_seconds(duration_seconds: float) -> float:
     """До какой секунды досмотреть: «длительность минус 30 секунд». Хвост не
     больше половины ролика, иначе у коротких роликов порог ушёл бы в ноль и
@@ -170,78 +239,214 @@ def watch_threshold_seconds(duration_seconds: float) -> float:
 
 @dataclass(frozen=True)
 class WatchDecision:
-    watched_seconds: float  # всего засчитано за все проходы
-    credited_this_pass: float  # засчитано с прошлого зачёта (или с начала)
+    watched_seconds: float  # всего засчитано за все проходы — для статистики
+    credited_this_pass: float  # покрытие текущего прохода после отметки
     threshold_seconds: float | None
     position_reached: bool
     completed: bool
-    # Перескок вперёд именно этим heartbeat'ом не меньше порога
+    # Непросмотренная часть прыжка вперёд не меньше порога
     # `VIDEO_WATCH_SKIP_NOTICE_SECONDS` — плеер предупреждает ученика.
     skipped: bool = False
-    # Сколько секунд ролика этот heartbeat не засчитал из прироста позиции —
-    # для лога, в том числе мелкие срезы от задержек сети.
+    # Сколько секунд прыжка вперёд осталось непросмотренными — ни этим
+    # сеансом, ни другими. Прыжок внутрь просмотренного (продолжение с места,
+    # второй плеер) срезом не считается.
     skipped_seconds: float = 0.0
-    # Засчитано в этом проходе до этого heartbeat'а. Позиция не дальше него —
-    # скачок внутрь уже засчитанного (продолжение, второй плеер), а не потеря;
-    # по нему причину среза раскладывает `video_watch_events.classify_cut`.
-    credited_before: float = 0.0
+    # Позиция прошлой отметки этого сеанса и пауза до неё — для разбора среза.
+    position_from: float | None = None
+    gap_seconds: float | None = None
+    # Что записать: новый конец последнего отрезка сеанса и/или новый отрезок
+    # с позиции отметки (`apply_watch_segments`).
+    extend_to: float | None = None
+    open_at: float | None = None
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def evaluate_watch(
     previous: VideoProgress | None,
     *,
+    session: VideoWatchSegment | None,
+    segments: list[VideoWatchSegment],
     position_seconds: float,
     duration_seconds: float | None,
     playback_active: bool,
     ended: bool,
     now: datetime | None = None,
 ) -> WatchDecision:
-    """Засчитан ли просмотр после этого heartbeat'а — одно решение для
-    сохранения прогресса (`api/video.py::_save_progress`) и панели проверки у
-    суперадмина.
+    """Засчитан ли просмотр после этой отметки — одно решение для сохранения
+    прогресса (`api/video.py::_save_progress`) и панели проверки у суперадмина.
 
-    Засчитано, когда позиция дошла до порога за 30 секунд до конца (или плеер
-    прислал `ended`) и честно пройденных секунд ролика набралось столько же.
-    После первого зачёта считается только новый проход
-    (`last_completion_watched_seconds`, 19.09.2026). Без длительности
-    проверить нечего — fail-closed."""
-    watched, skipped_seconds = _credit_step(
-        previous,
-        position_seconds=position_seconds,
-        playback_active=playback_active or ended,
-        now=now,
+    `session` — последний отрезок сеанса, приславшего отметку (None — первая
+    отметка сеанса), `segments` — все отрезки текущего прохода, он среди них.
+
+    Отметка сравнивается с прошлой отметкой **своего сеанса**, а не с общей
+    позицией пары (07.10.2026): иначе второй плеер срезал первому честный
+    кусок. Прирост засчитывается не больше, чем ролик мог проиграть за паузу
+    между отметками на 2,25×, плюс запас на сеть (владелец 24.09.2026:
+    «ускорение засчитывать»); на паузе — ничего. Кусок урезается, а не
+    выбрасывается: на 2× задержка одного запроса иначе стоила всего куска.
+    Шаг назад, перемотка и пауза со сдвигом открывают новый отрезок.
+
+    Засчитано, когда позиция дошла до порога за 30 секунд до конца (или пришёл
+    `ended`) и покрытие текущего прохода — сколько разных секунд ролика
+    просмотрено — не меньше порога. Пересмотр одного и того же куска покрытие
+    не растит. Без длительности проверить нечего — fail-closed."""
+    playing = playback_active or ended
+    now = now or datetime.now(timezone.utc)
+    credited = 0.0
+    position_from = gap = extend_to = open_at = jump_from = None
+    if session is None:
+        open_at = position_seconds
+    else:
+        position_from = session.end_seconds
+        delta = position_seconds - position_from
+        updated_at = _aware(session.updated_at)
+        gap = (now - updated_at).total_seconds() if updated_at is not None else None
+        if delta < 0:
+            open_at = position_seconds
+        elif delta == 0:
+            pass
+        elif not playing:
+            # Позиция ушла вперёд без проигрывания — перемотка на паузе
+            # целиком (06.10.2026, для предупреждения ученику).
+            jump_from = position_from
+            open_at = position_seconds
+        elif gap is None or gap <= 0:
+            # Часы разъехались — ни засчитать, ни срезать нечем.
+            open_at = position_seconds
+        else:
+            allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_NETWORK_SLACK_SECONDS
+            credited = min(delta, allowed)
+            extend_to = position_from + credited
+            if credited < delta:
+                jump_from = extend_to
+                open_at = position_seconds
+
+    after = [
+        (s.start_seconds, extend_to if s is session and extend_to is not None else s.end_seconds)
+        for s in segments
+    ]
+    merged = merge_segments(after, duration_seconds=duration_seconds)
+    covered = coverage_seconds(merged)
+    skipped_seconds = (
+        uncovered_seconds(merged, jump_from, position_seconds) if jump_from is not None else 0.0
     )
-    credited = watched
-    credited_before = previous.watched_seconds if previous is not None else 0.0
-    if previous is not None and previous.completed_at is not None:
-        credited = max(0.0, watched - previous.last_completion_watched_seconds)
-        credited_before = max(
-            0.0, previous.watched_seconds - previous.last_completion_watched_seconds
-        )
-    # Предупреждаем, только если позиция ушла дальше уже засчитанного в этом
-    # проходе. Скачок внутрь засчитанного — не перемотка: так выглядит
-    # продолжение с места остановки (плеер на старте присылает 0, через
-    # 10 секунд — прежнее место) и второй плеер того же ролика, чья позиция
-    # отстаёт. Прод 06.10.2026: 27 таких «прыжков с нуля» у 16 учеников и
-    # «пила» 46→110, 56→110 у владельца с двумя вкладками — каждый раз
-    # ученик читал «Перемотанный кусок не засчитается», хотя ничего не
-    # пропускал. Засчитываются секунды при этом так же строго.
-    skipped = (
-        skipped_seconds >= VIDEO_WATCH_SKIP_NOTICE_SECONDS
-        and position_seconds > credited_before + VIDEO_WATCH_SKIP_NOTICE_SECONDS
+    skipped = skipped_seconds >= VIDEO_WATCH_SKIP_NOTICE_SECONDS
+    watched = (previous.watched_seconds if previous is not None else 0.0) + credited
+    details = dict(
+        position_from=position_from, gap_seconds=gap, extend_to=extend_to, open_at=open_at,
     )
     if duration_seconds is None or duration_seconds <= 0:
         return WatchDecision(
-            watched, credited, None, False, False, skipped, skipped_seconds,
-            credited_before,
+            watched, covered, None, False, False, skipped, skipped_seconds, **details,
         )
     threshold = watch_threshold_seconds(duration_seconds)
     reached = ended or position_seconds >= threshold
-    completed = reached and credited >= threshold
+    completed = reached and covered >= threshold
     return WatchDecision(
-        watched, credited, threshold, reached, completed,
-        skipped and not completed, skipped_seconds, credited_before,
+        watched, covered, threshold, reached, completed,
+        skipped and not completed, skipped_seconds, **details,
     )
+
+
+def apply_watch_segments(
+    db: DBSession,
+    *,
+    user_id: int,
+    video_id: str,
+    session_id: str,
+    session: VideoWatchSegment | None,
+    decision: WatchDecision,
+    now: datetime,
+) -> None:
+    """Записать шаг отрезков в текущую транзакцию — коммитится вместе с
+    прогрессом. Зачёт стирает отрезки пары: следующий просмотр копит новый
+    проход (развилка 3, владелец 07.10.2026). Пустой последний отрезок сеанса
+    переезжает на новое место, а не плодит строки."""
+    if decision.completed:
+        db.query(VideoWatchSegment).filter(
+            VideoWatchSegment.user_id == user_id, VideoWatchSegment.video_id == video_id,
+        ).delete(synchronize_session=False)
+        return
+    if session is not None:
+        if decision.extend_to is not None:
+            session.end_seconds = decision.extend_to
+        session.updated_at = now
+    if decision.open_at is None:
+        return
+    if session is not None and session.end_seconds <= session.start_seconds:
+        session.start_seconds = session.end_seconds = decision.open_at
+        return
+    db.add(VideoWatchSegment(
+        user_id=user_id,
+        video_id=video_id,
+        session_id=session_id,
+        start_seconds=decision.open_at,
+        end_seconds=decision.open_at,
+        created_at=now,
+        updated_at=now,
+    ))
+
+
+def record_watch(
+    db: DBSession,
+    *,
+    user_id: int,
+    video_id: str,
+    session_id: str,
+    position_seconds: float,
+    duration_seconds: float | None,
+    playback_active: bool,
+    ended: bool,
+    now: datetime | None = None,
+) -> tuple[WatchDecision, bool]:
+    """Отметка плеера целиком: строка пары под блокировкой, отрезки прохода,
+    решение `evaluate_watch`, запись отрезков и прогресса одним коммитом.
+    Возвращает решение и был ли ролик засчитан до этой отметки.
+
+    Блокировка — потому что два плеера одной пары иначе считали бы покрытие
+    от одного и того же состояния и затирали бы друг другу кэш (07.10.2026).
+    """
+    now = now or datetime.now(timezone.utc)
+    existing = lock_video_progress(db, user_id=user_id, video_id=video_id)
+    segments = pass_segments(db, user_id=user_id, video_id=video_id)
+    session = session_segment(segments, session_id)
+    was_completed = existing is not None and existing.completed_at is not None
+    decision = evaluate_watch(
+        existing,
+        session=session,
+        segments=segments,
+        position_seconds=position_seconds,
+        duration_seconds=duration_seconds,
+        playback_active=playback_active,
+        ended=ended,
+        now=now,
+    )
+    apply_watch_segments(
+        db,
+        user_id=user_id,
+        video_id=video_id,
+        session_id=session_id,
+        session=session,
+        decision=decision,
+        now=now,
+    )
+    save_video_progress(
+        db,
+        user_id=user_id,
+        video_id=video_id,
+        position_seconds=position_seconds,
+        duration_seconds=duration_seconds,
+        completed=decision.completed,
+        watched_seconds=decision.watched_seconds,
+        # Зачёт начинает новый проход — покрытие с нуля, отрезки стёрты.
+        covered_seconds=0.0 if decision.completed else decision.credited_this_pass,
+    )
+    return decision, was_completed
 
 
 def save_video_progress(
@@ -253,15 +458,14 @@ def save_video_progress(
     duration_seconds: float | None,
     completed: bool,
     watched_seconds: float | None = None,
+    covered_seconds: float | None = None,
 ) -> bool:
     """Persist position, first completion, and latest confirmed completion.
 
-    `watched_seconds` — накопленное реальное время просмотра (см.
-    `compute_watched_seconds`), уже посчитанное вызывающим кодом. `None`
-    (по умолчанию, как звали эту функцию до 05.09.2026) оставляет колонку
-    как есть при обновлении и заводит с нуля при первой строке — вызывающий
-    код, которому анти-скрабинг не нужен (например прямые юнит-тесты этой
-    функции), не обязан её знать.
+    `watched_seconds` (сумма засчитанного за все проходы) и `covered_seconds`
+    (покрытие текущего прохода) уже посчитаны `evaluate_watch`. `None`
+    оставляет колонку как есть при обновлении и заводит с нуля при первой
+    строке — прямым юнит-тестам этой функции они не нужны.
     """
     now = datetime.now(timezone.utc)
     completed_at = now if completed else None
@@ -271,6 +475,7 @@ def save_video_progress(
         "position_seconds": position_seconds,
         "duration_seconds": duration_seconds,
         "watched_seconds": watched_seconds or 0.0,
+        "covered_seconds": covered_seconds or 0.0,
         "completed_at": completed_at,
         "last_completed_at": completed_at,
         "last_completion_watched_seconds": (
@@ -301,6 +506,8 @@ def save_video_progress(
     }
     if watched_seconds is not None:
         update_values["watched_seconds"] = watched_seconds
+    if covered_seconds is not None:
+        update_values["covered_seconds"] = covered_seconds
 
     dialect_name = db.get_bind().dialect.name
     if dialect_name == "postgresql":
@@ -330,6 +537,8 @@ def save_video_progress(
             progress.duration_seconds = duration_seconds
             if watched_seconds is not None:
                 progress.watched_seconds = watched_seconds
+            if covered_seconds is not None:
+                progress.covered_seconds = covered_seconds
             progress.updated_at = now
             if completed and progress.completed_at is None:
                 progress.completed_at = now

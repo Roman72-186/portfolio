@@ -673,10 +673,13 @@ def test_completion_uses_server_duration_not_client_claim(
     assert saved_forged.completed_at is None
     assert saved_forged.duration_seconds == 3600.0
 
-    # Защита от перемотки (владелец 05.09.2026) требует накопленного реального
-    # времени просмотра — симулируем, что ученик уже почти досмотрел урок.
-    progress = db.get(VideoProgress, (user.id, VIDEO_ID))
-    progress.watched_seconds = 3590.0
+    # Защита от перемотки (владелец 05.09.2026) требует просмотренного куска
+    # ролика — симулируем, что ученик уже почти досмотрел урок: отрезок
+    # сеанса, открытый первой отметкой, тянется до 3590.
+    from app.models.video_watch_segment import VideoWatchSegment
+
+    segment = db.query(VideoWatchSegment).one()
+    segment.end_seconds = 3590.0
     db.commit()
 
     honest = client.post(
@@ -712,14 +715,10 @@ def test_ended_event_allows_small_catalog_duration_mismatch(
         duration_seconds=600.0,
     )
     db.add(video)
-    db.flush()
-    db.add(VideoProgress(
-        user_id=user.id,
-        video_id=VIDEO_ID,
-        position_seconds=590.0,
-        watched_seconds=590.0,
-    ))
     db.commit()
+    from tests.test_routes_video import seed_video_watch
+
+    seed_video_watch(db, user_id=user.id, position=590.0, covered=590.0)
 
     response = client.post(
         f"/cabinet/videos/{video.id}/progress",
@@ -782,9 +781,14 @@ def test_rewatch_requires_fresh_watch_time_after_previous_completion(
     assert skipped.status_code == 200
     assert skipped.json()["completed"] is False
 
+    # Новый проход: ученик пересмотрел ролик с начала до 590. Зачёт стёр
+    # отрезки прошлого прохода, первая отметка открыла новый на 600.
+    from app.models.video_watch_segment import VideoWatchSegment
+
+    segment = db.query(VideoWatchSegment).one()
+    segment.start_seconds, segment.end_seconds = 0.0, 590.0
     progress = db.get(VideoProgress, (user.id, VIDEO_ID))
     progress.position_seconds = 590.0
-    progress.watched_seconds = 1190.0
     db.commit()
 
     rewatched = client.post(

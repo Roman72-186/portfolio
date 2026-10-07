@@ -89,12 +89,11 @@ def _event(db, user, reason, *, kind=KIND_CUT, skipped=60.0, video=VIDEO, at=Non
 
 def test_skip_forward_is_stored_with_reason(auth_client, db, monkeypatch):
     """Срез пишется в базу — до 07.10.2026 он был только строкой журнала."""
-    from tests.test_routes_video import VIDEO_ID, _configure_bunny
+    from tests.test_routes_video import VIDEO_ID, _configure_bunny, seed_video_watch
 
     client, user = auth_client
     _configure_bunny(monkeypatch)
-    db.add(VideoProgress(user_id=user.id, video_id=VIDEO_ID, position_seconds=10.0, watched_seconds=10.0))
-    db.commit()
+    seed_video_watch(db, user_id=user.id, position=10.0, covered=10.0)
 
     resp = client.post(
         "/cabinet/video/progress",
@@ -113,12 +112,11 @@ def test_event_failure_does_not_lose_progress(auth_client, db, monkeypatch):
     from sqlalchemy.exc import SQLAlchemyError
 
     from app.services import video_watch_events
-    from tests.test_routes_video import VIDEO_ID, _configure_bunny
+    from tests.test_routes_video import VIDEO_ID, _configure_bunny, seed_video_watch
 
     client, user = auth_client
     _configure_bunny(monkeypatch)
-    db.add(VideoProgress(user_id=user.id, video_id=VIDEO_ID, position_seconds=10.0, watched_seconds=10.0))
-    db.commit()
+    seed_video_watch(db, user_id=user.id, position=10.0, covered=10.0)
     real_add = video_watch_events.DBSession.add
 
     def broken_add(self, obj, *a, **kw):
@@ -147,7 +145,8 @@ def test_refusal_is_stored_with_block_and_reason(client, db, user_factory, sessi
     student = _student_client(client, user_factory, session_factory)
     db.add(VideoProgress(
         user_id=student.id, video_id=video.bunny_video_id,
-        position_seconds=115.0, watched_seconds=40.0, duration_seconds=120.0,
+        position_seconds=115.0, watched_seconds=90.0, covered_seconds=40.0,
+        duration_seconds=120.0,
     ))
     db.commit()
 
@@ -182,7 +181,7 @@ def test_student_details_split_losses_from_harmless(db, user_factory):
     student = _student(user_factory)
     _video(db)
     db.add(VideoProgress(user_id=student.id, video_id=VIDEO, position_seconds=580.0,
-                         watched_seconds=300.0, duration_seconds=600.0))
+                         watched_seconds=900.0, covered_seconds=300.0, duration_seconds=600.0))
     _event(db, student, CUT_PAUSED_PLAYING, skipped=120.0)
     _event(db, student, CUT_SEEK, skipped=60.0)
     _event(db, student, CUT_RESUME, skipped=400.0)
@@ -200,7 +199,7 @@ def test_student_details_split_losses_from_harmless(db, user_factory):
     ]
     assert v["harmless_seconds"] == 400
     assert v["refusals"] == 1
-    assert v["last_refusal"]["text"] == "Дошёл до конца, но не хватило 4:30 честного просмотра"
+    assert v["last_refusal"]["text"] == "Дошёл до конца, но не досмотрел 4:30 – пропущенные куски"
     assert len(v["history"]) == 4
     assert any(e["harmless"] for e in v["history"])
 

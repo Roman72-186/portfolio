@@ -12,6 +12,25 @@ VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
 TOKEN_KEY = "route-private-test-key"
 
 
+def seed_video_watch(db, *, user_id, video_id=VIDEO_ID, position, covered,
+                     duration=None, session=""):
+    """Ученик уже посмотрел ролик с начала до `covered` (07.10.2026: зачёт
+    считает покрытие по отрезкам сеансов). Сеанс по умолчанию — общий, как у
+    отметок без `session_id`, которые шлют тесты роутов."""
+    from app.models.video_progress import VideoProgress
+    from app.models.video_watch_segment import VideoWatchSegment
+
+    db.add(VideoProgress(
+        user_id=user_id, video_id=video_id, position_seconds=position,
+        watched_seconds=covered, covered_seconds=covered, duration_seconds=duration,
+    ))
+    db.add(VideoWatchSegment(
+        user_id=user_id, video_id=video_id, session_id=session,
+        start_seconds=0.0, end_seconds=covered,
+    ))
+    db.commit()
+
+
 def _configure_bunny(monkeypatch, *, enabled: bool = True, token_key: str = TOKEN_KEY) -> None:
     monkeypatch.setattr(settings, "bunny_stream_enabled", enabled)
     monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
@@ -429,16 +448,10 @@ def test_video_progress_ignores_client_completed_flag(auth_client, db, monkeypat
         "/cabinet/video/progress",
         json={"position_seconds": 20, "duration_seconds": 100, "completed": True},
     )
-    # Защита от перемотки (владелец 05.09.2026) требует накопленного реального
-    # времени просмотра — симулируем, что ученик уже почти досмотрел, иначе
-    # один heartbeat у конца ролика больше не защитывает просмотр.
-    db.add(
-        VideoProgress(
-            user_id=user.id, video_id=VIDEO_ID,
-            position_seconds=90.0, watched_seconds=90.0,
-        )
-    )
-    db.commit()
+    # Защита от перемотки (владелец 05.09.2026) требует просмотренного куска
+    # ролика — симулируем, что ученик уже почти досмотрел, иначе один
+    # heartbeat у конца ролика просмотр не засчитывает.
+    seed_video_watch(db, user_id=user.id, position=90.0, covered=90.0)
     near_end = client.post(
         "/cabinet/video/progress",
         json={"position_seconds": 98, "duration_seconds": 100},
@@ -504,7 +517,7 @@ def test_video_progress_save_failure_returns_safe_503(auth_client, monkeypatch):
     def fail_save(*args, **kwargs):
         raise SQLAlchemyError("test failure")
 
-    monkeypatch.setattr("app.api.video.persist_video_progress", fail_save)
+    monkeypatch.setattr("app.api.video.record_watch", fail_save)
     response = client.post(
         "/cabinet/video/progress",
         json={"position_seconds": 30, "duration_seconds": 100},
@@ -721,13 +734,7 @@ def test_video_progress_reports_skip_forward(auth_client, db, monkeypatch, caplo
 
     client, user = auth_client
     _configure_bunny(monkeypatch)
-    db.add(
-        VideoProgress(
-            user_id=user.id, video_id=VIDEO_ID,
-            position_seconds=10.0, watched_seconds=10.0,
-        )
-    )
-    db.commit()
+    seed_video_watch(db, user_id=user.id, position=10.0, covered=10.0)
 
     with caplog.at_level("WARNING", logger="app.api.video"):
         jumped = client.post(
@@ -743,3 +750,34 @@ def test_video_progress_reports_skip_forward(auth_client, db, monkeypatch, caplo
     assert f"user={user.id}" in line
     assert "позиция 10→300" in line
     assert "играло=True" in line
+
+
+def test_two_players_with_sessions_do_not_cut_each_other(auth_client, db, monkeypatch):
+    """Владелец 06.10.2026: две вкладки одного ролика давали «пилу» позиций,
+    и каждая отметка отстающей вкладки срезалась. С 07.10.2026 отметки
+    сравниваются внутри своего сеанса — срезов нет, покрытие складывается."""
+    from app.models.video_progress import VideoProgress
+    from app.models.video_watch_event import VideoWatchEvent
+
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    for session, position in [("tab-a", 36), ("tab-b", 100), ("tab-a", 40), ("tab-b", 104)]:
+        resp = client.post(
+            "/cabinet/video/progress",
+            json={"position_seconds": position, "duration_seconds": 600,
+                  "playback_active": True, "session_id": session},
+        )
+        assert resp.json() == {"ok": True, "completed": False, "skipped": False}
+
+    assert db.query(VideoWatchEvent).count() == 0
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).covered_seconds == 8.0
+
+
+def test_progress_rejects_malformed_session_id(auth_client, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+    resp = client.post(
+        "/cabinet/video/progress",
+        json={"position_seconds": 10, "duration_seconds": 600, "session_id": "a b<script>"},
+    )
+    assert resp.status_code == 422

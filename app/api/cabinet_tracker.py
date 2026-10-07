@@ -577,7 +577,7 @@ def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
     if reason == REFUSAL_NOT_STARTED:
         return "ролик не запускался"
     numbers = (
-        f"позиция={progress.position_seconds:.0f} | честных={progress.watched_seconds:.0f}"
+        f"позиция={progress.position_seconds:.0f} | просмотрено={progress.covered_seconds:.0f}"
         f" | длительность={duration or 0:.0f}"
     )
     if reason == REFUSAL_COMPLETED_BEFORE_BLOCK:
@@ -588,7 +588,7 @@ def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
     threshold = watch_threshold_seconds(duration)
     if reason == REFUSAL_BELOW_THRESHOLD:
         return f"не досмотрел до порога {threshold:.0f} | " + numbers
-    return f"дошёл до конца, но пропустил {threshold - progress.watched_seconds:.0f} с | " + numbers
+    return f"дошёл до конца, но пропустил {threshold - progress.covered_seconds:.0f} с | " + numbers
 
 
 # Контроль просмотра видео. Выключался владельцем 19.09.2026: плеер Bunny не

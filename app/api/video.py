@@ -3,7 +3,6 @@
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
 from typing import Annotated
 from urllib.parse import quote
 
@@ -37,12 +36,15 @@ from app.services.video_catalog import (
     list_published_videos,
 )
 from app.services.video_watch_events import cut_event, record as record_watch_event
+from app.models.video_watch_segment import VideoWatchSegment
 from app.services.video_progress import (
-    get_resume_position,
+    LEGACY_SESSION_ID,
     get_video_progress,
+    load_resume,
     log_video_view,
-    evaluate_watch,
-    save_video_progress as persist_video_progress,
+    merge_segments,
+    pass_segments,
+    record_watch,
     view_state,
     watch_shortfall_seconds,
     watch_threshold_seconds,
@@ -60,6 +62,10 @@ class VideoProgressUpdate(BaseModel):
     duration_seconds: float | None = Field(default=None, gt=0, le=604_800, allow_inf_nan=False)
     playback_active: bool = False
     ended: bool = False
+    # Номер сеанса — экземпляра плеера на странице (07.10.2026). Отметки
+    # сравниваются внутри сеанса, а не с общей позицией пары. Старый скрипт
+    # без номера идёт одним общим сеансом.
+    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,64}$")
 
     @model_validator(mode="after")
     def validate_position(self):
@@ -207,16 +213,19 @@ def _player_payload(
 
     try:
         progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
-        payload["resume_position_seconds"] = get_resume_position(progress)
-        # Позиция сдвинута назад ради зачёта — плеер объясняет ученику, сколько
-        # досмотреть (05.10.2026).
+        resume, gap = load_resume(db, progress)
+        payload["resume_position_seconds"] = resume
+        # Позиция сдвинута назад ради зачёта — плеер объясняет ученику, какой
+        # кусок досмотреть (05.10.2026; с 07.10.2026 — первый пропущенный).
         payload["resume_to_finish"] = watch_shortfall_seconds(progress) > 0
+        payload["resume_gap"] = gap
         payload["video_already_completed"] = bool(progress and progress.completed_at)
     except SQLAlchemyError:
         logger.exception("Video progress read failed for user_id=%s", user["user_id"])
         db.rollback()
         payload["resume_position_seconds"] = 0.0
         payload["resume_to_finish"] = False
+        payload["resume_gap"] = None
         payload["video_already_completed"] = False
 
     return payload, False
@@ -234,6 +243,7 @@ _PLAYER_DATA_KEYS = (
     "viewer_watermark",
     "resume_position_seconds",
     "resume_to_finish",
+    "resume_gap",
     "progress_endpoint",
     "player_url_endpoint",
     "player_url_ttl_seconds",
@@ -295,13 +305,15 @@ def cabinet_videos(
     for video in list_published_videos(db, viewer=user):
         try:
             progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+            resume, _gap = load_resume(db, progress)
         except SQLAlchemyError:
             logger.exception("Video catalogue progress read failed for user_id=%s", user["user_id"])
             db.rollback()
             progress = None
+            resume = 0.0
         items.append({
             "video": video,
-            "resume_seconds": get_resume_position(progress),
+            "resume_seconds": resume,
             "state": view_state(progress),
         })
     return templates.TemplateResponse(request, "cabinet_videos.html",
@@ -527,14 +539,19 @@ WATCH_CHECK_BASE = "/cabinet" + WATCH_CHECK_ROUTE
 
 
 def _watch_state(db: DBSession, *, user_id: int, video) -> dict:
-    """Состояние контроля просмотра по сохранённой строке — те же формулы, что
-    у `evaluate_watch`, чтобы панель не разошлась с решением."""
+    """Состояние контроля просмотра по сохранённой строке. Покрытие —
+    тот же кэш, который пишет `evaluate_watch`, куски — та же склейка."""
     progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
     duration = video.duration_seconds if video.duration_seconds and video.duration_seconds > 0 else None
     watched = progress.watched_seconds if progress else 0.0
-    credited = watched
-    if progress is not None and progress.completed_at is not None:
-        credited = max(0.0, watched - progress.last_completion_watched_seconds)
+    credited = progress.covered_seconds if progress else 0.0
+    merged = merge_segments(
+        (
+            (s.start_seconds, s.end_seconds)
+            for s in pass_segments(db, user_id=user_id, video_id=video.bunny_video_id)
+        ),
+        duration_seconds=duration,
+    )
     last_completed = (progress.last_completed_at or progress.completed_at) if progress else None
     return {
         "ok": True,
@@ -543,6 +560,7 @@ def _watch_state(db: DBSession, *, user_id: int, video) -> dict:
         "position_seconds": progress.position_seconds if progress else 0.0,
         "watched_seconds": watched,
         "credited_this_pass": credited,
+        "watched_parts": [[round(a, 1), round(b, 1)] for a, b in merged],
         "completed": last_completed is not None,
     }
 
@@ -617,7 +635,11 @@ def video_watch_check_reset(
     progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
     if progress is not None:
         db.delete(progress)
-        db.commit()
+    db.query(VideoWatchSegment).filter(
+        VideoWatchSegment.user_id == user["user_id"],
+        VideoWatchSegment.video_id == video.bunny_video_id,
+    ).delete(synchronize_session=False)
+    db.commit()
     return JSONResponse(_watch_state(db, user_id=user["user_id"], video=video))
 
 
@@ -667,7 +689,7 @@ def refresh_legacy_player_url(
 def _close_video_task_once(db: DBSession, *, user_id: int, topic_id: int) -> None:
     """Закрыть трекер-задачу недели по факту первого «досмотрел».
 
-    Отдельная транзакция от `persist_video_progress`: та уже закоммитила
+    Отдельная транзакция от `record_watch`: та уже закоммитила
     прогресс, и сбой здесь не должен откатывать уже сохранённую позицию
     просмотра — в худшем случае трекер останется «в работе» до ручной отметки.
     """
@@ -721,7 +743,7 @@ def _save_progress(
 
     `topic_id` — только у каталожных роликов (легаси пилотный ролик его не
     передаёт, autoclose для него не срабатывает, это осознанно). Момент «стало
-    done впервые» ловится чтением состояния до апсерта: `persist_video_progress`
+    done впервые» ловится чтением состояния до апсерта: `record_watch`
     делает атомарный `INSERT … ON CONFLICT`, из его возврата «стало ли только
     что true» не восстановить.
 
@@ -730,7 +752,8 @@ def _save_progress(
     рядом с длительностью за одно движение, поэтому вдобавок требуем, чтобы
     набрались честно проигранные секунды ролика. Порог — за 30 секунд до
     конца, ускорение засчитывается (владелец 24.09.2026, после проверки на
-    странице моста). Решение целиком — `evaluate_watch` в
+    странице моста). С 07.10.2026 вместо суммы секунд — покрытие текущего
+    прохода по отрезкам сеансов плеера. Решение целиком — `evaluate_watch` в
     `app/services/video_progress.py`, его же показывает панель проверки.
     """
     if known_duration_seconds is not None and known_duration_seconds > 0:
@@ -740,64 +763,51 @@ def _save_progress(
     else:
         duration = None
 
-    existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
-    was_completed = existing is not None and existing.completed_at is not None
-    decision = evaluate_watch(
-        existing,
-        position_seconds=payload.position_seconds,
-        duration_seconds=duration,
-        playback_active=payload.playback_active,
-        ended=payload.ended,
-    )
-    watched_seconds = decision.watched_seconds
-    completed = decision.completed
-    cut = None
-    if decision.skipped_seconds >= 1:
-        # Каждый срезанный кусок — в лог (владелец 06.10.2026): по паузе между
-        # отметками и флагу воспроизведения видно, перемотка это или сеть.
-        # Без строки на жалобу «смотрела до конца» ответить было нечем.
-        updated_at = existing.updated_at
-        if updated_at is not None and updated_at.tzinfo is None:
-            updated_at = updated_at.replace(tzinfo=timezone.utc)
-        gap = (datetime.now(timezone.utc) - updated_at).total_seconds() if updated_at else None
-        # И строкой в базу с причиной (07.10.2026) — для статистики в карточке
-        # ученика. Собирается до сохранения: после него `existing` уже новая.
-        cut = cut_event(
-            user_id=user["user_id"],
-            video_id=bunny_video_id,
-            position_from=existing.position_seconds,
-            position_to=payload.position_seconds,
-            skipped_seconds=decision.skipped_seconds,
-            gap_seconds=gap,
-            playing=payload.playback_active or payload.ended,
-            credited_before=decision.credited_before,
-            watched_seconds=watched_seconds,
-            duration_seconds=duration,
-        )
-        logger.warning(
-            "Видео: кусок не засчитан | user=%s | video=%s | позиция %.0f→%.0f"
-            " | срезано=%.0f | пауза между отметками=%s | играло=%s | засчитано всего=%.0f",
-            user["user_id"], bunny_video_id, existing.position_seconds,
-            payload.position_seconds, decision.skipped_seconds,
-            f"{gap:.0f}" if gap is not None else "?", payload.playback_active,
-            watched_seconds,
-        )
+    session_id = payload.session_id or LEGACY_SESSION_ID
     try:
-        completed = persist_video_progress(
+        decision, was_completed = record_watch(
             db,
             user_id=user["user_id"],
             video_id=bunny_video_id,
+            session_id=session_id,
             position_seconds=payload.position_seconds,
             # Для каталожного ролика храним длительность Bunny, а не значение из
             # браузера. Иначе один запрос с другой длительностью ломал бы возобновление.
             duration_seconds=duration,
-            completed=completed,
-            watched_seconds=watched_seconds,
+            playback_active=payload.playback_active,
+            ended=payload.ended,
         )
     except SQLAlchemyError:
         logger.exception("Video progress save failed for user_id=%s", user["user_id"])
         db.rollback()
         return JSONResponse({"ok": False, "error": "save_failed"}, status_code=503)
+    completed = decision.completed
+    cut = None
+    if decision.skipped_seconds >= 1:
+        # Каждый непросмотренный кусок — в лог (владелец 06.10.2026) и строкой
+        # в базу с причиной (07.10.2026). С переходом на отрезки срез — только
+        # то, что не просмотрено ни этим плеером, ни другими: продолжение с
+        # места и второй плеер сюда больше не попадают.
+        cut = cut_event(
+            user_id=user["user_id"],
+            video_id=bunny_video_id,
+            position_from=decision.position_from,
+            position_to=payload.position_seconds,
+            skipped_seconds=decision.skipped_seconds,
+            gap_seconds=decision.gap_seconds,
+            playing=payload.playback_active or payload.ended,
+            watched_seconds=decision.credited_this_pass,
+            duration_seconds=duration,
+        )
+        logger.warning(
+            "Видео: кусок не засчитан | user=%s | video=%s | сеанс=%s | позиция %.0f→%.0f"
+            " | не просмотрено=%.0f | пауза между отметками=%s | играло=%s"
+            " | просмотрено в проходе=%.0f",
+            user["user_id"], bunny_video_id, session_id or "-", decision.position_from,
+            payload.position_seconds, decision.skipped_seconds,
+            f"{decision.gap_seconds:.0f}" if decision.gap_seconds is not None else "?",
+            payload.playback_active, decision.credited_this_pass,
+        )
 
     if cut is not None:
         record_watch_event(db, cut)

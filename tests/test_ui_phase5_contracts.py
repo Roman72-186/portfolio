@@ -119,6 +119,35 @@ def test_player_infers_playback_from_position_without_play_event():
     assert "setPlaying(true)" in mark and "saveProgress(true, false, false)" in mark
 
 
+def test_player_sends_one_session_per_mount_and_keeps_it_on_reattach():
+    """07.10.2026, зачёт по отрезкам: сервер сравнивает отметку с прошлой
+    отметкой того же сеанса. Номер заводится один раз на `mount` и уходит в
+    каждой отметке; `reattachPlayer` (перевыпуск ссылки Bunny) его не меняет —
+    это та же вкладка. Номер внутри `attachPlayer` плодил бы сеансы на каждое
+    переподключение. Прогон настоящего плеера в Node с событиями — в разборе
+    07.10.2026 (правило 11)."""
+    source = _read("app/static/js/video-player.js")
+
+    assert source.count("var sessionId =") == 1
+    attach = source.split("function attachPlayer()", 1)[1].split("reattachPlayer = function", 1)[0]
+    assert "sessionId =" not in attach
+    reattach = source.split("reattachPlayer = function", 1)[1].split("};", 1)[0]
+    assert "sessionId" not in reattach
+    body = source.split("body: JSON.stringify({", 1)[1].split("})", 1)[0]
+    assert "session_id: sessionId" in body
+
+
+def test_player_names_the_missing_part_to_rewatch():
+    """Развилка 4 (владелец 07.10.2026): дошёл до конца без зачёта — плеер
+    стоит на первом пропущенном куске и называет его, а не «досмотри до
+    конца»: досмотр хвоста дыру в середине не закрывает."""
+    source = _read("app/static/js/video-player.js")
+
+    assert "data.resume_gap" in source
+    assert "'Чтобы просмотр засчитался, досмотри кусок с '" in source
+    assert "досмотри отсюда до конца" not in source
+
+
 def test_idle_player_does_not_reload_while_another_plays():
     """Прод 06.10.2026, жалоба «видео зависает каждые две минуты»: соседний
     плеер раз в 5 минут перезагружал плеер Bunny ради свежей ссылки и отнимал

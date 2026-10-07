@@ -58,9 +58,10 @@ def test_embed_returns_player_data_for_group_member(auth_client, db, monkeypatch
 
 
 def test_embed_tells_player_when_resume_was_moved_back_to_finish(auth_client, db, monkeypatch):
-    """05.10.2026: позиция у конца, засчитано меньше порога — сервер сдвигает
-    возврат назад и говорит плееру, чтобы тот объяснил ученику, зачем."""
-    from app.services.video_progress import save_video_progress
+    """Позиция у конца, просмотрено меньше порога — сервер ставит ученика на
+    первый пропущенный кусок и говорит плееру, какой досмотреть (05.10.2026,
+    с 07.10.2026 — по отрезкам)."""
+    from tests.test_routes_video import seed_video_watch
 
     client, user = auth_client
     _configure_bunny(monkeypatch)
@@ -68,14 +69,13 @@ def test_embed_tells_player_when_resume_was_moved_back_to_finish(auth_client, db
 
     body = client.get(f"/cabinet/videos/{video.id}/embed").json()
     assert body["resume_to_finish"] is False
+    assert body["resume_gap"] is None
 
-    save_video_progress(
-        db, user_id=user.id, video_id=VIDEO_ID, position_seconds=600.0,
-        duration_seconds=600.0, completed=False, watched_seconds=500.0,
-    )
+    seed_video_watch(db, user_id=user.id, position=600.0, covered=500.0, duration=600.0)
     body = client.get(f"/cabinet/videos/{video.id}/embed").json()
     assert body["resume_to_finish"] is True
-    assert body["resume_position_seconds"] == 515.0
+    assert body["resume_gap"] == {"start": 500.0, "end": 600.0, "missing": 70.0, "parts": 1}
+    assert body["resume_position_seconds"] == 495.0
 
 
 def test_embed_logs_a_view(auth_client, db, monkeypatch):

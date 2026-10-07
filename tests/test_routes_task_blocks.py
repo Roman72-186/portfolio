@@ -803,7 +803,8 @@ def test_video_block_refusal_is_logged_with_reason(
     student = _student_client(client, user_factory, session_factory)
     db.add(VideoProgress(
         user_id=student.id, video_id=video.bunny_video_id,
-        position_seconds=115.0, watched_seconds=40.0, duration_seconds=120.0,
+        position_seconds=115.0, watched_seconds=90.0, covered_seconds=40.0,
+        duration_seconds=120.0,
     ))
     db.commit()
 
@@ -814,7 +815,8 @@ def test_video_block_refusal_is_logged_with_reason(
     line = next(r.getMessage() for r in caplog.records if "кружок не поставлен" in r.getMessage())
     assert f"user={student.id}" in line
     assert "дошёл до конца, но пропустил 50 с" in line
-    assert "честных=40" in line
+    # Не хватает по покрытию прохода, а не по сумме проигранного (07.10.2026).
+    assert "просмотрено=40" in line
 
 
 @pytest.mark.parametrize(

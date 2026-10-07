@@ -57,9 +57,9 @@
             node('wd-rule').textContent = 'У ролика нет длительности – такой просмотр сервер не засчитывает никогда.';
         } else {
             node('wd-rule').textContent = 'Ролик ' + clock(duration) + '. Засчитаем, когда дойдёшь до '
-                + clock(threshold) + ' и честно проиграешь столько же. Последние '
+                + clock(threshold) + ' и просмотришь столько же разных секунд ролика. Последние '
                 + Math.round(duration - threshold) + ' с смотреть не обязательно. '
-                + 'Ускорение засчитывается, перемотка вперёд – нет.';
+                + 'Ускорение засчитывается, перемотка вперёд – нет, пересмотр одного куска считается один раз.';
         }
         node('wd-position').textContent = 'Где ты сейчас (по данным сервера): ' + clock(state.position_seconds);
         var credited = state.credited_this_pass || 0;
@@ -68,7 +68,7 @@
             // После зачёта сервер начинает считать новый проход с нуля — без
             // пояснения «0% рядом с „засчитан“» выглядело поломкой
             // (скриншот владельца 24.09.2026).
-            line = 'Засчитано всего: ' + clock(state.watched_seconds)
+            line = 'Проиграно всего: ' + clock(state.watched_seconds)
                 + '. Если смотреть заново, новый проход: ' + clock(credited);
         } else {
             line = 'Засчитано: ' + clock(credited);
@@ -76,6 +76,10 @@
                 var pct = Math.min(100, Math.floor(credited / threshold * 100));
                 line += ' из ' + clock(threshold) + ' (' + pct + '%)';
             }
+        }
+        var parts = state.watched_parts || [];
+        if (parts.length) {
+            line += '. Просмотрено: ' + parts.map(function (p) { return clock(p[0]) + '–' + clock(p[1]); }).join(', ');
         }
         node('wd-credited').textContent = line;
         var verdict = node('wd-verdict');

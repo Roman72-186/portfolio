@@ -397,7 +397,7 @@ def test_student_metrics_ignore_staff_activity(db, user_factory):
         db.add(StudentActivityEvent(user_id=u.id, event_type="login", created_at=now))
         db.add(VideoProgress(
             user_id=u.id, video_id="vid-1", position_seconds=50,
-            duration_seconds=100, watched_seconds=50,
+            duration_seconds=100, watched_seconds=50, covered_seconds=50,
         ))
         db.add(TrackerTaskState(task_id=task.id, user_id=u.id, started_at=now))
     db.commit()
