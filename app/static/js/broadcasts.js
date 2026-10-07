@@ -202,9 +202,13 @@
     }
 
     editable.addEventListener('input', updateCounter);
+    var photoName = form.querySelector('[data-bc-photo-name]');
     form.addEventListener('change', function (event) {
         if (event.target && (event.target.type === 'file' || event.target.name === 'remove_media')) {
             updateCounter();
+        }
+        if (event.target === photoInput && photoName) {
+            photoName.textContent = photoInput.files && photoInput.files.length ? photoInput.files[0].name : '';
         }
     });
     updateCounter();
@@ -320,7 +324,11 @@
         }).then(function (data) {
             if (seq !== summarySeq) return;
             if (!data.total) {
-                summary.textContent = 'Пока никого не выбрано.';
+                var chosenAny = params.getAll('tariffs').length || params.getAll('levels').length
+                    || (idsField.value || '').length;
+                summary.textContent = chosenAny
+                    ? 'Под этот выбор не подходит ни один ученик.'
+                    : 'Пока никого не выбрано.';
                 return;
             }
             var text = 'Получат ' + data.reachable + ' из ' + data.total + '.';

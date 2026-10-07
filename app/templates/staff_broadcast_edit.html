@@ -21,7 +21,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 <link rel="stylesheet" href="/static/css/program.css?v=59">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=1">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=3">
 {% endblock %}
 {% block content %}
 {% set ok = request.query_params.get('ok') %}
@@ -93,10 +93,11 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                  data-mrf-form-status="Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит текущее{% endif %}"></div>
             <input type="file" name="audio" accept="audio/*" hidden>
             <input type="file" name="video" accept="video/*" hidden>
-            <label class="prg-field">
-                <span>Или фото</span>
-                <input type="file" name="photo" accept="image/*" data-bc-photo>
-            </label>
+            <div class="file-pick">
+                <input id="bcPhoto" class="file-pick-input" type="file" name="photo" accept="image/*" data-bc-photo>
+                <label class="btn-outline file-pick-btn" for="bcPhoto">Прикрепить фото</label>
+                <p class="file-pick-names" data-bc-photo-name></p>
+            </div>
         </section>
 
         <section class="bc-section">
@@ -145,8 +146,10 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                 Получат {{ summary.reachable }} из {{ summary.total }}.
                 {% if summary.no_telegram %}Не подключили бота: {{ summary.no_telegram }}.{% endif %}
                 {% if summary.notifications_off %}Выключили уведомления: {{ summary.notifications_off }}.{% endif %}
-                {% else %}
+                {% elif audience.is_everyone %}
                 Пока никого не выбрано.
+                {% else %}
+                Под этот выбор не подходит ни один ученик.
                 {% endif %}
             </p>
         </section>
@@ -203,5 +206,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
-<script src="/static/js/broadcasts.js?v=1"></script>
+<script src="/static/js/broadcasts.js?v=2"></script>
 {% endblock %}

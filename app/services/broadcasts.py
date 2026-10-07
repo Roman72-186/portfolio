@@ -243,6 +243,9 @@ def telegram_html_for_page(telegram_html: str) -> str:
     shown = (telegram_html or "").replace("<tg-spoiler>", '<span class="tg-spoiler">')
     shown = shown.replace("</tg-spoiler>", "</span>")
     shown = shown.replace('<a href="', '<a target="_blank" rel="noopener noreferrer" href="')
+    # Цитата на странице — блок сама, перенос вокруг неё дал бы пустую строку,
+    # которой в Telegram нет. Обратно чистка вернёт его (`_newline`).
+    shown = shown.replace("</blockquote>\n", "</blockquote>").replace("\n<blockquote>", "<blockquote>")
     return shown.replace("\n", "<br>")
 
 

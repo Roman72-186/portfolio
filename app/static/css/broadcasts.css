@@ -10,11 +10,12 @@
 
 .bc-editable { min-height: 160px; }
 
-/* Спойлер Telegram: в редакторе и просмотре — приглушённая плашка, текст
-   виден (преподавателю нужно его читать), в Telegram он скрыт до нажатия. */
+/* Спойлер Telegram: в редакторе и просмотре текст виден (преподавателю нужно
+   его читать) — пунктирная рамка говорит, что ученик увидит его скрытым. */
 .bc-editable .tg-spoiler,
 .bc-preview-text .tg-spoiler {
-    background: var(--dim-fill-strong);
+    background: var(--surface-2);
+    outline: 1px dashed var(--muted);
     border-radius: var(--r-sm);
     padding: 0 2px;
 }
@@ -66,3 +67,7 @@
 
 .bc-counts { flex-wrap: wrap; }
 .bc-send form { display: inline-block; }
+
+/* Кнопок оформления восемь — на телефоне в ряд не встают (общий .rt-toolbar
+   рассчитан на четыре и не переносится). */
+.bc-toolbar { flex-wrap: wrap; }
