@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Оплаты{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=59">
+{% endblock %}
+{% block content %}
+{#
+Экран «Оплаты» (план оплаты, шаг 3): кто оплатил за месяц, кто нет.
+Считает `services/payment_board.py`. Своего <style> нет: полоса месяца,
+таблица, метки и форма — классы `program.css`, как у статистики цикла.
+Кнопки — у того, кому открыто действие `people:students`; сервер проверяет
+то же самое и ранг ≥ 4.
+#}
+{% set can_mark = can(user, "people:students") %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div>
+            <h1>Оплаты</h1>
+            <p>Кто оплатил обучение за месяц. Оплаченным месяц считается и тогда,
+               когда его отметили в карточке ученика или загрузили списком.</p>
+        </div>
+        <a class="btn-outline" href="/cabinet/superadmin/users">К пользователям</a>
+    </div>
+
+    <div class="prg-monthbar">
+        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ prev_month }}" aria-label="Предыдущий месяц">←</a>
+        <h2>{{ month_title }}</h2>
+        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ next_month }}" aria-label="Следующий месяц">→</a>
+    </div>
+    {% if not is_current %}
+    <div class="prg-actions">
+        <a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}">Текущий месяц</a>
+    </div>
+    {% endif %}
+
+    <section class="prg-items">
+        <div class="prg-meta">
+            <span>Оплатили: {{ board.counts.paid }}{% if board.paid_total_kop %} на {{ rub(board.paid_total_kop) }}{% endif %}</span>
+            <span>Просрочено: {{ board.counts.overdue }}</span>
+            <span>Окно идёт: {{ board.counts.open }}</span>
+            <span>Окно впереди: {{ board.counts.upcoming }}</span>
+            <span>Без окна оплаты: {{ board.no_window|length }}</span>
+        </div>
+    </section>
+
+    <section class="prg-items">
+        <h2>Ученики</h2>
+        {% if board.rows %}
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr>
+                        <th>Ученик</th>
+                        <th>Тариф</th>
+                        <th>Окно</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        {% if can_mark %}<th>Действия</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in board.rows %}
+                    {% set label = state_labels[row.state] %}
+                    <tr>
+                        <td><a href="/cabinet/students?student={{ row.student.id }}">{{ display_name(row.student) }}</a></td>
+                        <td>{{ tariff_text(row.student.tariff) }}</td>
+                        <td>{{ row.window_text }}</td>
+                        <td>{{ rub(row.amount_kop) if row.amount_kop else '–' }}</td>
+                        <td>
+                            <span class="prg-badge {{ label[1] }}">{{ label[0] }}</span>
+                            <div class="prg-hint">{{ row.detail }}</div>
+                            {% for problem in row.problems %}<div class="prg-hint">{{ problem }}</div>{% endfor %}
+                        </td>
+                        {% if can_mark %}
+                        <td>
+                            {% if row.state != 'paid' %}
+                            <button type="button" class="btn-outline" data-role="mark-open"
+                                    data-user="{{ row.student.id }}" data-name="{{ display_name(row.student) }}"
+                                    data-amount="{{ rub_input(row.amount_kop) }}">Отметить оплату</button>
+                            {% elif row.payment %}
+                            {% if row.payment.source == 'manual' %}
+                            <button type="button" class="btn-outline" data-role="revert-open" data-action="cancel"
+                                    data-payment="{{ row.payment.id }}" data-name="{{ display_name(row.student) }}">Отменить отметку</button>
+                            {% endif %}
+                            <button type="button" class="btn-outline" data-role="revert-open" data-action="refund"
+                                    data-payment="{{ row.payment.id }}" data-name="{{ display_name(row.student) }}">Возврат оформлен</button>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">Ни у одного ученика пока нет окна оплаты. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
+        {% endif %}
+    </section>
+
+    {% if can_mark %}
+    <form class="prg-form" data-role="mark-form" hidden>
+        <h2 data-role="mark-title">Отметить оплату</h2>
+        <p class="prg-hint">Для перевода на расчётный счёт школы. Ученик и служба заботы получат уведомление, как при оплате через Продамус.</p>
+        <input type="hidden" name="user_id">
+        <label class="prg-field">За месяц
+            <input type="month" name="month" value="{{ month_value }}" required>
+        </label>
+        <label class="prg-field">Сумма, ₽
+            <input type="text" name="amount" inputmode="decimal" required>
+        </label>
+        <label class="prg-field">Деньги пришли
+            <input type="date" name="paid_on" value="{{ today }}" required>
+        </label>
+        <label class="prg-field">Комментарий
+            <input type="text" name="comment" maxlength="300" placeholder="Номер платёжки, от кого перевод">
+        </label>
+        <p class="prg-hint" data-role="mark-error" role="alert" hidden></p>
+        <div class="prg-form-actions">
+            <button type="button" class="btn-outline" data-role="mark-cancel">Отмена</button>
+            <button type="submit" class="btn-blue">Отметить</button>
+        </div>
+    </form>
+
+    <div class="card" data-role="revert-confirm" hidden>
+        <p class="prg-hint" data-role="revert-text"></p>
+        <p class="prg-hint" data-role="revert-error" role="alert" hidden></p>
+        <div class="modal-actions">
+            <button type="button" class="btn-outline" data-role="revert-cancel">Отмена</button>
+            <button type="button" class="btn-blue" data-role="revert-send">Подтвердить</button>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if board.no_window %}
+    <section class="prg-items">
+        <h2>Без окна оплаты</h2>
+        <p class="prg-hint">Им оплату не ждём, и кабинет по неоплате не закроется. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
+        <p class="prg-hint">
+            {% for student in board.no_window %}<a href="/cabinet/students?student={{ student.id }}">{{ display_name(student) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+        </p>
+    </section>
+    {% endif %}
+</div>
+
+{% if can_mark %}
+<script>
+(function () {
+    const form = document.querySelector('[data-role="mark-form"]');
+    const markTitle = form.querySelector('[data-role="mark-title"]');
+    const markError = form.querySelector('[data-role="mark-error"]');
+    const confirmBox = document.querySelector('[data-role="revert-confirm"]');
+    const revertText = confirmBox.querySelector('[data-role="revert-text"]');
+    const revertError = confirmBox.querySelector('[data-role="revert-error"]');
+    const revertSend = confirmBox.querySelector('[data-role="revert-send"]');
+    let revert = null;
+
+    function failure(resp, body) {
+        const reason = window.csrfMessage(body, '');
+        return typeof reason === 'string' && reason ? reason : 'Не получилось. Попробуйте ещё раз.';
+    }
+
+    function send(url, body) {
+        return window.csrfFetch(url, { method: 'POST', body: body }).then(function (resp) {
+            return resp.json().catch(function () { return {}; }).then(function (data) {
+                if (!resp.ok || !data.ok) throw new Error(failure(resp, data));
+                return data;
+            });
+        });
+    }
+
+    document.querySelectorAll('[data-role="mark-open"]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            confirmBox.hidden = true;
+            form.user_id.value = btn.dataset.user;
+            form.amount.value = btn.dataset.amount || '';
+            form.comment.value = '';
+            markTitle.textContent = 'Отметить оплату: ' + btn.dataset.name;
+            markError.hidden = true;
+            form.hidden = false;
+            form.scrollIntoView({ block: 'center' });
+            form.amount.focus();
+        });
+    });
+    form.querySelector('[data-role="mark-cancel"]').addEventListener('click', function () { form.hidden = true; });
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        const submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        markError.hidden = true;
+        send('/cabinet/superadmin/payments/mark', new FormData(form))
+            .then(function () { window.location.reload(); })
+            .catch(function (err) {
+                markError.textContent = err.message;
+                markError.hidden = false;
+                submit.disabled = false;
+            });
+    });
+
+    document.querySelectorAll('[data-role="revert-open"]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            form.hidden = true;
+            revert = btn.dataset;
+            revertText.textContent = revert.action === 'refund'
+                ? 'Оформить возврат? Ученик: ' + revert.name + '. Месяц снова станет неоплаченным. Сами деньги возвращают в кабинете Продамуса или переводом – здесь только отметка.'
+                : 'Отменить ручную отметку оплаты? Ученик: ' + revert.name + '. Срок оплаты вернётся к тому, что был до отметки.';
+            revertError.hidden = true;
+            confirmBox.hidden = false;
+            confirmBox.scrollIntoView({ block: 'center' });
+        });
+    });
+    confirmBox.querySelector('[data-role="revert-cancel"]').addEventListener('click', function () { confirmBox.hidden = true; });
+    revertSend.addEventListener('click', function () {
+        if (!revert) return;
+        revertSend.disabled = true;
+        send('/cabinet/superadmin/payments/' + revert.payment + '/' + revert.action, new FormData())
+            .then(function () { window.location.reload(); })
+            .catch(function (err) {
+                revertError.textContent = err.message;
+                revertError.hidden = false;
+                revertSend.disabled = false;
+            });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

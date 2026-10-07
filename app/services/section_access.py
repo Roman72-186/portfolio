@@ -282,6 +282,7 @@ _RULES: tuple[_Rule, ...] = (
     _rule("people", _tree("/cabinet/superadmin/curators")),
     _rule("people", _tree("/cabinet/superadmin/tags")),
     _rule("people", _tree("/cabinet/superadmin/payment-import")),
+    _rule("people", _tree("/cabinet/superadmin/payments")),
     _rule("people", _exact("/cabinet/superadmin/set-credentials")),
     _rule("people", _exact("/cabinet/superadmin/issue-link")),
     # Выход из режима «глазами» (`/impersonate/stop`) сюда не попадает.
@@ -376,6 +377,9 @@ _ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
         # «Оплата списком» (07.10.2026): предпросмотр — POST на чтение, как поиск
         # по никам выше; запись — те же поля оплаты, что в карточке ученика.
         ("people:students", r"^/cabinet/superadmin/payment-import/(preview|apply)$", _POST),
+        # Экран «Оплаты» (07.10.2026): ручная отметка, её отмена и возврат.
+        ("people:students", _exact("/cabinet/superadmin/payments/mark"), _POST),
+        ("people:students", r"^/cabinet/superadmin/payments/\d+/(cancel|refund)$", _POST),
         ("people:students", r"^/cabinet/superadmin/tags/\d+/\d+$", ("DELETE",)),
         ("people:block", _USER + "/(toggle-active|delete)$", _POST),
         ("people:role", _USER + "/role$", _POST),

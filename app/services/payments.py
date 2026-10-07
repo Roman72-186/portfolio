@@ -49,6 +49,7 @@ from app.models.payment import (
     STATUS_CANCELLED,
     STATUS_PAID,
     STATUS_PENDING,
+    STATUS_REFUNDED,
     STATUS_SUM_MISMATCH,
     Payment,
     PaymentPrice,
@@ -648,6 +649,7 @@ def record_paid(
     if user is not None and has_window(user) and payment.kind == KIND_MONTH:
         new_until = paid_until_after(user, payment.period)
         if user.paid_until is None or _as_utc(user.paid_until) < new_until:
+            payment.paid_until_before = user.paid_until
             user.paid_until = new_until
             extended = f", оплачено до {new_until.astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')}"
 
@@ -677,6 +679,119 @@ def record_paid(
             f"{_who(user)} оплатил(а) {month}, {rub_text(paid_sum_kop)} ({how}).",
         )
     return created
+
+
+# ---------------------------------------------------------------------------
+# Ручная отметка, её отмена и возврат (экран «Оплаты»)
+# ---------------------------------------------------------------------------
+
+def paid_payment_for(db: DBSession, user_id: int, period: date) -> Payment | None:
+    """Оплаченный платёж ученика за месяц, если есть."""
+    return (
+        db.query(Payment)
+        .filter(Payment.user_id == user_id, Payment.period == period,
+                Payment.kind == KIND_MONTH, Payment.status == STATUS_PAID)
+        .first()
+    )
+
+
+def mark_paid_manually(
+    db: DBSession,
+    student: User,
+    *,
+    period: date,
+    amount_kop: int,
+    paid_on: date,
+    comment: str,
+    performed_by_id: int,
+) -> tuple[Payment, list[Notification]]:
+    """Оплата мимо Продамуса — перевод на расчётный счёт (п. 3.5 оферты).
+
+    Своей логики зачисления нет: строка платежа и дальше та же `record_paid`,
+    что у вебхука. Не коммитит; уведомления разослать после commit.
+    """
+    if not has_window(student):
+        raise PaymentSettingsError("Сначала задайте ученику окно оплаты в карточке")
+    if amount_kop <= 0:
+        raise PaymentSettingsError("Сумма должна быть больше нуля")
+    if paid_payment_for(db, student.id, period):
+        raise PaymentSettingsError(f"{period_label(period).capitalize()} уже оплачен")
+    payment = Payment(
+        user_id=student.id,
+        period=period,
+        kind=KIND_MONTH,
+        amount_kop=amount_kop,
+        tariff=student.tariff or "",
+        status=STATUS_PENDING,
+        source=SOURCE_MANUAL,
+    )
+    db.add(payment)
+    db.flush()
+    note = f"перевод на счёт, поступил {paid_on.strftime('%d.%m.%Y')}"
+    if comment.strip():
+        note += f": {comment.strip()}"
+    paid_at = datetime.combine(paid_on, time(12, 0), tzinfo=MSK_TZ).astimezone(timezone.utc)
+    notifications = record_paid(
+        db, payment, now=paid_at, source=SOURCE_MANUAL, paid_sum_kop=amount_kop,
+        performed_by_id=performed_by_id, note=note[:500],
+    )
+    return payment, notifications
+
+
+def revert_paid(db: DBSession, payment: Payment, *, refund: bool, performed_by_id: int, now: datetime) -> None:
+    """Платёж больше не оплачивает месяц: отмена ручной отметки или возврат.
+
+    Срок ученика откатывается, только если его держал этот платёж: оплата
+    более позднего месяца или срок из карточки остаются. Откат — к сроку до
+    платежа или к последнему из оставшихся оплаченных месяцев. Отмене
+    ошибочной отметки этого хватает: ученик возвращается туда, где был. Возврату
+    — нет: если срока до платежа не было, ученик выпал бы из оплаты совсем, и
+    кабинет по неоплате не закрылся бы никогда. Поэтому после возврата
+    оплаченным остаётся месяц перед возвращённым. Не коммитит.
+    """
+    if payment.status != STATUS_PAID:
+        raise PaymentSettingsError("Платёж не оплачен")
+    if not refund and payment.source != SOURCE_MANUAL:
+        raise PaymentSettingsError("Отменить можно только ручную отметку. Оплату через Продамус – только возвратом")
+
+    payment.status = STATUS_REFUNDED if refund else STATUS_CANCELLED
+    if refund:
+        payment.refunded_by_id = performed_by_id
+        payment.refunded_at = now
+
+    user = db.get(User, payment.user_id)
+    moved = ""
+    if user is not None and has_window(user) and payment.kind == KIND_MONTH and user.paid_until is not None:
+        contribution = paid_until_after(user, payment.period)
+        if _as_utc(user.paid_until) <= contribution:
+            remaining = [
+                paid_until_after(user, other.period)
+                for other in db.query(Payment).filter(
+                    Payment.user_id == user.id, Payment.kind == KIND_MONTH,
+                    Payment.status == STATUS_PAID, Payment.id != payment.id,
+                )
+            ]
+            candidates = [_as_utc(v) for v in [payment.paid_until_before, *remaining] if v is not None]
+            if candidates:
+                new_until = max(candidates)
+            elif refund:
+                new_until = paid_until_after(user, add_months(payment.period, -1))
+            else:
+                new_until = None
+            user.paid_until = new_until
+            moved = ", оплачено по: " + (
+                new_until.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M") if new_until else "не ведётся"
+            )
+
+    action = "payment_refunded" if refund else "payment_mark_cancelled"
+    what = "Возврат" if refund else "Отмена ручной отметки"
+    db.add(AuditLog(
+        action=action,
+        performed_by_id=performed_by_id,
+        target_user_id=payment.user_id,
+        details=(f"{what}: оплата #{payment.id} за {period_label(payment.period)}, "
+                 f"{rub_text(payment.paid_sum_kop or payment.amount_kop)}{moved}")[:1000],
+    ))
 
 
 @dataclass

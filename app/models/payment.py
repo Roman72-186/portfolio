@@ -99,6 +99,10 @@ class Payment(Base):
     prodamus_order_id: Mapped[str | None] = mapped_column(String(50), nullable=True, unique=True)
 
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # «Оплачено по» ученика до того, как этот платёж его сдвинул. Отмена
+    # ручной отметки и возврат возвращают срок сюда: из одних оставшихся
+    # платежей его не восстановить — срок мог стоять из карточки или загрузки.
+    paid_until_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Сколько пришло на самом деле — расходится с `amount_kop` у `sum_mismatch`.
     paid_sum_kop: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Номер платёжки, от кого перевод, «по старой цене, разница N ₽».
