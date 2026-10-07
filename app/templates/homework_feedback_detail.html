@@ -13,7 +13,7 @@ tests/test_reuse_ratchet.py.
 {% block title %}Обратная связь — {{ homework.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=9">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=11">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
@@ -36,7 +36,9 @@ tests/test_reuse_ratchet.py.
                     <span class="chip">{{ m.sender_role_label }}{% if m.sender_name %} · {{ m.sender_name }}{% endif %}</span>
                     {% if m.text %}<p class="hw-msg-text">{{ m.text | rich_text | safe }}</p>{% endif %}
                     {% if m.photo_s3_url %}
-                    <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
+                    <button type="button" class="photo-zoom-button hw-msg-photo-btn" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
+                        <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="Фото к обратной связи">
+                    </button>
                     {% endif %}
                     {% if m.video_s3_url %}
                     <video class="{{ 'msg-video-note' if m.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ m.video_s3_url }}"></video>
@@ -140,6 +142,8 @@ tests/test_reuse_ratchet.py.
     });
 })();
 </script>
+
+{% include "partials/lightbox.html" %}
 
 {% if viewer_role == 'student' %}
 {% set active_tab = "learning" %}

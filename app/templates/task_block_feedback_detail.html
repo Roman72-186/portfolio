@@ -2,7 +2,7 @@
 {% block title %}Обратная связь – {{ task.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=10">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=11">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
@@ -87,7 +87,7 @@
                 <div class="hw-msg-bubble">
                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
                     {% if message.text %}<p class="hw-msg-text">{{ message.text | rich_text | safe }}</p>{% endif %}
-                    {% if message.photo_s3_url %}<img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy">{% endif %}
+                    {% if message.photo_s3_url %}<button type="button" class="photo-zoom-button hw-msg-photo-btn" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy"></button>{% endif %}
                     {% if message.video_s3_url %}<video class="{{ 'msg-video-note' if message.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
                     {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
                     {% if message.audio_s3_url %}<audio class="hw-msg-audio" controls preload="metadata" src="{{ message.audio_s3_url }}"></audio>{% endif %}

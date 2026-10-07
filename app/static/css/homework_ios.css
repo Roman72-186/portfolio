@@ -134,6 +134,9 @@
 .ios-homework .hw-msg.from-me .hw-msg-bubble { background: rgba(175,82,222,0.10); border-bottom-right-radius: 5px; }
 .ios-homework .hw-msg-text { margin: 0; word-break: break-word; white-space: pre-wrap; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label); }
 .ios-homework .hw-msg-photo { display: block; max-width: 240px; width: 100%; border-radius: 10px; cursor: zoom-in; }
+/* Фото в диалоге ОС открывается в просмотрщике (07.10.2026). Кнопка по ширине
+   фото, а не всего пузыря: иначе клик мимо фото тоже открывал бы его. */
+.ios-homework .hw-msg-photo-btn { width: 240px; max-width: 100%; }
 .ios-homework .hw-msg-video { display: block; max-width: 280px; width: 100%; border-radius: 10px; background: #000; }
 .ios-homework .hw-msg-audio { display: block; width: 100%; max-width: 280px; }
 /* Кружок преподавателя (владелец 25.09.2026) — видео в круге, как в Telegram. */
