@@ -254,6 +254,11 @@ REPORT_EXCLUDED_USER_IDS = frozenset({161, 199, 277, 286})
 # ГП: через «службу заботы» Лиза входит в кабинет ученика.
 BIRTHDAY_EXTRA_RECIPIENT_IDS = frozenset({277})
 
+# Куда прислать проверку рассылки (`services/broadcasts.py::preview_target`),
+# если у того, кто её собрал, Telegram не привязан. Тот же случай, что выше:
+# аккаунт ГП Лизы (id 10) без Telegram, её рабочий Telegram — у «службы заботы».
+BROADCAST_PREVIEW_FALLBACK_IDS = frozenset({277})
+
 # Кому приходит «ученик оплатил» и тревоги оплаты (не та сумма, оплата по
 # отменённой ссылке, неизвестный платёж) — `services/payments.py`. Тот же
 # аккаунт «службы заботы» с Telegram Лизы, что и в днях рождения: план

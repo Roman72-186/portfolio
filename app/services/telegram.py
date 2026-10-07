@@ -8,6 +8,8 @@
 """
 import json
 import logging
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -307,3 +309,61 @@ async def get_chat_username(
         return False, None
 
     return True, data.get("result", {}).get("username")
+
+
+@dataclass(frozen=True)
+class ApiResult:
+    """Ответ Bot API целиком — для рассылок (`services/broadcast_delivery.py`).
+
+    Остальные функции модуля сворачивают ответ в True/False/None, а рассылке
+    нужно больше: `file_id` загруженного файла (ученикам он уходит без
+    повторной загрузки), причина отказа для журнала и `retry_after` при 429.
+    `status` — HTTP-код, `None` — до Telegram не дошли (сеть, нет токена).
+    """
+    ok: bool
+    status: int | None = None
+    result: Any = None
+    description: str = ""
+    retry_after: int | None = None
+
+
+async def call_api(
+    method: str, data: dict, *, files: dict | None = None, timeout: float = 60.0,
+) -> ApiResult:
+    """Вызвать метод Bot API формой (multipart, если есть `files`).
+
+    Значения `data` уходят полями формы: вложенные объекты (`reply_markup`)
+    вызывающий передаёт уже строкой JSON. Ошибок не поднимает.
+    """
+    if not settings.telegram_bot_token:
+        logger.warning("telegram.%s: TELEGRAM_BOT_TOKEN не настроен", method)
+        return ApiResult(ok=False, description="Бот не настроен")
+
+    client = await _get_client()
+    form = {key: str(value) for key, value in data.items() if value is not None}
+    try:
+        resp = await request_with_retry(
+            lambda: client.post(_api_url(method), data=form, files=files, timeout=timeout),
+            label=f"Telegram {method}",
+        )
+    except Exception as exc:
+        logger.warning("Telegram %s failed: %s", method, exc)
+        return ApiResult(ok=False, description="Нет связи с Telegram")
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    if resp.status_code < 400 and body.get("ok"):
+        return ApiResult(ok=True, status=resp.status_code, result=body.get("result"))
+    parameters = body.get("parameters") or {}
+    if resp.status_code != 403:
+        logger.warning(
+            "Telegram %s HTTP %s body=%s", method, resp.status_code, resp.text[:300],
+        )
+    return ApiResult(
+        ok=False,
+        status=resp.status_code,
+        description=str(body.get("description") or f"HTTP {resp.status_code}"),
+        retry_after=parameters.get("retry_after"),
+    )

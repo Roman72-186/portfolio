@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{#
+Черновик рассылки (владелец 07.10.2026): сообщение → кому → проверка у себя в
+Telegram → отправка. Правила — `services/broadcasts.py`.
+
+Редактор пишет разметку Telegram (жирный, курсив, подчёркнутый, зачёркнутый,
+спойлер, цитата, ссылка): тулбар и поле — классы общего редактора
+(`rich-text-field.css`), поведение — `static/js/broadcasts.js`. Общий
+`rich-text-field.js` не подходит: он пишет markdown-диалект `format_rich_text`,
+где нет ни спойлера, ни подчёркивания. Сервер всё равно чистит HTML до
+разметки Telegram (`clean_telegram_html`).
+
+Голосовое и кружок — общий компонент записи (`media-recorder-field.js`) в
+режиме формы. «Кому» — разметка «Доступности блока» конструктора
+(`prg-blk-*`), правило то же — `task_blocks.is_block_open_to`.
+
+Без своего <style>: prg-*, rt-*, mrf-* и bc-* (broadcasts.css).
+#}
+{% block title %}Рассылка{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
+<link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=1">
+{% endblock %}
+{% block content %}
+{% set ok = request.query_params.get('ok') %}
+{% set error = request.query_params.get('error') %}
+<div class="prg-page bc-page">
+    <p><a class="btn-outline" href="/cabinet/staff/broadcasts">← Все рассылки</a></p>
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Рассылка</h1>
+            <p>Черновик. Соберите сообщение, выберите, кому, и пришлите себе на
+                проверку: бот покажет его ровно таким, каким его получат ученики.</p>
+        </div>
+    </div>
+
+    {% if error %}<p class="prg-badge prg-badge--error" role="alert">{{ error }}</p>{% endif %}
+    {% if ok == 'saved' %}<p class="prg-badge prg-badge--done">Сохранено</p>{% endif %}
+    {% if ok == 'preview' %}<p class="prg-badge prg-badge--done">Проверка ушла вам в Telegram</p>{% endif %}
+
+    <form class="prg-form bc-form" method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}"
+          enctype="multipart/form-data" data-bc-form
+          data-audience-url="/cabinet/staff/broadcasts/audience">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <input type="hidden" name="action" value="save" data-bc-action>
+
+        <section class="bc-section">
+            <h2>Сообщение</h2>
+            <div class="rt-field bc-editor-field">
+                <div class="rt-toolbar bc-toolbar" role="toolbar" aria-label="Оформление текста">
+                    <button type="button" class="rt-btn" data-tg-cmd="bold" title="Жирный (Ctrl+B)" aria-label="Жирный"><strong>Ж</strong></button>
+                    <button type="button" class="rt-btn" data-tg-cmd="italic" title="Курсив (Ctrl+I)" aria-label="Курсив"><em>К</em></button>
+                    <button type="button" class="rt-btn" data-tg-cmd="underline" title="Подчёркнутый (Ctrl+U)" aria-label="Подчёркнутый"><u>П</u></button>
+                    <button type="button" class="rt-btn" data-tg-cmd="strikeThrough" title="Зачёркнутый" aria-label="Зачёркнутый"><s>З</s></button>
+                    <button type="button" class="rt-btn" data-tg-cmd="spoiler" title="Скрытый текст: откроется по нажатию" aria-label="Скрытый текст">▒</button>
+                    <button type="button" class="rt-btn" data-tg-cmd="quote" title="Цитата" aria-label="Цитата">❝</button>
+                    <button type="button" class="rt-btn" data-tg-cmd="link" title="Ссылка (Ctrl+K)" aria-label="Ссылка">&#128279;</button>
+                    <button type="button" class="rt-btn" data-tg-cmd="clear" title="Убрать оформление" aria-label="Убрать оформление">⌫</button>
+                </div>
+                <div class="rt-editable bc-editable" contenteditable="true" role="textbox" aria-multiline="true"
+                     aria-label="Текст сообщения" data-placeholder="Текст сообщения" data-tg-editable>{{ text_html|safe }}</div>
+            </div>
+            <textarea name="text" hidden data-tg-source>{{ text_html }}</textarea>
+            <p class="prg-hint" data-tg-counter data-media-kind="{{ broadcast.media_kind or '' }}"
+               data-limit-text="{{ TEXT_LIMIT }}" data-limit-caption="{{ CAPTION_LIMIT }}">
+                {{ text_length }} из {{ text_limit }} символов</p>
+        </section>
+
+        <section class="bc-section">
+            <h2>Вложение</h2>
+            <p class="prg-hint">Одно на сообщение: фото, голосовое или кружок. К фото и
+                голосовому текст встанет подписью (до {{ CAPTION_LIMIT }} символов). У кружка
+                в Telegram подписи не бывает: текст придёт следующим сообщением.</p>
+            {% if broadcast.media_kind %}
+            <div class="bc-media-current">
+                <p class="prg-meta"><span>Сейчас: {{ media_labels[broadcast.media_kind] }}</span></p>
+                {% if broadcast.media_kind == 'photo' %}
+                <img class="bc-preview-photo" src="{{ broadcast.media_s3_url }}" alt="Фото рассылки">
+                {% elif broadcast.media_kind == 'voice' %}
+                <audio controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
+                {% else %}
+                <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ broadcast.media_s3_url }}"></video>
+                {% endif %}
+                <label class="prg-field prg-field--row">
+                    <input type="checkbox" name="remove_media" value="1">
+                    <span>Убрать вложение</span>
+                </label>
+            </div>
+            {% endif %}
+            <div data-media-recorder data-mrf-modes="voice note"
+                 data-mrf-form-status="Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит текущее{% endif %}"></div>
+            <input type="file" name="audio" accept="audio/*" hidden>
+            <input type="file" name="video" accept="video/*" hidden>
+            <label class="prg-field">
+                <span>Или фото</span>
+                <input type="file" name="photo" accept="image/*" data-bc-photo>
+            </label>
+        </section>
+
+        <section class="bc-section">
+            <h2>Кому</h2>
+            <fieldset class="prg-blk-audience" aria-label="Получатели">
+                <div class="prg-setting-item">
+                    <p class="prg-settings-title">Тарифы</p>
+                    <div class="prg-blk-tariffs">
+                        {% for tariff in tariffs %}
+                        <label class="prg-field prg-field--row">
+                            <input type="checkbox" name="tariffs" value="{{ tariff }}" data-bc-audience
+                                   {{ 'checked' if tariff in audience.tariffs }}>
+                            <span>{{ tariff }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="prg-setting-item">
+                    <p class="prg-settings-title">Уровень точки А</p>
+                    <p class="prg-hint">1 – средний балл {{ point_a_level_2_min - 1 }} и ниже, 2 – {{ point_a_level_2_min }} и выше.
+                        Вместе с тарифом сужает. У кого точка А ещё не разобрана, тот при выборе по уровню не получит.</p>
+                    <div class="prg-blk-tariffs">
+                        {% for level in levels %}
+                        <label class="prg-field prg-field--row">
+                            <input type="checkbox" name="levels" value="{{ level }}" data-bc-audience
+                                   {{ 'checked' if level in audience.levels }}>
+                            <span>Уровень {{ level }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="prg-setting-item">
+                    <p class="prg-settings-title">Ученики поимённо</p>
+                    <p class="prg-hint">Получат при любом тарифе и уровне. Можно выбрать одного человека.</p>
+                    <div class="prg-blk-students" data-bc-students>
+                        <input type="search" data-bc-student-search autocomplete="off"
+                               placeholder="Имя, фамилия или @ник" aria-label="Найти ученика по имени, фамилии или нику">
+                        <div class="prg-blk-student-results" data-bc-student-results hidden></div>
+                        <div class="prg-blk-student-chips" data-bc-student-chips></div>
+                        <input type="hidden" name="student_ids" value="{{ chosen_student_ids|join(',') }}" data-bc-student-ids>
+                    </div>
+                </div>
+            </fieldset>
+            <p class="bc-summary" data-bc-summary aria-live="polite">
+                {% if summary.total %}
+                Получат {{ summary.reachable }} из {{ summary.total }}.
+                {% if summary.no_telegram %}Не подключили бота: {{ summary.no_telegram }}.{% endif %}
+                {% if summary.notifications_off %}Выключили уведомления: {{ summary.notifications_off }}.{% endif %}
+                {% else %}
+                Пока никого не выбрано.
+                {% endif %}
+            </p>
+        </section>
+
+        <div class="prg-form-actions">
+            <button type="submit" class="btn-outline" data-bc-submit="save">Сохранить</button>
+            <button type="submit" class="btn-blue" data-bc-submit="preview">Сохранить и прислать мне на проверку</button>
+        </div>
+    </form>
+
+    <section class="bc-section bc-send">
+        <h2>Отправка</h2>
+        {% if preview_current and summary.reachable %}
+        <p>Проверка ушла вам в Telegram {{ broadcast.preview_sent_at|msk_text }}. Если всё верно,
+            отправьте здесь или кнопкой под проверкой в Telegram.</p>
+        <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/send" data-bc-fresh-csrf
+              data-bc-confirm="Отправить сообщение: {{ summary.reachable }} уч.? Отменить отправку будет нельзя.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-blue">Отправить: {{ summary.reachable }} уч.</button>
+        </form>
+        {% elif preview_current %}
+        <p class="prg-hint">Под этот выбор не подходит ни один ученик с подключённым ботом.</p>
+        {% else %}
+        <p class="prg-hint">Отправить можно после проверки: нажмите «Сохранить и прислать мне на
+            проверку». После каждой правки сообщения или получателей проверка нужна заново.</p>
+        {% endif %}
+    </section>
+
+    {% if broadcast.text or broadcast.media_kind %}
+    <section class="bc-section">
+        <h2>Как увидят ученики</h2>
+        <div class="bc-preview">
+            {% if broadcast.media_kind == 'photo' %}
+            <img class="bc-preview-photo" src="{{ broadcast.media_s3_url }}" alt="">
+            {% elif broadcast.media_kind == 'voice' %}
+            <audio controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
+            {% elif broadcast.media_kind == 'video_note' %}
+            <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ broadcast.media_s3_url }}"></video>
+            {% endif %}
+            {% if broadcast.text %}
+            <div class="bc-preview-text{{ ' bc-preview-text--separate' if broadcast.media_kind == 'video_note' }}">{{ text_html|safe }}</div>
+            {% endif %}
+        </div>
+        <p class="prg-hint">Так выглядит последнее сохранённое. Точный вид — в проверке у вас в Telegram.</p>
+    </section>
+    {% endif %}
+
+    <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/delete" data-bc-fresh-csrf
+          data-bc-confirm="Удалить черновик?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button type="submit" class="btn-danger">Удалить черновик</button>
+    </form>
+</div>
+
+<script type="application/json" id="bc-students">{{ students|tojson }}</script>
+<script src="/static/js/media-recorder-field.js?v=9"></script>
+<script src="/static/js/broadcasts.js?v=1"></script>
+{% endblock %}

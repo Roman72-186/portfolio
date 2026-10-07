@@ -185,6 +185,13 @@ def s3_path_task_block_media(kind: str, filename: str) -> str:
     return f"zadaniya-media/{kind}/{rnd}.{ext}"
 
 
+
+def s3_path_broadcast_media(broadcast_id: int, filename: str) -> str:
+    """Вложение рассылки (фото, голосовое, кружок): broadcasts/{id}/{random}.ext."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    rnd = uuid.uuid4().hex[:12]
+    return f"broadcasts/{broadcast_id}/{rnd}.{ext}"
+
 def s3_path_curator_report(curator_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp4"
     rnd = uuid.uuid4().hex[:12]

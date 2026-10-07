@@ -52,6 +52,18 @@ _NOTE_ARGS = [
     "-c:a", "aac", "-b:a", "96k", "-ac", "1",
     "-movflags", "+faststart", "-threads", "2",
 ]
+# Кружок Telegram (`sendVideoNote`, рассылки — `services/broadcast_delivery.py`):
+# только квадрат, сторона до 640 и не длиннее минуты, иначе Telegram отказывает.
+# Браузер пишет кружок обычным прямоугольником (круг — маска на экране), поэтому
+# центр вырезается квадратом. Кавычки в фильтре держат запятую внутри `min`.
+TELEGRAM_NOTE_MAX_SECONDS = 60
+_TELEGRAM_NOTE_ARGS = [
+    "-t", str(TELEGRAM_NOTE_MAX_SECONDS),
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
+    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale='trunc(min(640,iw)/2)*2':'trunc(min(640,iw)/2)*2',setsar=1",
+    "-c:a", "aac", "-b:a", "96k", "-ac", "1",
+    "-movflags", "+faststart", "-threads", "2",
+]
 
 # Файл присылает пользователь, а ffmpeg умеет форматы-ссылки: плейлист HLS,
 # манифест DASH, concat-скрипт открывают другие файлы и URL (проверено
@@ -94,6 +106,20 @@ def playable_note(filename: str, data: bytes, content_type: str) -> tuple[str, b
         out_ext="mp4", out_type="video/mp4", args=_NOTE_ARGS, timeout=NOTE_TIMEOUT_SEC,
     )
 
+
+
+def telegram_note(filename: str, data: bytes, content_type: str) -> tuple[str, bytes, str]:
+    """Кружок для Telegram → квадратный `.mp4` не длиннее минуты.
+
+    На сайте его же играет обычный `<video>` (`.msg-video-note` рисует круг),
+    поэтому отдельной копии «для сайта» не нужно. Не справился ffmpeg —
+    возвращается исходный файл, как у остальных функций модуля: Telegram такой
+    кружок, скорее всего, не примет, и это покажет проверка у преподавателя.
+    """
+    return _transcode(
+        filename, data, content_type,
+        out_ext="mp4", out_type="video/mp4", args=_TELEGRAM_NOTE_ARGS, timeout=NOTE_TIMEOUT_SEC,
+    )
 
 def _transcode(
     filename: str, data: bytes, content_type: str,

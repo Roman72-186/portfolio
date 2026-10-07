@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{#
+Отправленная рассылка: сообщение и журнал по ученикам — кому дошло, кому нет и
+почему. Пока идёт отправка, страница сама обновляется (`data-bc-refresh`).
+«Дослать» — если проход прервался (перезапуск приложения): отправка берёт
+только «ждёт», повторов нет (`services/broadcast_delivery.py`).
+
+Без своего <style>: prg-* (program.css) и bc-* (broadcasts.css).
+#}
+{% block title %}Рассылка{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=1">
+{% endblock %}
+{% block content %}
+{% set error = request.query_params.get('error') %}
+<div class="prg-page bc-page"{% if broadcast.status == 'sending' and not can_resume %} data-bc-refresh{% endif %}>
+    <p><a class="btn-outline" href="/cabinet/staff/broadcasts">← Все рассылки</a></p>
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Рассылка</h1>
+            <p>
+                {% if broadcast.status == 'sent' %}Отправлена {{ broadcast.sent_at|msk_text }}.
+                {% else %}Отправляется — страница обновится сама.{% endif %}
+                Кому: {{ audience_text }}.
+            </p>
+        </div>
+    </div>
+
+    {% if error %}<p class="prg-badge prg-badge--error" role="alert">{{ error }}</p>{% endif %}
+
+    <div class="prg-meta bc-counts">
+        <span class="prg-badge prg-badge--done">{{ labels['sent'] }}: {{ counts['sent'] }}</span>
+        {% if counts['pending'] %}<span class="prg-badge">{{ labels['pending'] }}: {{ counts['pending'] }}</span>{% endif %}
+        {% if counts['failed'] %}<span class="prg-badge prg-badge--error">{{ labels['failed'] }}: {{ counts['failed'] }}</span>{% endif %}
+        {% if counts['no_telegram'] %}<span class="prg-badge">{{ labels['no_telegram'] }}: {{ counts['no_telegram'] }}</span>{% endif %}
+        {% if counts['notifications_off'] %}<span class="prg-badge">{{ labels['notifications_off'] }}: {{ counts['notifications_off'] }}</span>{% endif %}
+    </div>
+
+    {% if can_resume %}
+    <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/resume" data-bc-fresh-csrf>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <p class="prg-hint">Отправка прервалась. Дошлём только тем, кому ещё не ушло.</p>
+        <button type="submit" class="btn-blue">Дослать: {{ counts['pending'] }} уч.</button>
+    </form>
+    {% endif %}
+
+    <section class="bc-section">
+        <h2>Сообщение</h2>
+        <div class="bc-preview">
+            {% if broadcast.media_kind == 'photo' %}
+            <img class="bc-preview-photo" src="{{ broadcast.media_s3_url }}" alt="">
+            {% elif broadcast.media_kind == 'voice' %}
+            <audio controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
+            {% elif broadcast.media_kind == 'video_note' %}
+            <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ broadcast.media_s3_url }}"></video>
+            {% endif %}
+            {% if broadcast.text %}
+            <div class="bc-preview-text{{ ' bc-preview-text--separate' if broadcast.media_kind == 'video_note' }}">{{ text_html|safe }}</div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="bc-section">
+        <h2>Ученики</h2>
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr><th>Ученик</th><th>Ник</th><th>Тариф</th><th>Статус</th><th>Причина</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in recipients %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td>{{ '@' ~ row.username if row.username else 'нет ника' }}</td>
+                        <td>{{ row.tariff or '—' }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td>{{ row.error }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+<script src="/static/js/broadcasts.js?v=1"></script>
+{% endblock %}

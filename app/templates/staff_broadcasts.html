@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{#
+Журнал рассылок ученикам через бота (владелец 07.10.2026). Черновики и
+отправленные — новые сверху. Логика — `services/broadcasts.py`.
+
+Без своего <style>: prg-* (program.css) и bc-* (broadcasts.css).
+#}
+{% block title %}Рассылки{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=1">
+{% endblock %}
+{% block content %}
+<div class="prg-page bc-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Рассылки</h1>
+            <p>Сообщение ученикам от преподавателя в Telegram: текст, фото, голосовое
+                или кружок. Перед отправкой бот присылает его вам — ровно таким, каким
+                его увидят ученики.</p>
+        </div>
+        <form method="post" action="/cabinet/staff/broadcasts" data-bc-fresh-csrf>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-blue">Новая рассылка</button>
+        </form>
+    </div>
+
+    {% if request.query_params.get('ok') == 'deleted' %}
+    <p class="prg-badge prg-badge--done">Черновик удалён</p>
+    {% endif %}
+
+    {% if rows %}
+    <div class="prg-items">
+        {% for row in rows %}
+        {% set b = row.broadcast %}
+        <article class="prg-item{{ ' is-done' if b.status == 'sent' }}">
+            <div class="prg-item-copy">
+                <h3><a href="/cabinet/staff/broadcasts/{{ b.id }}">{{ row.title }}</a></h3>
+                <div class="prg-meta">
+                    {% if b.status == 'draft' %}
+                    <span class="prg-badge">Черновик</span>
+                    {% elif b.status == 'sending' %}
+                    <span class="prg-badge">Отправляется</span>
+                    {% else %}
+                    <span class="prg-badge prg-badge--done">Отправлено {{ b.sent_at|msk_text if b.sent_at else '' }}</span>
+                    {% endif %}
+                    {% if b.media_kind %}<span>{{ media_labels[b.media_kind] }}</span>{% endif %}
+                    <span>Кому: {{ row.audience }}</span>
+                    {% if row.counts %}
+                    <span>Доставлено {{ row.counts['sent'] }} из {{ row.counts.values()|sum }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="prg-empty">Рассылок пока нет.</p>
+    {% endif %}
+</div>
+<script src="/static/js/broadcasts.js?v=1"></script>
+{% endblock %}

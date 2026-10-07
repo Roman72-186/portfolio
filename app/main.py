@@ -31,6 +31,7 @@ from app.api import student_review
 from app.api import task_block_feedback
 from app.api import cabinet_point_a
 from app.api import cabinet_point_a_audio
+from app.api import cabinet_broadcasts
 from app.api import cabinet_staff_notifications
 from app.api import cabinet_access_admin
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
@@ -399,6 +400,7 @@ app.include_router(student_review.router)
 app.include_router(task_block_feedback.router)
 app.include_router(cabinet_point_a.router)
 app.include_router(cabinet_point_a_audio.router)
+app.include_router(cabinet_broadcasts.router)
 app.include_router(cabinet_staff_notifications.router)
 app.include_router(cabinet_access_admin.router)
 app.include_router(payments_router.router)

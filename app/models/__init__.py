@@ -67,6 +67,13 @@ from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessa
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.feedback_rating import FeedbackRating, FeedbackRatingImage
 from app.models.point_a_level_audio import PointALevelAudio
+from app.models.broadcast import (
+    Broadcast,
+    BroadcastLevel,
+    BroadcastRecipient,
+    BroadcastStudent,
+    BroadcastTariff,
+)
 from app.models.tracker import (
     ScheduleDigest,
     ScheduleDigestAssignee,

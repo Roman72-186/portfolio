@@ -144,6 +144,13 @@ SECTIONS: tuple[Section, ...] = (
         "point_a", "Оценка точки А", "Входной замер уровня ученика",
         (ROLE_HEAD,), ("point_a",),
     ),
+    # Рассылки ученикам через бота (владелец 07.10.2026). Только ГП: сообщение
+    # уходит ученикам от имени преподавателя, куратору раздел открывают сверх
+    # роли, если понадобится.
+    Section(
+        "broadcasts", "Рассылки", "Сообщения ученикам через бота: текст, фото, голосовое, кружок",
+        (ROLE_HEAD,), ("broadcasts",),
+    ),
     Section(
         "program", "Актуальное образовательное пространство",
         "Учебные программы, конструктор недели, трекер, цели, дайджест, загрузка видео",
@@ -256,6 +263,7 @@ _RULES: tuple[_Rule, ...] = (
     _rule("mock_check", _tree("/cabinet/admin/retake-check")),
     _rule("point_a", _tree("/cabinet/staff/point-a")),
     _rule("point_a", _tree("/cabinet/staff/point-a-audio")),
+    _rule("broadcasts", _tree("/cabinet/staff/broadcasts")),
     # ── Учебные программы ──
     _rule("program", _tree("/cabinet/staff/program")),
     _rule("program", _tree("/cabinet/staff/tracker")),

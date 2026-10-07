@@ -1,0 +1,68 @@
+/* Экран «Рассылки» (staff_broadcasts*.html). Каркас — prg-* из program.css,
+   поле текста — rt-* из rich-text-field.css; здесь только то, чего там нет:
+   разметка Telegram в редакторе и просмотре (спойлер, цитата) и карточка
+   «как увидят ученики». Токены — base.css, цветов числом нет. */
+
+.bc-page { display: grid; gap: var(--s-4); }
+.bc-form { display: grid; gap: var(--s-4); }
+.bc-section { display: grid; gap: var(--s-2); }
+.bc-section h2 { margin: 0; font-size: var(--fs-h3); }
+
+.bc-editable { min-height: 160px; }
+
+/* Спойлер Telegram: в редакторе и просмотре — приглушённая плашка, текст
+   виден (преподавателю нужно его читать), в Telegram он скрыт до нажатия. */
+.bc-editable .tg-spoiler,
+.bc-preview-text .tg-spoiler {
+    background: var(--dim-fill-strong);
+    border-radius: var(--r-sm);
+    padding: 0 2px;
+}
+
+.bc-editable blockquote,
+.bc-preview-text blockquote {
+    margin: var(--s-1) 0;
+    padding: var(--s-1) var(--s-2);
+    border-left: 3px solid var(--blue);
+    background: var(--blue-tint);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.bc-media-current { display: grid; gap: var(--s-2); justify-items: start; }
+
+.bc-summary {
+    margin: 0;
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+/* Как увидят ученики — пузырь сообщения, не макет Telegram один в один. */
+.bc-preview {
+    display: grid;
+    gap: var(--s-2);
+    justify-items: start;
+    max-width: 420px;
+    padding: var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+}
+.bc-preview-text { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+.bc-preview-text a { color: var(--blue-text); }
+.bc-preview-text--separate {
+    padding-top: var(--s-2);
+    border-top: 1px dashed var(--line);
+}
+.bc-preview-photo { max-width: 100%; border-radius: var(--r-md); }
+.bc-preview-note {
+    width: 240px;
+    max-width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.bc-counts { flex-wrap: wrap; }
+.bc-send form { display: inline-block; }
