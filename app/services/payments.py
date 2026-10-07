@@ -41,6 +41,8 @@ from app.constants import PAYMENT_NOTIFY_RECIPIENT_IDS, TARIFF_DISPLAY
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.payment import (
+    COHORT_LABELS,
+    COHORTS,
     KIND_MONTH,
     SOURCE_MANUAL,
     SOURCE_PRODAMUS,
@@ -53,7 +55,7 @@ from app.models.payment import (
 )
 from app.models.user import User
 from app.services.contacts import normalize_tg_username
-from app.services.tz import MSK_TZ, _as_utc
+from app.services.tz import MSK_TZ, _as_utc, msk_text
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +168,16 @@ def price_kop(db: DBSession, user: User) -> int | None:
     """
     if user.pay_price_kop:
         return user.pay_price_kop
-    if not user.tariff or not user.pay_cohort:
+    return reference_price_kop(db, user.tariff, user.pay_cohort)
+
+
+def reference_price_kop(db: DBSession, tariff: str | None, cohort: str | None) -> int | None:
+    """Цена из справочника «тариф × набор», без индивидуальной."""
+    if not tariff or not cohort:
         return None
     row = (
         db.query(PaymentPrice)
-        .filter(PaymentPrice.tariff == user.tariff, PaymentPrice.cohort == user.pay_cohort)
+        .filter(PaymentPrice.tariff == tariff, PaymentPrice.cohort == cohort)
         .first()
     )
     return row.amount_kop if row else None
@@ -433,6 +440,141 @@ def student_payment_view(db: DBSession, user: User, now: datetime) -> dict | Non
         "has_price": bool(amount),
         "until_text": f"{last_day.day:02d}.{last_day.month:02d}",
         "overdue": _as_utc(now) >= cutoff,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Настройки оплаты ученика — карточка «Учеников» и загрузка списка
+# ---------------------------------------------------------------------------
+
+class PaymentSettingsError(ValueError):
+    """Настройки оплаты не годятся — текст для показа человеку."""
+
+
+def paid_month(user: User) -> date | None:
+    """Последний оплаченный месяц — обратное к `paid_until_after`.
+
+    `None` — оплат не было или ученик вне автоматической оплаты.
+    """
+    if user.paid_until is None or not has_window(user):
+        return None
+    return add_months(due_period(user, user.paid_until), -1)
+
+
+def parse_paid_month(raw: str | None) -> date | None:
+    """«2026-10» из `<input type="month">` → 1 октября 2026; пусто — `None`."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        year, month = (int(part) for part in text.split("-"))
+        return date(year, month, 1)
+    except ValueError:
+        raise PaymentSettingsError("Неверный месяц оплаты") from None
+
+
+def _window_text(start: int | None, end: int | None) -> str:
+    return f"{start}–{end}" if start and end else "—"
+
+
+def _price_text(amount_kop: int | None) -> str:
+    return rub_text(amount_kop) if amount_kop else "по справочнику"
+
+
+def _month_text(period: date | None) -> str:
+    return period_label(period) if period else "—"
+
+
+def apply_payment_settings(
+    db: DBSession,
+    performed_by_id: int,
+    student: User,
+    *,
+    window_start: int | None,
+    window_end: int | None,
+    cohort: str,
+    price_kop: int | None,
+    paid_through: date | None,
+) -> bool:
+    """Окно оплаты, набор, индивидуальная цена и «оплачено по» ученика.
+
+    Одна точка ручной настройки: блок «Управление» в карточке «Учеников» и
+    загрузка списка от заказчика. Это правка, а не оплата: платежа не
+    создаёт, ученику и службе заботы ничего не шлёт — деньги зачисляет только
+    `record_paid`.
+
+    `paid_through` — последний оплаченный месяц. `paid_until` из него
+    считается тем же правилом, что при оплате (`paid_until_after`), поэтому
+    смена окна сдвигает срок сама. Пусто — оплат не было: срок не ведётся, и
+    по неоплате кабинет не закроется. Срок здесь может и уменьшиться — это
+    исправление ошибки, в отличие от оплаты.
+
+    Возвращает True, если что-то изменилось. Не коммитит.
+    """
+    error = validate_window(window_start, window_end)
+    if error:
+        raise PaymentSettingsError(error)
+    if cohort and cohort not in COHORTS:
+        raise PaymentSettingsError("Неверный набор")
+    if price_kop is not None and price_kop <= 0:
+        raise PaymentSettingsError("Цена должна быть больше нуля")
+    if paid_through is not None and not (window_start and window_end):
+        raise PaymentSettingsError("Чтобы указать оплаченный месяц, задайте окно оплаты")
+
+    old_window = (student.pay_window_start, student.pay_window_end)
+    old_cohort = student.pay_cohort or ""
+    old_price = student.pay_price_kop
+    old_month = paid_month(student)
+    old_until = student.paid_until
+
+    student.pay_window_start = window_start
+    student.pay_window_end = window_end
+    student.pay_cohort = cohort
+    student.pay_price_kop = price_kop
+    student.paid_until = paid_until_after(student, paid_through) if paid_through else None
+
+    changes = []
+    if old_window != (window_start, window_end):
+        changes.append(f"окно: {_window_text(*old_window)} → {_window_text(window_start, window_end)}")
+    if old_cohort != cohort:
+        changes.append(f"набор: {COHORT_LABELS.get(old_cohort, '—')} → {COHORT_LABELS.get(cohort, '—')}")
+    if old_price != price_kop:
+        changes.append(f"цена: {_price_text(old_price)} → {_price_text(price_kop)}")
+    if old_month != paid_through or (old_until is None) != (student.paid_until is None):
+        changes.append(f"оплачено по: {_month_text(old_month)} → {_month_text(paid_through)}")
+    if not changes:
+        return False
+    db.add(AuditLog(
+        action="payment_settings_change",
+        performed_by_id=performed_by_id,
+        target_user_id=student.id,
+        details=("Оплата: " + "; ".join(changes))[:1000],
+    ))
+    return True
+
+
+def _rub_input(amount_kop: int | None) -> str:
+    """Цена для поля ввода: «12000» или «12000,50»."""
+    if not amount_kop:
+        return ""
+    rub, kop = divmod(amount_kop, 100)
+    return f"{rub},{kop:02d}" if kop else str(rub)
+
+
+def manage_view(db: DBSession, student: User) -> dict:
+    """Поля оплаты для блока «Управление» в карточке ученика."""
+    month = paid_month(student)
+    reference = reference_price_kop(db, student.tariff, student.pay_cohort)
+    return {
+        "pay_window_start": student.pay_window_start,
+        "pay_window_end": student.pay_window_end,
+        "pay_cohort": student.pay_cohort or "",
+        "pay_cohorts": [[key, COHORT_LABELS[key]] for key in COHORTS],
+        "pay_price": _rub_input(student.pay_price_kop),
+        "pay_reference_text": rub_text(reference) if reference else "",
+        "paid_month": month.strftime("%Y-%m") if month else "",
+        "paid_until_text": msk_text(student.paid_until),
+        "payments_block_enabled": settings.payments_block_enabled,
     }
 
 

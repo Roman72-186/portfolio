@@ -418,3 +418,146 @@ def test_pay_button_hidden_without_window(db, client, session_factory, prices, u
     resp = client.post("/cabinet/personal/pay")
     assert resp.status_code == 409
     assert resp.json()["error"]
+
+
+# ── Настройки оплаты в карточке ученика («Управление») ──────────────────────
+
+def _settings(db, student, by, **overrides):
+    values = dict(window_start=10, window_end=15, cohort=COHORT_FROM,
+                  price_kop=None, paid_through=date(2026, 10, 1))
+    values.update(overrides)
+    return ps.apply_payment_settings(db, by.id, student, **values)
+
+
+def test_settings_paid_month_becomes_next_cutoff(db, user_factory):
+    student = user_factory(tariff="Я С ВАМИ")
+    assert _settings(db, student, student) is True
+
+    # Оплачен октябрь — срок до отсечки ноябрьского окна 10–15.
+    assert student.paid_until == _msk(2026, 11, 16, 9)
+    assert ps.paid_month(student) == date(2026, 10, 1)
+    db.flush()
+    [log] = db.query(AuditLog).filter(AuditLog.action == "payment_settings_change").all()
+    assert "оплачено по: — → октябрь 2026" in log.details
+
+    # Повтор тех же значений журнал не засоряет.
+    assert _settings(db, student, student) is False
+
+
+def test_settings_window_change_moves_paid_until(db, user_factory):
+    student = user_factory(tariff="Я С ВАМИ")
+    _settings(db, student, student)
+
+    _settings(db, student, student, window_start=20, window_end=25)
+
+    assert student.paid_until == _msk(2026, 11, 26, 9)
+    assert ps.paid_month(student) == date(2026, 10, 1)
+
+
+def test_settings_clear_paid_month_and_window(db, user_factory):
+    student = user_factory(tariff="Я С ВАМИ")
+    _settings(db, student, student, price_kop=1200000)
+
+    _settings(db, student, student, window_start=None, window_end=None, cohort="",
+              price_kop=1200000, paid_through=None)
+
+    assert (student.pay_window_start, student.pay_window_end, student.paid_until) == (None, None, None)
+    assert student.pay_price_kop == 1200000
+
+
+@pytest.mark.parametrize("overrides,message", [
+    ({"window_start": None, "window_end": None}, "задайте окно"),
+    ({"window_start": 16, "window_end": 15}, "Окно оплаты"),
+    ({"window_end": None}, "оба дня"),
+    ({"price_kop": 0}, "больше нуля"),
+    ({"cohort": "июнь"}, "набор"),
+])
+def test_settings_refuse_bad_values_and_change_nothing(db, user_factory, overrides, message):
+    student = user_factory(tariff="Я С ВАМИ")
+    with pytest.raises(ps.PaymentSettingsError, match=message):
+        _settings(db, student, student, **overrides)
+    assert (student.pay_window_start, student.paid_until) == (None, None)
+
+
+@pytest.mark.parametrize("raw,expected", [("", None), ("2026-10", date(2026, 10, 1))])
+def test_parse_paid_month(raw, expected):
+    assert ps.parse_paid_month(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["октябрь", "2026-13", "2026"])
+def test_parse_paid_month_garbage(raw):
+    with pytest.raises(ps.PaymentSettingsError):
+        ps.parse_paid_month(raw)
+
+
+@pytest.fixture()
+def card(user_factory):
+    chief = user_factory(vk_id=970_001, name="Главный", is_admin=True, role_name="админ")
+    curator = user_factory(vk_id=970_002, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_003, name="Ученик", tariff="Я С ВАМИ")
+    student.curator_id = curator.id
+    return {"chief": chief, "curator": curator, "student": student}
+
+
+def _payment_form(**overrides):
+    form = {"pay_window_start": "10", "pay_window_end": "15", "pay_cohort": COHORT_FROM,
+            "pay_price": "", "paid_month": "2026-10"}
+    form.update(overrides)
+    return form
+
+
+def test_card_saves_payment_settings(db, client, session_factory, prices, card):
+    student = card["student"]
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["chief"]).id)
+
+    resp = client.post(f"/cabinet/superadmin/users/{student.id}/payment",
+                       data=_payment_form(pay_price="12 000,50"))
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["pay_price"], body["paid_month"]) == ("12000,50", "2026-10")
+    assert body["pay_reference_text"] == "13 255 ₽"
+    db.refresh(student)
+    assert student.pay_price_kop == 1200050
+    assert student.paid_until is not None
+
+    p = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]["payment"]
+    assert (p["pay_window_start"], p["pay_window_end"], p["pay_cohort"]) == (10, 15, COHORT_FROM)
+    assert p["paid_until_text"] == "16.11.2026 в 09:00"
+
+
+def test_card_refuses_garbage_price_without_changes(db, client, session_factory, card):
+    student = card["student"]
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["chief"]).id)
+
+    resp = client.post(f"/cabinet/superadmin/users/{student.id}/payment",
+                       data=_payment_form(pay_price="много"), headers={"Accept": "application/json"})
+
+    assert resp.status_code == 400
+    db.refresh(student)
+    assert (student.pay_window_start, student.pay_price_kop, student.paid_until) == (None, None, None)
+
+
+def test_card_payment_curator_forbidden(db, client, session_factory, card):
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["curator"]).id)
+
+    resp = client.post(f"/cabinet/superadmin/users/{card['student'].id}/payment",
+                       data=_payment_form(), headers={"Accept": "application/json"})
+
+    assert resp.status_code == 403
+
+
+def test_card_payment_archived_read_only(db, client, session_factory, card, user_factory):
+    from app.services.user_management import archive_user
+
+    superadmin = user_factory(vk_id=970_004, name="Супер", is_admin=True, role_name="суперадмин")
+    db.commit()
+    archive_user(db, target_user_id=card["student"].id, performed_by_id=superadmin.id, actor_rank=5)
+    client.cookies.set("session_id", session_factory(superadmin).id)
+
+    resp = client.post(f"/cabinet/superadmin/users/{card['student'].id}/payment", data=_payment_form())
+
+    assert resp.status_code == 409

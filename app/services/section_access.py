@@ -365,9 +365,9 @@ _POST = ("POST",)
 _ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
     (key, re.compile(pattern), frozenset(methods))
     for key, pattern, methods in (
-        # `labels` и `access-until` — блок «Управление» в карточке «Учеников»
+        # `labels`, `access-until` и `payment` — блок «Управление» в карточке «Учеников»
         # (05.10.2026): та же правка ученика, что в форме «Людей».
-        ("people:students", _USER + "/(tags|curator|tariff|cohort-tag|labels|access-until)$", _POST),
+        ("people:students", _USER + "/(tags|curator|tariff|cohort-tag|labels|access-until|payment)$", _POST),
         ("people:students", _exact("/cabinet/superadmin/users/assign-curator-bulk"), _POST),
         ("people:students", r"^/cabinet/superadmin/tags/\d+$", _POST),
         # Поиск по списку ников — часть массовой проставки тегов, POST на чтение.

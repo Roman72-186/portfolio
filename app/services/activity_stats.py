@@ -662,6 +662,7 @@ _AUDIT_LABELS = {
     "user_unblock": "Разблокировка",
     # Действия над учеником — лента в его карточке (`student_activity`).
     "access_until_change": "Смена срока доступа",
+    "payment_settings_change": "Настройки оплаты",
     "user_archive": "В архив",
     "user_unarchive": "Из архива",
     "impersonate_start": "Вход в кабинет ученика",
@@ -1633,7 +1634,7 @@ _STUDENT_EVENT_FEED_LABELS = {
 # Действия сотрудников над учеником, которые попадают в его ленту. Остальные
 # записи аудита (дайджест, программа) к одному ученику не относятся.
 _STUDENT_AUDIT_ACTIONS = (
-    "curator_assign", "tariff_change", "access_until_change",
+    "curator_assign", "tariff_change", "access_until_change", "payment_settings_change",
     "user_block", "user_unblock", "user_archive", "user_unarchive",
     "impersonate_start", "impersonate_stop",
 )

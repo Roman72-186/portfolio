@@ -1216,6 +1216,8 @@ function buildManage(s) {
         false, 'Пусто – доступ без ограничения');
     html += '</div></div>';
 
+    html += buildManagePayment(m.payment, dis, m.can_edit);
+
     // Учебные метки
     html += '<div class="manage-group"><div class="section-title">Учёба</div><div class="profile-grid">';
     html += manageField('Формат обучения',
@@ -1277,6 +1279,42 @@ function buildManage(s) {
             + '<div class="profile-status-badges manage-buttons">' + stateButtons + '</div></div>';
     }
 
+    return html + '</div>';
+}
+
+// Оплата (07.10.2026): окно, набор, своя цена, последний оплаченный месяц.
+// Срок «оплачено до» считает сервер из месяца и окна (`payments.manage_view`).
+function buildManagePayment(p, dis, canEdit) {
+    if (!p) return '';
+    var dayInput = function(id, value) {
+        return '<input type="number" min="1" max="28" step="1" class="profile-edit-input" id="' + id + '" value="'
+            + esc(value == null ? '' : String(value)) + '"' + dis + '>';
+    };
+    var cohorts = [['', 'Не указан']].concat(p.pay_cohorts);
+    var paidHint = p.paid_until_text
+        ? 'Следующий месяц – оплатить до ' + p.paid_until_text + ' по Москве'
+            + (p.payments_block_enabled ? '' : '. Закрытие кабинета по неоплате пока выключено')
+        : 'Пусто – оплат ещё не было, по неоплате кабинет не закроется';
+
+    var html = '<div class="manage-group"><div class="section-title">Оплата</div><div class="profile-grid">';
+    html += manageField('Окно оплаты с', dayInput('manage-pay-start', p.pay_window_start),
+        false, 'День месяца. Пусто – ученик платит не через сайт');
+    html += manageField('Окно оплаты по', dayInput('manage-pay-end', p.pay_window_end),
+        false, 'Не позже 28-го');
+    html += manageField('Набор',
+        '<select class="profile-edit-select" id="manage-pay-cohort"' + dis + '>'
+        + manageOptions(cohorts, p.pay_cohort) + '</select>',
+        false, 'От него зависит цена по оферте');
+    html += manageField('Своя цена, ₽',
+        '<input class="profile-edit-input" id="manage-pay-price" inputmode="decimal" placeholder="13255" value="' + esc(p.pay_price) + '"' + dis + '>',
+        false, p.pay_reference_text ? 'Пусто – по тарифу и набору: ' + p.pay_reference_text : 'Пусто – по тарифу и набору');
+    html += manageField('Оплачено по',
+        '<input type="month" class="profile-edit-input" id="manage-paid-month" value="' + esc(p.paid_month) + '"' + dis + '>',
+        false, paidHint);
+    html += '</div>';
+    if (canEdit) {
+        html += '<div class="profile-edit-actions form-actions"><button type="button" class="btn-blue btn-save" onclick="savePayment()">Сохранить оплату</button></div>';
+    }
     return html + '</div>';
 }
 
@@ -1354,6 +1392,16 @@ function saveAccessUntil() {
     manageSave('access-until', {access_until: value},
         value ? 'Срок доступа сохранён' : 'Срок снят, доступ без ограничения',
         'Не удалось сохранить срок доступа');
+}
+
+function savePayment() {
+    manageSave('payment', {
+        pay_window_start: document.getElementById('manage-pay-start').value,
+        pay_window_end: document.getElementById('manage-pay-end').value,
+        pay_cohort: document.getElementById('manage-pay-cohort').value,
+        pay_price: document.getElementById('manage-pay-price').value,
+        paid_month: document.getElementById('manage-paid-month').value
+    }, 'Оплата сохранена', 'Не удалось сохранить оплату');
 }
 
 function saveLabels() {

@@ -49,6 +49,7 @@ from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services import payments
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
@@ -2549,6 +2550,54 @@ def superadmin_user_set_access_until(
         "access_until": msk_input_value(target.access_until),
         "tariff": target.tariff or "",
     })
+
+
+def _parse_window_day(raw: str) -> int | None:
+    text = raw.strip()
+    if not text:
+        return None
+    if not text.isdigit():
+        raise payments.PaymentSettingsError("День окна оплаты – число от 1 до 28")
+    return int(text)
+
+
+@router.post("/superadmin/users/{target_id}/payment")
+def superadmin_user_set_payment(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    pay_window_start: str = Form(""),
+    pay_window_end: str = Form(""),
+    pay_cohort: str = Form(""),
+    pay_price: str = Form(""),
+    paid_month: str = Form(""),
+):
+    """Настройки оплаты из блока «Управление» карточки ученика (JSON): окно,
+    набор, индивидуальная цена рублями, последний оплаченный месяц. Форма
+    шлёт все поля, пустое значит «снять». Право — `people:students`."""
+    target = _require_student_target(db, user, target_id)
+    try:
+        price_raw = pay_price.strip()
+        price_kop = payments.rub_str_to_kop(price_raw) if price_raw else None
+        # Мусор не равен пустому: «не разобрали — значит по справочнику»
+        # молча поменяло бы ученику сумму.
+        if price_raw and price_kop is None:
+            raise payments.PaymentSettingsError("Неверная цена")
+        payments.apply_payment_settings(
+            db, user["user_id"], target,
+            window_start=_parse_window_day(pay_window_start),
+            window_end=_parse_window_day(pay_window_end),
+            cohort=pay_cohort.strip(),
+            price_kop=price_kop,
+            paid_through=payments.parse_paid_month(paid_month),
+        )
+    except payments.PaymentSettingsError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+    return JSONResponse({"ok": True, "user_id": target.id, **payments.manage_view(db, target)})
 
 
 @router.post("/superadmin/users/{target_id}/tags")

@@ -59,6 +59,7 @@ from app.models.work import (
     Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER,
     WORK_TYPE_MOCK_EXAM,
 )
+from app.services import payments
 from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.stats import avg_score_by_subject_all_time
@@ -263,6 +264,9 @@ def _manage_block(db: DBSession, user: dict, student: User) -> dict | None:
         "study_modes": [[m, STUDY_MODE_LABELS[m]] for m in STUDY_MODES],
         "is_publishable": bool(student.is_publishable),
         "about": student.about or "",
+        # Окно, набор, цена и «оплачено по» (`payments.manage_view`), пишет
+        # `/payment` тех же «Людей» под `people:students`.
+        "payment": payments.manage_view(db, student),
     }
 
 
