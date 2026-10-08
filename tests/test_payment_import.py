@@ -335,7 +335,7 @@ def test_apply_refuses_error_rows_service_and_repeats(db, prices, make_student, 
 @pytest.fixture()
 def staff(user_factory):
     return {
-        "chief": user_factory(vk_id=982_001, name="Главный", is_admin=True, role_name="админ"),
+        "chief": user_factory(vk_id=982_001, name="Главный", is_admin=True, role_name="суперадмин"),
         "curator": user_factory(vk_id=982_002, name="Куратор", role_name="куратор"),
     }
 

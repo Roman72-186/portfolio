@@ -492,7 +492,7 @@ def test_parse_paid_month_garbage(raw):
 
 @pytest.fixture()
 def card(user_factory):
-    chief = user_factory(vk_id=970_001, name="Главный", is_admin=True, role_name="админ")
+    chief = user_factory(vk_id=970_001, name="Главный", is_admin=True, role_name="суперадмин")
     curator = user_factory(vk_id=970_002, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_003, name="Ученик", tariff="Я С ВАМИ")
     student.curator_id = curator.id

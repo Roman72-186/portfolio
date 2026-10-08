@@ -2575,7 +2575,10 @@ def superadmin_user_set_payment(
 ):
     """Настройки оплаты из блока «Управление» карточки ученика (JSON): окно,
     набор, индивидуальная цена рублями, последний оплаченный месяц. Форма
-    шлёт все поля, пустое значит «снять». Право — `people:students`."""
+    шлёт все поля, пустое значит «снять». Право — `people:students` и
+    `payments.is_payments_staff`."""
+    if not payments.is_payments_staff(user):
+        raise HTTPException(status_code=403, detail="Оплата пока открыта только суперадмину")
     target = _require_student_target(db, user, target_id)
     try:
         price_raw = pay_price.strip()

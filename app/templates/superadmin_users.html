@@ -29,8 +29,10 @@
         {% if can(user, "people:create") %}<a class="su-tab" href="/cabinet/superadmin/create-staff">Создать сотрудника</a>{% endif %}
         <a class="su-tab" href="/cabinet/superadmin/assign-curator">Привязка к куратору</a>
         <a class="su-tab" href="/cabinet/superadmin/tags">Назначить теги</a>
+        {% if payments_staff(user) %}
         <a class="su-tab" href="/cabinet/superadmin/payments">Оплаты</a>
         {% if can(user, "people:students") %}<a class="su-tab" href="/cabinet/superadmin/payment-import">Оплата списком</a>{% endif %}
+        {% endif %}
     </nav>
 
     <!-- Filters -->

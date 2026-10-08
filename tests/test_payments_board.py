@@ -42,7 +42,7 @@ def prices(db):
 
 @pytest.fixture()
 def people(db, user_factory):
-    chief = user_factory(vk_id=990_001, name="Главный", is_admin=True, role_name="админ")
+    chief = user_factory(vk_id=990_001, name="Главный", is_admin=True, role_name="суперадмин")
     curator = user_factory(vk_id=990_002, name="Куратор", role_name="куратор")
     return {"chief": chief, "curator": curator}
 
@@ -313,3 +313,41 @@ def test_mark_refused_for_archived(db, client, session_factory, prices, make_pay
     })
 
     assert resp.status_code == 409
+
+
+# ── Пока владелец тестирует — только суперадмин (08.10.2026) ────────────────
+
+def test_head_teacher_sees_nothing_about_payments(db, client, session_factory, prices, make_payer, user_factory):
+    """`payments.STAFF_MIN_RANK = 5`: ГП не видит вкладок, группы в карточке и
+    не проходит ни один адрес оплаты."""
+    head = user_factory(vk_id=990_050, name="ГП", is_admin=True, role_name="админ")
+    student = make_payer()
+    client.cookies.set("session_id", session_factory(head).id)
+
+    users_page = client.get("/cabinet/superadmin/users")
+    assert users_page.status_code == 200
+    assert "/cabinet/superadmin/payments" not in users_page.text
+    assert "/cabinet/superadmin/payment-import" not in users_page.text
+
+    manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
+    assert manage["payment"] is None
+
+    json_headers = {"Accept": "application/json"}
+    assert client.get("/cabinet/superadmin/payments", headers=json_headers).status_code == 403
+    assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
+    assert client.post("/cabinet/superadmin/payments/mark", headers=json_headers, data={
+        "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
+    }).status_code == 403
+    assert client.post(f"/cabinet/superadmin/users/{student.id}/payment", headers=json_headers, data={
+        "pay_window_start": "10", "pay_window_end": "15", "pay_cohort": "", "pay_price": "", "paid_month": "",
+    }).status_code == 403
+    db.refresh(student)
+    assert student.paid_until is None
+
+
+def test_superadmin_sees_payment_tabs(db, client, session_factory, people):
+    client.cookies.set("session_id", session_factory(people["chief"]).id)
+
+    page = client.get("/cabinet/superadmin/users")
+
+    assert "/cabinet/superadmin/payments" in page.text and "/cabinet/superadmin/payment-import" in page.text
