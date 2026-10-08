@@ -85,6 +85,11 @@ def _student_names(db: DBSession, user_ids) -> dict[int, str]:
     }
 
 
+def _east_offset(users) -> int:
+    """Самое большое смещение от Москвы среди учеников, в часах."""
+    return max((bc.tz_offset(user) for user in users), default=0)
+
+
 def _plain_title(broadcast: Broadcast) -> str:
     """Первая строка текста — заголовок карточки в журнале."""
     plain = html.unescape(re.sub(r"<[^>]+>", "", broadcast.text or "")).strip()
@@ -148,12 +153,16 @@ def broadcast_audience(
     audience = bc.normalize_audience(
         db, tariffs=tariffs, levels=levels, user_ids=[s for s in students.split(",") if s],
     )
-    summary = bc.summarize(bc.audience_users(db, audience))
+    users = bc.audience_users(db, audience)
+    summary = bc.summarize(users)
     return JSONResponse({
         "total": summary.total,
         "reachable": summary.reachable,
         "no_telegram": summary.no_telegram,
         "notifications_off": summary.notifications_off,
+        # Странице — проверить «по часам ученика» до сохранения: раньше всех
+        # время наступит у самого восточного пояса.
+        "east_offset": _east_offset(users),
     })
 
 
@@ -213,6 +222,8 @@ def broadcast_screen(
     summary = bc.summarize(users)
     context.update({
         "no_timezone": sum(not bc.has_timezone(u) for u in users),
+        "east_offset": _east_offset(users),
+        "max_photo_mb": MAX_PHOTO_INPUT_SIZE // (1024 * 1024),
         "schedule_labels": bc.SCHEDULE_LABELS,
         "schedule_value": bc.schedule_input_value(broadcast),
         "tariffs": tariff_choices(*audience.tariffs),
@@ -291,37 +302,56 @@ async def broadcast_save(
     video: UploadFile | None = File(None),
     photo: UploadFile | None = File(None),
 ):
-    """Сохранить черновик; с `action=preview` — и прислать на проверку."""
+    """Сохранить черновик; с `action=preview` — и прислать на проверку.
+
+    Ошибка в одном поле не отменяет остальные (владелец 08.10.2026): до этого
+    любая ошибка возвращала страницу без записи, и текст, выбор учеников и
+    время пропадали. Теперь сохраняется всё исправное, ошибки показываются
+    списком, проверка при ошибках не уходит. Большую часть их страница ловит
+    ещё до отправки формы (`broadcasts.js`), здесь — то, что проверить
+    можно только на сервере, и страховка.
+    """
     broadcast = _get_broadcast(db, broadcast_id)
     if broadcast.status == STATUS_SCHEDULED:
         return _redirect(broadcast_id, error="Рассылка запланирована — чтобы поправить, сначала отмените отправку")
     if broadcast.status != STATUS_DRAFT:
         return _redirect(broadcast_id, error="Отправленную рассылку уже не поправить")
 
+    errors: list[str] = []
+    media_failed = False
     mode = schedule_mode if schedule_mode in SCHEDULE_MODES else None
     moment = parse_msk_local(scheduled_at) if mode else None
     if mode and moment is None:
-        return _redirect(broadcast_id, error="Укажите дату и время отправки")
+        # Режим запоминаем и без времени: проверка и отправка без времени
+        # откажут сами (`broadcasts.schedule_problem`).
+        errors.append("Укажите дату и время отправки")
 
     try:
         media = await _read_media(audio=audio, video=video, photo=photo)
     except ValueError as exc:
-        return _redirect(broadcast_id, error=str(exc))
+        media = None
+        media_failed = True
+        errors.append(f"{exc} — вложение не сохранено, выберите его заново")
 
     old_path = broadcast.media_s3_path
+    url = None
     if media is not None:
         kind, name, data, content_type = media
         s3_path = s3_service.s3_path_broadcast_media(broadcast.id, name)
         url = await asyncio.to_thread(s3_service.upload_to_s3, s3_path, data, content_type)
         if not url:
-            return _redirect(broadcast_id, error="Не удалось сохранить вложение в хранилище")
+            media_failed = True
+            errors.append("Не удалось сохранить вложение в хранилище — выберите его заново")
+    if url:
         broadcast.media_kind = kind
         broadcast.media_s3_path = s3_path
         broadcast.media_s3_url = url
         broadcast.media_filename = name
         broadcast.media_content_type = content_type
         broadcast.telegram_file_id = None
-    elif remove_media == "1":
+    elif remove_media == "1" and not media_failed:
+        # С ошибкой вложения не убираем и старое: человек менял вложение,
+        # а не просил остаться без него.
         broadcast.media_kind = None
         broadcast.media_s3_path = None
         broadcast.media_s3_url = None
@@ -329,16 +359,12 @@ async def broadcast_save(
         broadcast.media_content_type = None
         broadcast.telegram_file_id = None
 
-    cleaned = bc.clean_telegram_html(text)
-    limit = bc.text_limit(broadcast.media_kind)
-    length = bc.visible_length(cleaned)
-    if length > limit:
-        db.rollback()
-        hint = " (подпись к фото и голосовому — до 1024)" if limit == bc.CAPTION_LIMIT else ""
-        return _redirect(
-            broadcast_id, error=f"Текст длиннее {limit} символов: сейчас {length}{hint}",
-        )
-    broadcast.text = cleaned
+    # Длинный текст тоже сохраняем: отправить его не дадут проверка и
+    # отправка (`broadcasts.text_problem`), а набранное не пропадёт.
+    broadcast.text = bc.clean_telegram_html(text)
+    problem = bc.text_problem(broadcast)
+    if problem:
+        errors.append(problem)
     broadcast.schedule_mode = mode
     broadcast.scheduled_at = moment
 
@@ -348,6 +374,11 @@ async def broadcast_save(
     )
     bc.save_audience(db, broadcast, audience)
     db.flush()
+    if moment is not None:
+        # Прошедшее время — сразу при сохранении, а не только на проверке.
+        problem = bc.schedule_problem(broadcast, bc.audience_users(db, audience))
+        if problem:
+            errors.append(problem)
     if broadcast.preview_fingerprint != bc.fingerprint(broadcast, audience):
         bc.invalidate_preview(broadcast)
     broadcast.updated_at = datetime.now(timezone.utc)
@@ -356,6 +387,9 @@ async def broadcast_save(
     if old_path and old_path != broadcast.media_s3_path:
         await asyncio.to_thread(s3_service.delete_from_s3, old_path)
 
+    if errors:
+        # «Сохранено» рядом с ошибкой: набранное на месте, поправить — одно поле.
+        return _redirect(broadcast_id, ok="saved", error=". ".join(errors))
     if action != "preview":
         return _redirect(broadcast_id, ok="saved")
     target_id = int(preview_to) if preview_to.strip().isdigit() else None

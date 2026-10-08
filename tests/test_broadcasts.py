@@ -6,6 +6,7 @@ Telegram подменяется фейком `FakeTelegram`: он запомин
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
 import pytest
 
@@ -325,10 +326,16 @@ def test_caption_limit_and_single_attachment(gp_client, db, s3_store, no_transco
     bid = _create(client)
     long_text = "а" * (bc.CAPTION_LIMIT + 1)
     resp = _save(client, bid, text=long_text, files={"audio": ("r.webm", b"x", "audio/webm")})
-    assert "error=" in resp.headers["location"]
+    assert "error=" in resp.headers["location"] and "ok=saved" in resp.headers["location"]
     db.expire_all()
-    assert db.get(Broadcast, bid).media_kind is None  # отказ ничего не сохранил
-    assert "error" not in _save(client, bid, text=long_text).headers["location"]  # без вложения — 4096
+    saved = db.get(Broadcast, bid)
+    # С 08.10.2026 ошибка не стирает набранное: и текст, и голосовое на месте.
+    assert saved.media_kind == "voice" and bc.visible_length(saved.text) == bc.CAPTION_LIMIT + 1
+    # А в Telegram длинная подпись не уйдёт — ни проверкой, ни рассылкой.
+    resp = _save(client, bid, action="preview", text=long_text)
+    assert "error=" in resp.headers["location"] and "ok=preview" not in resp.headers["location"]
+    # Без вложения — до 4096, ошибки нет.
+    assert "error" not in _save(client, bid, text=long_text, remove_media="1").headers["location"]
 
     resp = _save(client, bid, files={
         "audio": ("r.webm", b"x", "audio/webm"), "video": ("n.webm", b"y", "video/webm"),
@@ -442,7 +449,9 @@ def test_screens_render_and_audience_counter(gp_client, db, student):
     assert page.status_code == 200
     assert "data-tg-editable" in page.text and "Я С ВАМИ" in page.text
     counter = client.get("/cabinet/staff/broadcasts/audience", params={"tariffs": "Я С ВАМИ"}).json()
-    assert counter == {"total": 2, "reachable": 1, "no_telegram": 1, "notifications_off": 0}
+    assert counter == {
+        "total": 2, "reachable": 1, "no_telegram": 1, "notifications_off": 0, "east_offset": 0,
+    }
     assert client.get("/cabinet/staff/broadcasts/audience").json()["total"] == 0
 
 
@@ -742,3 +751,40 @@ def test_telegram_button_schedules_instead_of_sending(gp_client, db, student, fa
     assert fake_tg.to(101) == []
     answers = [d for m, d, _ in fake_tg.calls if m == "answerCallbackQuery"]
     assert answers[-1]["text"].startswith("Запланировано: 1 ученику")
+
+
+def test_save_error_keeps_everything_else(gp_client, db, student, fake_tg):
+    """Владелец 08.10.2026: ошибка в одном поле не стирает остальное. До этого
+    «по Москве» без времени возвращало страницу без записи — текст, выбор
+    учеников и режим пропадали."""
+    client, _ = gp_client
+    picked = student(chat=101)
+    bid = _create(client)
+    resp = _save(
+        client, bid, text="<b>Новый текст</b>", tariffs=[], student_ids=str(picked.id),
+        schedule_mode="msk", scheduled_at="",
+    )
+    location = unquote(resp.headers["location"])
+    assert "Укажите дату и время отправки" in location and "ok=saved" in location
+    db.expire_all()
+    saved = db.get(Broadcast, bid)
+    assert saved.text == "<b>Новый текст</b>" and saved.schedule_mode == "msk"
+    assert saved.scheduled_at is None
+    assert bc.get_audience(db, bid).user_ids == {picked.id}
+    # Страница показывает сохранённое, а не пустую форму.
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}?ok=saved&error=x")
+    assert "Новый текст" in page.text and "Остальное сохранено" in page.text
+
+
+def test_preview_with_save_error_is_not_sent(gp_client, db, student, fake_tg):
+    """Прошедшее время ловится уже при сохранении, и проверка не уходит."""
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    resp = _save(client, bid, action="preview", schedule_mode="msk", scheduled_at="2020-01-01T10:00")
+    location = unquote(resp.headers["location"])
+    assert "уже прошло" in location and "ok=saved" in location
+    assert fake_tg.to(ADMIN_CHAT) == []
+    db.expire_all()
+    assert db.get(Broadcast, bid).schedule_mode == "msk"
+

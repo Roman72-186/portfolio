@@ -36,14 +36,19 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
         </div>
     </div>
 
+    {# С ошибкой сервер сохраняет всё исправное (08.10.2026) — тогда «Сохранено»
+       говорит, что набранное на месте, а поправить надо только названное. #}
     {% if error %}<p class="prg-badge prg-badge--error" role="alert">{{ error }}</p>{% endif %}
-    {% if ok == 'saved' %}<p class="prg-badge prg-badge--done">Сохранено</p>{% endif %}
+    {% if ok == 'saved' and error %}<p class="prg-badge prg-badge--done">Остальное сохранено</p>
+    {% elif ok == 'saved' %}<p class="prg-badge prg-badge--done">Сохранено</p>{% endif %}
     {% if ok == 'preview' %}<p class="prg-badge prg-badge--done">Проверка ушла вам в Telegram</p>{% endif %}
     {% if ok == 'unscheduled' %}<p class="prg-badge prg-badge--done">Отправка отменена: рассылка снова черновик</p>{% endif %}
 
     <form class="prg-form bc-form" method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}"
           enctype="multipart/form-data" data-bc-form
-          data-audience-url="/cabinet/staff/broadcasts/audience">
+          data-audience-url="/cabinet/staff/broadcasts/audience"
+          data-east-offset="{{ east_offset }}" data-max-photo-mb="{{ max_photo_mb }}"
+          data-has-media="{{ '1' if broadcast.media_kind else '' }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="action" value="save" data-bc-action>
 
@@ -194,6 +199,10 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
             {% endif %}
         </label>
 
+        {# Ошибки настройки — до отправки формы (`broadcasts.js`): форма не уходит,
+           всё набранное остаётся на странице. #}
+        <div class="alert alert-error" role="alert" data-bc-problems hidden></div>
+
         <div class="prg-form-actions">
             <button type="submit" class="btn-outline" data-bc-submit="save">Сохранить</button>
             <button type="submit" class="btn-blue" data-bc-submit="preview">Сохранить и прислать мне на проверку</button>
@@ -245,5 +254,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
-<script src="/static/js/broadcasts.js?v=3"></script>
+<script src="/static/js/broadcasts.js?v=4"></script>
 {% endblock %}

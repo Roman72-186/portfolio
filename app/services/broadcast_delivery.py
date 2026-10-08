@@ -237,6 +237,9 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
             return "Эта рассылка уже отправлена"
         if not (broadcast.text or broadcast.media_kind):
             return "Сообщение пустое: добавьте текст или вложение"
+        problem = bc.text_problem(broadcast)
+        if problem:
+            return problem
         audience = bc.get_audience(db, broadcast.id)
         if audience.is_everyone:
             return "Не выбрано, кому отправить"

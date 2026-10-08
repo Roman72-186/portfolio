@@ -12,6 +12,10 @@
 // 4. Отправка форм со свежим ключом CSRF (`static/js/csrf.js`, правило в
 //    AGENTS.md) и подтверждением, где оно нужно.
 // 5. «Когда»: поле даты и времени видно только при отложенной отправке.
+// 6. Проверка настройки до отправки формы (владелец 08.10.2026): ошибка
+//    показывается на странице, форма не уходит — набранное не пропадает.
+//    Правила — зеркало сервера: лимит текста (`broadcasts.text_problem`),
+//    вложение (`_read_media`), время (`broadcasts.schedule_problem`).
 (function () {
     'use strict';
 
@@ -190,13 +194,19 @@
         return counter ? counter.getAttribute('data-media-kind') : '';
     }
 
-    function updateCounter() {
-        if (!counter) return;
+    function textState() {
         var kind = currentMediaKind();
         var limit = (kind === 'photo' || kind === 'voice')
             ? Number(counter.getAttribute('data-limit-caption'))
             : Number(counter.getAttribute('data-limit-text'));
-        var length = (editable.innerText || '').replace(/\n$/, '').length;
+        return {limit: limit, length: (editable.innerText || '').replace(/\n$/, '').length};
+    }
+
+    function updateCounter() {
+        if (!counter) return;
+        var state = textState();
+        var limit = state.limit;
+        var length = state.length;
         counter.textContent = length + ' из ' + limit + ' символов'
             + (length > limit ? ' — сократите текст' : '');
         counter.classList.toggle('prg-badge--error', length > limit);
@@ -303,6 +313,7 @@
     var summary = form.querySelector('[data-bc-summary]');
     var audienceUrl = form.getAttribute('data-audience-url');
     var summaryTimer = null;
+    var eastOffset = Number(form.getAttribute('data-east-offset')) || 0;
     var summarySeq = 0;
 
     function scheduleSummary() {
@@ -332,6 +343,7 @@
                     : 'Пока никого не выбрано.';
                 return;
             }
+            if (typeof data.east_offset === 'number') eastOffset = data.east_offset;
             var text = 'Получат ' + data.reachable + ' из ' + data.total + '.';
             if (data.no_telegram) text += ' Не подключили бота: ' + data.no_telegram + '.';
             if (data.notifications_off) text += ' Выключили уведомления: ' + data.notifications_off + '.';
@@ -353,6 +365,97 @@
         if (event.target && event.target.hasAttribute('data-bc-when')) syncWhen();
     });
 
+    // ── 6. Проверка до отправки формы ──────────────────────────────────────
+    var problemsBox = form.querySelector('[data-bc-problems]');
+    var maxPhotoBytes = (Number(form.getAttribute('data-max-photo-mb')) || 0) * 1024 * 1024;
+    var IMAGE_EXT = /\.(jpe?g|jpe|jfif|a?png|webp|hei[cf]|avif|gif|bmp|tiff?|svg)$/i;
+    var LOCAL_MODE = 'local';  // SCHEDULE_LOCAL в models/broadcast.py
+    var checkedAction = null;  // после первой попытки — проверять на лету
+
+    function pickedFile(name) {
+        var input = form.querySelector('input[type=file][name="' + name + '"]');
+        return input && input.files && input.files.length ? input.files[0] : null;
+    }
+
+    function hasMessage() {
+        if (textState().length) return true;
+        if (pickedFile('photo') || pickedFile('audio') || pickedFile('video')) return true;
+        var remove = form.querySelector('input[name="remove_media"]');
+        return form.getAttribute('data-has-media') === '1' && !(remove && remove.checked);
+    }
+
+    // datetime-local по Москве → миллисекунды UTC.
+    function mskMoment(value) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+        if (!m) return null;
+        return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 3, +m[5]);
+    }
+
+    function problems(action) {
+        var list = [];
+        var state = textState();
+        if (state.length > state.limit) {
+            list.push('Текст длиннее ' + state.limit + ' символов: сейчас ' + state.length
+                + (state.limit < Number(counter.getAttribute('data-limit-text'))
+                    ? ' (подпись к фото и голосовому — до ' + state.limit + ')' : ''));
+        }
+
+        var photo = pickedFile('photo');
+        if (photo && (pickedFile('audio') || pickedFile('video'))) {
+            list.push('В сообщении может быть только одно вложение: фото, голосовое или кружок');
+        }
+        if (photo && !(/^image\//i.test(photo.type || '') || IMAGE_EXT.test(photo.name || ''))) {
+            list.push('Фото должно быть в формате jpg, png, webp или heic');
+        }
+        if (photo && maxPhotoBytes && photo.size > maxPhotoBytes) {
+            list.push('Фото больше ' + (maxPhotoBytes / 1024 / 1024) + ' МБ');
+        }
+
+        var when = form.querySelector('input[data-bc-when]:checked');
+        var mode = when ? when.value : '';
+        if (mode) {
+            var timeInput = form.querySelector('input[name="scheduled_at"]');
+            var moment = mskMoment(timeInput && timeInput.value);
+            if (moment === null) {
+                list.push('Укажите дату и время отправки');
+            } else {
+                var first = mode === LOCAL_MODE ? moment - eastOffset * 3600 * 1000 : moment;
+                if (first <= Date.now()) {
+                    list.push(first !== moment
+                        ? 'У части учеников это время по их часам уже прошло — выберите позже'
+                        : 'Это время уже прошло — выберите позже');
+                }
+            }
+        }
+
+        if (action === 'preview') {
+            if (!hasMessage()) list.push('Сообщение пустое: добавьте текст или вложение');
+            var chosenAny = form.querySelector('input[name="tariffs"]:checked')
+                || form.querySelector('input[name="levels"]:checked')
+                || (idsField.value || '').length;
+            if (!chosenAny) list.push('Не выбрано, кому отправить');
+        }
+        return list;
+    }
+
+    // Показать ошибки; true — ошибок нет, форму можно отправлять.
+    function showProblems(scroll) {
+        if (!problemsBox || !checkedAction) return true;
+        var list = problems(checkedAction);
+        problemsBox.hidden = !list.length;
+        problemsBox.innerHTML = list.length
+            ? '<p>Не отправлено: поправьте и нажмите снова. Набранное на месте.</p><ul>'
+                + list.map(function (item) { return '<li>' + escapeHTML(item) + '</li>'; }).join('')
+                + '</ul>'
+            : '';
+        if (list.length && scroll) problemsBox.scrollIntoView({block: 'center', behavior: 'smooth'});
+        return !list.length;
+    }
+
+    // Список ошибок сам укорачивается, пока человек их правит.
+    form.addEventListener('input', function () { showProblems(false); });
+    form.addEventListener('change', function () { showProblems(false); });
+
     // ── Отправка формы черновика ───────────────────────────────────────────
     var actionField = form.querySelector('[data-bc-action]');
     var lastSubmitter = null;
@@ -367,6 +470,8 @@
         event.preventDefault();
         var submitter = event.submitter || lastSubmitter;
         var action = submitter ? submitter.getAttribute('data-bc-submit') : 'save';
+        checkedAction = action || 'save';
+        if (!showProblems(true)) return;
         // `form.submit()` не передаёт нажатую кнопку — действие идёт полем.
         actionField.value = action || 'save';
         source.value = editable.innerHTML;

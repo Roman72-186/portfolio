@@ -291,6 +291,20 @@ def text_limit(media_kind: str | None) -> int:
     return TEXT_LIMIT
 
 
+def text_problem(broadcast: Broadcast) -> str | None:
+    """Почему текст не уйдёт в Telegram, или None.
+
+    С 08.10.2026 черновик сохраняется и с длинным текстом — чтобы ошибка не
+    стирала набранное, — поэтому лимит держат проверка и отправка, а не только
+    сохранение."""
+    limit = text_limit(broadcast.media_kind)
+    length = visible_length(broadcast.text or "")
+    if length <= limit:
+        return None
+    hint = " (подпись к фото и голосовому — до 1024)" if limit == CAPTION_LIMIT else ""
+    return f"Текст длиннее {limit} символов: сейчас {length}{hint}"
+
+
 # ── Выбор получателей ───────────────────────────────────────────────────────
 
 
@@ -612,6 +626,9 @@ def _ready(db: DBSession, broadcast_id: int) -> tuple[Broadcast, list[User]]:
         raise SendRefused("Не выбрано, кому отправить")
     if not (broadcast.text or broadcast.media_kind):
         raise SendRefused("Сообщение пустое")
+    problem = text_problem(broadcast)
+    if problem:
+        raise SendRefused(problem)
     if not preview_is_current(db, broadcast):
         raise SendRefused("Сначала пришлите себе на проверку эту версию сообщения")
     if broadcast.media_kind and not broadcast.telegram_file_id:
