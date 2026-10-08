@@ -39,6 +39,7 @@ from app.models.broadcast import (
     SCHEDULE_MODES,
     STATUS_DRAFT,
     STATUS_SCHEDULED,
+    STATUS_SENT,
     Broadcast,
     BroadcastRecipient,
 )
@@ -107,10 +108,12 @@ def broadcasts_list(
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    rows = []
+    # Отправленные — журнал, к ним возвращаются редко: внизу свёрнутым блоком,
+    # чтобы черновики и запланированные не терялись под ними (владелец 08.10.2026).
+    rows, sent_rows = [], []
     for broadcast in db.query(Broadcast).order_by(Broadcast.created_at.desc(), Broadcast.id.desc()).limit(200):
         audience = bc.get_audience(db, broadcast.id)
-        rows.append({
+        (sent_rows if broadcast.status == STATUS_SENT else rows).append({
             "broadcast": broadcast,
             "title": _plain_title(broadcast),
             "audience": bc.audience_text(audience),
@@ -124,6 +127,7 @@ def broadcasts_list(
         "request": request,
         "user": user,
         "rows": rows,
+        "sent_rows": sent_rows,
         "media_labels": bc.MEDIA_LABELS,
         "nav_active": "broadcasts",
     })

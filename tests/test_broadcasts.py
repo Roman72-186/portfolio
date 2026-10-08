@@ -439,6 +439,25 @@ def test_delete_only_drafts(gp_client, db, student, fake_tg):
     assert db.get(Broadcast, bid) is None
 
 
+def test_list_sent_collapsed_and_drafts_deletable(gp_client, db):
+    """Отправленные — свёрнутым блоком внизу, черновик удаляется прямо из списка
+    (владелец 08.10.2026)."""
+    client, _ = gp_client
+    draft = _create(client)
+    sent = _create(client)
+    db.get(Broadcast, sent).status = STATUS_SENT
+    db.commit()
+
+    page = client.get("/cabinet/staff/broadcasts").text
+    panel = page.index('<details class="prg-settings"')
+    assert page.index(f'href="/cabinet/staff/broadcasts/{draft}"') < panel
+    assert page.index(f'href="/cabinet/staff/broadcasts/{sent}"') > panel
+    assert "1 рассылка" in page
+    assert f'action="/cabinet/staff/broadcasts/{draft}/delete"' in page
+    assert f'action="/cabinet/staff/broadcasts/{sent}/delete"' not in page
+    assert " open" not in page[panel:page.index(">", panel)]  # свёрнут
+
+
 def test_screens_render_and_audience_counter(gp_client, db, student):
     client, _ = gp_client
     student(chat=101)

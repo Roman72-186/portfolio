@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {#
-Журнал рассылок ученикам через бота (владелец 07.10.2026). Черновики и
-отправленные — новые сверху. Логика — `services/broadcasts.py`.
+Журнал рассылок ученикам через бота (владелец 07.10.2026). Сверху черновики,
+запланированные и отправляемые, ниже свёрнутым блоком отправленные — новые сверху. Логика — `services/broadcasts.py`.
 
 Без своего <style>: prg-* (program.css) и bc-* (broadcasts.css).
 #}
@@ -29,35 +29,55 @@
     <p class="prg-badge prg-badge--done">Черновик удалён</p>
     {% endif %}
 
+    {% macro broadcast_card(row) %}
+    {% set b = row.broadcast %}
+    <article class="prg-item{{ ' is-done' if b.status == 'sent' }}">
+        <div class="prg-item-copy">
+            <h3><a href="/cabinet/staff/broadcasts/{{ b.id }}">{{ row.title }}</a></h3>
+            <div class="prg-meta">
+                {% if b.status == 'draft' %}
+                <span class="prg-badge">Черновик</span>
+                {% elif b.status == 'scheduled' %}
+                <span class="prg-badge">Запланирована: {{ row.schedule_text }}</span>
+                {% elif b.status == 'sending' %}
+                <span class="prg-badge">Отправляется</span>
+                {% else %}
+                <span class="prg-badge prg-badge--done">Отправлено {{ b.sent_at|msk_text if b.sent_at else '' }}</span>
+                {% endif %}
+                {% if b.media_kind %}<span>{{ media_labels[b.media_kind] }}</span>{% endif %}
+                <span>Кому: {{ row.audience }}</span>
+                {% if row.counts %}
+                <span>Доставлено {{ row.counts['sent'] }} из {{ row.counts.values()|sum }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if b.status == 'draft' %}
+        {# Удалить черновик можно и отсюда, не открывая его (владелец 08.10.2026). #}
+        <form class="prg-item-actions" method="post" action="/cabinet/staff/broadcasts/{{ b.id }}/delete"
+              data-bc-fresh-csrf data-bc-confirm="Удалить черновик «{{ row.title }}»?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-danger">Удалить</button>
+        </form>
+        {% endif %}
+    </article>
+    {% endmacro %}
+
     {% if rows %}
     <div class="prg-items">
-        {% for row in rows %}
-        {% set b = row.broadcast %}
-        <article class="prg-item{{ ' is-done' if b.status == 'sent' }}">
-            <div class="prg-item-copy">
-                <h3><a href="/cabinet/staff/broadcasts/{{ b.id }}">{{ row.title }}</a></h3>
-                <div class="prg-meta">
-                    {% if b.status == 'draft' %}
-                    <span class="prg-badge">Черновик</span>
-                    {% elif b.status == 'scheduled' %}
-                    <span class="prg-badge">Запланирована: {{ row.schedule_text }}</span>
-                    {% elif b.status == 'sending' %}
-                    <span class="prg-badge">Отправляется</span>
-                    {% else %}
-                    <span class="prg-badge prg-badge--done">Отправлено {{ b.sent_at|msk_text if b.sent_at else '' }}</span>
-                    {% endif %}
-                    {% if b.media_kind %}<span>{{ media_labels[b.media_kind] }}</span>{% endif %}
-                    <span>Кому: {{ row.audience }}</span>
-                    {% if row.counts %}
-                    <span>Доставлено {{ row.counts['sent'] }} из {{ row.counts.values()|sum }}</span>
-                    {% endif %}
-                </div>
-            </div>
-        </article>
-        {% endfor %}
+        {% for row in rows %}{{ broadcast_card(row) }}{% endfor %}
     </div>
-    {% else %}
+    {% elif not sent_rows %}
     <p class="prg-empty">Рассылок пока нет.</p>
+    {% endif %}
+
+    {% if sent_rows %}
+    {# Отправленные свёрнуты: это журнал, открывают его редко (владелец 08.10.2026). #}
+    {% from "partials/program_settings_panel.html" import settings_panel %}
+    {% call settings_panel('Отправленные', sent_rows|length ~ ' ' ~ sent_rows|length|plural('рассылка', 'рассылки', 'рассылок')) %}
+    <div class="prg-items">
+        {% for row in sent_rows %}{{ broadcast_card(row) }}{% endfor %}
+    </div>
+    {% endcall %}
     {% endif %}
 </div>
 <script src="/static/js/broadcasts.js?v=5"></script>
