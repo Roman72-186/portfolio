@@ -30,7 +30,106 @@
     border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 
-.bc-media-current { display: grid; gap: var(--s-2); justify-items: start; }
+/* Слот вложения (владелец 08.10.2026): миниатюра слева, подпись справа,
+   «Заменить» и «Удалить» под подписью; на телефоне кнопки — во всю ширину
+   карточки поровну. У голосового миниатюры нет — плеер во всю ширину. */
+.bc-attach { display: grid; gap: var(--s-3); }
+.bc-attach-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "thumb info" "thumb actions";
+    column-gap: var(--s-3);
+    row-gap: var(--s-2);
+    align-items: start;
+    padding: var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+}
+.bc-attach-card > :first-child { grid-area: thumb; }
+.bc-attach-card:has(.bc-thumb-audio) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "thumb" "info" "actions";
+}
+.bc-attach-info { grid-area: info; display: grid; gap: 2px; min-width: 0; }
+.bc-attach-info .prg-hint { margin: 0; }
+.bc-attach-title { margin: 0; color: var(--text); font: 600 15px/1.3 var(--font-body); }
+.bc-attach-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.bc-attach-actions > * { min-height: 44px; padding: 8px 18px; }
+
+.bc-thumb {
+    position: relative;
+    display: block;
+    width: 112px;
+    height: 112px;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    cursor: pointer;
+}
+.bc-thumb img,
+.bc-thumb video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bc-thumb--note { border-radius: 50%; }
+.bc-thumb-play {
+    position: absolute;
+    inset: 0;
+    width: 40px;
+    height: 40px;
+    margin: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 14px;
+    box-shadow: var(--sh-sm);
+    pointer-events: none;
+}
+.bc-thumb.is-playing .bc-thumb-play { display: none; }
+.bc-thumb:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.bc-thumb-audio { display: block; width: 100%; max-width: 360px; }
+
+/* «Удалится при сохранении · Вернуть» и «Выберите, чем заменить · Оставить». */
+.bc-attach-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2) var(--s-3);
+    margin: 0;
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    color: var(--text);
+}
+.bc-attach-note .btn-outline { min-height: 44px; padding: 8px 18px; }
+
+.bc-attach-pickers { display: grid; gap: var(--s-2); }
+.bc-attach-pickers .mrf { margin-top: 0; }
+.bc-attach-pickers .file-pick { margin-bottom: 0; }
+
+@media (max-width: 480px) {
+    .bc-attach-card { grid-template-areas: "thumb info" "actions actions"; }
+    .bc-attach-card:has(.bc-thumb-audio) { grid-template-areas: "thumb" "info" "actions"; }
+    .bc-thumb { width: 96px; height: 96px; }
+    .bc-attach-actions > * { flex: 1 1 0; justify-content: center; }
+    /* «Прикрепить фото» — того же размера, что пары кнопок записи над ним
+       (`.mrf-pair`, media-recorder.css): половина ряда, 13px. */
+    .bc-attach-pickers .file-pick-btn {
+        width: calc(50% - var(--s-1));
+        justify-content: center;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}
+
+/* Подписи у флажков и переключателей («Я САМ», «Уровень 1», «Сразу…»).
+   Общий `.prg-field` — подпись над полем ввода: 12px, жирная, серая. Здесь
+   подпись и есть пункт выбора, и на телефоне она читалась хуже подсказки
+   под ней (владелец 08.10.2026: «чтобы все пункты были читаемыми»). */
+.bc-form .prg-field--row { color: var(--text); font: 500 15px/1.35 var(--font-body); }
 
 .bc-summary {
     margin: 0;
@@ -58,13 +157,16 @@
     border-top: 1px dashed var(--line);
 }
 .bc-preview-photo { max-width: 100%; border-radius: var(--r-md); }
-.bc-preview-note {
+/* Кружок сообщения — та же кнопка-миниатюра, что в слоте вложения, только
+   крупнее; два класса — чтобы узкий экран слота (96px) её не ужимал. */
+.bc-thumb.bc-preview-note {
     width: 240px;
     max-width: 100%;
+    height: auto;
     aspect-ratio: 1;
-    object-fit: cover;
     border-radius: 50%;
 }
+.bc-preview-note .bc-thumb-play { width: 56px; height: 56px; font-size: 18px; }
 
 /* Колокольчик ученика: спойлер скрыт, как в Telegram, и открывается нажатием
    (tabindex у спойлера — `telegram_html_for_page(student=True)`). */
@@ -87,8 +189,35 @@
 }
 
 .bc-counts { flex-wrap: wrap; }
+
+/* Журнал по ученикам на телефоне — карточками: в пять колонок таблица
+   уезжала вбок, статус резался («Уведомления выключе…»), причину было не
+   видно вовсе (08.10.2026). Имя — заголовком, остальное — «подпись: значение». */
+@media (max-width: 600px) {
+    .bc-recipients thead { display: none; }
+    .bc-recipients,
+    .bc-recipients tbody,
+    .bc-recipients tr,
+    .bc-recipients td { display: block; }
+    .bc-recipients tr { padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
+    .bc-recipients td {
+        padding: 2px 0;
+        border: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        font-size: 14px;
+    }
+    .bc-recipients td:first-child { color: var(--text); font-weight: 600; font-size: 15px; }
+    .bc-recipients td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); }
+    .bc-recipients td:empty { display: none; }
+}
 .bc-send form { display: inline-block; }
 
 /* Кнопок оформления восемь — на телефоне в ряд не встают (общий .rt-toolbar
    рассчитан на четыре и не переносится). */
 .bc-toolbar { flex-wrap: wrap; }
+/* На телефоне — два ровных ряда по четыре, а не шесть и два. */
+@media (max-width: 480px) {
+    .bc-toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .bc-toolbar .rt-btn { width: 100%; }
+}

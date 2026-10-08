@@ -16,6 +16,12 @@
 //    показывается на странице, форма не уходит — набранное не пропадает.
 //    Правила — зеркало сервера: лимит текста (`broadcasts.text_problem`),
 //    вложение (`_read_media`), время (`broadcasts.schedule_problem`).
+// 7. Слот вложения (владелец 08.10.2026): сохранённое или только что
+//    выбранное — миниатюрой, с «Заменить» и «Удалить»; кнопки выбора видны,
+//    только пока слот пуст.
+// 8. Кружок играет по нажатию (`data-bc-play`) — в слоте вложения, в «Как
+//    увидят ученики», в журнале и в колокольчике ученика
+//    (`cabinet_notifications.html` подключает этот файл ради него).
 (function () {
     'use strict';
 
@@ -50,6 +56,21 @@
             if (question && !window.confirm(question)) return;
             submitWithFreshCsrf(form, form.querySelector('button[type="submit"]'), 'Минуту…');
         });
+    });
+
+    // ── 8. Кружок: нажатие — играть или пауза, «▶» виден, пока стоит ───────
+    document.addEventListener('click', function (event) {
+        var play = event.target.closest && event.target.closest('[data-bc-play]');
+        if (!play) return;
+        var video = play.querySelector('video');
+        if (!video) return;
+        if (video.paused) video.play(); else video.pause();
+    });
+    ['play', 'pause', 'ended'].forEach(function (name) {
+        document.addEventListener(name, function (event) {
+            var thumb = event.target.closest && event.target.closest('[data-bc-play]');
+            if (thumb) thumb.classList.toggle('is-playing', !event.target.paused && !event.target.ended);
+        }, true);
     });
 
     // Пока идёт отправка, отчёт обновляется сам.
@@ -183,14 +204,19 @@
         document.execCommand('insertText', false, text);
     });
 
+    // Сохранённое вложение помечено на удаление (раздел 7).
+    function mediaRemoved() {
+        var field = form.querySelector('[data-bc-remove-media]');
+        return !!field && field.value === '1';
+    }
+
     function currentMediaKind() {
         if (photoInput && photoInput.files && photoInput.files.length) return 'photo';
         var audio = form.querySelector('input[type=file][name="audio"]');
         if (audio && audio.files && audio.files.length) return 'voice';
         var video = form.querySelector('input[type=file][name="video"]');
         if (video && video.files && video.files.length) return 'video_note';
-        var remove = form.querySelector('input[name="remove_media"]');
-        if (remove && remove.checked) return '';
+        if (mediaRemoved()) return '';
         return counter ? counter.getAttribute('data-media-kind') : '';
     }
 
@@ -213,14 +239,8 @@
     }
 
     editable.addEventListener('input', updateCounter);
-    var photoName = form.querySelector('[data-bc-photo-name]');
     form.addEventListener('change', function (event) {
-        if (event.target && (event.target.type === 'file' || event.target.name === 'remove_media')) {
-            updateCounter();
-        }
-        if (event.target === photoInput && photoName) {
-            photoName.textContent = photoInput.files && photoInput.files.length ? photoInput.files[0].name : '';
-        }
+        if (event.target && event.target.type === 'file') updateCounter();
     });
     updateCounter();
 
@@ -380,8 +400,7 @@
     function hasMessage() {
         if (textState().length) return true;
         if (pickedFile('photo') || pickedFile('audio') || pickedFile('video')) return true;
-        var remove = form.querySelector('input[name="remove_media"]');
-        return form.getAttribute('data-has-media') === '1' && !(remove && remove.checked);
+        return form.getAttribute('data-has-media') === '1' && !mediaRemoved();
     }
 
     // datetime-local по Москве → миллисекунды UTC.
@@ -455,6 +474,149 @@
     // Список ошибок сам укорачивается, пока человек их правит.
     form.addEventListener('input', function () { showProblems(false); });
     form.addEventListener('change', function () { showProblems(false); });
+
+    // ── 7. Слот вложения ───────────────────────────────────────────────────
+    // В слоте одно: новое (выбранный файл) главнее сохранённого. Удалить
+    // сохранённое — пометка `remove_media=1`, сервер уберёт его при
+    // «Сохранить»; до того «Вернуть» снимает пометку. Новое удаляется сразу:
+    // голосовое и кружок — через сам компонент записи (`_mrf.clear`), фото —
+    // очисткой поля. «Заменить» открывает кнопки выбора, у сохранённого — с
+    // «Оставить прежнее».
+    var attach = form.querySelector('[data-bc-attach]');
+    if (attach) (function () {
+        var savedCard = attach.querySelector('[data-bc-saved]');
+        var pendingCard = attach.querySelector('[data-bc-pending]');
+        var pendingThumb = attach.querySelector('[data-bc-pending-thumb]');
+        var pendingTitle = attach.querySelector('[data-bc-pending-title]');
+        var removedNote = attach.querySelector('[data-bc-removed]');
+        var replacingNote = attach.querySelector('[data-bc-replacing]');
+        var pickers = attach.querySelector('[data-bc-pickers]');
+        var photoPick = attach.querySelector('[data-bc-photo-pick]');
+        var recorderRoot = attach.querySelector('[data-media-recorder]');
+        var removeField = attach.querySelector('[data-bc-remove-media]');
+        var LABELS = {photo: 'Фото', voice: 'Голосовое', video_note: 'Кружок'};
+        var replacing = false;
+        var shownFile = null;
+        var shownUrl = null;
+
+        function pending() {
+            var pairs = [['photo', 'photo'], ['audio', 'voice'], ['video', 'video_note']];
+            for (var i = 0; i < pairs.length; i++) {
+                var file = pickedFile(pairs[i][0]);
+                if (file) return {kind: pairs[i][1], file: file};
+            }
+            return null;
+        }
+
+        // Компонент записи не в покое — идёт подготовка или запись.
+        function recorderBusy() {
+            var idle = recorderRoot && recorderRoot.querySelector('[data-mrf-idle]');
+            return !!idle && idle.hidden;
+        }
+
+        // Та же разметка, что у сохранённого в шаблоне.
+        function thumbNode(kind, url) {
+            var node;
+            if (kind === 'photo') {
+                node = document.createElement('a');
+                node.className = 'bc-thumb';
+                node.href = url;
+                node.target = '_blank';
+                node.rel = 'noopener';
+                node.setAttribute('aria-label', 'Открыть фото целиком');
+                var img = document.createElement('img');
+                img.src = url;
+                img.alt = '';
+                node.appendChild(img);
+            } else if (kind === 'video_note') {
+                node = document.createElement('button');
+                node.type = 'button';
+                node.className = 'bc-thumb bc-thumb--note';
+                node.setAttribute('data-bc-play', '');
+                node.setAttribute('aria-label', 'Посмотреть кружок');
+                var video = document.createElement('video');
+                video.setAttribute('playsinline', '');
+                video.preload = 'metadata';
+                video.src = url + '#t=0.1';
+                var icon = document.createElement('span');
+                icon.className = 'bc-thumb-play';
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = '▶';
+                node.appendChild(video);
+                node.appendChild(icon);
+            } else {
+                node = document.createElement('audio');
+                node.className = 'bc-thumb-audio';
+                node.controls = true;
+                node.preload = 'metadata';
+                node.src = url;
+            }
+            return node;
+        }
+
+        function showPending(item) {
+            if (item && shownFile === item.file) return;
+            if (shownUrl) URL.revokeObjectURL(shownUrl);
+            shownUrl = null;
+            shownFile = item ? item.file : null;
+            pendingThumb.innerHTML = '';
+            if (!item) return;
+            shownUrl = URL.createObjectURL(item.file);
+            pendingThumb.appendChild(thumbNode(item.kind, shownUrl));
+            pendingTitle.textContent = LABELS[item.kind];
+        }
+
+        function sync() {
+            var item = pending();
+            var removed = removeField.value === '1';
+            var savedShown = !!savedCard && !removed && !replacing && !item;
+            showPending(item);
+            if (savedCard) savedCard.hidden = !savedShown;
+            pendingCard.hidden = !item;
+            removedNote.hidden = !(savedCard && removed && !item);
+            pickers.hidden = savedShown || !!item;
+            photoPick.hidden = recorderBusy();
+            if (replacingNote) replacingNote.hidden = !(replacing && !removed && !item && !recorderBusy());
+        }
+
+        function clearPending() {
+            var item = pending();
+            if (!item) return;
+            if (item.kind === 'photo') {
+                photoInput.value = '';
+                photoInput.dispatchEvent(new Event('change', {bubbles: true}));
+            } else if (recorderRoot && recorderRoot._mrf) {
+                recorderRoot._mrf.clear();
+            }
+        }
+
+        attach.addEventListener('click', function (event) {
+            if (event.target.closest('[data-bc-attach-remove]')) {
+                if (event.target.closest('[data-bc-saved]')) removeField.value = '1';
+                else clearPending();
+            } else if (event.target.closest('[data-bc-attach-replace]')) {
+                clearPending();
+                replacing = true;
+            } else if (event.target.closest('[data-bc-attach-keep]')) {
+                removeField.value = '';
+                replacing = false;
+            } else {
+                return;
+            }
+            sync();
+            updateCounter();
+            showProblems(false);
+        });
+
+        form.addEventListener('change', sync);
+        // Начало и конец записи событий не шлют — смотрим на смену стадий.
+        if (recorderRoot && window.MutationObserver) {
+            new MutationObserver(sync).observe(recorderRoot, {
+                attributes: true, subtree: true, attributeFilter: ['hidden']
+            });
+        }
+        sync();
+    })();
 
     // ── Отправка формы черновика ───────────────────────────────────────────
     var actionField = form.querySelector('[data-bc-action]');

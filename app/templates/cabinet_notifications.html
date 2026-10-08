@@ -2,7 +2,7 @@
 {% block title %}Уведомления{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/notifications_ios.css?v=6">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=5">
 {% endblock %}
 {% block content %}
 <div class="notif-page ios-notifications">
@@ -69,6 +69,8 @@
     {% endif %}
 </div>
 
+{# Кружок рассылки в колокольчике играет по нажатию (`data-bc-play`). #}
+<script src="/static/js/broadcasts.js?v=5"></script>
 <script>
 (function(){
     var input = document.getElementById('pushToggleInput');

@@ -788,3 +788,39 @@ def test_preview_with_save_error_is_not_sent(gp_client, db, student, fake_tg):
     db.expire_all()
     assert db.get(Broadcast, bid).schedule_mode == "msk"
 
+
+
+# ── Вложение: миниатюра, «Заменить» и «Удалить» (владелец 08.10.2026) ───────
+
+
+def test_saved_attachment_is_thumbnail_with_replace_and_remove(
+    gp_client, db, student, fake_tg, s3_store, no_transcode,
+):
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    _save(client, bid, files={"video": ("note.webm", b"NOTE", "video/webm")}, video_note="1")
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}").text
+    # Сохранённое — карточкой с миниатюрой и двумя действиями, а не галочкой.
+    assert "data-bc-saved" in page and "Убрать вложение" not in page
+    assert "data-bc-attach-replace" in page and "data-bc-attach-remove" in page
+    assert '<input type="hidden" name="remove_media" value="" data-bc-remove-media>' in page
+    # Кружок — без родных кнопок плеера: круг их обрезал.
+    assert "data-bc-play" in page and 'class="bc-preview-note" controls' not in page
+
+    # «Удалить» на странице — это remove_media=1 при «Сохранить».
+    _save(client, bid, remove_media="1")
+    db.expire_all()
+    assert db.get(Broadcast, bid).media_kind is None
+    assert "data-bc-saved" not in client.get(f"/cabinet/staff/broadcasts/{bid}").text
+
+
+def test_report_rows_carry_labels_for_phone(gp_client, db, student, fake_tg):
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    _save(client, bid, action="preview")
+    client.post(f"/cabinet/staff/broadcasts/{bid}/send")
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}").text
+    assert 'class="prg-table bc-recipients"' in page
+    assert 'data-label="Статус"' in page and 'data-label="Причина"' in page

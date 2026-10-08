@@ -21,7 +21,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 <link rel="stylesheet" href="/static/css/program.css?v=59">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=5">
 {% endblock %}
 {% block content %}
 {% set ok = request.query_params.get('ok') %}
@@ -79,30 +79,71 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
             <p class="prg-hint">Одно на сообщение: фото, голосовое или кружок. К фото и
                 голосовому текст встанет подписью (до {{ CAPTION_LIMIT }} символов). У кружка
                 в Telegram подписи не бывает: текст придёт следующим сообщением.</p>
-            {% if broadcast.media_kind %}
-            <div class="bc-media-current">
-                <p class="prg-meta"><span>Сейчас: {{ media_labels[broadcast.media_kind] }}</span></p>
-                {% if broadcast.media_kind == 'photo' %}
-                <img class="bc-preview-photo" src="{{ broadcast.media_s3_url }}" alt="Фото рассылки">
-                {% elif broadcast.media_kind == 'voice' %}
-                <audio controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
-                {% else %}
-                <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ broadcast.media_s3_url }}"></video>
+            {# Слот вложения (владелец 08.10.2026: «если уже загрузили — чтобы можно
+               было удалять либо менять, фото и видео показывать миниатюрой»). В слоте
+               одно: сохранённое или только что выбранное — миниатюрой, с кнопками
+               «Заменить» и «Удалить». Пока слот занят, кнопок выбора не видно; пустой —
+               видны. Поведение — `broadcasts.js`, раздел 7. Сохранённое рисует
+               сервер: страница честна и до запуска скрипта. #}
+            <div class="bc-attach" data-bc-attach>
+                {% if broadcast.media_kind %}
+                <div class="bc-attach-card" data-bc-saved>
+                    {# Та же разметка миниатюры, что строит скрипт для нового (`thumbNode`). #}
+                    {% if broadcast.media_kind == 'photo' %}
+                    <a class="bc-thumb" href="{{ broadcast.media_s3_url }}" target="_blank" rel="noopener"
+                       aria-label="Открыть фото целиком"><img src="{{ broadcast.media_s3_url }}" alt=""></a>
+                    {% elif broadcast.media_kind == 'video_note' %}
+                    {# `#t=0.1` — iOS Safari без него не рисует первый кадр, миниатюра чёрная. #}
+                    <button type="button" class="bc-thumb bc-thumb--note" data-bc-play aria-label="Посмотреть кружок">
+                        <video src="{{ broadcast.media_s3_url }}#t=0.1" playsinline preload="metadata"></video>
+                        <span class="bc-thumb-play" aria-hidden="true">▶</span>
+                    </button>
+                    {% else %}
+                    <audio class="bc-thumb-audio" controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
+                    {% endif %}
+                    <div class="bc-attach-info">
+                        <p class="bc-attach-title">{{ media_labels[broadcast.media_kind] }}</p>
+                        <p class="prg-hint">Сохранено в рассылке</p>
+                    </div>
+                    <div class="bc-attach-actions">
+                        <button type="button" class="btn-outline" data-bc-attach-replace>Заменить</button>
+                        <button type="button" class="btn-danger" data-bc-attach-remove>Удалить</button>
+                    </div>
+                </div>
                 {% endif %}
-                <label class="prg-field prg-field--row">
-                    <input type="checkbox" name="remove_media" value="1">
-                    <span>Убрать вложение</span>
-                </label>
-            </div>
-            {% endif %}
-            <div data-media-recorder data-mrf-modes="voice note"
-                 data-mrf-form-status="Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит текущее{% endif %}"></div>
-            <input type="file" name="audio" accept="audio/*" hidden>
-            <input type="file" name="video" accept="video/*" hidden>
-            <div class="file-pick">
-                <input id="bcPhoto" class="file-pick-input" type="file" name="photo" accept="image/*" data-bc-photo>
-                <label class="btn-outline file-pick-btn" for="bcPhoto">Прикрепить фото</label>
-                <p class="file-pick-names" data-bc-photo-name></p>
+                {# Новое, ещё не сохранённое: миниатюру рисует скрипт из выбранного файла. #}
+                <div class="bc-attach-card" data-bc-pending hidden>
+                    <div data-bc-pending-thumb></div>
+                    <div class="bc-attach-info">
+                        <p class="bc-attach-title" data-bc-pending-title></p>
+                        <p class="prg-hint">Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит прежнее{% endif %}</p>
+                    </div>
+                    <div class="bc-attach-actions">
+                        <button type="button" class="btn-outline" data-bc-attach-replace>Заменить</button>
+                        <button type="button" class="btn-danger" data-bc-attach-remove>Удалить</button>
+                    </div>
+                </div>
+                <p class="bc-attach-note" data-bc-removed hidden>
+                    <span>Вложение удалится, когда нажмёте «Сохранить».</span>
+                    <button type="button" class="btn-outline" data-bc-attach-keep>Вернуть</button>
+                </p>
+                <div class="bc-attach-pickers" data-bc-pickers>
+                    {% if broadcast.media_kind %}
+                    <p class="bc-attach-note" data-bc-replacing hidden>
+                        <span>Выберите, чем заменить.</span>
+                        <button type="button" class="btn-outline" data-bc-attach-keep>Оставить прежнее</button>
+                    </p>
+                    {% endif %}
+                    <div data-media-recorder data-mrf-modes="voice note"
+                         data-mrf-form-status="Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит прежнее{% endif %}"></div>
+                    <div class="file-pick" data-bc-photo-pick>
+                        <input id="bcPhoto" class="file-pick-input" type="file" name="photo" accept="image/*" data-bc-photo>
+                        <label class="btn-outline file-pick-btn" for="bcPhoto">Прикрепить фото</label>
+                    </div>
+                </div>
+                <input type="hidden" name="remove_media" value="" data-bc-remove-media>
+                <input type="file" name="audio" accept="audio/*" hidden>
+                <input type="file" name="video" accept="video/*" hidden>
             </div>
         </section>
 
@@ -254,5 +295,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
-<script src="/static/js/broadcasts.js?v=4"></script>
+<script src="/static/js/broadcasts.js?v=5"></script>
 {% endblock %}

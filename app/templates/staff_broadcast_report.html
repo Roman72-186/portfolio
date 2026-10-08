@@ -13,7 +13,7 @@
 {% block title %}Рассылка{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=5">
 {% endblock %}
 {% block content %}
 {% set error = request.query_params.get('error') %}
@@ -77,7 +77,7 @@
     <section class="bc-section">
         <h2>Ученики</h2>
         <div class="table-scroll">
-            <table class="prg-table">
+            <table class="prg-table bc-recipients">
                 <thead>
                     <tr><th>Ученик</th><th>Ник</th><th>Тариф</th><th>Статус</th><th>Причина</th></tr>
                 </thead>
@@ -85,10 +85,10 @@
                     {% for row in recipients %}
                     <tr>
                         <td>{{ row.name }}</td>
-                        <td>{{ '@' ~ row.username if row.username else 'нет ника' }}</td>
-                        <td>{{ row.tariff or '—' }}</td>
-                        <td>{{ row.status_label }}{% if row.due_at %} · {{ row.due_at|msk_text }} по Москве{% endif %}</td>
-                        <td>{{ row.error }}</td>
+                        <td data-label="Ник">{{ '@' ~ row.username if row.username else 'нет ника' }}</td>
+                        <td data-label="Тариф">{{ row.tariff or '—' }}</td>
+                        <td data-label="Статус">{{ row.status_label }}{% if row.due_at %} · {{ row.due_at|msk_text }} по Москве{% endif %}</td>
+                        <td data-label="Причина">{{ row.error }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -97,5 +97,5 @@
     </section>
     {% endif %}
 </div>
-<script src="/static/js/broadcasts.js?v=4"></script>
+<script src="/static/js/broadcasts.js?v=5"></script>
 {% endblock %}

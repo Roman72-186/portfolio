@@ -8,7 +8,11 @@ Telegram. Один вид на трёх экранах — черновик («�
 разметка). `bc_message_student` — у ученика спойлер скрыт до нажатия, как в
 Telegram; у преподавателя виден с пунктирной рамкой.
 
-Стили — bc-* в broadcasts.css, экран подключает его сам.
+Кружок — круг без родных кнопок плеера: круг обрезал их, «плей» уходил за
+край (телефон, 08.10.2026). Как в Telegram: «▶» по центру, нажатие — играть
+или пауза (`broadcasts.js`, `data-bc-play`).
+
+Стили — bc-* в broadcasts.css, скрипт — broadcasts.js; экран подключает их сам.
 #}
 <div class="bc-preview{{ ' bc-preview--student' if bc_message_student }}">
     {% if bc_message.media_kind == 'photo' %}
@@ -16,7 +20,10 @@ Telegram; у преподавателя виден с пунктирной ра�
     {% elif bc_message.media_kind == 'voice' %}
     <audio controls preload="metadata" src="{{ bc_message.media_s3_url }}"></audio>
     {% elif bc_message.media_kind == 'video_note' %}
-    <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ bc_message.media_s3_url }}"></video>
+    <button type="button" class="bc-thumb bc-thumb--note bc-preview-note" data-bc-play aria-label="Посмотреть кружок">
+        <video src="{{ bc_message.media_s3_url }}#t=0.1" playsinline preload="metadata"></video>
+        <span class="bc-thumb-play" aria-hidden="true">▶</span>
+    </button>
     {% endif %}
     {% if bc_message.text %}
     <div class="bc-preview-text{{ ' bc-preview-text--separate' if bc_message.media_kind == 'video_note' }}">{{ bc_message_html|safe }}</div>
