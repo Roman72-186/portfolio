@@ -542,6 +542,17 @@
                 }
             }
             var hasEverPlayed = false;
+            // Плеер не прислал `ready` (прод 08.10.2026, ученица id 219: телефон
+            // с VPN). Видео в рамке играло, а страница не получила ни одного
+            // события Player.js — 9 сеансов подряд сервер видел её на 25-й
+            // секунде, кружок отказан 9 раз. Хуже того, раз «ролик не
+            // запускали», страница раз в 5 минут перевыпускала ссылку и
+            // перезагружала плеер посреди просмотра — ролик начинался заново.
+            // Молчащий плеер не перезагружаем и честно говорим ученику, почему
+            // просмотр не засчитывается.
+            var playerSilent = false;
+            var playerFaultReported = false;
+            var PLAYER_SILENCE_MS = 20000;
 
             function showStatus(message, isError) {
                 progressStatus.hidden = false;
@@ -595,6 +606,10 @@
             // 5 минут на каждый простаивающий плеер), жалоба «зависает каждые
             // две минуты». Ссылка обновится, как только воспроизведение встанет.
             function refreshPlayerUrlIfStale() {
+                // Молчащий плеер мог играть: страница этого просто не знает.
+                // Загруженной рамке свежая ссылка не нужна — куски видео
+                // подписаны своим токеном на часы, а не на 5 минут.
+                if (playerSilent) return;
                 if (playingPlayers.size > 0 || !isPlayerUrlStale()) return;
                 refreshPlayerUrl();
             }
@@ -692,6 +707,10 @@
                 return minutes + ':' + String(remainder).padStart(2, '0');
             }
             function setStatus(message, isError) {
+                // Предупреждение о молчащем плеере не затирается ответами на
+                // отметки: «Место просмотра сохранено» после него было бы
+                // неправдой. Снимает его только дошедший `ready`.
+                if (playerSilent) return;
                 if (progressStatus.textContent.trim() === message) return;
                 showStatus(message, isError);
             }
@@ -722,7 +741,10 @@
                         duration_seconds: progress.duration_seconds,
                         playback_active: Boolean(progress.playback_active),
                         ended: Boolean(progress.ended),
-                        session_id: sessionId
+                        session_id: sessionId,
+                        // Только в разовой отметке о молчащем плеере
+                        // (`reportPlayerFault`), в остальных поле опускается.
+                        player_fault: progress.player_fault || undefined
                     })
                 }).then(function (response) {
                     if (response.status === 401) { savingDisabled = true; throw new Error('session_expired'); }
@@ -832,14 +854,82 @@
                 return advanceStartedAt !== null && now - advanceStartedAt >= PLAYBACK_PROOF_MS;
             }
 
+            // Разовая отметка о сбое плеера — серверу для статистики
+            // (`video_watch_events.KIND_PLAYER`). Позиция та же, что в прошлой
+            // отметке, поэтому на зачёт она не влияет.
+            function reportPlayerFault(reason) {
+                if (playerFaultReported) return;
+                playerFaultReported = true;
+                sendProgress({
+                    position_seconds: Math.max(0, currentSeconds || 0),
+                    duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
+                    completed: false,
+                    playback_active: Boolean(isPlaying),
+                    ended: false,
+                    player_fault: reason
+                }, false);
+            }
+
+            // Player.js принимает `ready`, только если адрес, который плеер
+            // сообщает о себе (`location` внутри рамки), побуквенно равен
+            // `iframe.src`, и отбрасывает всё, что пришло с другого домена.
+            // Не совпало — подписки на события лежат в очереди вечно, без
+            // единой ошибки. Поэтому слушаем сами и узнаём свою рамку по
+            // `e.source`: это окно нашего iframe, его не подделать, в отличие
+            // от адреса. Позицию из него сервер всё равно проверяет сам
+            // (`evaluate_watch`, не быстрее 2,25×).
+            window.addEventListener('message', function (event) {
+                var player = activePlayer;
+                if (!player || event.source !== iframe.contentWindow) return;
+                var message = event.data;
+                if (typeof message === 'string') {
+                    try { message = JSON.parse(message); } catch (error) { return; }
+                }
+                if (!message || message.context !== 'player.js') return;
+                if (message.event !== 'ready' || player.isReady || !message.value) return;
+                var fault = event.origin !== player.origin
+                    ? 'origin'
+                    : (message.value.src !== iframe.src ? 'src' : null);
+                // Совпало — `ready` библиотека примет сама.
+                if (!fault) return;
+                // Повторяем `Player.receive` без двух его проверок: `ready()`
+                // отправляет накопленные подписки уже на верный домен, а
+                // обработчики `ready` библиотека зовёт отдельно, следом.
+                // Наш слушатель стоит раньше библиотечного, и тот потом
+                // обработчики не повторит: подписка на `ready` одноразовая.
+                player.origin = event.origin;
+                player.loaded = true;
+                player.ready(message);
+                player.keeper.execute('ready', message.listener, message.value, player);
+                reportPlayerFault(fault);
+            });
+
+            function watchSilence(generation, player) {
+                function check() {
+                    if (generation !== playerGeneration || player.isReady) return;
+                    playerSilent = true;
+                    showStatus('Просмотр сейчас не засчитывается: плеер не сообщает сайту, на какой ты минуте. Выключи VPN или открой кабинет в другом браузере и обнови страницу.', true);
+                    reportPlayerFault('no_message');
+                }
+                function start() { window.setTimeout(check, PLAYER_SILENCE_MS); }
+                // При перевыпуске ссылки плеер пересоздаётся уже после `load`.
+                if (frameWrap.classList.contains('is-ready')) start();
+                else iframe.addEventListener('load', start, { once: true });
+            }
+
             function attachPlayer() {
                 var generation = ++playerGeneration;
                 var player = new window.playerjs.Player(iframe);
                 activePlayer = player;
                 resetAdvance();
+                watchSilence(generation, player);
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
+                    // `ready` всё-таки дошёл — позже срока или после лечения
+                    // по `e.source`: просмотр засчитывается, ссылку снова можно
+                    // обновлять. Статус ниже перепишет `getDuration`.
+                    playerSilent = false;
                     if (coverPlay && cover && cover.getAttribute('src')
                         && !frameWrap.classList.contains('is-started')) {
                         coverPlay.hidden = false;

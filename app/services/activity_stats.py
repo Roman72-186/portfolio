@@ -51,7 +51,10 @@ from app.services.video_watch_events import (
     CUT_SEEK,
     HARMLESS_CUTS,
     KIND_CUT,
+    KIND_PLAYER,
     KIND_REFUSAL,
+    PLAYER_FAULT_LABELS,
+    PLAYER_NO_MESSAGE,
     refusal_text,
 )
 
@@ -956,6 +959,8 @@ def _empty_video_details() -> dict:
         "losses": [],
         "harmless_seconds": 0,
         "refusals": 0,
+        # Сеансы, где плеер не передавал события (`KIND_PLAYER`, 08.10.2026).
+        "player_faults": 0,
         "last_refusal": None,
         "history": [],
     }
@@ -985,6 +990,11 @@ def _own_watch(row) -> dict:
 def _video_event_text(event: VideoWatchEvent) -> str:
     if event.kind == KIND_REFUSAL:
         return "Кружок не поставлен: " + refusal_text(event)
+    if event.kind == KIND_PLAYER:
+        return (
+            f"{PLAYER_FAULT_LABELS.get(event.reason, event.reason)}"
+            f" (место {_mmss(event.position_to)})"
+        )
     text = (
         f"{CUT_LABELS.get(event.reason, event.reason)}: {_mmss(event.position_from)}"
         f" → {_mmss(event.position_to)}, не засчитано {_mmss(event.skipped_seconds)}"
@@ -1023,6 +1033,9 @@ def _video_event_details(db: DBSession, student_id: int) -> dict[str, dict]:
         seconds = float(seconds or 0)
         if kind == KIND_REFUSAL:
             d["refusals"] += count
+        elif kind == KIND_PLAYER:
+            # Сбой плеера, а не срез: секунд в нём нет, в потери не идёт.
+            d["player_faults"] += count
         elif reason in HARMLESS_CUTS:
             d["harmless_seconds"] += seconds
         else:
@@ -1104,7 +1117,7 @@ def get_video_loss_stats(db: DBSession, days: int = VIDEO_LOSS_DAYS) -> dict:
     def _blank() -> dict:
         return {
             "lost": 0.0, CUT_PAUSED_PLAYING: 0.0, CUT_SEEK: 0.0, CUT_NETWORK: 0.0,
-            "harmless": 0.0, "refusals": 0,
+            "harmless": 0.0, "refusals": 0, "player_silent": 0,
         }
 
     totals = _blank()
@@ -1115,6 +1128,12 @@ def get_video_loss_stats(db: DBSession, days: int = VIDEO_LOSS_DAYS) -> dict:
             if r.kind == KIND_REFUSAL:
                 bucket["refusals"] += 1
                 continue
+            if r.kind == KIND_PLAYER:
+                # Только «молчал»: «другой домен/адрес» страница лечит сама,
+                # просмотр после них засчитывается (`video_watch_events`).
+                if r.reason == PLAYER_NO_MESSAGE:
+                    bucket["player_silent"] += 1
+                continue
             seconds = float(r.skipped_seconds or 0)
             if r.reason in HARMLESS_CUTS:
                 bucket["harmless"] += seconds
@@ -1124,17 +1143,19 @@ def get_video_loss_stats(db: DBSession, days: int = VIDEO_LOSS_DAYS) -> dict:
                 bucket[r.reason] += seconds
 
     def _minutes(bucket: dict) -> dict:
-        # Секунды → минуты для показа; отказы — штуки, как есть.
+        # Секунды → минуты для показа; отказы и сбои плеера — штуки, как есть.
         return {
-            key: value if key == "refusals" else round(value / 60)
+            key: value if key in ("refusals", "player_silent") else round(value / 60)
             for key, value in bucket.items()
         }
 
     top_ids = [
         uid for uid, b in sorted(
-            by_user.items(), key=lambda kv: (kv[1]["lost"], kv[1]["refusals"]), reverse=True,
+            by_user.items(),
+            key=lambda kv: (kv[1]["lost"], kv[1]["refusals"], kv[1]["player_silent"]),
+            reverse=True,
         )
-        if b["lost"] >= 60 or b["refusals"]
+        if b["lost"] >= 60 or b["refusals"] or b["player_silent"]
     ][:VIDEO_LOSS_TOP]
     # Ник зашифрован (`EncryptedString`) — читается только через ORM.
     people = (

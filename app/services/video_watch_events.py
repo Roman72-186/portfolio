@@ -28,6 +28,26 @@ logger = logging.getLogger(__name__)
 
 KIND_CUT = "cut"
 KIND_REFUSAL = "refusal"
+# Плеер не передаёт события странице (08.10.2026, ученица id 219: телефон,
+# VPN). Видео играет, а `timeupdate` до страницы не доходит — просмотр не
+# засчитывается ни секундой, и это не поведение ученика. Пишет клиент один
+# раз за сеанс плеера (`video-player.js`, `player_fault`).
+KIND_PLAYER = "player"
+
+# Причины молчания плеера. `origin`/`src` — сообщение из нашего iframe пришло,
+# но Player.js его отбросил: не совпал домен или адрес. Страница принимает
+# такой плеер по `e.source` сама, поэтому эти две причины — диагностика, а
+# просмотр после них засчитывается. `no_message` — не пришло ничего.
+PLAYER_NO_MESSAGE = "no_message"
+PLAYER_ORIGIN = "origin"
+PLAYER_SRC = "src"
+PLAYER_FAULTS = (PLAYER_NO_MESSAGE, PLAYER_ORIGIN, PLAYER_SRC)
+
+PLAYER_FAULT_LABELS = {
+    PLAYER_NO_MESSAGE: "Плеер молчал – просмотр не передавался",
+    PLAYER_ORIGIN: "Плеер ответил с другого домена – связь восстановлена",
+    PLAYER_SRC: "Плеер ответил с другим адресом – связь восстановлена",
+}
 
 # Причины среза. Порядок проверки — в `classify_cut`.
 CUT_PAUSED_PLAYING = "paused_playing"
@@ -204,6 +224,24 @@ def refusal_event(
         # Покрытие прохода на момент отказа — по нему `refusal_text` считает,
         # сколько не хватило.
         watched_seconds=progress.covered_seconds if progress is not None else None,
+        duration_seconds=duration_seconds,
+    )
+
+
+def player_fault_event(
+    *,
+    user_id: int,
+    video_id: str,
+    reason: str,
+    position_seconds: float | None,
+    duration_seconds: float | None,
+) -> VideoWatchEvent:
+    return VideoWatchEvent(
+        user_id=user_id,
+        video_id=video_id,
+        kind=KIND_PLAYER,
+        reason=reason,
+        position_to=position_seconds,
         duration_seconds=duration_seconds,
     )
 

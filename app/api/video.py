@@ -3,7 +3,7 @@
 import json
 import logging
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -35,7 +35,11 @@ from app.services.video_catalog import (
     legacy_pilot_video,
     list_published_videos,
 )
-from app.services.video_watch_events import cut_event, record as record_watch_event
+from app.services.video_watch_events import (
+    cut_event,
+    player_fault_event,
+    record as record_watch_event,
+)
 from app.models.video_watch_segment import VideoWatchSegment
 from app.services.video_progress import (
     LEGACY_SESSION_ID,
@@ -66,6 +70,11 @@ class VideoProgressUpdate(BaseModel):
     # сравниваются внутри сеанса, а не с общей позицией пары. Старый скрипт
     # без номера идёт одним общим сеансом.
     session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,64}$")
+    # Плеер не передаёт события странице (08.10.2026, ученица id 219 с VPN на
+    # телефоне): клиент сообщает один раз за сеанс, почему. Зачёт эта отметка
+    # не меняет — позиция в ней та же, что в прошлой. Значения —
+    # `video_watch_events.PLAYER_FAULTS`.
+    player_fault: Literal["no_message", "origin", "src"] | None = None
 
     @model_validator(mode="after")
     def validate_position(self):
@@ -811,6 +820,18 @@ def _save_progress(
 
     if cut is not None:
         record_watch_event(db, cut)
+    if payload.player_fault:
+        logger.warning(
+            "Видео: плеер не передаёт события | user=%s | video=%s | сеанс=%s | причина=%s",
+            user["user_id"], bunny_video_id, session_id, payload.player_fault,
+        )
+        record_watch_event(db, player_fault_event(
+            user_id=user["user_id"],
+            video_id=bunny_video_id,
+            reason=payload.player_fault,
+            position_seconds=payload.position_seconds,
+            duration_seconds=duration,
+        ))
 
     if completed and not was_completed and topic_id is not None:
         _close_video_task_once(db, user_id=user["user_id"], topic_id=topic_id)

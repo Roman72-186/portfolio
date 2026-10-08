@@ -442,11 +442,12 @@
                 <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.paused_playing }}</div><div class="ss-stat-lbl">Из них плеер считал паузой — сбой плеера, должно быть 0</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.seek }}</div><div class="ss-stat-lbl">Перемотка</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.refusals }}</div><div class="ss-stat-lbl">Отказов кружка</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_loss.totals.player_silent }}</div><div class="ss-stat-lbl">Плеер молчал — видео шло, а просмотр не передавался</div></div>
             </div>
             <p class="ss-dim-sm">Продолжение с места остановки и скачки по уже просмотренному (второй плеер того же ролика, перемотка внутри засчитанного) потерей не считаются: эти секунды засчитаны раньше. Они в колонке «Не потеря».</p>
             <div class="ss-table-wrap">
                 <table class="ss-table">
-                    <thead><tr><th>День</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Сеть</th><th class="ss-ta-r">Не потеря</th><th class="ss-ta-r">Отказы кружка</th></tr></thead>
+                    <thead><tr><th>День</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Сеть</th><th class="ss-ta-r">Не потеря</th><th class="ss-ta-r">Отказы кружка</th><th class="ss-ta-r">Плеер молчал</th></tr></thead>
                     <tbody>
                     {% for d in video_loss.by_day %}
                     <tr>
@@ -457,6 +458,7 @@
                         <td data-label="Сеть" class="ss-ta-r">{{ d.network }}</td>
                         <td data-label="Не потеря" class="ss-ta-r">{{ d.harmless }}</td>
                         <td data-label="Отказы кружка" class="ss-ta-r">{{ d.refusals }}</td>
+                        <td data-label="Плеер молчал" class="ss-ta-r">{{ d.player_silent }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -467,7 +469,7 @@
                 <div class="ss-sub-head">У кого больше всего не засчитано</div>
                 <div class="ss-table-wrap">
                     <table class="ss-table">
-                        <thead><tr><th>Ученик</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Отказы кружка</th></tr></thead>
+                        <thead><tr><th>Ученик</th><th class="ss-ta-r">Не засчитано, мин</th><th class="ss-ta-r">Плеер считал паузой</th><th class="ss-ta-r">Перемотка</th><th class="ss-ta-r">Отказы кружка</th><th class="ss-ta-r">Плеер молчал</th></tr></thead>
                         <tbody>
                         {% for st in video_loss.students %}
                         <tr>
@@ -476,6 +478,7 @@
                             <td data-label="Плеер считал паузой" class="ss-ta-r">{{ st.paused_playing }}</td>
                             <td data-label="Перемотка" class="ss-ta-r">{{ st.seek }}</td>
                             <td data-label="Отказы кружка" class="ss-ta-r">{{ st.refusals }}</td>
+                            <td data-label="Плеер молчал" class="ss-ta-r">{{ st.player_silent }}</td>
                         </tr>
                         {% endfor %}
                         </tbody>

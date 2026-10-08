@@ -310,6 +310,7 @@ def test_loss_stats_by_reason_day_and_student(db, user_factory):
 
     assert stats["totals"] == {
         "lost": 12, "paused_playing": 10, "seek": 2, "network": 0, "harmless": 15, "refusals": 1,
+        "player_silent": 0,
     }
     assert len(stats["by_day"]) == 1
     # Тихий потерял 5 секунд и без отказов — в список «у кого больше всего» не попал.
@@ -330,6 +331,98 @@ def test_activity_page_shows_loss_card(client, db, user_factory, session_factory
     assert "Незачёт видео" in html
     assert "Плеер считал паузой" in html
     assert f"/cabinet/students?student={student.id}&amp;tab=statistics" in html
+
+
+# ── Молчащий плеер (08.10.2026) ─────────────────────────────────────────────
+# Ученица id 219, телефон с VPN: видео играло, а страница не получила от
+# Player.js ни одного события. Клиент сообщает об этом одной отметкой.
+
+def test_player_fault_is_stored_and_does_not_touch_credit(auth_client, db, monkeypatch):
+    from app.services.video_watch_events import KIND_PLAYER, PLAYER_NO_MESSAGE
+    from tests.test_routes_video import VIDEO_ID, _configure_bunny, seed_video_watch
+
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    seed_video_watch(db, user_id=user.id, position=25.0, covered=25.0)
+
+    resp = client.post("/cabinet/video/progress", json={
+        "position_seconds": 25, "duration_seconds": 600, "playback_active": False,
+        "session_id": "s-1", "player_fault": PLAYER_NO_MESSAGE,
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["completed"] is False
+    [event] = db.query(VideoWatchEvent).all()
+    assert (event.user_id, event.video_id, event.kind, event.reason) == (
+        user.id, VIDEO_ID, KIND_PLAYER, PLAYER_NO_MESSAGE,
+    )
+    assert event.position_to == 25.0
+    db.expire_all()
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).covered_seconds == 25.0
+
+
+def test_unknown_player_fault_is_rejected(auth_client, monkeypatch):
+    from tests.test_routes_video import _configure_bunny
+
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    resp = client.post("/cabinet/video/progress", json={
+        "position_seconds": 25, "duration_seconds": 600, "player_fault": "anything",
+    })
+
+    assert resp.status_code == 422
+
+
+def test_player_fault_is_not_a_loss_in_card(db, user_factory):
+    from app.services.activity_stats import get_video_watch_stats
+    from app.services.video_watch_events import KIND_PLAYER, PLAYER_NO_MESSAGE, PLAYER_SRC
+
+    student = _student(user_factory)
+    _video(db)
+    _event(db, student, PLAYER_NO_MESSAGE, kind=KIND_PLAYER, position_to=25.0)
+    _event(db, student, PLAYER_SRC, kind=KIND_PLAYER, position_to=0.0)
+    db.commit()
+
+    [v] = get_video_watch_stats(db, student_id=student.id)["videos"]
+
+    assert v["player_faults"] == 2
+    assert v["lost_seconds"] == 0 and v["losses"] == []
+    texts = [e["text"] for e in v["history"]]
+    assert "Плеер молчал – просмотр не передавался (место 0:25)" in texts
+
+
+def test_loss_stats_count_only_silent_player(db, user_factory):
+    """«Другой адрес/домен» страница лечит сама — в «Плеер молчал» не идёт."""
+    from app.services.activity_stats import get_video_loss_stats
+    from app.services.video_watch_events import KIND_PLAYER, PLAYER_NO_MESSAGE, PLAYER_ORIGIN
+
+    student = _student(user_factory)
+    _event(db, student, PLAYER_NO_MESSAGE, kind=KIND_PLAYER)
+    _event(db, student, PLAYER_NO_MESSAGE, kind=KIND_PLAYER)
+    _event(db, student, PLAYER_ORIGIN, kind=KIND_PLAYER)
+    db.commit()
+
+    stats = get_video_loss_stats(db)
+
+    assert stats["totals"]["player_silent"] == 2
+    assert stats["totals"]["lost"] == 0
+    [row] = stats["students"]
+    assert (row["id"], row["player_silent"]) == (student.id, 2)
+
+
+def test_player_script_heals_by_source_and_never_reloads_silent_player():
+    """Контракт `video-player.js`: свою рамку узнаём по `e.source`, а не по
+    адресу, и молчащий плеер ссылкой не перезагружаем — иначе ролик
+    начинается заново посреди просмотра (прод 08.10.2026)."""
+    from pathlib import Path
+
+    js = Path("app/static/js/video-player.js").read_text(encoding="utf-8")
+    assert "event.source !== iframe.contentWindow" in js
+    assert "player.keeper.execute('ready'" in js
+    stale = js.split("function refreshPlayerUrlIfStale() {", 1)[1].split("}", 1)[0]
+    assert "if (playerSilent) return;" in stale
+    assert "player_fault: progress.player_fault" in js
 
 
 # ── Перенос журнала ─────────────────────────────────────────────────────────
