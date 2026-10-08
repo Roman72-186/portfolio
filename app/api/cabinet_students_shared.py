@@ -265,8 +265,10 @@ def _manage_block(db: DBSession, user: dict, student: User) -> dict | None:
         "is_publishable": bool(student.is_publishable),
         "about": student.about or "",
         # Окно, набор, цена и «оплачено по» (`payments.manage_view`), пишет
-        # `/payment` тех же «Людей» под `people:students`.
-        "payment": payments.manage_view(db, student),
+        # `/payment` тех же «Людей» под `people:students`. Пока владелец
+        # тестирует оплату — только `payments.is_payments_staff`; без поля
+        # карточка группу «Оплата» не рисует.
+        "payment": payments.manage_view(db, student) if payments.is_payments_staff(user) else None,
     }
 
 

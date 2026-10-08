@@ -13,13 +13,16 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf
+from app.dependencies import require_csrf, require_role
 from app.services import payment_import as pi
 from app.services import payments
 from app.services.user_management import _invalidate_user_sessions
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
+
+# Кому открыто — `payments.STAFF_MIN_RANK` (пока только суперадмин).
+require_payments_staff = require_role(payments.STAFF_MIN_RANK)
 
 
 async def _read_rows(file: UploadFile) -> list[pi.SheetRow]:
@@ -40,7 +43,7 @@ def _defaults(start: str, end: str, month: str) -> pi.Defaults:
 @router.get("/payment-import", response_class=HTMLResponse)
 def payment_import_page(
     request: Request,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     students = [
@@ -57,7 +60,7 @@ def payment_import_page(
 
 @router.post("/payment-import/preview")
 async def payment_import_preview(
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     file: UploadFile = File(...),
@@ -77,7 +80,7 @@ async def payment_import_preview(
 
 @router.post("/payment-import/apply")
 async def payment_import_apply(
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     file: UploadFile = File(...),

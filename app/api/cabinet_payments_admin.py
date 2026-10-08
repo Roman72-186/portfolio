@@ -3,8 +3,9 @@
 Расчёт — `services/payment_board.py`, деньги — `services/payments.py`
 (`mark_paid_manually` → `record_paid`, `revert_paid`). Экран живёт в разделе
 «Люди» (`section_access`, дерево `/cabinet/superadmin/payments`), записи —
-действие `people:students`. Все адреса под `require_admin_role` (ранг ≥ 4):
-куратору и модератору ни экрана, ни кнопок (план, «Ручная отметка оплаты»).
+действие `people:students`. Все адреса — `payments.STAFF_MIN_RANK`: по плану
+ГП и суперадмин (ранг ≥ 4), пока владелец тестирует — только суперадмин.
+Куратору и модератору ни экрана, ни кнопок (план, «Ручная отметка оплаты»).
 """
 from datetime import date, datetime, timezone
 from typing import Annotated
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf
+from app.dependencies import require_csrf, require_role
 from app.models.payment import STATUS_PAID, Payment
 from app.models.role import Role
 from app.models.user import User
@@ -26,6 +27,9 @@ from app.services.tz import MSK_TZ
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
+
+# Кому открыто — `payments.STAFF_MIN_RANK` (пока только суперадмин).
+require_payments_staff = require_role(payments.STAFF_MIN_RANK)
 
 STATE_LABELS = {
     payment_board.STATE_OVERDUE: ("Просрочено", "prg-badge--error"),
@@ -38,7 +42,7 @@ STATE_LABELS = {
 @router.get("/payments", response_class=HTMLResponse)
 def payments_board_page(
     request: Request,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     month: str = Query(""),
 ):
@@ -82,7 +86,7 @@ def _student(db: DBSession, student_id: int) -> User:
 @router.post("/payments/mark")
 def payments_mark(
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     user_id: int = Form(...),
@@ -143,7 +147,7 @@ def _revert(db: DBSession, user: dict, payment_id: int, *, refund: bool) -> JSON
 @router.post("/payments/{payment_id}/cancel")
 def payments_cancel_mark(
     payment_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -154,7 +158,7 @@ def payments_cancel_mark(
 @router.post("/payments/{payment_id}/refund")
 def payments_refund(
     payment_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_payments_staff)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):

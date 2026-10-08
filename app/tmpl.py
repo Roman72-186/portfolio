@@ -210,3 +210,12 @@ def ru_plural(count: int, one: str, few: str, many: str) -> str:
 
 templates.env.filters["plural"] = ru_plural
 templates.env.globals["can"] = _can
+
+
+def _payments_staff(user: dict | None) -> bool:
+    # Импорт внутри: сервис оплаты тянет модели, `tmpl` грузится раньше них.
+    from app.services.payments import is_payments_staff
+    return is_payments_staff(user)
+
+
+templates.env.globals["payments_staff"] = _payments_staff
