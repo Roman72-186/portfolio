@@ -53,3 +53,27 @@ def test_feed_only_own_notifications(auth_client, db):
     titles = [n["title"] for n in body["notifications"]]
     assert "Моё" in titles
     assert "Чужое" not in titles
+
+
+def test_notification_time_shown_in_moscow(auth_client, db):
+    """В базе время в UTC, человеку — по Москве. До 08.10.2026 колокольчик и
+    страница уведомлений печатали UTC как есть и отставали на три часа."""
+    from datetime import datetime, timezone
+
+    from app.models.notification import Notification
+
+    client, user = auth_client
+    db.add(Notification(
+        user_id=user.id, title="Время", is_read=False,
+        created_at=datetime(2026, 10, 8, 7, 5, tzinfo=timezone.utc),
+    ))
+    db.commit()
+
+    body = client.get("/cabinet/notifications/feed").json()
+    item = next(n for n in body["notifications"] if n["title"] == "Время")
+    assert item["created_at"] == "08.10.2026 в 10:05"
+
+    page = client.get("/cabinet/notifications")
+    assert page.status_code == 200
+    assert "08.10.2026 в 10:05" in page.text
+    assert "08.10.2026 07:05" not in page.text

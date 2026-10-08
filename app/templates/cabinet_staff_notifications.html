@@ -25,7 +25,7 @@
                 {% if n.text %}
                 <div class="notif-text">{{ n.text }}</div>
                 {% endif %}
-                <div class="notif-meta">{{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
+                <div class="notif-meta">{{ n.created_at | msk_text }}</div>
             </div>
             {% if href %}<div class="notif-arrow" aria-hidden="true"></div>{% endif %}
         {% if href %}</a>{% else %}</div>{% endif %}

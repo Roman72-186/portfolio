@@ -49,7 +49,7 @@
                 {% if n.audio_url %}
                 <audio class="notif-audio" controls preload="metadata" src="{{ n.audio_url }}"></audio>
                 {% endif %}
-                <div class="notif-meta">{{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
+                <div class="notif-meta">{{ n.created_at | msk_text }}</div>
             </div>
             {% if href %}
             <div class="notif-arrow" aria-hidden="true"></div>

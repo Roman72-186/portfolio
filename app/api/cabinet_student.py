@@ -47,7 +47,7 @@ from app.services.mock_exam_access import (
     mock_exam_deadline_for_started_at,
 )
 from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
-from app.services.tz import MSK_TZ, now_msk, today_msk
+from app.services.tz import MSK_TZ, msk_text, now_msk, today_msk
 from app.services.user_management import log_tariff_change
 from app.services.portfolio import student_portfolio_after_groups
 from app.services.utils import compress_image
@@ -616,7 +616,7 @@ def notifications_feed(
                     )
                 )
             ),
-            "created_at": n.created_at.strftime("%d.%m.%Y %H:%M") if n.created_at else "",
+            "created_at": msk_text(n.created_at),
         }
         for n in notifications
     ]
