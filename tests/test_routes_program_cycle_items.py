@@ -308,3 +308,85 @@ def test_whole_cycle_preview_is_offered_and_never_touches_the_server(
     assert "editPayloads[" in script
     assert "fetch(" not in script and "api(" not in script
     assert "freezePreview(cyclePreviewBox)" in script
+
+
+def test_whole_cycle_preview_filters_by_level_and_student_like_the_feed(
+    client, db, user_factory, session_factory
+):
+    """«Глазами ученика» учитывает уровень точки А и учеников поимённо, а не
+    только тариф (владелец 08.10.2026). Правило отбора на странице — перенос
+    `task_blocks.is_block_open_to`: прогоняем его в Node.js на тех же
+    случаях, что серверное правило, и сверяем ответы. Ничего не выбрано —
+    обзор, видно всё, как и раньше."""
+    import json
+
+    import pytest
+
+    from app.services.task_blocks import BlockAudience, BlockViewer, is_block_open_to
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js не установлен — правило просмотра не прогнать")
+
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Введение", "is_required": True, "blocks": [
+            {"block_type": "text", "title": "Теория", "body": "Текст"},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}").text
+    assert "data-cycle-preview-level" in page
+    assert "data-cycle-preview-student" in page
+
+    start = page.index("function previewBlockOpenTo(")
+    end = page.index("\n    }\n", start) + len("\n    }\n")
+    function = page[start:end]
+
+    audiences = [
+        {},
+        {"tariffs": ["А"]},
+        {"levels": [2]},
+        {"tariffs": ["А"], "levels": [2]},
+        {"student_ids": [7]},
+        {"tariffs": ["Б"], "student_ids": [7]},
+        {"levels": [1], "student_ids": [7]},
+    ]
+    viewers = [
+        {"tariff": "А", "level": 2, "studentId": 0},
+        {"tariff": "А", "level": 1, "studentId": 0},
+        {"tariff": "Б", "level": 2, "studentId": 0},
+        {"tariff": "Б", "level": 1, "studentId": 7},
+        {"tariff": "А", "level": 2, "studentId": 9},
+    ]
+    cases = [(a, v) for a in audiences for v in viewers]
+
+    expected = [
+        is_block_open_to(
+            BlockAudience(
+                tariffs=frozenset(a.get("tariffs", [])),
+                levels=frozenset(a.get("levels", [])),
+                user_ids=frozenset(a.get("student_ids", [])),
+            ),
+            BlockViewer(None, user_id=v["studentId"] or None, tariff=v["tariff"], level=v["level"]),
+        )
+        for a, v in cases
+    ]
+    script = function + (
+        "\nvar cases = " + json.dumps(cases, ensure_ascii=False) + ";"
+        "\nconsole.log(JSON.stringify(cases.map(function (c) {"
+        " return previewBlockOpenTo(c[0], c[1]); })));"
+        "\nconsole.log(JSON.stringify(previewBlockOpenTo({student_ids: [7], levels: [2]},"
+        " {tariff: '', level: 0, studentId: 0})));"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = pathlib.Path(tmp) / "preview_rule.js"
+        path.write_text(script, encoding="utf-8")
+        run = subprocess.run([node, str(path)], capture_output=True, text=True, encoding="utf-8")
+    assert run.returncode == 0, run.stderr
+    lines = run.stdout.strip().splitlines()
+    assert json.loads(lines[0]) == expected
+    assert json.loads(lines[1]) is True  # обзор: ничего не выбрано — видно всё

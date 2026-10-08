@@ -202,6 +202,20 @@
                     {% for tariff in tariffs %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}
                 </select>
             </label>
+            {# Уровень точки А и ученик поимённо — те же оси, что «Кому доступно»
+               у блока (владелец 08.10.2026: просмотр учитывал только тариф). #}
+            <label class="prg-field">Уровень
+                <select data-cycle-preview-level>
+                    <option value="">Все уровни</option>
+                    <option value="1">Уровень 1 – {{ point_a_level_2_min - 1 }} и ниже</option>
+                    <option value="2">Уровень 2 – {{ point_a_level_2_min }} и выше</option>
+                </select>
+            </label>
+            <label class="prg-field" data-cycle-preview-student-wrap hidden>Ученик
+                <select data-cycle-preview-student>
+                    <option value="">Не выбран</option>
+                </select>
+            </label>
             <label class="prg-field">Вкладка
                 <select data-cycle-preview-subject>
                     <option value="*">Все</option>
@@ -503,8 +517,69 @@ function uploadImage(file, url) {
     var cyclePreviewBox = document.querySelector('[data-cycle-preview]');
     var cyclePreviewOpen = document.querySelector('[data-cycle-preview-open]');
 
+    // Виден ли блок тому, на кого смотрим, — перенос серверного
+    // `task_blocks.is_block_open_to` (владелец 08.10.2026: просмотр
+    // учитывал только тариф, блоки «Уровень 2» и «только Маше» были видны
+    // всегда). `viewer` — {tariff, level, studentId}, пустое — «не выбрано».
+    // Ничего не выбрано — обзор всего цикла, видны все блоки, как и раньше.
+    // Не выбранные тариф или уровень не сужают: «Все уровни» — любой уровень.
+    // Ученик не выбран — значит, смотрим не глазами отмеченного поимённо:
+    // блок «только этим ученикам» такому не виден.
+    function previewBlockOpenTo(block, viewer) {
+        if (!viewer.tariff && !viewer.level && !viewer.studentId) return true;
+        var tariffs = block.tariffs || [];
+        var levels = (block.levels || []).map(Number);
+        var students = (block.student_ids || []).map(Number);
+        if (!tariffs.length && !levels.length && !students.length) return true;
+        if (viewer.studentId && students.indexOf(viewer.studentId) !== -1) return true;
+        if (!tariffs.length && !levels.length) return false;
+        if (tariffs.length && viewer.tariff && tariffs.indexOf(viewer.tariff) === -1) return false;
+        if (levels.length && viewer.level && levels.indexOf(viewer.level) === -1) return false;
+        return true;
+    }
+
+    // В выборе ученика — только отмеченные поимённо в блоках этого цикла:
+    // остальным ученикам выбор ничего не добавит к тарифу и уровню. Имя —
+    // из списка «Кому доступно» (`BLOCK_STUDENTS`), его нет у «Смотреть».
+    var cyclePreviewStudent = document.querySelector('[data-cycle-preview-student]');
+    (function fillPreviewStudents() {
+        if (!cyclePreviewStudent) return;
+        var ids = [];
+        Object.keys(editPayloads).forEach(function (key) {
+            (editPayloads[key].blocks || []).forEach(function (block) {
+                (block.student_ids || []).forEach(function (id) {
+                    id = Number(id);
+                    if (ids.indexOf(id) === -1) ids.push(id);
+                });
+            });
+        });
+        if (!ids.length) return;
+        var names = {};
+        BLOCK_STUDENTS.forEach(function (row) { names[row.id] = row; });
+        ids.sort(function (a, b) {
+            return ((names[a] || {}).name || '').localeCompare((names[b] || {}).name || '') || a - b;
+        }).forEach(function (id) {
+            var row = names[id];
+            var option = document.createElement('option');
+            option.value = String(id);
+            option.textContent = row
+                ? row.name + (row.username ? ' @' + row.username : '')
+                : 'Ученик ' + id;
+            cyclePreviewStudent.appendChild(option);
+        });
+        document.querySelector('[data-cycle-preview-student-wrap]').hidden = false;
+    })();
+
+    function previewViewer() {
+        return {
+            tariff: document.querySelector('[data-cycle-preview-tariff]').value,
+            level: Number(document.querySelector('[data-cycle-preview-level]').value) || 0,
+            studentId: Number(cyclePreviewStudent.value) || 0,
+        };
+    }
+
     function previewCycle() {
-        var tariff = document.querySelector('[data-cycle-preview-tariff]').value;
+        var viewer = previewViewer();
         var subject = document.querySelector('[data-cycle-preview-subject]').value;
         cyclePreviewBox.innerHTML = '';
         var shown = 0;
@@ -513,9 +588,8 @@ function uploadImage(file, url) {
             var data = editPayloads[card.getAttribute('data-item-id')];
             if (!data) return;
             var rows = (data.blocks || []).filter(function (block) {
-                var tariffs = block.tariffs || [];
                 var ownSubject = block.subject || data.subject || '';
-                return (!tariff || !tariffs.length || tariffs.indexOf(tariff) !== -1)
+                return previewBlockOpenTo(block, viewer)
                     && (subject === '*' || ownSubject === subject);
             });
             var taskSubject = data.subject || '';
@@ -535,13 +609,13 @@ function uploadImage(file, url) {
                 renderPreviewBlocks(section, blocks, index);
                 index += blocks.length;
             } else {
-                section.appendChild(el('p', 'prg-hint', 'Для этого тарифа в задании нет блоков.'));
+                section.appendChild(el('p', 'prg-hint', 'При таком выборе в задании нет блоков.'));
             }
             cyclePreviewBox.appendChild(section);
             shown += 1;
         });
         if (!shown) {
-            cyclePreviewBox.appendChild(el('p', 'prg-hint', 'На этой вкладке у выбранного тарифа заданий нет.'));
+            cyclePreviewBox.appendChild(el('p', 'prg-hint', 'При таком выборе на этой вкладке заданий нет.'));
         }
         freezePreview(cyclePreviewBox);
         cyclePreviewBox.hidden = false;
@@ -559,7 +633,19 @@ function uploadImage(file, url) {
             }
             previewCycle();
         });
-        document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-subject]').forEach(function (select) {
+        // Выбрали ученика — тариф встаёт его (если он есть в списке):
+        // «глазами Маши» значит и с её тарифом. Уровень не подставляем —
+        // точку А браузер не знает.
+        cyclePreviewStudent.addEventListener('change', function () {
+            var row = BLOCK_STUDENTS.find(function (item) {
+                return item.id === Number(cyclePreviewStudent.value);
+            });
+            var tariffSelect = document.querySelector('[data-cycle-preview-tariff]');
+            if (row && row.tariff && tariffSelect.querySelector('option[value="' + CSS.escape(row.tariff) + '"]')) {
+                tariffSelect.value = row.tariff;
+            }
+        });
+        document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-level], [data-cycle-preview-student], [data-cycle-preview-subject]').forEach(function (select) {
             select.addEventListener('change', function () {
                 if (!cyclePreviewBox.hidden) previewCycle();
             });

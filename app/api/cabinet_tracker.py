@@ -172,6 +172,10 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cabinet")
 
+# Отказ на запись в пройденном цикле. Им же лента подписывает поля, которые
+# там закрыты (`_freeze_archived_block`), — одна фраза на экран и на отказ.
+ARCHIVED_TASK_DETAIL = "Цикл пройден — можно только посмотреть свои ответы"
+
 
 _NO_DEADLINE = datetime.max.replace(tzinfo=timezone.utc)
 
@@ -394,7 +398,7 @@ def cabinet_tracker_toggle(
     _accessible_task_or_404(db, user["user_id"], task_id)
     if task_is_archived_for_user(db, user["user_id"], task, today_msk()):
         raise HTTPException(
-            status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+            status_code=403, detail=ARCHIVED_TASK_DETAIL
         )
 
     # Гейт «нельзя закрыть, пока не отвечены вопросы» — общей функцией: по ней
@@ -471,7 +475,7 @@ def _writable_task_or_404(
         returned is not None and returned.needs_revision
     ):
         raise HTTPException(
-            status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+            status_code=403, detail=ARCHIVED_TASK_DETAIL
         )
     return task
 
@@ -700,6 +704,25 @@ def _submission_payload(
     }
 
 
+def _freeze_archived_block(item: dict) -> None:
+    """Блок задания из пройденного цикла — только просмотр.
+
+    Правило то же, что у пишущих роутов (`_writable_task_or_404`): отказ
+    всем, кроме работы, возвращённой на доработку. Своя причина блока
+    («Преподаватель уже проверил ответ», истёкший срок) главнее — она точнее.
+    Причину получают блоки со сдачей и ответом — те, чью запись архив
+    запирает (ответы, правила, сравнение, работы). Кружки «Выполнено» у
+    видео, фото и голосового не трогаем: их отмечают и в пройденном цикле
+    (владелец 28.09.2026, `/watched` и `/done` архив не запирает).
+    """
+    if item.get("needs_revision"):
+        return
+    if "edit_reason" in item and item["edit_reason"] is None:
+        item["edit_reason"] = ARCHIVED_TASK_DETAIL
+    if "submit_endpoint" in item:
+        item["submit_endpoint"] = None
+
+
 @router.get("/tracker/tasks/{task_id}/blocks")
 def cabinet_tracker_task_blocks(
     task_id: int,
@@ -722,6 +745,11 @@ def cabinet_tracker_task_blocks(
     (`video_catalog.is_video_accessible`).
     """
     task = _accessible_task_or_404(db, user["user_id"], task_id)
+    # Пройденный цикл — только просмотр, и решает это тот же вопрос, что
+    # задают пишущие роуты (`_writable_task_or_404`). До 08.10.2026 здесь его
+    # не задавали: отвеченный текстовый вопрос в архиве рисовался формой
+    # правки, а «Сохранить» получало 403 «Цикл пройден».
+    archived = task_is_archived_for_user(db, user["user_id"], task, today_msk())
 
     task_done = _is_task_done(db, task_id, user["user_id"])
     # Скрытый вопрос появляется только после закрытия задания — и весь блок
@@ -1147,6 +1175,8 @@ def cabinet_tracker_task_blocks(
                 for o in rule_options
             ]
             item["answer_option_ids"] = sorted(selected.get(block.id, set()))
+        if archived:
+            _freeze_archived_block(item)
         payload.append(item)
 
     editable_answers = [
@@ -1166,7 +1196,7 @@ def cabinet_tracker_task_blocks(
         "answered": answered,
         "submit_endpoint": (
             f"/cabinet/tracker/tasks/{task_id}/blocks"
-            if questions_left or editable_answers else None
+            if not archived and (questions_left or editable_answers) else None
         ),
         "correct_count": verdict["correct_count"] if verdict else None,
         "gradable_count": verdict["gradable_count"] if verdict else None,

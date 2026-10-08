@@ -276,3 +276,74 @@ def test_check_blocks_can_be_marked_in_archived_cycle(auth_client, db):
     assert client.post(f"/cabinet/tracker/blocks/{blocks[BLOCK_PHOTO].id}/done").status_code == 200
     assert client.post(f"/cabinet/tracker/blocks/{blocks[BLOCK_MEDIA].id}/done").status_code == 200
     assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 403
+
+
+def _answered_text_question(db, user, topic):
+    from app.models.task_block import BLOCK_QUESTION, BLOCK_VIDEO, QUESTION_TEXT, TaskBlock
+    from app.services.task_blocks import save_response
+
+    task = _task_in_topic(db, user, topic, title="Рефлексия")
+    question = TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type=QUESTION_TEXT,
+        body="Как прошло?", sort_order=0,
+    )
+    video = TaskBlock(task_id=task.id, block_type=BLOCK_VIDEO, title="Урок", sort_order=1)
+    db.add_all([question, video])
+    db.commit()
+    save_response(
+        db, task_id=task.id, user_id=user.id, blocks=[question],
+        answers={question.id: {"text": "Хорошо", "option_ids": []}},
+    )
+    db.commit()
+    return task, question, video
+
+
+def test_answered_text_question_in_archived_cycle_comes_read_only(auth_client, db):
+    """Хвост проверки архива 06.10.2026: отвеченный текстовый вопрос в
+    пройденном цикле рисовался формой правки, а «Сохранить» получало 403
+    «Цикл пройден». Чтение блоков задаёт тот же вопрос об архиве, что запись:
+    поле приходит закрытым с той же фразой, общей формы ответа нет. Кружок
+    видео остаётся — его отмечают и в пройденном цикле (28.09.2026)."""
+    from app.api.cabinet_tracker import ARCHIVED_TASK_DETAIL
+
+    client, user = auth_client
+    old_cycle = _cycle(
+        db, user, title="Старый цикл",
+        starts_on=TODAY - timedelta(days=20), ends_on=TODAY - timedelta(days=10),
+    )
+    _cycle(
+        db, user, title="Текущий цикл",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=10),
+    )
+    task, question, video = _answered_text_question(db, user, old_cycle)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+
+    by_id = {item["id"]: item for item in body["blocks"]}
+    assert by_id[question.id]["answer_text"] == "Хорошо"
+    assert by_id[question.id]["edit_reason"] == ARCHIVED_TASK_DETAIL
+    assert body["submit_endpoint"] is None
+    assert by_id[video.id]["confirm_endpoint"] == f"/cabinet/tracker/blocks/{video.id}/watched"
+    # Экран и сервер согласны: запись и правда заперта.
+    resp = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": question.id, "text": "Иначе"}]},
+    )
+    assert resp.status_code == 403
+
+
+def test_answered_text_question_in_running_cycle_stays_editable(auth_client, db):
+    """Обратная сторона: в идущем цикле отвеченный текстовый ответ можно
+    поправить, как и раньше."""
+    client, user = auth_client
+    current = _cycle(
+        db, user, title="Текущий цикл",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=10),
+    )
+    task, question, _video = _answered_text_question(db, user, current)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+
+    item = next(item for item in body["blocks"] if item["id"] == question.id)
+    assert item["edit_reason"] is None
+    assert body["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
