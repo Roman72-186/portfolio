@@ -26,6 +26,12 @@ class Notification(Base):
     # Голосовое по уровню точки А (`point_a.py::maybe_notify_point_a_level`).
     # NULL у всех остальных уведомлений — только это уведомление несёт звук.
     audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Копия рассылки преподавателя (`services/broadcast_delivery.py`, владелец
+    # 08.10.2026): страница уведомлений показывает само сообщение — оформление,
+    # фото, голосовое, кружок. В `text` — его простой текст для попапа.
+    broadcast_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("broadcasts.id", ondelete="SET NULL"), nullable=True
+    )
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     # Момент первого прочтения (для метрики «время реакции»); NULL у непрочитанных
     # и у прочитанных до введения поля.

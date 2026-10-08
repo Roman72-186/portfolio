@@ -1047,12 +1047,14 @@ async def _handle_broadcast_callback(callback: _TgCallback, background_tasks: Ba
     if chat_id is None or chat_id != callback.from_user.id:
         await broadcast_delivery.answer_callback(callback.id, "Откройте рассылку на сайте")
         return
-    started, text = broadcast_delivery.approve_from_telegram(broadcast_id, token, chat_id)
+    accepted, run_now, text = broadcast_delivery.approve_from_telegram(broadcast_id, token, chat_id)
     await broadcast_delivery.answer_callback(callback.id, text)
-    if not started:
+    if not accepted:
         return
     await broadcast_delivery.close_preview_buttons(chat_id, callback.message.message_id, text)
-    background_tasks.add_task(broadcast_delivery.run_broadcast, broadcast_id)
+    # С назначенным временем — только запланирована, уйдёт планировщиком.
+    if run_now:
+        background_tasks.add_task(broadcast_delivery.run_broadcast, broadcast_id)
 
 
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────

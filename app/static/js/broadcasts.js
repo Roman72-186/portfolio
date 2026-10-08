@@ -11,6 +11,7 @@
 // 3. Живой счётчик «Получат N из M» — `GET /cabinet/staff/broadcasts/audience`.
 // 4. Отправка форм со свежим ключом CSRF (`static/js/csrf.js`, правило в
 //    AGENTS.md) и подтверждением, где оно нужно.
+// 5. «Когда»: поле даты и времени видно только при отложенной отправке.
 (function () {
     'use strict';
 
@@ -340,8 +341,16 @@
         });
     }
 
+    // ── 5. Когда: поле даты — только для отложенной отправки ───────────────
+    var whenTime = form.querySelector('[data-bc-when-time]');
+    function syncWhen() {
+        var chosen = form.querySelector('input[data-bc-when]:checked');
+        if (whenTime) whenTime.hidden = !(chosen && chosen.value);
+    }
+
     form.addEventListener('change', function (event) {
         if (event.target && event.target.hasAttribute('data-bc-audience')) scheduleSummary();
+        if (event.target && event.target.hasAttribute('data-bc-when')) syncWhen();
     });
 
     // ── Отправка формы черновика ───────────────────────────────────────────

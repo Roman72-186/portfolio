@@ -22,9 +22,18 @@
 преподаватель видел у себя в Telegram: `fingerprint` берёт текст, вложение и
 выбор получателей, любая правка его меняет и требует новой проверки.
 
-Умолчания до ответов службы заботы (вопросы в плане): выключенные
-уведомления — не шлём (`RECIPIENT_NOTIFICATIONS_OFF`), ученики без уровня при
-выборе по уровню не попадают, в колокольчик сайта рассылка не дублируется.
+Ответы службы заботы (владелец 08.10.2026, вопросы в плане): выключенные
+уведомления — в Telegram не шлём (`RECIPIENT_NOTIFICATIONS_OFF`); учеников без
+уровня нет; копия — в колокольчик сайта каждому получателю, в том числе без
+бота и с выключенными уведомлениями (`create_bells`); отправка — сразу или в
+назначенное время: по Москве всем разом или по часам каждого ученика.
+
+**Отложенная отправка.** «Запланировать» фиксирует проверенную версию
+(статус `scheduled`, править нельзя — только отменить). В `fire_at`
+планировщик (`exam_scheduler._run_broadcast_schedule`, раз в минуту) заводит
+журнал: у каждого ученика свой `due_at`, и проход берёт только тех, чьё время
+пришло. При «у ученика» `fire_at` — момент самого раннего пояса, отправка идёт
+волнами по часу, пока не дойдёт до последнего. Пояс не указан — по Москве.
 """
 from __future__ import annotations
 
@@ -36,10 +45,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import BROADCAST_PREVIEW_FALLBACK_IDS, REPORT_EXCLUDED_USER_IDS, TARIFFS
+from app.constants import BROADCAST_PREVIEW_FALLBACK_IDS, REPORT_EXCLUDED_USER_IDS, TARIFFS, TIMEZONES
 from app.models.broadcast import (
     MEDIA_PHOTO,
     MEDIA_VIDEO_NOTE,
@@ -49,7 +58,10 @@ from app.models.broadcast import (
     RECIPIENT_NOTIFICATIONS_OFF,
     RECIPIENT_PENDING,
     RECIPIENT_SENT,
+    SCHEDULE_LOCAL,
+    SCHEDULE_MSK,
     STATUS_DRAFT,
+    STATUS_SCHEDULED,
     STATUS_SENDING,
     STATUS_SENT,
     Broadcast,
@@ -58,10 +70,12 @@ from app.models.broadcast import (
     BroadcastStudent,
     BroadcastTariff,
 )
+from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
 from app.services.access_state import access_expired
 from app.services.task_blocks import BlockAudience, BlockViewer, is_block_open_to
+from app.services.tz import MSK_TZ, msk_text
 
 LEVELS = (1, 2)
 
@@ -86,6 +100,19 @@ MEDIA_LABELS = {
     MEDIA_PHOTO: "Фото",
     MEDIA_VOICE: "Голосовое",
     MEDIA_VIDEO_NOTE: "Кружок",
+}
+SCHEDULE_LABELS = {
+    SCHEDULE_MSK: "по Москве",
+    SCHEDULE_LOCAL: "по часам ученика",
+}
+
+# Копия в колокольчике. Сотрудник для ученика — только «преподаватель»
+# (`docs/invariants/feedback.md`): ни имени, ни должности.
+BELL_TITLE = "Сообщение от преподавателя"
+BELL_MEDIA_TEXT = {
+    MEDIA_PHOTO: "Фото",
+    MEDIA_VOICE: "Голосовое сообщение",
+    MEDIA_VIDEO_NOTE: "Видеосообщение",
 }
 
 
@@ -234,19 +261,27 @@ def visible_length(telegram_html: str) -> int:
     return len(plain.encode("utf-16-le")) // 2
 
 
-def telegram_html_for_page(telegram_html: str) -> str:
+def telegram_html_for_page(telegram_html: str, *, student: bool = False) -> str:
     """Разметку Telegram показать на странице — в редакторе и в просмотре.
 
     Безопасно: в базе лежит только очищенное (`clean_telegram_html`), а здесь
     меняется лишь вид спойлера (браузер не знает `<tg-spoiler>`) и переносы.
+    `student` — колокольчик ученика: спойлер скрыт и открывается нажатием
+    (фокус — `tabindex`, стиль `.bc-preview--student` в broadcasts.css).
     """
-    shown = (telegram_html or "").replace("<tg-spoiler>", '<span class="tg-spoiler">')
+    spoiler = '<span class="tg-spoiler" tabindex="0">' if student else '<span class="tg-spoiler">'
+    shown = (telegram_html or "").replace("<tg-spoiler>", spoiler)
     shown = shown.replace("</tg-spoiler>", "</span>")
     shown = shown.replace('<a href="', '<a target="_blank" rel="noopener noreferrer" href="')
     # Цитата на странице — блок сама, перенос вокруг неё дал бы пустую строку,
     # которой в Telegram нет. Обратно чистка вернёт его (`_newline`).
     shown = shown.replace("</blockquote>\n", "</blockquote>").replace("\n<blockquote>", "<blockquote>")
     return shown.replace("\n", "<br>")
+
+
+def plain_text(telegram_html: str) -> str:
+    """Текст без разметки — для попапа колокольчика."""
+    return html.unescape(re.sub(r"<[^>]+>", "", telegram_html or "")).strip()
 
 
 def text_limit(media_kind: str | None) -> int:
@@ -348,6 +383,66 @@ def audience_users(db: DBSession, audience: BlockAudience) -> list[User]:
     return chosen
 
 
+_TIMEZONE_CODES = frozenset(code for code, _ in TIMEZONES)
+
+
+def has_timezone(user: User) -> bool:
+    return (user.timezone or "").strip() in _TIMEZONE_CODES
+
+
+def tz_offset(user: User) -> int:
+    """Пояс ученика из анкеты — часы от МСК. Не указан или не из списка — 0."""
+    if not has_timezone(user):
+        return 0
+    return int(user.timezone.strip())
+
+
+def _aware(value: datetime) -> datetime:
+    """SQLite в тестах отдаёт время без пояса — в базе всегда UTC."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def due_moment(broadcast: Broadcast, user: User) -> datetime | None:
+    """Когда ученику уйдёт сообщение. «У ученика» — то же время на его часах:
+    10:00 у МСК+4 — это 06:00 по Москве. Без расписания — сразу (None)."""
+    if not broadcast.schedule_mode or broadcast.scheduled_at is None:
+        return None
+    moment = _aware(broadcast.scheduled_at)
+    if broadcast.schedule_mode == SCHEDULE_LOCAL:
+        moment -= timedelta(hours=tz_offset(user))
+    return moment
+
+
+def schedule_text(broadcast: Broadcast) -> str:
+    """Когда уйдёт — словами: «10.10.2026 в 10:00 по Москве»."""
+    if not broadcast.schedule_mode or broadcast.scheduled_at is None:
+        return "сразу"
+    return f"{msk_text(broadcast.scheduled_at)} {SCHEDULE_LABELS[broadcast.schedule_mode]}"
+
+
+def schedule_input_value(broadcast: Broadcast) -> str:
+    """Выбранное время для поля `datetime-local` — как его вводили."""
+    if broadcast.scheduled_at is None:
+        return ""
+    return _aware(broadcast.scheduled_at).astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
+
+
+def schedule_problem(broadcast: Broadcast, users: list[User], now: datetime | None = None) -> str | None:
+    """Почему это время не годится, или None. Время должно быть впереди у
+    всех: при «у ученика» раньше всех оно наступит у самого восточного пояса."""
+    if not broadcast.schedule_mode:
+        return None
+    if broadcast.scheduled_at is None:
+        return "Не указано время отправки"
+    now = now or datetime.now(timezone.utc)
+    first = min((due_moment(broadcast, user) for user in users), default=None)
+    if first is None or first > now:
+        return None
+    if first != _aware(broadcast.scheduled_at):
+        return "У части учеников это время по их часам уже прошло — выберите позже"
+    return "Это время уже прошло — выберите позже"
+
+
 def delivery_status(user: User) -> str:
     """С каким статусом ученик встанет в журнал в момент отправки."""
     if not user.telegram_chat_id:
@@ -417,7 +512,9 @@ def student_choices(db: DBSession) -> list[dict]:
 
 
 def fingerprint(broadcast: Broadcast, audience: BlockAudience) -> str:
-    """Отпечаток версии: текст, вложение и выбор получателей."""
+    """Отпечаток версии: текст, вложение, выбор получателей и когда отправить.
+    Время — тоже часть проверенного: кнопка под проверкой в Telegram
+    «Отправить … 10.10 в 10:00» должна значить ровно это."""
     parts = [
         broadcast.text or "",
         broadcast.media_kind or "",
@@ -425,6 +522,8 @@ def fingerprint(broadcast: Broadcast, audience: BlockAudience) -> str:
         ",".join(sorted(audience.tariffs)),
         ",".join(str(level) for level in sorted(audience.levels)),
         ",".join(str(uid) for uid in sorted(audience.user_ids)),
+        broadcast.schedule_mode or "",
+        _aware(broadcast.scheduled_at).isoformat() if broadcast.scheduled_at else "",
     ]
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
@@ -499,17 +598,13 @@ class SendRefused(Exception):
     """Отправить нельзя — текст причины для человека."""
 
 
-def start_sending(db: DBSession, broadcast_id: int, *, actor_id: int) -> int:
-    """Взять рассылку в отправку: черновик → «отправляется», журнал по ученикам.
-
-    Переход — условным UPDATE по статусу: двойное нажатие или кнопка в
-    Telegram вместе с кнопкой на сайте возьмут рассылку один раз. Список
-    получателей фиксируется здесь и дальше не меняется. Возвращает, скольким
-    уйдёт сообщение; коммитит сам.
-    """
+def _ready(db: DBSession, broadcast_id: int) -> tuple[Broadcast, list[User]]:
+    """Проверенная версия, которую можно отправить, и кому она уйдёт."""
     broadcast = db.get(Broadcast, broadcast_id)
     if broadcast is None:
         raise SendRefused("Рассылки нет")
+    if broadcast.status == STATUS_SCHEDULED:
+        raise SendRefused("Рассылка уже запланирована")
     if broadcast.status != STATUS_DRAFT:
         raise SendRefused("Эта рассылка уже отправлена")
     audience = get_audience(db, broadcast.id)
@@ -521,11 +616,47 @@ def start_sending(db: DBSession, broadcast_id: int, *, actor_id: int) -> int:
         raise SendRefused("Сначала пришлите себе на проверку эту версию сообщения")
     if broadcast.media_kind and not broadcast.telegram_file_id:
         raise SendRefused("Вложение не дошло до Telegram на проверке — пришлите проверку заново")
-
     users = audience_users(db, audience)
     if not users:
         raise SendRefused("Под этот выбор не подходит ни один ученик")
+    return broadcast, users
 
+
+def _journal(db: DBSession, broadcast: Broadcast, users: list[User]) -> int:
+    """Журнал по ученикам — список с этой секунды не меняется. Возвращает,
+    скольким уйдёт в Telegram."""
+    reachable = 0
+    for user in users:
+        status = delivery_status(user)
+        reachable += status == RECIPIENT_PENDING
+        db.add(BroadcastRecipient(
+            broadcast_id=broadcast.id, user_id=user.id, status=status,
+            due_at=due_moment(broadcast, user),
+        ))
+    return reachable
+
+
+def approve(db: DBSession, broadcast_id: int, *, actor_id: int) -> tuple[bool, int]:
+    """«Отправить» на сайте или под проверкой в Telegram. Без расписания —
+    в отправку сразу, с расписанием — запланировать. Возвращает (запускать ли
+    проход сейчас, скольким уйдёт в Telegram)."""
+    broadcast = db.get(Broadcast, broadcast_id)
+    if broadcast is not None and broadcast.schedule_mode:
+        return False, schedule_sending(db, broadcast_id, actor_id=actor_id)
+    return True, start_sending(db, broadcast_id, actor_id=actor_id)
+
+
+def start_sending(db: DBSession, broadcast_id: int, *, actor_id: int) -> int:
+    """Взять рассылку в отправку: черновик → «отправляется», журнал по ученикам.
+
+    Переход — условным UPDATE по статусу: двойное нажатие или кнопка в
+    Telegram вместе с кнопкой на сайте возьмут рассылку один раз. Список
+    получателей фиксируется здесь и дальше не меняется. Возвращает, скольким
+    уйдёт сообщение; коммитит сам.
+    """
+    broadcast, users = _ready(db, broadcast_id)
+    if broadcast.schedule_mode:
+        raise SendRefused("У рассылки назначено время — её можно только запланировать")
     now = datetime.now(timezone.utc)
     taken = db.execute(
         update(Broadcast)
@@ -535,13 +666,140 @@ def start_sending(db: DBSession, broadcast_id: int, *, actor_id: int) -> int:
     if taken != 1:
         db.rollback()
         raise SendRefused("Эта рассылка уже отправлена")
-    reachable = 0
-    for user in users:
-        status = delivery_status(user)
-        reachable += status == RECIPIENT_PENDING
-        db.add(BroadcastRecipient(broadcast_id=broadcast.id, user_id=user.id, status=status))
+    reachable = _journal(db, broadcast, users)
     db.commit()
     return reachable
+
+
+def schedule_sending(db: DBSession, broadcast_id: int, *, actor_id: int) -> int:
+    """Запланировать: черновик → «запланирована». Журнала ещё нет — его
+    заведёт `fire_scheduled` в `fire_at`. Возвращает, скольким уйдёт в
+    Telegram на сегодня; коммитит сам."""
+    broadcast, users = _ready(db, broadcast_id)
+    if not broadcast.schedule_mode:
+        raise SendRefused("Не выбрано время отправки")
+    problem = schedule_problem(broadcast, users)
+    if problem:
+        raise SendRefused(problem)
+    fire_at = min(due_moment(broadcast, user) for user in users)
+    now = datetime.now(timezone.utc)
+    taken = db.execute(
+        update(Broadcast)
+        .where(Broadcast.id == broadcast.id, Broadcast.status == STATUS_DRAFT)
+        .values(status=STATUS_SCHEDULED, sent_by_id=actor_id, fire_at=fire_at, updated_at=now)
+    ).rowcount
+    if taken != 1:
+        db.rollback()
+        raise SendRefused("Эта рассылка уже отправлена")
+    db.commit()
+    return sum(delivery_status(user) == RECIPIENT_PENDING for user in users)
+
+
+def cancel_schedule(db: DBSession, broadcast_id: int) -> bool:
+    """«Отменить отправку»: запланированная → черновик, пока планировщик её не
+    взял. Проверка остаётся в силе — версия та же. Коммитит сам."""
+    now = datetime.now(timezone.utc)
+    taken = db.execute(
+        update(Broadcast)
+        .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SCHEDULED)
+        .values(status=STATUS_DRAFT, sent_by_id=None, fire_at=None, updated_at=now)
+    ).rowcount
+    db.commit()
+    return taken == 1
+
+
+def fire_scheduled(db: DBSession, now: datetime | None = None) -> list[int]:
+    """Запланированные, чьё время пришло: «отправляется» и журнал по ученикам
+    с их `due_at`. Проход взят сразу (`sending_started_at`). Получатели — на
+    этот момент: кто успел уйти в архив, тот не получит. Коммитит сам."""
+    now = now or datetime.now(timezone.utc)
+    fired: list[int] = []
+    ids = [
+        row[0] for row in db.query(Broadcast.id).filter(
+            Broadcast.status == STATUS_SCHEDULED, Broadcast.fire_at <= now,
+        )
+    ]
+    for broadcast_id in ids:
+        taken = db.execute(
+            update(Broadcast)
+            .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SCHEDULED)
+            .values(status=STATUS_SENDING, sending_started_at=now, updated_at=now)
+        ).rowcount
+        if taken != 1:
+            db.rollback()
+            continue
+        broadcast = db.get(Broadcast, broadcast_id)
+        _journal(db, broadcast, audience_users(db, get_audience(db, broadcast_id)))
+        db.commit()
+        fired.append(broadcast_id)
+    return fired
+
+
+def _due_work(db: DBSession, broadcast_id: int, now: datetime):
+    """Строки журнала, чьё время пришло и где ещё есть что делать: Telegram
+    ждёт или копии в колокольчике нет."""
+    return db.query(BroadcastRecipient).filter(
+        BroadcastRecipient.broadcast_id == broadcast_id,
+        or_(BroadcastRecipient.due_at.is_(None), BroadcastRecipient.due_at <= now),
+        or_(BroadcastRecipient.status == RECIPIENT_PENDING, BroadcastRecipient.bell_at.is_(None)),
+    )
+
+
+def _lease_free(now: datetime):
+    """Прохода нет: прежний закончился или молчит `RESUME_AFTER` (умер)."""
+    return or_(
+        Broadcast.sending_started_at.is_(None),
+        Broadcast.sending_started_at < now - RESUME_AFTER,
+    )
+
+
+def claim_due_runs(db: DBSession, now: datetime | None = None) -> list[int]:
+    """Запланированные в отправке, у кого подошла следующая волна (или прежний
+    проход умер): взять проход. Коммитит сам."""
+    now = now or datetime.now(timezone.utc)
+    claimed: list[int] = []
+    ids = [
+        row[0] for row in db.query(Broadcast.id).filter(
+            Broadcast.status == STATUS_SENDING,
+            Broadcast.schedule_mode.isnot(None),
+            _lease_free(now),
+        )
+    ]
+    for broadcast_id in ids:
+        if _due_work(db, broadcast_id, now).first() is None:
+            continue
+        taken = db.execute(
+            update(Broadcast)
+            .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SENDING, _lease_free(now))
+            .values(sending_started_at=now, updated_at=now)
+        ).rowcount
+        db.commit()
+        if taken == 1:
+            claimed.append(broadcast_id)
+    return claimed
+
+
+def create_bells(db: DBSession, broadcast_id: int, now: datetime | None = None) -> list[int]:
+    """Копия в колокольчике всем, чьё время пришло, — один раз на ученика
+    (`bell_at`). Без доставки в Telegram: туда уходит сама рассылка. Не
+    коммитит; возвращает, кому завели (сбросить счётчик непрочитанных)."""
+    now = now or datetime.now(timezone.utc)
+    broadcast = db.get(Broadcast, broadcast_id)
+    if broadcast is None:
+        return []
+    text = plain_text(broadcast.text) or BELL_MEDIA_TEXT.get(broadcast.media_kind or "", "")
+    rows = (
+        _due_work(db, broadcast_id, now)
+        .filter(BroadcastRecipient.bell_at.is_(None))
+        .all()
+    )
+    for row in rows:
+        db.add(Notification(
+            user_id=row.user_id, title=BELL_TITLE, text=text or None,
+            broadcast_id=broadcast_id, created_at=now,
+        ))
+        row.bell_at = now
+    return [row.user_id for row in rows]
 
 
 def claim_resume(db: DBSession, broadcast_id: int) -> bool:
@@ -553,7 +811,7 @@ def claim_resume(db: DBSession, broadcast_id: int) -> bool:
         .where(
             Broadcast.id == broadcast_id,
             Broadcast.status == STATUS_SENDING,
-            Broadcast.sending_started_at < now - RESUME_AFTER,
+            _lease_free(now),
         )
         .values(sending_started_at=now, updated_at=now)
     ).rowcount
@@ -561,34 +819,60 @@ def claim_resume(db: DBSession, broadcast_id: int) -> bool:
     return taken == 1
 
 
-def can_resume(broadcast: Broadcast, now: datetime | None = None) -> bool:
+def pass_running(broadcast: Broadcast, now: datetime | None = None) -> bool:
+    """Проход идёт прямо сейчас — живой, не умерший."""
     if broadcast.status != STATUS_SENDING or broadcast.sending_started_at is None:
         return False
     now = now or datetime.now(timezone.utc)
-    started = broadcast.sending_started_at
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    return started < now - RESUME_AFTER
+    return _aware(broadcast.sending_started_at) >= now - RESUME_AFTER
+
+
+def can_resume(db: DBSession, broadcast: Broadcast, now: datetime | None = None) -> bool:
+    """Показать «Дослать»: прохода нет, а работа, чьё время пришло, осталась.
+    Следующие волны «у ученика» сюда не попадают — их время не пришло."""
+    if broadcast.status != STATUS_SENDING or pass_running(broadcast, now):
+        return False
+    now = now or datetime.now(timezone.utc)
+    return _due_work(db, broadcast.id, now).first() is not None
 
 
 def finish_if_done(db: DBSession, broadcast_id: int) -> None:
-    """Не осталось «ждёт» — рассылка отправлена. Коммитит сам."""
-    pending = (
+    """Конец прохода. Ничего не осталось — рассылка отправлена; осталось
+    (следующие волны «у ученика») — проход отпускается, следующую возьмёт
+    планировщик. Коммитит сам."""
+    left = (
         db.query(BroadcastRecipient.id)
         .filter(
             BroadcastRecipient.broadcast_id == broadcast_id,
-            BroadcastRecipient.status == RECIPIENT_PENDING,
+            or_(BroadcastRecipient.status == RECIPIENT_PENDING, BroadcastRecipient.bell_at.is_(None)),
         )
         .first()
     )
-    if pending is None:
-        now = datetime.now(timezone.utc)
-        db.execute(
-            update(Broadcast)
-            .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SENDING)
-            .values(status=STATUS_SENT, sent_at=now, updated_at=now)
-        )
+    now = datetime.now(timezone.utc)
+    values = {"sending_started_at": None, "updated_at": now}
+    if left is None:
+        values.update(status=STATUS_SENT, sent_at=now)
+    db.execute(
+        update(Broadcast)
+        .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SENDING)
+        .values(**values)
+    )
     db.commit()
+
+
+def next_wave(db: DBSession, broadcast_id: int) -> datetime | None:
+    """Когда следующая волна «у ученика» — для отчёта."""
+    row = (
+        db.query(BroadcastRecipient.due_at)
+        .filter(
+            BroadcastRecipient.broadcast_id == broadcast_id,
+            BroadcastRecipient.due_at > datetime.now(timezone.utc),
+            or_(BroadcastRecipient.status == RECIPIENT_PENDING, BroadcastRecipient.bell_at.is_(None)),
+        )
+        .order_by(BroadcastRecipient.due_at)
+        .first()
+    )
+    return row[0] if row else None
 
 
 def recipient_counts(db: DBSession, broadcast_id: int) -> dict[str, int]:

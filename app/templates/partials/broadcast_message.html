@@ -1,0 +1,24 @@
+{#
+Сообщение рассылки так, как его увидит ученик: вложение и текст в разметке
+Telegram. Один вид на трёх экранах — черновик («Как увидят ученики»), журнал
+рассылки и колокольчик ученика (`cabinet_notifications.html`).
+
+Ждёт: `bc_message` — рассылка (`Broadcast`), `bc_message_html` — текст из
+`broadcasts.telegram_html_for_page` (уже безопасный: в базе только очищенная
+разметка). `bc_message_student` — у ученика спойлер скрыт до нажатия, как в
+Telegram; у преподавателя виден с пунктирной рамкой.
+
+Стили — bc-* в broadcasts.css, экран подключает его сам.
+#}
+<div class="bc-preview{{ ' bc-preview--student' if bc_message_student }}">
+    {% if bc_message.media_kind == 'photo' %}
+    <img class="bc-preview-photo" src="{{ bc_message.media_s3_url }}" alt="">
+    {% elif bc_message.media_kind == 'voice' %}
+    <audio controls preload="metadata" src="{{ bc_message.media_s3_url }}"></audio>
+    {% elif bc_message.media_kind == 'video_note' %}
+    <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ bc_message.media_s3_url }}"></video>
+    {% endif %}
+    {% if bc_message.text %}
+    <div class="bc-preview-text{{ ' bc-preview-text--separate' if bc_message.media_kind == 'video_note' }}">{{ bc_message_html|safe }}</div>
+    {% endif %}
+</div>

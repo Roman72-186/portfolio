@@ -28,8 +28,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
 
 STATUS_DRAFT = "draft"
+# Проверена и ждёт своего времени (владелец 08.10.2026: «запланированная
+# рассылка, согласно часового пояса МСК и часового пояса ученика»). Править
+# нельзя — только отменить, и рассылка снова станет черновиком.
+STATUS_SCHEDULED = "scheduled"
 STATUS_SENDING = "sending"
 STATUS_SENT = "sent"
+
+# Когда отправлять. Пусто — сразу по нажатию «Отправить».
+# «По Москве» — всем в один момент; «у ученика» — в то же время на часах
+# ученика по его поясу из анкеты (`User.timezone`, смещение от МСК).
+SCHEDULE_MSK = "msk"
+SCHEDULE_LOCAL = "local"
+SCHEDULE_MODES = (SCHEDULE_MSK, SCHEDULE_LOCAL)
 
 MEDIA_PHOTO = "photo"
 MEDIA_VOICE = "voice"
@@ -87,15 +98,28 @@ class Broadcast(Base):
     sending_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Отложенная отправка. `scheduled_at` — выбранное время как момент по
+    # Москве; при «у ученика» каждому оно сдвигается на его пояс
+    # (`broadcasts.due_moment`). `fire_at` — когда зафиксировать список и
+    # начать: самый ранний из моментов учеников, считается при «Запланировать».
+    schedule_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft', 'sending', 'sent')", name="ck_broadcasts_status",
+            "status IN ('draft', 'scheduled', 'sending', 'sent')", name="ck_broadcasts_status",
+        ),
+        CheckConstraint(
+            "schedule_mode IS NULL OR schedule_mode IN ('msk', 'local')",
+            name="ck_broadcasts_schedule_mode",
         ),
         CheckConstraint(
             "media_kind IS NULL OR media_kind IN ('photo', 'voice', 'video_note')",
             name="ck_broadcasts_media_kind",
         ),
         Index("ix_broadcasts_created_at", "created_at"),
+        Index("ix_broadcasts_status_fire_at", "status", "fire_at"),
     )
 
 
@@ -155,6 +179,12 @@ class BroadcastRecipient(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=RECIPIENT_PENDING)
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Не раньше этого момента (отложенная «у ученика»); пусто — сразу.
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Копия в колокольчике сайта заведена (владелец 08.10.2026: «нужен тоже»).
+    # Отдельно от статуса Telegram: колокольчик получают и те, у кого бот не
+    # подключён или уведомления выключены.
+    bell_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("broadcast_id", "user_id", name="uq_broadcast_recipients_user"),

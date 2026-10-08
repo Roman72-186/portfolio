@@ -2,6 +2,7 @@
 {% block title %}Уведомления{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/notifications_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="notif-page ios-notifications">
@@ -38,7 +39,11 @@
             <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
             <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
-                {% if n.text %}
+                {% set bc_item = broadcast_messages.get(n.broadcast_id) if n.broadcast_id else none %}
+                {% if bc_item %}
+                {% set bc_message = bc_item.broadcast %}{% set bc_message_html = bc_item.html %}{% set bc_message_student = true %}
+                {% include "partials/broadcast_message.html" %}
+                {% elif n.text %}
                 <div class="notif-text">{{ n.text }}</div>
                 {% endif %}
                 {% if n.audio_url %}

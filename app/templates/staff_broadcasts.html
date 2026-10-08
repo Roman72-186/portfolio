@@ -8,7 +8,7 @@
 {% block title %}Рассылки{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=59">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=3">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="prg-page bc-page">
@@ -39,6 +39,8 @@
                 <div class="prg-meta">
                     {% if b.status == 'draft' %}
                     <span class="prg-badge">Черновик</span>
+                    {% elif b.status == 'scheduled' %}
+                    <span class="prg-badge">Запланирована: {{ row.schedule_text }}</span>
                     {% elif b.status == 'sending' %}
                     <span class="prg-badge">Отправляется</span>
                     {% else %}
@@ -58,5 +60,5 @@
     <p class="prg-empty">Рассылок пока нет.</p>
     {% endif %}
 </div>
-<script src="/static/js/broadcasts.js?v=2"></script>
+<script src="/static/js/broadcasts.js?v=3"></script>
 {% endblock %}

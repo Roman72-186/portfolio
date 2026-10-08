@@ -2,10 +2,12 @@
 (владелец 07.10.2026, план `plans/2026-10-07-apparchi-сообщения-лизы-я-с-вами.md`).
 
 Порядок для человека: собрать сообщение (текст в оформлении Telegram, фото,
-голосовое или кружок) → выбрать, кому (тарифы, уровень точки А, поимённо) →
-«Прислать мне на проверку»: бот присылает сообщение ровно таким, каким его
-получат ученики, под ним «Отправить N ученикам» и «Исправить» → отправить
-здесь или кнопкой в Telegram → журнал по ученикам.
+голосовое или кружок) → выбрать, кому (тарифы, уровень точки А, поимённо) и
+когда (сразу, к часу по Москве или к часу у каждого ученика) → «Прислать мне
+на проверку»: бот присылает сообщение ровно таким, каким его получат ученики,
+под ним «Отправить N ученикам» и «Исправить» → отправить (или запланировать)
+здесь или кнопкой в Telegram → журнал по ученикам. Запланированную можно
+отменить, пока время не пришло.
 
 Правила — `services/broadcasts.py`, сеть — `services/broadcast_delivery.py`.
 Доступ — только суперадмин (владелец 08.10.2026: «только для СА, чтобы я
@@ -33,7 +35,10 @@ from app.models.broadcast import (
     MEDIA_PHOTO,
     MEDIA_VIDEO_NOTE,
     MEDIA_VOICE,
+    RECIPIENT_PENDING,
+    SCHEDULE_MODES,
     STATUS_DRAFT,
+    STATUS_SCHEDULED,
     Broadcast,
     BroadcastRecipient,
 )
@@ -43,6 +48,7 @@ from app.services import broadcasts as bc
 from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.point_a import POINT_A_LEVEL_2_MIN_AVERAGE
+from app.services.tz import parse_msk_local
 from app.services.upload_validation import is_allowed_image
 from app.services.utils import compress_image
 from app.tmpl import templates
@@ -103,7 +109,11 @@ def broadcasts_list(
             "broadcast": broadcast,
             "title": _plain_title(broadcast),
             "audience": bc.audience_text(audience),
-            "counts": bc.recipient_counts(db, broadcast.id) if broadcast.status != STATUS_DRAFT else None,
+            "schedule_text": bc.schedule_text(broadcast),
+            "counts": (
+                bc.recipient_counts(db, broadcast.id)
+                if broadcast.status not in (STATUS_DRAFT, STATUS_SCHEDULED) else None
+            ),
         })
     return templates.TemplateResponse(request, "staff_broadcasts.html", {
         "request": request,
@@ -164,8 +174,11 @@ def broadcast_screen(
         "audience": audience,
         "audience_text": bc.audience_text(audience, _student_names(db, audience.user_ids)),
         "media_labels": bc.MEDIA_LABELS,
+        "schedule_text": bc.schedule_text(broadcast),
         "nav_active": "broadcasts",
     }
+    if broadcast.status == STATUS_SCHEDULED:
+        return templates.TemplateResponse(request, "staff_broadcast_report.html", context)
     if broadcast.status != STATUS_DRAFT:
         rows = (
             db.query(BroadcastRecipient, User)
@@ -183,17 +196,25 @@ def broadcast_screen(
                     "status": r.status,
                     "status_label": bc.RECIPIENT_LABELS.get(r.status, r.status),
                     "error": r.error or "",
+                    # Отложенная «у ученика»: ещё ждёт — когда уйдёт.
+                    "due_at": r.due_at if r.status == RECIPIENT_PENDING else None,
                 }
                 for r, u in rows
             ],
             "counts": bc.recipient_counts(db, broadcast.id),
             "labels": bc.RECIPIENT_LABELS,
-            "can_resume": bc.can_resume(broadcast),
+            "can_resume": bc.can_resume(db, broadcast),
+            "pass_running": bc.pass_running(broadcast),
+            "next_wave": bc.next_wave(db, broadcast.id),
         })
         return templates.TemplateResponse(request, "staff_broadcast_report.html", context)
 
-    summary = bc.summarize(bc.audience_users(db, audience))
+    users = bc.audience_users(db, audience)
+    summary = bc.summarize(users)
     context.update({
+        "no_timezone": sum(not bc.has_timezone(u) for u in users),
+        "schedule_labels": bc.SCHEDULE_LABELS,
+        "schedule_value": bc.schedule_input_value(broadcast),
         "tariffs": tariff_choices(*audience.tariffs),
         "levels": bc.LEVELS,
         "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
@@ -264,14 +285,23 @@ async def broadcast_save(
     remove_media: Annotated[str, Form()] = "",
     action: Annotated[str, Form()] = "save",
     preview_to: Annotated[str, Form()] = "",
+    schedule_mode: Annotated[str, Form()] = "",
+    scheduled_at: Annotated[str, Form()] = "",
     audio: UploadFile | None = File(None),
     video: UploadFile | None = File(None),
     photo: UploadFile | None = File(None),
 ):
     """Сохранить черновик; с `action=preview` — и прислать на проверку."""
     broadcast = _get_broadcast(db, broadcast_id)
+    if broadcast.status == STATUS_SCHEDULED:
+        return _redirect(broadcast_id, error="Рассылка запланирована — чтобы поправить, сначала отмените отправку")
     if broadcast.status != STATUS_DRAFT:
         return _redirect(broadcast_id, error="Отправленную рассылку уже не поправить")
+
+    mode = schedule_mode if schedule_mode in SCHEDULE_MODES else None
+    moment = parse_msk_local(scheduled_at) if mode else None
+    if mode and moment is None:
+        return _redirect(broadcast_id, error="Укажите дату и время отправки")
 
     try:
         media = await _read_media(audio=audio, video=video, photo=photo)
@@ -309,6 +339,8 @@ async def broadcast_save(
             broadcast_id, error=f"Текст длиннее {limit} символов: сейчас {length}{hint}",
         )
     broadcast.text = cleaned
+    broadcast.schedule_mode = mode
+    broadcast.scheduled_at = moment
 
     audience = bc.normalize_audience(
         db, tariffs=tariffs, levels=levels,
@@ -343,11 +375,27 @@ def broadcast_send(
 ):
     _get_broadcast(db, broadcast_id)
     try:
-        bc.start_sending(db, broadcast_id, actor_id=user["user_id"])
+        run_now, _count = bc.approve(db, broadcast_id, actor_id=user["user_id"])
     except bc.SendRefused as exc:
         return _redirect(broadcast_id, error=str(exc))
+    if not run_now:
+        return _redirect(broadcast_id, ok="scheduled")
     background_tasks.add_task(broadcast_delivery.run_broadcast, broadcast_id)
     return _redirect(broadcast_id, ok="sending")
+
+
+@router.post("/{broadcast_id}/unschedule")
+def broadcast_unschedule(
+    broadcast_id: int,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Отменить запланированную, пока время не пришло: снова черновик."""
+    _get_broadcast(db, broadcast_id)
+    if not bc.cancel_schedule(db, broadcast_id):
+        return _redirect(broadcast_id, error="Отменить уже нельзя: отправка началась")
+    return _redirect(broadcast_id, ok="unscheduled")
 
 
 @router.post("/{broadcast_id}/resume")

@@ -11,8 +11,13 @@
 уходит файлом, Telegram возвращает `file_id`, и ученикам сообщение идёт по
 нему — с нашего РФ-сервера через прокси не тянется сотня копий кружка.
 
-Отправка берёт только строки журнала «ждёт» и отмечает итог по каждой, поэтому
-прерванный проход (перезапуск приложения) досылается без повторов.
+Отправка берёт только строки журнала «ждёт», чьё время пришло (`due_at`), и
+отмечает итог по каждой, поэтому прерванный проход (перезапуск приложения)
+досылается без повторов. Перед сетью проход заводит копии в колокольчике
+(`broadcasts.create_bells`) — той же короткой сессией, что читает журнал.
+
+Отложенные рассылки запускает планировщик (`run_due_broadcasts`, раз в
+минуту): заводит журнал запланированных и берёт следующую волну «у ученика».
 """
 from __future__ import annotations
 
@@ -22,6 +27,9 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from sqlalchemy import or_, update
+
+from app.cache import invalidate_unread
 from app.config import settings
 from app.db.database import SessionLocal
 from app.models.broadcast import (
@@ -185,6 +193,15 @@ def edit_url(broadcast_id: int) -> str:
     return f"https://{settings.domain}/cabinet/staff/broadcasts/{broadcast_id}"
 
 
+def _short_when(broadcast: Broadcast) -> str:
+    """Время на кнопке под проверкой: «10.10 в 10:00 по Москве», пусто — сразу."""
+    if not broadcast.schedule_mode or broadcast.scheduled_at is None:
+        return ""
+    moment = bc.schedule_input_value(broadcast)  # 2026-10-10T10:00 по Москве
+    day = f"{moment[8:10]}.{moment[5:7]}"
+    return f"{day} в {moment[11:16]} {bc.SCHEDULE_LABELS[broadcast.schedule_mode]}"
+
+
 def _ru_students(count: int) -> str:
     tail = count % 100
     if 11 <= tail <= 14:
@@ -207,6 +224,7 @@ class _PreviewJob:
     token: str
     note: str
     reachable: int
+    when: str
 
 
 def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _PreviewJob | str:
@@ -240,6 +258,10 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
             lines.append(f"Не подключили бота: {summary.no_telegram}.")
         if summary.notifications_off:
             lines.append(f"Выключили уведомления: {summary.notifications_off}.")
+        lines.append(f"Когда: {bc.schedule_text(broadcast)}.")
+        problem = bc.schedule_problem(broadcast, users)
+        if problem:
+            return problem
         return _PreviewJob(
             content=_copy_content(broadcast),
             chat_id=target[1],
@@ -247,6 +269,7 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
             token=bc.new_preview_token(),
             note="\n".join(lines),
             reachable=summary.reachable,
+            when=_short_when(broadcast),
         )
     finally:
         db.close()
@@ -272,7 +295,7 @@ async def send_preview(broadcast_id: int, sender_id: int, target_id: int | None 
     buttons = [[{"text": "Исправить", "url": edit_url(broadcast_id)}]]
     if job.reachable:
         buttons.insert(0, [{
-            "text": f"Отправить {_ru_students(job.reachable)}",
+            "text": f"Отправить {_ru_students(job.reachable)}" + (f" {job.when}" if job.when else ""),
             "callback_data": f"{CALLBACK_PREFIX}:{broadcast_id}:{job.token}",
         }])
     note = await _call("sendMessage", {
@@ -314,17 +337,25 @@ class _Target:
 
 
 def _load_run(broadcast_id: int) -> tuple[_Content, list[_Target]] | None:
+    """Копия рассылки и кому слать сейчас. Попутно — копии в колокольчике
+    всем, чьё время пришло: это база, а не сеть, и делается до неё."""
     db = SessionLocal()
     try:
         broadcast = db.get(Broadcast, broadcast_id)
         if broadcast is None or broadcast.status != STATUS_SENDING:
             return None
+        now = datetime.now(timezone.utc)
+        belled = bc.create_bells(db, broadcast_id, now)
+        db.commit()
+        for user_id in belled:
+            invalidate_unread(user_id)
         rows = (
             db.query(BroadcastRecipient.id, User.telegram_chat_id)
             .join(User, User.id == BroadcastRecipient.user_id)
             .filter(
                 BroadcastRecipient.broadcast_id == broadcast_id,
                 BroadcastRecipient.status == RECIPIENT_PENDING,
+                or_(BroadcastRecipient.due_at.is_(None), BroadcastRecipient.due_at <= now),
             )
             .order_by(BroadcastRecipient.id)
             .all()
@@ -351,6 +382,12 @@ def _flush(results: list[tuple[int, str, str | None]], file_id: str | None, broa
             broadcast = db.get(Broadcast, broadcast_id)
             if broadcast is not None and not broadcast.telegram_file_id:
                 broadcast.telegram_file_id = file_id
+        # Проход жив: «Дослать» и планировщик не возьмут его, пока идут пачки.
+        db.execute(
+            update(Broadcast)
+            .where(Broadcast.id == broadcast_id, Broadcast.status == STATUS_SENDING)
+            .values(sending_started_at=now)
+        )
         db.commit()
     finally:
         db.close()
@@ -435,11 +472,12 @@ def parse_callback(data: str | None) -> tuple[int, str] | None:
         return None
 
 
-def approve_from_telegram(broadcast_id: int, token: str, chat_id: int) -> tuple[bool, str]:
+def approve_from_telegram(broadcast_id: int, token: str, chat_id: int) -> tuple[bool, bool, str]:
     """Нажата «Отправить» под проверкой. Пускает, только если нажали в том
     чате, куда ушла проверка, токен этой проверки и версия не менялась.
 
-    Возвращает (взяли ли в отправку, текст ответа на кнопку).
+    Возвращает (принято ли, запускать ли проход сейчас, текст ответа на
+    кнопку). Рассылка с назначенным временем не уходит, а планируется.
     """
     db = SessionLocal()
     try:
@@ -450,12 +488,15 @@ def approve_from_telegram(broadcast_id: int, token: str, chat_id: int) -> tuple[
             or broadcast.preview_token != token
             or broadcast.preview_chat_id != chat_id
         ):
-            return False, "Эта проверка устарела — откройте рассылку на сайте"
+            return False, False, "Эта проверка устарела — откройте рассылку на сайте"
+        when = bc.schedule_text(broadcast)
         try:
-            count = bc.start_sending(db, broadcast_id, actor_id=broadcast.created_by_id)
+            run_now, count = bc.approve(db, broadcast_id, actor_id=broadcast.created_by_id)
         except bc.SendRefused as exc:
-            return False, str(exc)
-        return True, f"Отправляю: {_ru_students(count)}"
+            return False, False, str(exc)
+        if not run_now:
+            return True, False, f"Запланировано: {_ru_students(count)}, {when}"
+        return True, True, f"Отправляю: {_ru_students(count)}"
     finally:
         db.close()
 
@@ -471,3 +512,26 @@ async def close_preview_buttons(chat_id: int, message_id: int, text: str) -> Non
         "reply_markup": json.dumps({"inline_keyboard": []}),
     })
     await _call("sendMessage", {"chat_id": chat_id, "text": text})
+
+
+# ── Отложенные: планировщик ─────────────────────────────────────────────────
+
+
+async def run_due_broadcasts() -> None:
+    """Раз в минуту из планировщика: завести журнал запланированных, чьё время
+    пришло, и разослать волну, чьё время пришло. Проходы — по одному, чтобы
+    разом шло не больше `NOTIFY_CONCURRENCY` отправок. Не поднимает исключений."""
+    db = SessionLocal()
+    try:
+        fired = bc.fire_scheduled(db)
+        claimed = bc.claim_due_runs(db)
+    except Exception:
+        logger.exception("broadcast: сбой планировщика рассылок")
+        db.rollback()
+        return
+    finally:
+        db.close()
+    for broadcast_id in fired:
+        logger.info("broadcast %s: время пришло, журнал заведён", broadcast_id)
+    for broadcast_id in dict.fromkeys(fired + claimed):
+        await run_broadcast(broadcast_id)

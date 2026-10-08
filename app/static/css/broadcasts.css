@@ -1,4 +1,5 @@
-/* Экран «Рассылки» (staff_broadcasts*.html). Каркас — prg-* из program.css,
+/* Экран «Рассылки» (staff_broadcasts*.html) и копия рассылки в колокольчике
+   ученика (cabinet_notifications.html). Каркас — prg-* из program.css,
    поле текста — rt-* из rich-text-field.css; здесь только то, чего там нет:
    разметка Telegram в редакторе и просмотре (спойлер, цитата) и карточка
    «как увидят ученики». Токены — base.css, цветов числом нет. */
@@ -63,6 +64,26 @@
     aspect-ratio: 1;
     object-fit: cover;
     border-radius: 50%;
+}
+
+/* Колокольчик ученика: спойлер скрыт, как в Telegram, и открывается нажатием
+   (tabindex у спойлера — `telegram_html_for_page(student=True)`). */
+.bc-preview--student .bc-preview-text .tg-spoiler {
+    outline: none;
+    cursor: pointer;
+}
+.bc-preview--student .bc-preview-text .tg-spoiler:not(:focus) {
+    color: transparent;
+    background: var(--muted);
+}
+
+/* «Когда»: варианты столбиком, поле даты под ними. */
+.bc-when {
+    display: grid;
+    gap: var(--s-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
 }
 
 .bc-counts { flex-wrap: wrap; }

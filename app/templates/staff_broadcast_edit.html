@@ -21,7 +21,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 <link rel="stylesheet" href="/static/css/program.css?v=59">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
-<link rel="stylesheet" href="/static/css/broadcasts.css?v=3">
+<link rel="stylesheet" href="/static/css/broadcasts.css?v=4">
 {% endblock %}
 {% block content %}
 {% set ok = request.query_params.get('ok') %}
@@ -39,6 +39,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
     {% if error %}<p class="prg-badge prg-badge--error" role="alert">{{ error }}</p>{% endif %}
     {% if ok == 'saved' %}<p class="prg-badge prg-badge--done">Сохранено</p>{% endif %}
     {% if ok == 'preview' %}<p class="prg-badge prg-badge--done">Проверка ушла вам в Telegram</p>{% endif %}
+    {% if ok == 'unscheduled' %}<p class="prg-badge prg-badge--done">Отправка отменена: рассылка снова черновик</p>{% endif %}
 
     <form class="prg-form bc-form" method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}"
           enctype="multipart/form-data" data-bc-form
@@ -154,6 +155,32 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
             </p>
         </section>
 
+        <section class="bc-section">
+            <h2>Когда</h2>
+            <fieldset class="bc-when" aria-label="Когда отправить">
+                <label class="prg-field prg-field--row">
+                    <input type="radio" name="schedule_mode" value="" data-bc-when
+                           {{ 'checked' if not broadcast.schedule_mode }}>
+                    <span>Сразу, по кнопке «Отправить»</span>
+                </label>
+                {% for mode, label in schedule_labels.items() %}
+                <label class="prg-field prg-field--row">
+                    <input type="radio" name="schedule_mode" value="{{ mode }}" data-bc-when
+                           {{ 'checked' if broadcast.schedule_mode == mode }}>
+                    <span>В назначенное время {{ label }}</span>
+                </label>
+                {% endfor %}
+                <label class="prg-field" data-bc-when-time{% if not broadcast.schedule_mode %} hidden{% endif %}>
+                    <span>Дата и время</span>
+                    <input type="datetime-local" name="scheduled_at" value="{{ schedule_value }}">
+                </label>
+            </fieldset>
+            <p class="prg-hint">По Москве — всем в один момент. По часам ученика — каждому в это
+                время по его часовому поясу из анкеты: 10:00 у Новосибирска (МСК+4) придёт в
+                06:00 по Москве.{% if no_timezone %} Пояс не указан у {{ no_timezone }} из
+                {{ summary.total }} — им по Москве.{% endif %}</p>
+        </section>
+
         <label class="prg-field">
             <span>Проверку прислать в Telegram</span>
             {% if preview_choices %}
@@ -175,7 +202,15 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
     <section class="bc-section bc-send">
         <h2>Отправка</h2>
-        {% if preview_current and summary.reachable %}
+        {% if preview_current and summary.reachable and broadcast.schedule_mode %}
+        <p>Проверка ушла вам в Telegram {{ broadcast.preview_sent_at|msk_text }}. Уйдёт
+            {{ schedule_text }}. Если всё верно, запланируйте здесь или кнопкой под проверкой
+            в Telegram. До назначенного времени отправку можно отменить.</p>
+        <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/send" data-bc-fresh-csrf>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-blue">Запланировать: {{ summary.reachable }} уч.</button>
+        </form>
+        {% elif preview_current and summary.reachable %}
         <p>Проверка ушла вам в Telegram {{ broadcast.preview_sent_at|msk_text }}. Если всё верно,
             отправьте здесь или кнопкой под проверкой в Telegram.</p>
         <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/send" data-bc-fresh-csrf
@@ -194,19 +229,10 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
     {% if broadcast.text or broadcast.media_kind %}
     <section class="bc-section">
         <h2>Как увидят ученики</h2>
-        <div class="bc-preview">
-            {% if broadcast.media_kind == 'photo' %}
-            <img class="bc-preview-photo" src="{{ broadcast.media_s3_url }}" alt="">
-            {% elif broadcast.media_kind == 'voice' %}
-            <audio controls preload="metadata" src="{{ broadcast.media_s3_url }}"></audio>
-            {% elif broadcast.media_kind == 'video_note' %}
-            <video class="bc-preview-note" controls playsinline preload="metadata" src="{{ broadcast.media_s3_url }}"></video>
-            {% endif %}
-            {% if broadcast.text %}
-            <div class="bc-preview-text{{ ' bc-preview-text--separate' if broadcast.media_kind == 'video_note' }}">{{ text_html|safe }}</div>
-            {% endif %}
-        </div>
-        <p class="prg-hint">Так выглядит последнее сохранённое. Точный вид — в проверке у вас в Telegram.</p>
+        {% set bc_message = broadcast %}{% set bc_message_html = text_html %}
+        {% include "partials/broadcast_message.html" %}
+        <p class="prg-hint">Так выглядит последнее сохранённое. Точный вид — в проверке у вас в
+            Telegram. Копия придёт ученикам и в колокольчик на сайте.</p>
     </section>
     {% endif %}
 
@@ -219,5 +245,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
-<script src="/static/js/broadcasts.js?v=2"></script>
+<script src="/static/js/broadcasts.js?v=3"></script>
 {% endblock %}

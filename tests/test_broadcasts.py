@@ -383,8 +383,8 @@ def test_telegram_button_approval_checks_chat_and_token(gp_client, db, student, 
 
     assert delivery.approve_from_telegram(bid, token, 999)[0] is False
     assert delivery.approve_from_telegram(bid, "чужой", ADMIN_CHAT)[0] is False
-    ok, text = delivery.approve_from_telegram(bid, token, ADMIN_CHAT)
-    assert ok and "1 ученику" in text
+    ok, run_now, text = delivery.approve_from_telegram(bid, token, ADMIN_CHAT)
+    assert ok and run_now and "1 ученику" in text
     assert delivery.approve_from_telegram(bid, token, ADMIN_CHAT)[0] is False  # второй раз — нет
     db.expire_all()
     assert db.get(Broadcast, bid).status == STATUS_SENDING
@@ -539,3 +539,206 @@ def test_webhook_ignores_unknown_buttons(client, fake_tg, monkeypatch):
     monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
     assert _press(client, "что-то-другое").status_code == 200
     assert [m for m, _, _ in fake_tg.calls] == ["answerCallbackQuery"]
+
+
+# ── Колокольчик (владелец 08.10.2026: «нужен тоже») ─────────────────────────
+
+
+def test_bell_copy_for_every_recipient_without_second_telegram(
+    gp_client, db, student, fake_tg, session_factory,
+):
+    from app.models.notification import Notification
+
+    client, _ = gp_client
+    reachable = student(chat=101)
+    no_bot = student(chat=None)
+    muted = student(chat=103, notifications=False)
+    bid = _create(client)
+    _save(client, bid, text='<b>Привет</b> <span class="tg-spoiler">тайна</span>', action="preview")
+    client.post(f"/cabinet/staff/broadcasts/{bid}/send")
+
+    bells = db.query(Notification).filter(Notification.broadcast_id == bid).all()
+    assert {n.user_id for n in bells} == {reachable.id, no_bot.id, muted.id}
+    assert {n.title for n in bells} == {bc.BELL_TITLE}
+    assert bells[0].text == "Привет тайна"  # попапу — простой текст
+    assert [m for m, _, _ in fake_tg.to(101)] == ["sendMessage"]  # колокольчик Telegram не дублирует
+    assert fake_tg.to(103) == []
+
+    # Повторный проход («Дослать») второй копии не заводит.
+    asyncio.run(delivery.run_broadcast(bid))
+    assert db.query(Notification).filter(Notification.broadcast_id == bid).count() == 3
+
+    client.cookies.set("session_id", session_factory(no_bot).id)
+    page = client.get("/cabinet/notifications")
+    assert page.status_code == 200
+    assert bc.BELL_TITLE in page.text and "<b>Привет</b>" in page.text
+    assert 'class="tg-spoiler" tabindex="0"' in page.text  # у ученика спойлер скрыт до нажатия
+    assert "bc-preview--student" in page.text
+    feed = client.get("/cabinet/notifications/feed").json()["notifications"]
+    assert feed[0]["href"] == "/cabinet/notifications"
+
+
+def test_bell_shows_attachment(gp_client, db, student, fake_tg, s3_store, no_transcode, session_factory):
+    client, _ = gp_client
+    pupil = student(chat=101)
+    bid = _create(client)
+    _save(client, bid, text="", action="preview", files={"audio": ("rec.webm", b"OGG", "audio/webm")})
+    client.post(f"/cabinet/staff/broadcasts/{bid}/send")
+    client.cookies.set("session_id", session_factory(pupil).id)
+    feed = client.get("/cabinet/notifications/feed").json()["notifications"]
+    assert feed[0]["text"] == "Голосовое сообщение"  # без текста — попапу вид вложения
+    page = client.get("/cabinet/notifications")
+    assert '<audio controls preload="metadata" src="https://s3.test/' in page.text
+
+
+# ── Отложенная отправка ─────────────────────────────────────────────────────
+
+
+def _msk_input(delta: timedelta) -> str:
+    from app.services.tz import now_msk
+    return (now_msk() + delta).strftime("%Y-%m-%dT%H:%M")
+
+
+def _shift_schedule(db, bid, *, scheduled_at, fire_at):
+    """Время «пришло»: сдвинуть назначенное, не трогая проверенную версию."""
+    broadcast = db.get(Broadcast, bid)
+    broadcast.scheduled_at = scheduled_at
+    broadcast.fire_at = fire_at
+    db.commit()
+
+
+def test_schedule_msk_waits_for_time_then_sends(gp_client, db, student, fake_tg):
+    from app.models.broadcast import STATUS_SCHEDULED
+
+    client, gp = gp_client
+    student(chat=101)
+    bid = _create(client)
+    when = _msk_input(timedelta(hours=2))
+    _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=when)
+    note = fake_tg.to(ADMIN_CHAT)[1][1]
+    assert "Когда:" in note["text"] and "по Москве" in note["text"]
+    assert f"{when[8:10]}.{when[5:7]} в {when[11:16]} по Москве" in note["reply_markup"]
+
+    resp = client.post(f"/cabinet/staff/broadcasts/{bid}/send", follow_redirects=False)
+    assert resp.headers["location"].endswith("ok=scheduled")
+    db.expire_all()
+    broadcast = db.get(Broadcast, bid)
+    assert broadcast.status == STATUS_SCHEDULED and broadcast.sent_by_id == gp.id
+    assert bc._aware(broadcast.fire_at) == bc._aware(broadcast.scheduled_at)
+    assert fake_tg.to(101) == []
+    assert db.query(BroadcastRecipient).filter_by(broadcast_id=bid).count() == 0
+
+    # Запланированную не поправить — только отменить.
+    assert "error=" in _save(client, bid, text="другое").headers["location"]
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}")
+    assert "Отменить отправку" in page.text and "Запланирована" in page.text
+
+    asyncio.run(delivery.run_due_broadcasts())  # время не пришло
+    assert fake_tg.to(101) == []
+
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    _shift_schedule(db, bid, scheduled_at=past, fire_at=past)
+    asyncio.run(delivery.run_due_broadcasts())
+    db.expire_all()
+    assert db.get(Broadcast, bid).status == STATUS_SENT
+    assert [m for m, _, _ in fake_tg.to(101)] == ["sendMessage"]
+
+
+def test_schedule_local_goes_in_waves_by_student_timezone(gp_client, db, student, fake_tg):
+    from app.models.notification import Notification
+
+    client, _ = gp_client
+    east = student(chat=201, timezone="4")
+    msk = student(chat=202, timezone=None)
+    west = student(chat=203, timezone="-1")
+    bid = _create(client)
+    _save(client, bid, action="preview", schedule_mode="local", scheduled_at=_msk_input(timedelta(hours=10)))
+    client.post(f"/cabinet/staff/broadcasts/{bid}/send")
+    db.expire_all()
+    broadcast = db.get(Broadcast, bid)
+    chosen = bc._aware(broadcast.scheduled_at)
+    assert bc._aware(broadcast.fire_at) == chosen - timedelta(hours=4)  # первым — восток
+    assert bc.due_moment(broadcast, east) == chosen - timedelta(hours=4)
+    assert bc.due_moment(broadcast, msk) == chosen  # пояс не указан — по Москве
+    assert bc.due_moment(broadcast, west) == chosen + timedelta(hours=1)
+
+    now = datetime.now(timezone.utc)
+    _shift_schedule(db, bid, scheduled_at=now + timedelta(hours=3), fire_at=now - timedelta(hours=1))
+    asyncio.run(delivery.run_due_broadcasts())
+    db.expire_all()
+    assert fake_tg.to(201) and not fake_tg.to(202) and not fake_tg.to(203)
+    bells = {n.user_id for n in db.query(Notification).filter(Notification.broadcast_id == bid)}
+    assert bells == {east.id}  # колокольчик — тоже в его время
+    broadcast = db.get(Broadcast, bid)
+    assert broadcast.status == STATUS_SENDING and broadcast.sending_started_at is None
+    assert not bc.can_resume(db, broadcast)  # следующие волны — не «прервалось»
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}")
+    assert "следующим" in page.text and "data-bc-refresh" not in page.text
+
+    asyncio.run(delivery.run_due_broadcasts())  # следующая волна ещё не пришла
+    assert not fake_tg.to(202)
+
+    for row in db.query(BroadcastRecipient).filter_by(broadcast_id=bid, user_id=msk.id):
+        row.due_at = now - timedelta(minutes=1)
+    db.commit()
+    asyncio.run(delivery.run_due_broadcasts())
+    assert fake_tg.to(202) and not fake_tg.to(203)
+
+    for row in db.query(BroadcastRecipient).filter_by(broadcast_id=bid, user_id=west.id):
+        row.due_at = now - timedelta(minutes=1)
+    db.commit()
+    asyncio.run(delivery.run_due_broadcasts())
+    db.expire_all()
+    assert db.get(Broadcast, bid).status == STATUS_SENT
+    assert [len(fake_tg.to(chat)) for chat in (201, 202, 203)] == [1, 1, 1]  # каждому один раз
+    assert db.query(Notification).filter(Notification.broadcast_id == bid).count() == 3
+
+
+def test_schedule_refuses_past_time(gp_client, db, student, fake_tg):
+    client, _ = gp_client
+    student(chat=101, timezone="4")
+    bid = _create(client)
+    resp = _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=_msk_input(-timedelta(hours=1)))
+    assert "error=" in resp.headers["location"] and fake_tg.calls == []
+    # Через 2 часа по Москве — у МСК+4 это время уже прошло.
+    resp = _save(client, bid, action="preview", schedule_mode="local", scheduled_at=_msk_input(timedelta(hours=2)))
+    assert "error=" in resp.headers["location"] and fake_tg.calls == []
+    assert "error=" in _save(client, bid, schedule_mode="msk", scheduled_at="").headers["location"]
+
+
+def test_cancel_schedule_returns_draft(gp_client, db, student, fake_tg):
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=_msk_input(timedelta(hours=2)))
+    client.post(f"/cabinet/staff/broadcasts/{bid}/send")
+    resp = client.post(f"/cabinet/staff/broadcasts/{bid}/unschedule", follow_redirects=False)
+    assert resp.headers["location"].endswith("ok=unscheduled")
+    db.expire_all()
+    broadcast = db.get(Broadcast, bid)
+    assert broadcast.status == STATUS_DRAFT and broadcast.fire_at is None
+    again = client.post(f"/cabinet/staff/broadcasts/{bid}/unschedule", follow_redirects=False)
+    assert "error=" in again.headers["location"]
+    # Снова черновик: правится, а смена времени требует новой проверки.
+    _save(client, bid, schedule_mode="msk", scheduled_at=_msk_input(timedelta(hours=3)))
+    db.expire_all()
+    assert not bc.preview_is_current(db, db.get(Broadcast, bid))
+
+
+def test_telegram_button_schedules_instead_of_sending(gp_client, db, student, fake_tg, monkeypatch):
+    from app.config import settings as app_settings
+    from app.models.broadcast import STATUS_SCHEDULED
+
+    monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=_msk_input(timedelta(hours=2)))
+    db.expire_all()
+    token = db.get(Broadcast, bid).preview_token
+    assert _press(client, f"bc:{bid}:{token}").status_code == 200
+    db.expire_all()
+    assert db.get(Broadcast, bid).status == STATUS_SCHEDULED
+    assert fake_tg.to(101) == []
+    answers = [d for m, d, _ in fake_tg.calls if m == "answerCallbackQuery"]
+    assert answers[-1]["text"].startswith("Запланировано: 1 ученику")

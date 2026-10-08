@@ -618,6 +618,15 @@ def _run_student_reminders() -> None:
     if notification_ids:
         notify_many_sync(notification_ids)
 
+def _run_broadcast_schedule() -> None:
+    """Отложенные рассылки ученикам (владелец 08.10.2026): журнал тем, чьё
+    время пришло, и волны «по часам ученика». Логика —
+    `services/broadcasts.py`, сеть — `broadcast_delivery.run_due_broadcasts`
+    (база на время сети закрыта, не больше `NOTIFY_CONCURRENCY` разом)."""
+    from app.services.broadcast_delivery import run_due_broadcasts
+
+    asyncio.run(run_due_broadcasts())
+
 # Прод поднимает uvicorn с `--workers 4` (`docker-compose.prod-ru.yml`), и
 # каждый воркер проходит lifespan и звал `start_scheduler` — все job шли
 # вчетверо почти одновременно. Идемпотентность через флаг в базе такой гонки
@@ -727,12 +736,22 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
     )
+    _scheduler.add_job(
+        _run_broadcast_schedule,
+        trigger="interval",
+        minutes=1,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
+        id="broadcast_schedule",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=120,
+    )
     _scheduler.start()
     logger.info(
         "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
         "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC, "
-        "student_reminders=30min)"
+        "student_reminders=30min, broadcast_schedule=1min)"
     )
 
 

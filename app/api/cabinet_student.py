@@ -26,6 +26,7 @@ from app.constants import (
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf, require_csrf_header
+from app.models.broadcast import Broadcast
 from app.models.homework_submission import HomeworkSubmission
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
@@ -33,6 +34,7 @@ from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services import broadcasts as bc_service
 from app.services import feedback as fb_service
 from app.services.task_block_feedback import list_student_feedback_cards
 from app.services.feature_periods import is_feature_available
@@ -546,12 +548,23 @@ def cabinet_notifications(
             s.id: f"/cabinet/homework/{s.tracker_task_id}/feedback" for s in subs
         }
 
+    # Копия рассылки преподавателя — само сообщение с вложением, одним
+    # запросом на страницу (`services/broadcasts.py::create_bells`).
+    broadcast_ids = {n.broadcast_id for n in notifications if n.broadcast_id}
+    broadcast_messages = {}
+    if broadcast_ids:
+        broadcast_messages = {
+            b.id: {"broadcast": b, "html": bc_service.telegram_html_for_page(b.text, student=True)}
+            for b in db.query(Broadcast).filter(Broadcast.id.in_(broadcast_ids))
+        }
+
     return templates.TemplateResponse(request, "cabinet_notifications.html", {
         "request": request,
         "user": user,
         "notifications": notifications,
         "unread_count": unread_count,
         "homework_feedback_urls": homework_feedback_urls,
+        "broadcast_messages": broadcast_messages,
     })
 
 
@@ -588,7 +601,9 @@ def notifications_feed(
             "is_read": n.is_read,
             "work_id": n.work_id,
             "href": (
-                "/cabinet/cycle" if n.work_id
+                # Рассылка — на страницу уведомлений: там фото, голосовое, кружок.
+                "/cabinet/notifications" if n.broadcast_id
+                else "/cabinet/cycle" if n.work_id
                 else (
                     homework_feedback_urls.get(n.homework_submission_id)
                     or (
