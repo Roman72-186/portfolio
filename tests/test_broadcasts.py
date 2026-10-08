@@ -115,12 +115,14 @@ def student(user_factory, db):
 
 @pytest.fixture()
 def gp_client(client, session_factory, user_factory, db):
-    gp = user_factory(vk_id=880_001, name="ГП", role_name="админ")
-    gp.telegram_chat_id = ADMIN_CHAT
+    """Суперадмин с Telegram: раздел пока только его (владелец 08.10.2026).
+    Имя фикстуры историческое — так её зовут все тесты пути."""
+    sa = user_factory(vk_id=880_001, name="СА", role_name="суперадмин")
+    sa.telegram_chat_id = ADMIN_CHAT
     db.commit()
-    sess = session_factory(gp)
+    sess = session_factory(sa)
     client.cookies.set("session_id", sess.id)
-    return client, gp
+    return client, sa
 
 
 # ── Разметка ────────────────────────────────────────────────────────────────
@@ -225,7 +227,7 @@ def _create(client) -> int:
 
 
 def _save(client, bid, *, action="save", files=None, **form):
-    data = {"text": "<b>Привет</b>", "tariffs": ["Я С ВАМИ"], "action": action}
+    data = {"text": "<b>Привет</b>", "tariffs": ["Я С ВАМИ"], "action": action, "preview_to": ""}
     data.update(form)
     return client.post(f"/cabinet/staff/broadcasts/{bid}", data=data, files=files, follow_redirects=False)
 
@@ -392,9 +394,34 @@ def test_preview_falls_back_to_service_account(db, user_factory, monkeypatch):
     gp = user_factory(vk_id=880_003, role_name="админ")
     fallback = user_factory(vk_id=880_004)
     fallback.telegram_chat_id = 4242
+    owner = user_factory(vk_id=880_006)
+    owner.telegram_chat_id = 4343
     db.commit()
     monkeypatch.setattr(bc, "BROADCAST_PREVIEW_FALLBACK_IDS", frozenset({fallback.id}))
-    assert bc.preview_target(db, gp.id) == (fallback.id, 4242)
+    monkeypatch.setattr(bc, "REPORT_EXCLUDED_USER_IDS", frozenset({fallback.id, owner.id}))
+    assert bc.preview_target(db, gp.id) == (fallback.id, 4242)  # по умолчанию — запасной
+    assert bc.preview_target(db, gp.id, owner.id) == (owner.id, 4343)  # выбранный
+    assert bc.preview_target(db, gp.id, 999_999) == (fallback.id, 4242)  # чужой id — нет
+
+
+def test_preview_goes_to_chosen_service_account(gp_client, db, student, user_factory, fake_tg, monkeypatch):
+    """Владелец тестирует у себя (аккаунт 199), а не в Telegram Лизы."""
+    client, sa = gp_client
+    sa.telegram_chat_id = None
+    owner = user_factory(vk_id=880_007)
+    owner.telegram_chat_id = 6060
+    liza = user_factory(vk_id=880_008)
+    liza.telegram_chat_id = 7070
+    db.commit()
+    monkeypatch.setattr(bc, "BROADCAST_PREVIEW_FALLBACK_IDS", frozenset({liza.id}))
+    monkeypatch.setattr(bc, "REPORT_EXCLUDED_USER_IDS", frozenset({liza.id, owner.id}))
+    student(chat=101)
+    bid = _create(client)
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}")
+    assert f'value="{owner.id}"' in page.text and f'value="{liza.id}"' in page.text
+    resp = _save(client, bid, action="preview", preview_to=str(owner.id))
+    assert resp.headers["location"].endswith("ok=preview")
+    assert fake_tg.to(6060) and not fake_tg.to(7070)
 
 
 def test_delete_only_drafts(gp_client, db, student, fake_tg):
@@ -419,14 +446,31 @@ def test_screens_render_and_audience_counter(gp_client, db, student):
     assert client.get("/cabinet/staff/broadcasts/audience").json()["total"] == 0
 
 
-def test_staff_below_head_has_no_access(client, session_factory, user_factory):
-    curator = user_factory(vk_id=880_010, role_name="куратор")
-    client.cookies.set("session_id", session_factory(curator).id)
-    resp = client.get("/cabinet/staff/broadcasts", follow_redirects=False)
-    assert resp.status_code in (302, 303, 403, 404)
+def test_staff_below_superadmin_has_no_access(client, session_factory, user_factory):
+    for vk_id, role in ((880_010, "куратор"), (880_011, "админ")):
+        staff = user_factory(vk_id=vk_id, role_name=role)
+        client.cookies.set("session_id", session_factory(staff).id)
+        resp = client.get("/cabinet/staff/broadcasts", follow_redirects=False)
+        assert resp.status_code in (302, 303, 403, 404), role
+    page = client.get("/cabinet/students")
+    assert 'href="/cabinet/staff/broadcasts"' not in page.text  # и пункта меню у ГП нет
 
 
-def test_nav_shows_broadcasts_to_head(gp_client):
+def test_head_sees_broadcasts_after_grant_in_access_screen(client, session_factory, user_factory, db):
+    """Лизе раздел открывает суперадмин в «Доступах» — без выкатки."""
+    from app.models.section_access import SectionAccessRule
+
+    gp = user_factory(vk_id=880_012, role_name="админ")
+    db.add(SectionAccessRule(section_key="broadcasts", user_id=gp.id, level="edit"))
+    db.commit()
+    client.cookies.set("session_id", session_factory(gp).id)
+    page = client.get("/cabinet/staff/broadcasts")
+    assert page.status_code == 200
+    assert 'href="/cabinet/staff/broadcasts"' in page.text
+    assert client.post("/cabinet/staff/broadcasts", follow_redirects=False).status_code == 302
+
+
+def test_nav_shows_broadcasts_to_superadmin(gp_client):
     client, _ = gp_client
     page = client.get("/cabinet/staff/broadcasts")
     assert 'href="/cabinet/staff/broadcasts"' in page.text

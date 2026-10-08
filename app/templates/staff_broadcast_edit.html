@@ -154,6 +154,19 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
             </p>
         </section>
 
+        <label class="prg-field">
+            <span>Проверку прислать в Telegram</span>
+            {% if preview_choices %}
+            <select name="preview_to">
+                {% for choice in preview_choices %}
+                <option value="{{ choice.id }}"{{ ' selected' if loop.first }}>{{ choice.label }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <span class="prg-hint">Некуда: ни у вас, ни у служебных аккаунтов нет Telegram.</span>
+            {% endif %}
+        </label>
+
         <div class="prg-form-actions">
             <button type="submit" class="btn-outline" data-bc-submit="save">Сохранить</button>
             <button type="submit" class="btn-blue" data-bc-submit="preview">Сохранить и прислать мне на проверку</button>

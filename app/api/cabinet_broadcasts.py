@@ -8,7 +8,10 @@
 здесь или кнопкой в Telegram → журнал по ученикам.
 
 Правила — `services/broadcasts.py`, сеть — `services/broadcast_delivery.py`.
-Доступ — ранг ГП и выше, раздел `broadcasts` (`section_access.py`).
+Доступ — только суперадмин (владелец 08.10.2026: «только для СА, чтобы я
+видел и тестил самостоятельно»). Раздел `broadcasts` ни одной роли не
+положен; Лизе его открывает суперадмин в «Доступах» — внутри открытого
+раздела ранг поднимается до `Section.min_rank` (5), выкатка не нужна.
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import tariff_choices
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf
+from app.dependencies import require_csrf, require_superadmin
 from app.models.broadcast import (
     MEDIA_PHOTO,
     MEDIA_VIDEO_NOTE,
@@ -90,7 +93,7 @@ def _plain_title(broadcast: Broadcast) -> str:
 @router.get("", response_class=HTMLResponse)
 def broadcasts_list(
     request: Request,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     rows = []
@@ -113,7 +116,7 @@ def broadcasts_list(
 
 @router.post("")
 def broadcast_create(
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -125,7 +128,7 @@ def broadcast_create(
 
 @router.get("/audience")
 def broadcast_audience(
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     tariffs: Annotated[list[str], Query()] = [],
     levels: Annotated[list[str], Query()] = [],
@@ -148,7 +151,7 @@ def broadcast_audience(
 def broadcast_screen(
     broadcast_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     broadcast = _get_broadcast(db, broadcast_id)
@@ -200,6 +203,7 @@ def broadcast_screen(
         "preview_current": bc.preview_is_current(db, broadcast),
         "text_limit": bc.text_limit(broadcast.media_kind),
         "text_length": bc.visible_length(broadcast.text),
+        "preview_choices": bc.preview_choices(db, user["user_id"]),
         "TEXT_LIMIT": bc.TEXT_LIMIT,
         "CAPTION_LIMIT": bc.CAPTION_LIMIT,
     })
@@ -250,7 +254,7 @@ async def _read_media(
 @router.post("/{broadcast_id}")
 async def broadcast_save(
     broadcast_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     text: Annotated[str, Form()] = "",
@@ -259,6 +263,7 @@ async def broadcast_save(
     student_ids: Annotated[str, Form()] = "",
     remove_media: Annotated[str, Form()] = "",
     action: Annotated[str, Form()] = "save",
+    preview_to: Annotated[str, Form()] = "",
     audio: UploadFile | None = File(None),
     video: UploadFile | None = File(None),
     photo: UploadFile | None = File(None),
@@ -321,7 +326,8 @@ async def broadcast_save(
 
     if action != "preview":
         return _redirect(broadcast_id, ok="saved")
-    error = await broadcast_delivery.send_preview(broadcast_id, user["user_id"])
+    target_id = int(preview_to) if preview_to.strip().isdigit() else None
+    error = await broadcast_delivery.send_preview(broadcast_id, user["user_id"], target_id)
     if error:
         return _redirect(broadcast_id, error=error)
     return _redirect(broadcast_id, ok="preview")
@@ -331,7 +337,7 @@ async def broadcast_save(
 def broadcast_send(
     broadcast_id: int,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -348,7 +354,7 @@ def broadcast_send(
 def broadcast_resume(
     broadcast_id: int,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -363,7 +369,7 @@ def broadcast_resume(
 @router.post("/{broadcast_id}/delete")
 async def broadcast_delete(
     broadcast_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):

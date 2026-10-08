@@ -436,17 +436,48 @@ def preview_is_current(db: DBSession, broadcast: Broadcast) -> bool:
     )
 
 
-def preview_target(db: DBSession, sender_id: int) -> tuple[int, int] | None:
-    """Куда прислать проверку: (id аккаунта, chat_id).
+def preview_choices(db: DBSession, sender_id: int) -> list[dict]:
+    """Куда можно прислать проверку: свой Telegram и служебные аккаунты с ним.
 
-    Свой Telegram того, кто собирает рассылку; нет его — запасной список
-    `BROADCAST_PREVIEW_FALLBACK_IDS` (рабочий Telegram Лизы привязан к «службе
-    заботы», а её аккаунт ГП — без Telegram; см. `docs/invariants/notifications.md`).
+    Служебные — не ученики (`REPORT_EXCLUDED_USER_IDS`): на них привязаны
+    рабочие Telegram команды — Лизы («служба заботы», 277), владельца (199).
+    У аккаунта ГП Лизы (id 10) и суперадмина (id 3) Telegram нет, а проверку
+    владелец смотрит у себя, не у Лизы (владелец 08.10.2026). Первый пункт —
+    выбор по умолчанию: свой Telegram, иначе запасной
+    `BROADCAST_PREVIEW_FALLBACK_IDS`.
     """
-    for user_id in (sender_id, *sorted(BROADCAST_PREVIEW_FALLBACK_IDS)):
+    choices: list[dict] = []
+    sender = db.get(User, sender_id)
+    if sender is not None and sender.telegram_chat_id:
+        choices.append({"id": sender.id, "label": "Мой Telegram", "chat_id": sender.telegram_chat_id})
+    preferred = sorted(BROADCAST_PREVIEW_FALLBACK_IDS)
+    others = sorted((REPORT_EXCLUDED_USER_IDS | BROADCAST_PREVIEW_FALLBACK_IDS) - set(preferred))
+    for user_id in preferred + others:
+        if user_id == sender_id:
+            continue
         user = db.get(User, user_id)
-        if user is not None and user.telegram_chat_id:
-            return user.id, user.telegram_chat_id
+        if user is None or not user.telegram_chat_id:
+            continue
+        name = " ".join(p for p in (user.first_name, user.last_name) if p) or user.name or "аккаунт"
+        choices.append({
+            "id": user.id,
+            "label": f"{name} (служебный, id {user.id})",
+            "chat_id": user.telegram_chat_id,
+        })
+    return choices
+
+
+def preview_target(
+    db: DBSession, sender_id: int, chosen_id: int | None = None,
+) -> tuple[int, int] | None:
+    """Куда прислать проверку: (id аккаунта, chat_id). Выбранный на форме —
+    если он среди `preview_choices`, иначе первый из них."""
+    choices = preview_choices(db, sender_id)
+    for choice in choices:
+        if chosen_id is not None and choice["id"] == chosen_id:
+            return choice["id"], choice["chat_id"]
+    if choices:
+        return choices[0]["id"], choices[0]["chat_id"]
     return None
 
 

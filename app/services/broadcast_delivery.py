@@ -209,7 +209,7 @@ class _PreviewJob:
     reachable: int
 
 
-def _load_preview(broadcast_id: int, sender_id: int) -> _PreviewJob | str:
+def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _PreviewJob | str:
     db = SessionLocal()
     try:
         broadcast = db.get(Broadcast, broadcast_id)
@@ -222,9 +222,9 @@ def _load_preview(broadcast_id: int, sender_id: int) -> _PreviewJob | str:
         audience = bc.get_audience(db, broadcast.id)
         if audience.is_everyone:
             return "Не выбрано, кому отправить"
-        target = bc.preview_target(db, sender_id)
+        target = bc.preview_target(db, sender_id, target_id)
         if target is None:
-            return "К вашему аккаунту не привязан Telegram — проверку некуда прислать"
+            return "Ни у вас, ни у служебных аккаунтов нет Telegram — проверку некуда прислать"
         users = bc.audience_users(db, audience)
         summary = bc.summarize(users)
         names = {
@@ -252,13 +252,13 @@ def _load_preview(broadcast_id: int, sender_id: int) -> _PreviewJob | str:
         db.close()
 
 
-async def send_preview(broadcast_id: int, sender_id: int) -> str | None:
+async def send_preview(broadcast_id: int, sender_id: int, target_id: int | None = None) -> str | None:
     """Прислать преподавателю сообщение ровно в том виде, в каком его получат
     ученики, и под ним — кому уйдёт и кнопки «Отправить» / «Исправить».
 
     Возвращает текст ошибки для экрана или None, если проверка ушла.
     """
-    job = _load_preview(broadcast_id, sender_id)
+    job = _load_preview(broadcast_id, sender_id, target_id)
     if isinstance(job, str):
         return job
     upload = await _media_bytes(job.content)

@@ -259,7 +259,9 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         aria_label="Рассылки",
         tooltip="Сообщения ученикам через бота: текст, фото, голосовое, кружок",
         icon="broadcasts",
-        min_rank=4,
+        # Пока только суперадмин; ГП видит пункт, когда раздел ему открыли
+        # в «Доступах» (`granted` в `staff_nav_items`).
+        min_rank=5,
     ),
     StaffNavItem(
         key="program",
@@ -449,7 +451,11 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         return tuple(by_key[key] for key in keys)
+    # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
+    # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные
+    # разделы ГП положены по роли, так что это касается только сверх-ролевых.
+    granted = set(granted_nav_keys(granted_sections))
     return tuple(
         item for item in STAFF_NAV_ITEMS
-        if item.is_visible_for(role_rank) and item.key not in hidden
+        if (item.is_visible_for(role_rank) or item.key in granted) and item.key not in hidden
     )
