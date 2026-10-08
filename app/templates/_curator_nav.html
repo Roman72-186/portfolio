@@ -2,10 +2,10 @@
 {# `force_curator_nav` ставит base.html: куратор в разделе, открытом ему сверх
    роли, проходит проверки с рангом ГП, а меню должен видеть своё. #}
 {# Навигация куратора (rank 2). Раньше — горизонтальный бар сверху; теперь зеркалит
-   staff_nav.html: десктоп-сайдбар (.staff-aside) + нижний pill (.staff-pill-nav), но по
-   curator_nav_items(). Куратор и staff_nav взаимоисключающи по рангу (rank==2 vs rank>=4),
-   поэтому переиспользование тех же классов и локальная копия pill-стилей безопасны:
-   на странице куратора staff_nav никогда не подключается, конфликта определений нет. #}
+   staff_nav.html: десктоп-сайдбар (.staff-aside) + нижнее бургер-меню (.bottom-nav,
+   с 08.10.2026 — как у ученика), но по curator_nav_items(). Куратор и staff_nav
+   взаимоисключающи по рангу (rank==2 vs rank>=4): на странице куратора staff_nav
+   никогда не подключается, двух меню на одной странице нет. #}
 {% set _p = request.url.path %}
 {% set curator_items = curator_nav_items(user.closed_sections, user.granted_sections) %}
 {# Экраны ГП, куда куратора пустил открытый раздел, `nav_active` не задают —
@@ -65,111 +65,11 @@
     </div>
 </aside>
 <style>
-/* ── Pill nav (копия стиля staff_nav.html — куратор и staff не сосуществуют на странице) ── */
-.staff-pill-nav {
-    position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 200;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 6px;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    box-shadow: 0 8px 32px rgba(30,45,107,0.14), 0 2px 8px rgba(30,45,107,0.08);
-    min-width: 320px;
-    max-width: 95vw;
-    height: 52px;
-}
-.staff-pill-nav::-webkit-scrollbar { display: none; }
+/* Мобильное меню куратора — бургер, общий с учеником и персоналом
+   (static/css/bottom_nav_burger.css, владелец 08.10.2026). Здесь только
+   отступы страницы под ним. */
 
-/* Desktop: hide pill nav — sidebar takes over */
-@media (min-width: 1024px) {
-    .staff-pill-nav { display: none; }
-}
-
-.spn-btn {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    padding: 6px 12px;
-    height: 44px;
-    min-width: 44px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: var(--muted);
-    font-family: inherit;
-    text-decoration: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.18s, color 0.18s;
-    white-space: nowrap;
-    overflow: hidden;
-    flex-shrink: 0;
-    position: relative;
-}
-.spn-btn:hover { background: var(--surface-2); color: var(--text); opacity: 1; }
-.spn-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.spn-btn.spn-active {
-    background: var(--blue-soft);
-    color: var(--blue-text);
-}
-.spn-icon {
-    width: 22px; height: 22px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-}
-.spn-label {
-    font-size: 12px;
-    font-weight: 700;
-    max-width: 0;
-    opacity: 0;
-    overflow: hidden;
-    margin-left: 0;
-    transition:
-        max-width 0.28s var(--ease-out),
-        opacity   0.19s ease,
-        margin-left 0.19s ease;
-}
-.spn-btn.spn-active .spn-label {
-    max-width: 110px;
-    opacity: 1;
-    margin-left: 8px;
-}
-
-/* ── Tooltip ── */
-.spn-btn[data-tooltip]::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.88);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: inherit;
-    white-space: nowrap;
-    padding: 4px 10px;
-    border-radius: 8px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-    z-index: 300;
-    bottom: calc(100% + 8px);
-    top: auto;
-    transform: translateX(-50%) translateY(4px);
-}
-.spn-btn[data-tooltip]:hover::after {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
-
-/* Mobile: content isn't hidden behind the pill nav at bottom */
+/* Mobile: content isn't hidden behind the burger at bottom */
 @media (max-width: 1023px) {
     body.staff-page .main {
         padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
@@ -185,17 +85,42 @@
 
 <script>document.body.classList.add('staff-page');</script>
 
-<nav class="staff-pill-nav" aria-label="Меню куратора">
-    {% for item in curator_items %}
-    <a href="{{ item.href }}"
-       class="spn-btn {% if nav_active == item.key %}spn-active{% endif %}"
-       aria-label="{{ item.label }}"
-       data-tooltip="{{ item.label }}">
-        <span class="spn-icon" aria-hidden="true">
-            {{ curator_nav_icon(item.key, 20) }}
+{# Мобильное меню (08.10.2026, владелец: «у всех ролей… как у ученика») —
+   тот же выпадающий список, что у ученика (partials/bottom_nav.html), вместо
+   пилюли из безымянных иконок. Пункт роли «Уведомления» в список не берём:
+   колокольчик в хвосте (burger_nav_tail.html) со счётчиком открывает попап, а в
+   нём ссылка «Все уведомления →» на тот же экран — два пункта с одним
+   названием подряд путали. Так же устроено у ученика. #}
+{% set _cur_active = curator_items | selectattr('key', 'equalto', nav_active|default('')) | list | first %}
+<link rel="stylesheet" href="/static/css/bottom_nav_burger.css?v=8">
+<div id="nav-loader"></div>
+<nav class="bottom-nav" data-burger-nav aria-label="Меню куратора">
+    <div class="burger-backdrop"></div>
+    <div class="burger-panel">
+        <div class="burger-list" id="curatorBurgerList">
+            {% set _burger_items = curator_items | rejectattr('key', 'equalto', 'notifications') | list %}
+            {% for item in _burger_items %}
+            <div class="burger-item-wrap" data-key="{{ item.key }}" style="--i:{{ loop.index0 }}">
+                <a href="{{ item.href }}" class="burger-item {% if nav_active == item.key %}burger-item-active{% endif %}"
+                   data-nav-key="{{ item.key }}"
+                   tabindex="-1" {% if nav_active == item.key %}aria-current="page"{% endif %} aria-label="{{ item.label }}">
+                    <span class="burger-item-icon" aria-hidden="true">{{ curator_nav_icon(item.key, 20) }}</span>
+                    <span class="burger-item-label">{{ item.label }}</span>
+                </a>
+            </div>
+            {% endfor %}
+            {% with burger_tail_index = _burger_items|length %}{% include "partials/burger_nav_tail.html" %}{% endwith %}
+        </div>
+    </div>
+    <button type="button" class="burger-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="curatorBurgerList" aria-label="Открыть меню">
+        <span class="burger-toggle-icon" aria-hidden="true">
+            {% if _cur_active %}{{ curator_nav_icon(_cur_active.key, 20) }}{% else %}<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>{% endif %}
         </span>
-        <span class="spn-label">{{ "Цикл" if item.key == "cycles" else item.label }}</span>
-    </a>
-    {% endfor %}
+        <span class="burger-toggle-label">{% if _cur_active %}{{ _cur_active.label }}{% else %}Меню{% endif %}</span>
+        <span class="burger-toggle-chevron" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+        </span>
+    </button>
 </nav>
+<script src="/static/js/burger-nav.js?v=1"></script>
 {% endif %}

@@ -66,9 +66,11 @@ def test_staff_catalogue_uses_only_staff_navigation(admin_client, db, monkeypatc
     catalogue = client.get("/cabinet/videos")
     preview = client.get(f"/cabinet/videos/{video.id}")
 
-    assert 'class="staff-pill-nav"' in catalogue.text
-    assert 'class="bottom-nav"' not in catalogue.text
-    assert 'class="bottom-nav"' not in preview.text
+    # С 08.10.2026 нижнее меню персонала — тот же выпадающий список, что у
+    # ученика (класс `bottom-nav` общий), поэтому отличаем по подписи и id.
+    assert 'aria-label="Меню персонала"' in catalogue.text
+    assert 'id="studentBurger"' not in catalogue.text
+    assert 'id="studentBurger"' not in preview.text
 
 
 def test_admin_can_create_direct_tus_upload(

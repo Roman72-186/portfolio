@@ -1,0 +1,36 @@
+{# Хвост мобильного бургер-меню любой роли: «Тема» и «Уведомления» — последние
+   два пункта списка (владелец 03.09.2026 у ученика, 08.10.2026 — у всех ролей).
+   Подключается внутри `.burger-list` партиала роли: partials/bottom_nav.html,
+   partials/staff_nav.html, _curator_nav.html. `burger_tail_index` — сколько
+   пунктов роли стоит выше, от него считается задержка каскада (`--i`).
+   Клик обрабатывают общие слушатели: тема — base.html (`data-theme-toggle-btn`),
+   колокольчик — static/js/notif-bell.js (`data-notif-bell`); меню после клика
+   закрывает static/js/burger-nav.js. #}
+{% set _unread = unread_count_for(user) %}
+<div class="burger-item-wrap" data-key="theme" style="--i:{{ burger_tail_index }}">
+    <button type="button" class="burger-item" data-theme-toggle-btn aria-pressed="false" tabindex="-1" aria-label="Тёмная тема">
+        <span class="burger-item-icon" aria-hidden="true">
+            <svg class="theme-toggle-icon theme-toggle-icon--sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+            <svg class="theme-toggle-icon theme-toggle-icon--moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+            </svg>
+        </span>
+        <span class="burger-item-label">Тема</span>
+    </button>
+</div>
+<div class="burger-item-wrap" data-key="bell" style="--i:{{ burger_tail_index + 1 }}">
+    <button type="button" class="burger-item" data-notif-bell tabindex="-1" aria-haspopup="dialog" aria-expanded="false"
+        aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
+        <span class="burger-item-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="notif-bell-badge" data-notif-bell-badge aria-hidden="true" {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
+        </span>
+        <span class="burger-item-label">Уведомления</span>
+    </button>
+</div>

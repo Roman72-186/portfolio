@@ -12,11 +12,11 @@
     "style_lines": 95
   },
   "_curator_nav.html": {
-    "hex": 1,
+    "hex": 0,
     "shadow": [
       "main"
     ],
-    "style_lines": 117
+    "style_lines": 17
   },
   "blocked.html": {
     "hex": 0,
@@ -128,11 +128,11 @@
     "style_lines": 80
   },
   "partials/staff_nav.html": {
-    "hex": 1,
+    "hex": 0,
     "shadow": [
       "main"
     ],
-    "style_lines": 135
+    "style_lines": 21
   },
   "periods_management.html": {
     "hex": 0,

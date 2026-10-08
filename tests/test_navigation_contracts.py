@@ -6,6 +6,7 @@ list or changing the role dispatcher while extracting navigation helpers.
 """
 
 import io
+import re
 
 import pytest
 
@@ -104,7 +105,11 @@ def test_portfolio_gate_keeps_personal_open_on_mobile_and_desktop(
     assert resp.status_code == 200
     # Архив — часть обучения: сервер `/cabinet/learning/*` гейтом не закрывает,
     # и меню клик по нему не перехватывает (04.10.2026).
-    assert "navKey !== 'learning' && navKey !== 'archive' && navKey !== 'personal'" in resp.text
+    # Перехват клика в мобильном меню живёт в общем static/js/burger-nav.js
+    # с 08.10.2026 (меню стало общим у всех ролей) — страница его подключает.
+    assert "/static/js/burger-nav.js" in resp.text
+    burger_js = io.open("app/static/js/burger-nav.js", encoding="utf-8").read()
+    assert "navKey !== 'learning' && navKey !== 'archive' && navKey !== 'personal'" in burger_js
     assert "navKey === 'learning' || navKey === 'archive' || navKey === 'personal'" in resp.text
     assert client.get("/cabinet/personal").status_code == 200
     assert client.get("/cabinet/learning/archive").status_code == 200
@@ -197,6 +202,56 @@ def test_moderator_lands_on_students_and_sees_observer_menu(
     assert 'href="/cabinet"' not in staff_nav
     assert 'href="/cabinet/staff/students-review"' not in staff_nav
     assert 'href="/cabinet/staff/program/periods"' not in staff_nav
+
+
+# ── Мобильное меню персонала — выпадающий список, как у ученика (владелец 08.10.2026) ──
+
+_BURGER_START = '<nav class="bottom-nav" data-burger-nav'
+
+
+@pytest.mark.parametrize(
+    ("role_name", "vk_id", "path", "menu_label", "toggle_label"),
+    [
+        ("куратор", 302101, "/cabinet/curator/reports", "Меню куратора", "Отчёты"),
+        ("модератор", 302102, "/cabinet/students", "Меню персонала", "Ученики"),
+        ("админ", 302103, "/cabinet/admin-panel", "Меню персонала", "Кабинет"),
+        ("суперадмин", 302104, "/cabinet/superadmin", "Меню персонала", "Кабинет"),
+    ],
+)
+def test_staff_mobile_menu_is_student_style_dropdown(
+    client, user_factory, session_factory, role_name, vk_id, path, menu_label, toggle_label,
+):
+    """Пилюля из безымянных иконок снята у всех ролей: внизу та же кнопка с
+    названием раздела и раскрывающийся список, что у ученика. Пункты — ровно
+    те, что в сайдбаре роли, плюс «Тема» и «Уведомления» в хвосте."""
+    user = user_factory(vk_id=vk_id, role_name=role_name)
+    _login_as(client, session_factory, user)
+
+    resp = client.get(path)
+
+    assert resp.status_code == 200
+    assert "staff-pill-nav" not in resp.text
+    assert "spn-btn" not in resp.text
+    assert 'id="studentBurger"' not in resp.text
+    assert resp.text.count(_BURGER_START) == 1
+    assert "/static/js/burger-nav.js" in resp.text
+
+    burger = _html_between(resp.text, _BURGER_START, "</nav>")
+    assert f'aria-label="{menu_label}"' in burger
+    sidebar = _html_between(resp.text, '<aside class="staff-aside">', "</aside>")
+    sidebar_hrefs = re.findall(r'class="desk-nav-item[^"]*"\s*href="([^"]+)"|href="([^"]+)"\s*class="desk-nav-item', sidebar)
+    sidebar_hrefs = [a or b for a, b in sidebar_hrefs]
+    burger_hrefs = re.findall(r'<a href="([^"]+)" class="burger-item', burger)
+    # Экран уведомлений куратора в списке заменяет колокольчик из хвоста:
+    # в его попапе ссылка «Все уведомления →» туда же.
+    sidebar_hrefs = [h for h in sidebar_hrefs if h != "/cabinet/staff/notifications"]
+    assert sidebar_hrefs and burger_hrefs == sidebar_hrefs
+    assert burger.count(">Уведомления</span>") == 1
+
+    assert "data-theme-toggle-btn" in burger
+    assert "data-notif-bell" in burger
+    assert burger.count("burger-item-active") == 1
+    assert f'<span class="burger-toggle-label">{toggle_label}</span>' in burger
 
 
 # ── Фаза 3 (2026-07-05): cabinet_feedback_detail.html / cabinet_cycle_calendar.html

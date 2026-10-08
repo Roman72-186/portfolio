@@ -57,123 +57,9 @@
     </div>
 </aside>
 <style>
-/* ── Staff pill nav (menu.tsx style) ── */
-.staff-pill-nav {
-    position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 200;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-    padding: 6px;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    box-shadow: 0 8px 32px rgba(30,45,107,0.14), 0 2px 8px rgba(30,45,107,0.08);
-    width: max-content;
-    min-width: min(320px, calc(100vw - 16px));
-    max-width: calc(100vw - 16px);
-    height: 56px;
-}
-.staff-pill-nav::-webkit-scrollbar { display: none; }
-
-/* Desktop: hide pill nav — sidebar takes over */
-@media (min-width: 1024px) {
-    .staff-pill-nav { display: none; }
-}
-
-.spn-btn {
-    display: inline-flex;
-    align-items: center;
-    border-radius: var(--r-pill);
-    padding: 6px 12px;
-    height: 44px;
-    min-width: 44px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: var(--muted);
-    font-family: inherit;
-    text-decoration: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.18s, color 0.18s;
-    white-space: nowrap;
-    overflow: hidden;
-    flex-shrink: 0;
-    position: relative;
-}
-.spn-btn:hover { background: var(--surface-2); color: var(--text); opacity: 1; }
-.spn-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.spn-btn.spn-active {
-    background: var(--blue-soft);
-    color: var(--blue-on-soft);
-}
-.spn-icon {
-    width: 22px; height: 22px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-}
-.spn-label {
-    font-size: 12px;
-    font-weight: 700;
-    max-width: 0;
-    opacity: 0;
-    overflow: hidden;
-    margin-left: 0;
-    transition:
-        max-width 0.28s var(--ease-out),
-        opacity   0.19s ease,
-        margin-left 0.19s ease;
-}
-.spn-btn.spn-active .spn-label {
-    max-width: 90px;
-    opacity: 1;
-    margin-left: 8px;
-}
-
-/* ── Tooltip ── */
-.spn-btn[data-tooltip]::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.88);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: inherit;
-    white-space: nowrap;
-    padding: 4px 10px;
-    border-radius: 8px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-    z-index: 300;
-    /* Mobile: tooltip above the nav (nav is at bottom) */
-    bottom: calc(100% + 8px);
-    top: auto;
-    transform: translateX(-50%) translateY(4px);
-}
-.spn-btn[data-tooltip]:hover::after {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
-
-/* Desktop: tooltip below the nav (nav is at top) */
-@media (min-width: 1024px) {
-    .spn-btn[data-tooltip]::after {
-        bottom: auto;
-        top: calc(100% + 8px);
-        transform: translateX(-50%) translateY(-4px);
-    }
-    .spn-btn[data-tooltip]:hover::after {
-        transform: translateX(-50%) translateY(0);
-    }
-}
+/* Мобильное меню персонала — бургер, общий с учеником и куратором
+   (static/css/bottom_nav_burger.css, владелец 08.10.2026). Здесь только
+   отступы страницы под ним. */
 
 /* Desktop: staff-aside sidebar handles layout — remove all overrides */
 @media (min-width: 1024px) {
@@ -185,7 +71,7 @@
     }
 }
 
-/* Mobile: content isn't hidden behind the pill nav at bottom */
+/* Mobile: content isn't hidden behind the burger at bottom */
 @media (max-width: 1023px) {
     body.staff-page .main {
         padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
@@ -195,18 +81,40 @@
 
 <script>document.body.classList.add('staff-page');</script>
 
-<nav class="staff-pill-nav" aria-label="Меню персонала">
-
-    {% for item in _staff_items %}
-    <a href="{{ item.href }}"
-       class="spn-btn {% if (item.key == 'dashboard' and (_p == '/cabinet' or _p == '/cabinet/admin-panel' or (_p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats') and not _p.startswith('/cabinet/superadmin/access')))) or (item.key == 'students' and (_p.startswith('/cabinet/students') or _p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == 'archive' and _p.startswith('/cabinet/archive')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'point_a' and _p.startswith('/cabinet/staff/point-a')) or (item.key == 'broadcasts' and _p.startswith('/cabinet/staff/broadcasts')) or (item.key == 'students_review' and _p.startswith('/cabinet/staff/students-review')) or (item.key == 'program' and (_p.startswith('/cabinet/staff/program') or _p.startswith('/cabinet/staff/digest') or _p.startswith('/cabinet/staff/goals') or _p.startswith('/cabinet/admin/videos'))) or (item.key == 'guest_exam' and _p.startswith('/cabinet/staff/guest-exam')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) or (item.key == 'activity' and _p.startswith('/cabinet/superadmin/activity')) or (item.key == 'access' and _p.startswith('/cabinet/superadmin/access')) %}spn-active{% endif %}"
-       aria-label="{{ item.aria_label }}"
-       data-tooltip="{{ item.tooltip }}">
-        <span class="spn-icon" aria-hidden="true">
-            {{ staff_nav_icon(item.icon, 20) }}
+{# Мобильное меню (08.10.2026, владелец: «у всех ролей… как у ученика») —
+   тот же выпадающий список, что у ученика (partials/bottom_nav.html), вместо
+   пилюли из безымянных иконок. Активный пункт считается по своему условию:
+   у мобилки «Кабинет» подсвечивается ещё и на /cabinet/admin-panel и
+   /cabinet/superadmin/* (кроме stats/access) — так было у пилюли. #}
+{% set _m = namespace(active=none) %}
+{% for item in _staff_items if not _m.active and ((item.key == 'dashboard' and (_p == '/cabinet' or _p == '/cabinet/admin-panel' or (_p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats') and not _p.startswith('/cabinet/superadmin/access')))) or (item.key == 'students' and (_p.startswith('/cabinet/students') or _p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == 'archive' and _p.startswith('/cabinet/archive')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'point_a' and _p.startswith('/cabinet/staff/point-a')) or (item.key == 'broadcasts' and _p.startswith('/cabinet/staff/broadcasts')) or (item.key == 'students_review' and _p.startswith('/cabinet/staff/students-review')) or (item.key == 'program' and (_p.startswith('/cabinet/staff/program') or _p.startswith('/cabinet/staff/digest') or _p.startswith('/cabinet/staff/goals') or _p.startswith('/cabinet/admin/videos'))) or (item.key == 'guest_exam' and _p.startswith('/cabinet/staff/guest-exam')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) or (item.key == 'activity' and _p.startswith('/cabinet/superadmin/activity')) or (item.key == 'access' and _p.startswith('/cabinet/superadmin/access'))) %}{% set _m.active = item %}{% endfor %}
+<link rel="stylesheet" href="/static/css/bottom_nav_burger.css?v=8">
+<div id="nav-loader"></div>
+<nav class="bottom-nav" data-burger-nav aria-label="Меню персонала">
+    <div class="burger-backdrop"></div>
+    <div class="burger-panel">
+        <div class="burger-list" id="staffBurgerList">
+            {% for item in _staff_items %}
+            <div class="burger-item-wrap" data-key="{{ item.key }}" style="--i:{{ loop.index0 }}">
+                <a href="{{ item.href }}" class="burger-item {% if _m.active and _m.active.key == item.key %}burger-item-active{% endif %}"
+                   data-nav-key="{{ item.key }}"
+                   tabindex="-1" {% if _m.active and _m.active.key == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
+                    <span class="burger-item-icon" aria-hidden="true">{{ staff_nav_icon(item.icon, 20) }}</span>
+                    <span class="burger-item-label">{{ item.sidebar_label }}</span>
+                </a>
+            </div>
+            {% endfor %}
+            {% with burger_tail_index = _staff_items|length %}{% include "partials/burger_nav_tail.html" %}{% endwith %}
+        </div>
+    </div>
+    <button type="button" class="burger-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="staffBurgerList" aria-label="Открыть меню">
+        <span class="burger-toggle-icon" aria-hidden="true">
+            {% if _m.active %}{{ staff_nav_icon(_m.active.icon, 20) }}{% else %}<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>{% endif %}
         </span>
-        <span class="spn-label">{{ item.pill_label }}</span>
-    </a>
-    {% endfor %}
-
+        <span class="burger-toggle-label">{% if _m.active %}{{ _m.active.sidebar_label }}{% else %}Меню{% endif %}</span>
+        <span class="burger-toggle-chevron" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+        </span>
+    </button>
 </nav>
+<script src="/static/js/burger-nav.js?v=1"></script>
