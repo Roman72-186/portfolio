@@ -879,6 +879,15 @@ def _archive_levels(
     return period, stage
 
 
+def _feed_period(db: Session, topic: LearningTopic | None) -> LearningTopic | None:
+    """Период над циклом или этапом ленты; `None`, если настоящего периода нет
+    (`_archive_levels` тогда отдаёт сам этап — в шапке он был бы повтором)."""
+    if topic is None or topic.kind not in (TOPIC_KIND_WEEK, TOPIC_KIND_STAGE):
+        return None
+    period, _ = _archive_levels(db, topic)
+    return period if period is not None and period.kind == TOPIC_KIND_PERIOD else None
+
+
 def _frame_of(db: Session, topic: LearningTopic | None) -> LearningTopic | None:
     """Верхняя рамка темы задания: период, а без него этап, а без этапа сам
     цикл (данные до 24.09.2026). Правило уровней — `_archive_levels`, своей
@@ -1259,6 +1268,11 @@ def feed_for_student(
         # Срок открытого цикла; у этапа, открытого напрямую, срока нет.
         "deadline": cycle_deadline(viewed_cycle) if viewed_cycle else None,
         "stage": stage,
+        # Период открытого цикла — подпись в шапке ленты (владелец 08.10.2026:
+        # «показывать период»). Правило уровней то же, что у архива
+        # (`_archive_levels`): скрытый, удалённый или отсутствующий период
+        # ученик не видит, этап вместо него здесь не подставляем.
+        "period": _feed_period(db, topic),
         # Кнопки перед циклами в карусели («Портфолио») — задания, заведённые
         # прямо на этапе. Якорь на них уже есть у любого шага ленты
         # (`id="learning-task-{{ task.id }}"` у первого блока задания).

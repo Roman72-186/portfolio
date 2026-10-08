@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=87">
+<link rel="stylesheet" href="/static/css/tracker.css?v=88">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -28,6 +28,11 @@
 <div class="lrn-page ios-learning">
 
     <div class="lrn-hero">
+        {# Период над циклом (владелец 08.10.2026: «показывать период») — в
+           шапке, а не на плитках карусели: на плитке только цикл (06.10.2026). #}
+        {% if feed.period %}
+        <p class="lrn-hero-period" data-role="cycle-period">{{ feed.period.title }}</p>
+        {% endif %}
         <h1>{{ feed.topic.title if feed.topic else 'Актуальное образовательное пространство' }}
             {% if not archive_view %}{{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}{% endif %}
         </h1>

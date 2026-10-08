@@ -488,3 +488,40 @@ def test_task_of_unfinished_ended_stage_is_writable(db, regular_user):
     close_task_for_user(db, left, regular_user.id, source="manual")
     db.commit()
     assert task_is_archived_for_user(db, regular_user.id, left, TODAY) is True
+
+
+# ── период в шапке ленты (владелец 08.10.2026: «показывать период») ──────────
+
+def _running_cycle_in_period(db, owner, *, period_published=True):
+    period = _topic(db, owner, title="1 семестр 2026-2027", kind=TOPIC_KIND_PERIOD,
+                    starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=60))
+    period.is_published = period_published
+    db.commit()
+    stage = _topic(db, owner, title="Октябрь", kind=TOPIC_KIND_STAGE, parent=period,
+                   starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=20))
+    cycle = _topic(db, owner, title="Цикл 1", parent=stage,
+                   starts_on=TODAY - timedelta(days=2), ends_on=TODAY + timedelta(days=5))
+    _task(db, owner, cycle, title="Наброски")
+    return period
+
+
+def test_feed_header_names_the_period(auth_client, db):
+    """Ученик видит, в какой части года он сейчас: период — строкой над
+    названием цикла в шапке ленты, а не на плитках карусели."""
+    client, user = auth_client
+    _running_cycle_in_period(db, user)
+
+    page = client.get("/cabinet/learning").text
+
+    assert '<p class="lrn-hero-period" data-role="cycle-period">1 семестр 2026-2027</p>' in page
+
+
+def test_feed_header_hides_unpublished_period(auth_client, db):
+    """Скрытый период («Показывать ученикам» снята) в шапке не подписан — то же
+    правило, что у архива (`_archive_levels`)."""
+    client, user = auth_client
+    _running_cycle_in_period(db, user, period_published=False)
+
+    page = client.get("/cabinet/learning").text
+
+    assert 'data-role="cycle-period"' not in page
