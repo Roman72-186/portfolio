@@ -487,6 +487,8 @@ scope)` и свойством `answered` (одна попытка: после о
                             var error = new Error('rejected');
                             error.answered = true;
                             error.serverText = typeof text === 'string' ? text : '';
+                            // Отказ видео-блока несёт карту прохода.
+                            error.body = result.body;
                             throw error;
                         }
                         block.done = true;
@@ -635,9 +637,14 @@ scope)` и свойством `answered` (одна попытка: после о
                 wrap.appendChild(checkHint);
 
                 wireBlockCheck(check, block.confirm_endpoint, block, checkHint, function (err) {
-                    return err && err.serverText === 'not_watched'
-                        ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
-                        : '';
+                    if (!err || err.serverText !== 'not_watched') return '';
+                    // Сервер прислал карту прохода — называем пропущенный
+                    // кусок, а не «до конца» (09.10.2026: ученица перематывала
+                    // в конец 16 раз, а не хватало куска 1:07–1:40).
+                    var advice = window.lrnVideoPlayer && window.lrnVideoPlayer.gapsAdvice
+                        ? window.lrnVideoPlayer.gapsAdvice(err.body && err.body.watch_map)
+                        : null;
+                    return advice ? advice.circle : 'Досмотри ролик до конца, чтобы отметить выполнение.';
                 });
                 return wrap;
             }

@@ -386,7 +386,11 @@ def test_video_progress_is_saved_and_restored_for_current_user(auth_client, db, 
         },
     )
     assert saved.status_code == 200
-    assert saved.json() == {"ok": True, "completed": False, "skipped": False}
+    assert saved.json() == {
+        "ok": True, "completed": False, "skipped": False,
+        # Первая отметка сеанса ещё ничего не покрыла — весь ролик впереди.
+        "watch_map": {"duration": 600.0, "threshold": 570.0, "covered": 0.0, "gaps": [[0.0, 600.0]]},
+    }
 
     progress = db.get(VideoProgress, (user.id, VIDEO_ID))
     assert progress.position_seconds == 123.5
@@ -459,7 +463,8 @@ def test_video_progress_ignores_client_completed_flag(auth_client, db, monkeypat
 
     assert forged.status_code == 422
     assert near_end.status_code == 200
-    assert near_end.json() == {"ok": True, "completed": True, "skipped": False}
+    # Засчитан — карты прохода нет, плеер прячет полоску.
+    assert near_end.json() == {"ok": True, "completed": True, "skipped": False, "watch_map": None}
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
 
 
@@ -743,7 +748,9 @@ def test_video_progress_reports_skip_forward(auth_client, db, monkeypatch, caplo
         )
 
     assert jumped.status_code == 200
-    assert jumped.json() == {"ok": True, "completed": False, "skipped": True}
+    assert {k: v for k, v in jumped.json().items() if k != "watch_map"} == {
+        "ok": True, "completed": False, "skipped": True,
+    }
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).watched_seconds < 20
     # Срезанный кусок виден в логе: откуда куда, сколько срезано, играло ли.
     line = next(r.getMessage() for r in caplog.records if "кусок не засчитан" in r.getMessage())
@@ -767,7 +774,9 @@ def test_two_players_with_sessions_do_not_cut_each_other(auth_client, db, monkey
             json={"position_seconds": position, "duration_seconds": 600,
                   "playback_active": True, "session_id": session},
         )
-        assert resp.json() == {"ok": True, "completed": False, "skipped": False}
+        assert {k: v for k, v in resp.json().items() if k != "watch_map"} == {
+            "ok": True, "completed": False, "skipped": False,
+        }
 
     assert db.query(VideoWatchEvent).count() == 0
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).covered_seconds == 8.0

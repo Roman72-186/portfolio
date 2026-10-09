@@ -37,13 +37,14 @@ from app.models.user import User
 from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.models.video_watch_event import VideoWatchEvent
+from app.models.video_watch_segment import VideoWatchSegment
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.program import day_bounds, week_start
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import accessible_task_entries, effective_week_start
 from app.services.tz import MSK_TZ, msk_midnight
-from app.services.video_progress import watch_threshold_seconds
+from app.services.video_progress import merge_segments, missing_parts, watch_threshold_seconds
 from app.services.video_watch_events import (
     CUT_LABELS,
     CUT_NETWORK,
@@ -894,6 +895,20 @@ def get_video_watch_stats(
     for vid in details:
         _video(vid)  # кружок отказал, а ролик не запускался
     own = {r.video_id: r for r in rows} if student_id is not None else {}
+    # Отрезки текущего прохода одного ученика — для «не просмотрено: 1:07–1:40»
+    # (владелец 09.10.2026). Одной выборкой на все ролики.
+    own_segments: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    if student_id is not None:
+        for vid, start, end in (
+            db.query(
+                VideoWatchSegment.video_id,
+                VideoWatchSegment.start_seconds,
+                VideoWatchSegment.end_seconds,
+            )
+            .filter(VideoWatchSegment.user_id == student_id)
+            .all()
+        ):
+            own_segments[vid].append((start, end))
 
     titles = {}
     if by_video:
@@ -913,7 +928,7 @@ def get_video_watch_stats(
             "opens": opens.get(vid, 0),
         }
         if student_id is not None:
-            item.update(_own_watch(own.get(vid)))
+            item.update(_own_watch(own.get(vid), own_segments.get(vid, [])))
             item.update(details.get(vid) or _empty_video_details())
         videos.append(item)
     if student_id is not None:
@@ -966,21 +981,32 @@ def _empty_video_details() -> dict:
     }
 
 
-def _own_watch(row) -> dict:
-    """Засчитано и нужно по ролику одного ученика — по его `VideoProgress`."""
+def _own_watch(row, segments: list[tuple[float, float]]) -> dict:
+    """Засчитано и нужно по ролику одного ученика — по его `VideoProgress`;
+    у незасчитанного — непросмотренные куски текущего прохода (`missing`)."""
     if row is None:
         return {
             "watch_state": "not_started", "credited_seconds": 0, "needed_seconds": None,
-            "completed_at": None, "last_watch": None, "sort_at": _NEVER,
+            "missing": [], "completed_at": None, "last_watch": None, "sort_at": _NEVER,
         }
     completed_at = row.last_completed_at or row.completed_at
     needed = watch_threshold_seconds(row.duration_seconds) if row.duration_seconds else None
+    missing = []
+    if not completed_at and row.duration_seconds:
+        merged = merge_segments(segments, duration_seconds=row.duration_seconds)
+        # Секунды отбрасываются, как у плеера (`video-player.js::clock`):
+        # ученик и сотрудник видят один и тот же кусок одинаково.
+        missing = [
+            f"{_mmss(int(start))}–{_mmss(int(end))}"
+            for start, end in missing_parts(merged, row.duration_seconds)
+        ]
     return {
         # У засчитанного ролика страница пишет дату зачёта, а не «засчитано
         # 0:30 из 9:30» нового прохода — то читалось бы как незачёт.
         "watch_state": "completed" if completed_at else "watching",
         "credited_seconds": round(float(row.covered_seconds or 0)),
         "needed_seconds": round(needed) if needed is not None else None,
+        "missing": missing,
         "completed_at": _when_msk(completed_at),
         "last_watch": _when_msk(row.updated_at),
         "sort_at": _utc(row.updated_at) or _NEVER,

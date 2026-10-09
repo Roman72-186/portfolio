@@ -154,7 +154,7 @@ from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 from app.services.video_catalog import get_published_video
-from app.services.video_progress import get_video_progress, watch_threshold_seconds
+from app.services.video_progress import get_video_progress, load_watch_map, watch_threshold_seconds
 from app.services.video_watch_events import (
     REFUSAL_BELOW_THRESHOLD,
     REFUSAL_COMPLETED_BEFORE_BLOCK,
@@ -561,13 +561,16 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     return completed_at >= block_created_at
 
 
-def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
+def _video_watch_refusal(db: DBSession, block, user_id: int) -> tuple[str, dict | None]:
     """Почему кружок видео-блока не поставлен — строка для лога (владелец
     06.10.2026) и строка `VideoWatchEvent` для статистики карточки (07.10.2026).
     До этого отказ уходил ученику кодом `not_watched` и нигде не оставался: на
     жалобу «смотрела до конца, а не засчитало» ответить было нечем, кроме
     гипотез. Причину выбирает `video_watch_events.refusal_reason` — те же
-    условия, что у `_video_block_watched`."""
+    условия, что у `_video_block_watched`.
+
+    Вторым — карта прохода (`video_progress.watch_map`): по ней кружок
+    называет ученику пропущенный кусок вместо «досмотри до конца» (09.10.2026)."""
     video = db.get(LearningVideo, block.video_id) if block.video_id else None
     progress = (
         get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
@@ -575,28 +578,32 @@ def _video_watch_refusal(db: DBSession, block, user_id: int) -> str:
     )
     duration = video.duration_seconds if video is not None else None
     reason = refusal_reason(progress, video_exists=video is not None, duration_seconds=duration)
+    watch_map = load_watch_map(db, progress)
     if video is not None:
         record_watch_event(db, refusal_event(
             progress, user_id=user_id, video_id=video.bunny_video_id,
             block_id=block.id, reason=reason, duration_seconds=duration,
         ))
     if reason == REFUSAL_NO_VIDEO:
-        return "ролика нет"
+        return "ролика нет", watch_map
     if reason == REFUSAL_NOT_STARTED:
-        return "ролик не запускался"
+        return "ролик не запускался", watch_map
     numbers = (
         f"позиция={progress.position_seconds:.0f} | просмотрено={progress.covered_seconds:.0f}"
         f" | длительность={duration or 0:.0f}"
     )
     if reason == REFUSAL_COMPLETED_BEFORE_BLOCK:
         # Засчитан раньше, чем блок появился: в новом занятии нужен новый проход.
-        return "засчитан до создания блока, нужен новый проход | " + numbers
+        return "засчитан до создания блока, нужен новый проход | " + numbers, watch_map
     if reason == REFUSAL_NO_DURATION:
-        return "у ролика нет длительности | " + numbers
+        return "у ролика нет длительности | " + numbers, watch_map
     threshold = watch_threshold_seconds(duration)
     if reason == REFUSAL_BELOW_THRESHOLD:
-        return f"не досмотрел до порога {threshold:.0f} | " + numbers
-    return f"дошёл до конца, но пропустил {threshold - progress.covered_seconds:.0f} с | " + numbers
+        return f"не досмотрел до порога {threshold:.0f} | " + numbers, watch_map
+    return (
+        f"дошёл до конца, но пропустил {threshold - progress.covered_seconds:.0f} с | " + numbers,
+        watch_map,
+    )
 
 
 # Контроль просмотра видео. Выключался владельцем 19.09.2026: плеер Bunny не
@@ -1329,12 +1336,14 @@ def confirm_video_block_watched(
         db, block, user["user_id"]
     ):
         # Причину пишет и в базу (статистика карточки), поэтому вызов отдельно.
-        refusal = _video_watch_refusal(db, block, user["user_id"])
+        refusal, watch_map = _video_watch_refusal(db, block, user["user_id"])
         log.warning(
             "Видео не засчитано, кружок не поставлен | block=%s | user=%s | причина=%s",
             block_id, user["user_id"], refusal,
         )
-        return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
+        return JSONResponse(
+            {"ok": False, "error": "not_watched", "watch_map": watch_map}, status_code=409,
+        )
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")
     db.commit()
     return JSONResponse({"ok": True})

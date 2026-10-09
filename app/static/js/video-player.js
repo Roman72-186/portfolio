@@ -19,6 +19,54 @@
         return window.__lrnPlayerJsPromise;
     }
 
+    // Карта прохода с сервера (`video_progress.py::watch_map`, 09.10.2026):
+    // какие куски ролика не просмотрены. По ней — строка и полоска под плеером
+    // (`renderWatchMap`) и текст отказа кружка (`task-blocks-render.js`).
+    // До неё ученик слышал только «досмотри до конца»: прод 09.10.2026,
+    // ученица id 202 — 16 отказов кружка при пропущенном куске 1:07–1:40,
+    // она перематывала в конец. Хвост — кусок до самого конца ролика, его
+    // смотрят по порядку; кнопка «Досмотреть» ведёт только к дыре позади.
+    var GAP_LEAD_SECONDS = 5;
+    function clock(seconds) {
+        var whole = Math.max(0, Math.floor(seconds));
+        var hours = Math.floor(whole / 3600);
+        var minutes = Math.floor((whole % 3600) / 60);
+        var rest = String(whole % 60).padStart(2, '0');
+        return hours > 0 ? hours + ':' + String(minutes).padStart(2, '0') + ':' + rest : minutes + ':' + rest;
+    }
+    function isTail(map, gap) {
+        return gap[1] >= map.duration - 0.05;
+    }
+    window.lrnVideoPlayer.gapsAdvice = function (map) {
+        if (!map || !map.duration || !map.gaps) return null;
+        if (map.covered >= map.threshold) {
+            // Просмотрено достаточно, зачёт ждёт только позицию у конца
+            // (`evaluate_watch`: покрытие и позиция у порога).
+            return {
+                label: 'Пропусков больше нет – перемотай в конец ролика, и просмотр засчитается.',
+                circle: 'Пропусков больше нет – перемотай ролик в конец, и кружок поставится.',
+                jumpTo: Math.min(map.duration - 1, map.threshold + 2),
+                jumpLabel: 'К концу ролика'
+            };
+        }
+        if (!map.gaps.length) return null;
+        var parts = map.gaps.map(function (gap) {
+            return isTail(map, gap)
+                ? 'с ' + clock(gap[0]) + ' до конца'
+                : clock(gap[0]) + '–' + clock(gap[1]);
+        });
+        var shown = parts.slice(0, 3).join(', ')
+            + (parts.length > 3 ? ' и ещё ' + (parts.length - 3) : '');
+        var hole = map.gaps.filter(function (gap) { return !isTail(map, gap); })[0];
+        var jumpTo = hole ? Math.max(0, hole[0] - GAP_LEAD_SECONDS) : null;
+        return {
+            label: 'Не просмотрено: ' + shown,
+            circle: 'Не досмотрено: ' + shown + '. Досмотри без перемотки, и кружок поставится.',
+            jumpTo: jumpTo,
+            jumpLabel: jumpTo === null ? '' : 'Досмотреть с ' + clock(jumpTo)
+        };
+    };
+
     // Скрипт грузится с каждым вхождением партиала (иногда и дважды на одной
     // странице, если у задачи и вкладка «Видео», и блоки с видео) —
     // переопределение той же функции идемпотентно, как и `loadPlayerJs` выше.
@@ -687,6 +735,60 @@
             var SAVE_FAILURES_BEFORE_ERROR = 3;
             var saveFailures = 0;
 
+            // Что не просмотрено — полоской и строкой под плеером, с кнопкой
+            // к первому пропущенному куску (09.10.2026). Карта приходит со
+            // страницей и с каждым ответом на отметку, так что закрашивается
+            // по ходу просмотра. Только там, где просмотр проверяют.
+            var watchMapEl = null;
+            function renderWatchMap(map) {
+                if (!watchRequired || !progressStatus) return;
+                var advice = map && map.covered > 0 ? window.lrnVideoPlayer.gapsAdvice(map) : null;
+                if (!advice) {
+                    if (watchMapEl) watchMapEl.hidden = true;
+                    return;
+                }
+                if (!watchMapEl) {
+                    watchMapEl = document.createElement('div');
+                    watchMapEl.className = 'video-watch-map';
+                    var bar = document.createElement('div');
+                    bar.className = 'video-watch-map-bar';
+                    bar.setAttribute('aria-hidden', 'true');
+                    var text = document.createElement('p');
+                    text.className = 'video-watch-map-text';
+                    text.setAttribute('aria-live', 'polite');
+                    var jump = document.createElement('button');
+                    jump.type = 'button';
+                    jump.className = 'btn-outline video-watch-map-jump';
+                    jump.addEventListener('click', function () {
+                        var target = Number(jump.getAttribute('data-jump-to'));
+                        if (!activePlayer || !Number.isFinite(target)) return;
+                        hideCover();
+                        activePlayer.setCurrentTime(target);
+                        currentSeconds = target;
+                    });
+                    watchMapEl.appendChild(bar);
+                    watchMapEl.appendChild(text);
+                    watchMapEl.appendChild(jump);
+                    progressStatus.parentNode.insertBefore(watchMapEl, progressStatus.nextSibling);
+                }
+                var barEl = watchMapEl.querySelector('.video-watch-map-bar');
+                barEl.innerHTML = '';
+                map.gaps.forEach(function (gap) {
+                    var mark = document.createElement('span');
+                    mark.className = 'video-watch-map-gap';
+                    mark.style.left = (100 * gap[0] / map.duration) + '%';
+                    mark.style.width = Math.max(0.5, 100 * (gap[1] - gap[0]) / map.duration) + '%';
+                    barEl.appendChild(mark);
+                });
+                watchMapEl.querySelector('.video-watch-map-text').textContent = advice.label;
+                var jumpEl = watchMapEl.querySelector('.video-watch-map-jump');
+                jumpEl.hidden = advice.jumpTo === null;
+                jumpEl.textContent = advice.jumpLabel;
+                jumpEl.setAttribute('data-jump-to', advice.jumpTo === null ? '' : String(advice.jumpTo));
+                watchMapEl.hidden = false;
+            }
+            renderWatchMap(data.watch_map);
+
             function finiteNumber(value) {
                 var number = Number(value);
                 return Number.isFinite(number) ? number : null;
@@ -760,6 +862,7 @@
                     }
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
+                    if (respData && 'watch_map' in respData) renderWatchMap(respData.watch_map);
                     if (respData && respData.completed === true) {
                         setStatus(
                             onCompleted
@@ -780,7 +883,7 @@
                     } else if (!watchRequired) {
                         setStatus('Место просмотра сохранено.', false);
                     } else {
-                        setStatus('Просмотр пока не засчитан – часть ролика пропущена. Обнови страницу, и ролик встанет туда, откуда нужно досмотреть.', true);
+                        setStatus('Просмотр пока не засчитан – часть ролика пропущена. Что досмотреть, видно под плеером.', true);
                     }
                 }).catch(function (error) {
                     if (error.message === 'session_expired') setStatus('Обнови страницу, чтобы сохранять место просмотра.', true);
@@ -904,14 +1007,49 @@
                 reportPlayerFault(fault);
             });
 
+            // Молчание отсчитывается, только пока плеер на экране и вкладка
+            // открыта (09.10.2026). Плееры свёрнутых шагов и ушедшие за край
+            // экрана `ready` не присылают, пока их не покажут: за первые сутки
+            // после выкатки 940 сигналов «молчит» у 47 учеников — это все, кто
+            // смотрел видео, и 80% сигналов пришли от уже засчитанных роликов
+            // соседних шагов, пока ученик смотрел свой. Ученица id 219, ради
+            // которой проверка заведена, смотрела ролик на экране — её случай
+            // ловится по-прежнему.
             function watchSilence(generation, player) {
+                var timer = null;
+                var loaded = false;
+                var visible = !('IntersectionObserver' in window);
+                var observer = null;
+                function stale() {
+                    if (generation === playerGeneration && !player.isReady) return false;
+                    if (timer) window.clearTimeout(timer);
+                    if (observer) observer.disconnect();
+                    return true;
+                }
+                function arm() {
+                    if (timer) window.clearTimeout(timer);
+                    timer = null;
+                    if (stale() || !loaded || !visible) return;
+                    timer = window.setTimeout(check, PLAYER_SILENCE_MS);
+                }
                 function check() {
-                    if (generation !== playerGeneration || player.isReady) return;
+                    timer = null;
+                    if (stale()) return;
+                    // Скрытая вкладка: браузер мог придержать и сам плеер.
+                    if (document.visibilityState !== 'visible') { arm(); return; }
+                    if (observer) observer.disconnect();
                     playerSilent = true;
                     showStatus('Просмотр сейчас не засчитывается: плеер не сообщает сайту, на какой ты минуте. Выключи VPN или открой кабинет в другом браузере и обнови страницу.', true);
                     reportPlayerFault('no_message');
                 }
-                function start() { window.setTimeout(check, PLAYER_SILENCE_MS); }
+                if (!visible) {
+                    observer = new IntersectionObserver(function (entries) {
+                        visible = entries[entries.length - 1].isIntersecting;
+                        arm();
+                    });
+                    observer.observe(frameWrap);
+                }
+                function start() { loaded = true; arm(); }
                 // При перевыпуске ссылки плеер пересоздаётся уже после `load`.
                 if (frameWrap.classList.contains('is-ready')) start();
                 else iframe.addEventListener('load', start, { once: true });

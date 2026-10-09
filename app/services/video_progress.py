@@ -1,7 +1,7 @@
 """Read and atomically upsert per-user video playback progress."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy import func
@@ -107,6 +107,39 @@ def missing_parts(merged: list[Interval], duration_seconds: float) -> list[Inter
     if duration_seconds - cursor > VIDEO_WATCH_SEGMENT_JOIN_SECONDS:
         gaps.append((cursor, duration_seconds))
     return gaps
+
+
+def watch_map(merged: list[Interval], duration_seconds: float) -> dict:
+    """Карта текущего прохода для ученика: какие куски ролика не просмотрены
+    и сколько нужно для зачёта (владелец 09.10.2026: «показывать, где что не
+    просмотрено и что досмотреть»). До неё ученик знал только «досмотри до
+    конца»: прод 09.10.2026, ученица id 202 — 16 отказов кружка подряд при
+    пропущенном куске 1:07–1:40, ей не хватало 4 секунд, а она перематывала в
+    конец. Плеер рисует по карте полоску и подсказку
+    (`video-player.js::gapsAdvice`), кружок — текст отказа. `gaps` — дыры
+    склейки и непросмотренный хвост, по порядку."""
+    return {
+        "duration": round(duration_seconds, 1),
+        "threshold": round(watch_threshold_seconds(duration_seconds), 1),
+        "covered": round(coverage_seconds(merged), 1),
+        "gaps": [
+            [round(start, 1), round(end, 1)]
+            for start, end in missing_parts(merged, duration_seconds)
+        ],
+    }
+
+
+def load_watch_map(db: DBSession, progress: VideoProgress | None) -> dict | None:
+    """Карта прохода по сохранённым отрезкам; None — показывать нечего:
+    ролик не запускали, он уже засчитан или у него нет длительности."""
+    if progress is None or progress.completed_at is not None or not progress.duration_seconds:
+        return None
+    duration = progress.duration_seconds
+    segments = pass_segments(db, user_id=progress.user_id, video_id=progress.video_id)
+    merged = merge_segments(
+        ((s.start_seconds, s.end_seconds) for s in segments), duration_seconds=duration
+    )
+    return watch_map(merged, duration)
 
 
 def lock_video_progress(
@@ -258,6 +291,9 @@ class WatchDecision:
     # с позиции отметки (`apply_watch_segments`).
     extend_to: float | None = None
     open_at: float | None = None
+    # Карта прохода после отметки (`watch_map`) — плеер обновляет по ней
+    # полоску и подсказку. None — ролик засчитан или длительности нет.
+    watch_map: dict | None = field(default=None, compare=False)
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -350,6 +386,7 @@ def evaluate_watch(
     return WatchDecision(
         watched, covered, threshold, reached, completed,
         skipped and not completed, skipped_seconds, **details,
+        watch_map=None if completed else watch_map(merged, duration_seconds),
     )
 
 

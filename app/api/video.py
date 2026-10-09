@@ -45,6 +45,7 @@ from app.services.video_progress import (
     LEGACY_SESSION_ID,
     get_video_progress,
     load_resume,
+    load_watch_map,
     log_video_view,
     merge_segments,
     pass_segments,
@@ -228,6 +229,9 @@ def _player_payload(
         # кусок досмотреть (05.10.2026; с 07.10.2026 — первый пропущенный).
         payload["resume_to_finish"] = watch_shortfall_seconds(progress) > 0
         payload["resume_gap"] = gap
+        # Какие куски не просмотрены — плеер рисует полоску и подсказку
+        # (09.10.2026, `video_progress.py::watch_map`).
+        payload["watch_map"] = load_watch_map(db, progress)
         payload["video_already_completed"] = bool(progress and progress.completed_at)
     except SQLAlchemyError:
         logger.exception("Video progress read failed for user_id=%s", user["user_id"])
@@ -235,6 +239,7 @@ def _player_payload(
         payload["resume_position_seconds"] = 0.0
         payload["resume_to_finish"] = False
         payload["resume_gap"] = None
+        payload["watch_map"] = None
         payload["video_already_completed"] = False
 
     return payload, False
@@ -253,6 +258,7 @@ _PLAYER_DATA_KEYS = (
     "resume_position_seconds",
     "resume_to_finish",
     "resume_gap",
+    "watch_map",
     "progress_endpoint",
     "player_url_endpoint",
     "player_url_ttl_seconds",
@@ -838,7 +844,11 @@ def _save_progress(
 
     # `skipped` — ученик перемотал вперёд, перемотанное не засчитано: плеер
     # предупреждает сразу, а не после досмотра (владелец 06.10.2026).
-    return JSONResponse({"ok": True, "completed": completed, "skipped": decision.skipped})
+    # `watch_map` — что осталось досмотреть после этой отметки (09.10.2026).
+    return JSONResponse({
+        "ok": True, "completed": completed, "skipped": decision.skipped,
+        "watch_map": decision.watch_map,
+    })
 
 
 @router.post("/video/progress", response_class=JSONResponse)

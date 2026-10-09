@@ -1648,6 +1648,10 @@ function buildStatsVideos(sc) {
             badges += statsBadge(v.needed_seconds != null
                 ? 'Засчитано ' + mmss(v.credited_seconds) + ' из ' + mmss(v.needed_seconds)
                 : 'Смотрел');
+            // Где именно дырки — сразу видно, что досмотреть (09.10.2026).
+            if (v.missing && v.missing.length) {
+                badges += statsBadge('Не просмотрено: ' + v.missing.join(', '), 'no');
+            }
         } else {
             badges += statsBadge('Не запускал');
         }
