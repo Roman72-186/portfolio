@@ -533,3 +533,35 @@ def test_superadmin_quick_tariff_clears_access(db, client, user_factory, session
     db.refresh(student)
     assert student.tariff == "Я С ВАМИ"
     assert student.access_until is None
+
+
+# ── Рабочие списки сотрудников (владелец 09.10.2026) ─────────────────────────
+
+def test_expired_student_hidden_from_staff_lists(db, user_factory):
+    """Пробник после конца срока — активен и без тарифа, но в «Учениках»,
+    точке А и проверке его нет; найти его, чтобы дать тариф, можно фильтром
+    «Со сроком доступа»."""
+    from app.api.cabinet_students_shared import _get_accessible_students
+    from app.services.review_aggregate import _accessible_students
+
+    curator = user_factory(vk_id=870_001, role_name="куратор")
+    head = {"user_id": 0, "role_rank": 5}
+    expired = user_factory(vk_id=870_002)
+    trial = user_factory(vk_id=870_003)
+    regular = user_factory(vk_id=870_004)
+    for student in (expired, trial, regular):
+        student.profile_completed = True
+        student.curator_id = curator.id
+    expired.access_until, expired.tariff = _hours_ago(1), ""
+    trial.access_until, trial.tariff = _hours_ahead(24), ""
+    db.commit()
+    own = {"user_id": curator.id, "role_rank": 2}
+
+    for viewer in (head, own):
+        ids = {u.id for u in _get_accessible_students(viewer, db)}
+        assert {trial.id, regular.id} <= ids and expired.id not in ids
+        ids = {u.id for u in _accessible_students(db, viewer)}
+        assert {trial.id, regular.id} <= ids and expired.id not in ids
+
+    with_deadline = {u.id for u in _get_accessible_students(head, db, has_access_deadline=True)}
+    assert {expired.id, trial.id} <= with_deadline

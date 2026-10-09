@@ -431,10 +431,18 @@ def _exam_cycle_items(
 def _accessible_students(db: DBSession, user: dict) -> list:
     """Канонический список — `_get_accessible_students` (решение владельца,
     вопрос 2): куратор (и модератор, `FULL_ACCESS_RANK`) видит `curator_id` +
-    `is_active`, admin+ — всех активных."""
+    `is_active`, admin+ — всех активных.
+
+    Без тех, у кого кабинет закрыт по сроку (`access_state`): пробник после
+    конца пробного срока остаётся активным и без тарифа, и в точке А и
+    проверке его быть не должно (владелец 09.10.2026). Карточку по прямой
+    ссылке это не закрывает."""
     from app.constants import REPORT_EXCLUDED_USER_IDS
     from app.models.role import Role
     from app.models.user import User
+    from app.services.access_state import access_open_clause
+
+    access_open = access_open_clause(datetime.now(timezone.utc))
 
     if user["role_rank"] < FULL_ACCESS_RANK:
         return (
@@ -443,6 +451,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
                 User.curator_id == user["user_id"],
                 User.is_active == True,  # noqa: E712
                 User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+                access_open,
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -456,6 +465,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
             User.role_id == student_role.id,
             User.is_active == True,  # noqa: E712
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            access_open,
         )
         .order_by(User.last_name, User.first_name)
         .all()

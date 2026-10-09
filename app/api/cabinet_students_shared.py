@@ -46,6 +46,7 @@ from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score, can_send_to_revision
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
+from app.services.access_state import access_open_clause
 from app.services.activity_stats import student_statistics
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
@@ -137,6 +138,11 @@ def _get_accessible_students(
     archived=True — режим архива (`_can_read_archive`): вместо действующих
     учеников отдаются архивные (прошлые потоки), их данные открыты только на чтение.
     Куратору с личным доступом — весь архив школы, как ГП (владелец 30.09.2026).
+
+    Действующий список — без тех, у кого кабинет закрыт по сроку
+    (`access_state`): пробник после конца срока остаётся активным и без
+    тарифа, в рабочих списках его быть не должно (владелец 09.10.2026). Найти
+    его, чтобы дать тариф, — фильтром «Со сроком доступа», он их показывает.
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
 
@@ -170,6 +176,7 @@ def _get_accessible_students(
                 User.curator_id == user["user_id"],
                 User.is_active == True,  # noqa: E712
                 User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+                access_open_clause(datetime.now(timezone.utc)),
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -189,6 +196,8 @@ def _get_accessible_students(
         q = q.filter(User.profile_completed == True)  # noqa: E712
     if has_access_deadline:
         q = q.filter(User.access_until.isnot(None))
+    else:
+        q = q.filter(access_open_clause(datetime.now(timezone.utc)))
 
     return q.order_by(User.last_name, User.first_name).all()
 
