@@ -108,7 +108,12 @@ def _can_read_archive(user: dict) -> bool:
     суперадмин открыл архив лично (владелец 30.09.2026, `section_access.py`).
     Такой куратор видит весь архив школы, только на чтение: среди действующих
     учеников правило «только свои» остаётся (`student_access` снимает его лишь
-    для архивного ученика в режиме чтения архива)."""
+    для архивного ученика в режиме чтения архива).
+
+    Аккаунту просмотра одного тарифа (`viewer_tariff`) архив закрыт: ранг у
+    него как у ГП, и без этой строки карточка открывала бы архивных."""
+    if user.get("viewer_tariff"):
+        return False
     return user["role_rank"] >= 4 or has_grant(user, "archive")
 
 
@@ -193,6 +198,8 @@ def _get_accessible_students(
         User.is_active == True,  # noqa: E712
         User.id.notin_(REPORT_EXCLUDED_USER_IDS),
     )
+    if user.get("viewer_tariff"):
+        q = q.filter(User.tariff == user["viewer_tariff"])
     if hide_pre_cohort:
         q = q.filter(User.profile_completed == True)  # noqa: E712
     if has_access_deadline:
@@ -571,6 +578,8 @@ def _render_students_panel(
                 (not_submitted_students if pending_subjects else submitted_students).append(entry)
 
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
+    if user.get("viewer_tariff"):
+        sidebar_title = tariff_label(user["viewer_tariff"])
     if archived_b:
         sidebar_title = "Архив учеников"
     valid_tabs = ("portfolio", "tasks", "statistics")
@@ -623,7 +632,9 @@ def _render_students_panel(
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
         "months": MONTHS,
+        # Аккаунту одного тарифа кнопки тарифов не нужны: в списке он один.
         "tariffs": TARIFFS_CURRENT,
+        "show_tariff_pills": not user.get("viewer_tariff"),
         # Подписи для JS карточки: фильтра `tariff_label` в скрипте нет.
         "tariff_labels": TARIFF_DISPLAY,
         "current_year": datetime.now(timezone.utc).year,

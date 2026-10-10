@@ -53,6 +53,7 @@ from app.services import payments
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
+from app.services.rbac import MODERATOR_ROLE_NAME
 from app.services import section_access
 from app.services import view_host
 from app.services.mock_exam_access import (
@@ -1645,6 +1646,7 @@ def _render_superadmin_create_staff(
         "request": request,
         "user": user,
         "roles": roles,
+        "tariffs": TARIFFS_CURRENT,
         "current_user_rank": user["role_rank"],
         "issued_creds": issued_creds,
         "page_error": page_error,
@@ -2064,9 +2066,11 @@ def superadmin_create_staff(
     first_name: str = Form(...),
     last_name: str = Form(""),
     role_id: int = Form(...),
+    viewer_tariff: str = Form(""),
 ):
     first_name_clean = first_name.strip()
     last_name_clean = last_name.strip()
+    viewer_tariff = viewer_tariff.strip()
     if not first_name_clean:
         return _render_superadmin_create_staff(request, user, db, page_error="Имя сотрудника обязательно.")
 
@@ -2077,6 +2081,15 @@ def superadmin_create_staff(
         return _render_superadmin_create_staff(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
     if not can_assign_role_rank(user["role_rank"], new_role.effective_rank):
         return _render_superadmin_create_staff(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
+    # Аккаунт просмотра одного тарифа (10.10.2026) — только модератор: у него
+    # нет прав что-либо менять, и сужение держит `get_current_user`.
+    if viewer_tariff:
+        if new_role.name != MODERATOR_ROLE_NAME:
+            return _render_superadmin_create_staff(
+                request, user, db, page_error="Ограничение по тарифу — только для роли «модератор».",
+            )
+        if viewer_tariff not in TARIFFS_CURRENT:
+            return _render_superadmin_create_staff(request, user, db, page_error="Тариф не найден.")
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
     staff = User(
@@ -2091,6 +2104,7 @@ def superadmin_create_staff(
         # учеников), а прежний дефолт «УВЕРЕННЫЙ» проставлял отработавший тариф
         # каждому новому куратору — из-за него он и висит сейчас у семи человек.
         tariff="",
+        viewer_tariff=viewer_tariff or None,
     )
     db.add(staff)
     db.flush()

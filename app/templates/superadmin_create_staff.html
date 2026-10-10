@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Создать сотрудника{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=12">
 {% endblock %}
 {% block content %}
 <div class="su-wrap ios-sa-create-staff">
@@ -56,8 +56,18 @@
                     {% endfor %}
                 </select>
             </label>
+            <label>
+                Видит только тариф
+                <select name="viewer_tariff" aria-describedby="viewer-tariff-hint">
+                    <option value="" selected>Без ограничения</option>
+                    {% for t in tariffs %}
+                    <option value="{{ t }}">{{ t|tariff_label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
             <button type="submit" class="btn-blue sa-nowrap-btn">Создать сотрудника</button>
         </div>
+        <div class="create-student-sub" id="viewer-tariff-hint">Тариф – только для модератора: такой аккаунт видит одних учеников этого тарифа, без архива и статистики, и ничего не меняет.</div>
     </form>
 
 </div>

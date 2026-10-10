@@ -44,4 +44,10 @@ def get_student_for_staff_access(
     if user["role_rank"] < 4 and student.curator_id != user["user_id"] and not reading_archive:
         raise HTTPException(status_code=403, detail=forbidden_detail)
 
+    # Аккаунт просмотра одного тарифа (10.10.2026): уровень у него как у ГП,
+    # поэтому правило «только свои» выше его не держит — держит тариф. Здесь,
+    # а не в роутах: через эту функцию идёт каждая вкладка карточки.
+    if user.get("viewer_tariff") and student.tariff != user["viewer_tariff"]:
+        raise HTTPException(status_code=403, detail=forbidden_detail)
+
     return student

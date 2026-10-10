@@ -49,6 +49,12 @@ class User(Base):
     university_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"), nullable=True)
+    # Аккаунт просмотра одного тарифа (владелец 10.10.2026: куратору Алёне —
+    # все ученики «Уверенного максимума», вход по паролю). Действует только у
+    # модератора: он видит одних учеников этого тарифа, без архива и
+    # статистики (`dependencies.get_current_user`, `student_access`). Пусто —
+    # обычный модератор.
+    viewer_tariff: Mapped[str | None] = mapped_column(String(50), nullable=True)
     tg_username: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     # Расхождение с живым Telegram (добавлено 12.09.2026). Раз в сутки
     # exam_scheduler._run_tg_username_check сверяет это поле с тем, что

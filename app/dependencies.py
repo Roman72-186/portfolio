@@ -31,6 +31,7 @@ from app.services.section_access import (
     is_configurable_role,
     judge_request,
     resolve_levels,
+    tariff_viewer_levels,
 )
 
 
@@ -215,7 +216,12 @@ def get_current_user(
     # ограничивает ничто. В режиме «глазами» сессия принадлежит сотруднику —
     # суперадмин видит ровно его ограничения.
     levels: dict[str, str] = {}
-    if is_configurable_role(role_name):
+    # Аккаунт просмотра одного тарифа (`User.viewer_tariff`, 10.10.2026) —
+    # только у модератора: его уровни зашиты, «Доступы» его не расширяют.
+    viewer_tariff = user.viewer_tariff if role_name == MODERATOR_ROLE_NAME else None
+    if viewer_tariff:
+        levels = tariff_viewer_levels()
+    elif is_configurable_role(role_name):
         levels = resolve_levels(
             db, user_id=user.id, role_id=user.role_id, role_name=role_name,
         )
@@ -323,6 +329,8 @@ def get_current_user(
         "drive_folder_id": user.drive_folder_id,
         "curator_id": user.curator_id,
         "tariff": user.tariff,
+        # Видит только учеников этого тарифа (`student_access`); None — без сужения.
+        "viewer_tariff": viewer_tariff,
         "photo_url": user.photo_url,
         "custom_avatar_url": user.custom_avatar_url,
         "is_admin": is_admin,

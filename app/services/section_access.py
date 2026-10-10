@@ -571,6 +571,18 @@ def resolve_levels(
     return levels
 
 
+def tariff_viewer_levels() -> dict[str, str]:
+    """Уровни аккаунта просмотра одного тарифа (`User.viewer_tariff`,
+    владелец 10.10.2026): «Ученики» — смотреть, остальное закрыто, действия
+    нельзя. Правила из «Доступов» к нему не применяются — расширить такой
+    аккаунт настройкой нельзя, только сняв тариф. Закрытые архив и статистика
+    уходят из меню и отвечают 403 тем же путём, что у любого сотрудника."""
+    levels = {s.key: LEVEL_NONE for s in SECTIONS}
+    levels["students"] = LEVEL_VIEW
+    levels.update({a.key: LEVEL_NONE for a in ACTIONS})
+    return levels
+
+
 def _action_level(stored: str | None, action: Action, section_levels: dict[str, str]) -> str:
     """Уровень действия: своё правило (только «можно» или «нельзя») или
     уровень по умолчанию от раздела."""

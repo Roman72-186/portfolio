@@ -100,6 +100,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             </details>
         </div>
         {% endif %}
+        {% if show_tariff_pills %}
         <div class="tariff-pills">
             <button class="tariff-pill active" data-tariff="" onclick="selectTariff(this)">Все</button>
             {% for tariff_name in tariffs %}
@@ -107,6 +108,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             {% endfor %}
             <button class="tariff-pill" data-tariff="__newcomer__" onclick="selectTariff(this)">Новенький</button>
         </div>
+        {% endif %}
         <div class="sidebar-filters">
             {% if not is_archive_view %}
             <select class="sidebar-select" id="filter-unreviewed" aria-label="Фильтр по проверке" onchange="filterSidebar()">
