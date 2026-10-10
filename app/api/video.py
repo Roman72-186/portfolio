@@ -75,7 +75,7 @@ class VideoProgressUpdate(BaseModel):
     # телефоне): клиент сообщает один раз за сеанс, почему. Зачёт эта отметка
     # не меняет — позиция в ней та же, что в прошлой. Значения —
     # `video_watch_events.PLAYER_FAULTS`.
-    player_fault: Literal["no_message", "origin", "src"] | None = None
+    player_fault: Literal["no_message", "origin", "src", "fallback"] | None = None
 
     @model_validator(mode="after")
     def validate_position(self):
@@ -429,6 +429,7 @@ def refresh_catalog_player_url(
 def save_catalog_video_progress(
     video_id: int,
     payload: VideoProgressUpdate,
+    request: Request,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
@@ -443,6 +444,7 @@ def save_catalog_video_progress(
         bunny_video_id=video.bunny_video_id,
         known_duration_seconds=video.duration_seconds,
         topic_id=video.topic_id,
+        user_agent=request.headers.get("user-agent"),
     )
 
 
@@ -739,6 +741,7 @@ def _save_progress(
     known_duration_seconds: float | None = None,
     allow_client_duration: bool = False,
     topic_id: int | None = None,
+    user_agent: str | None = None,
 ):
     """Сохранить позицию просмотра. Факт «досмотрел» решает сервер.
 
@@ -827,9 +830,13 @@ def _save_progress(
     if cut is not None:
         record_watch_event(db, cut)
     if payload.player_fault:
+        # Устройство — только в журнал, не в базу (10.10.2026): без него молчание
+        # плеера у ученицы id 288 не с чем было сопоставить.
         logger.warning(
-            "Видео: плеер не передаёт события | user=%s | video=%s | сеанс=%s | причина=%s",
+            "Видео: плеер не передаёт события | user=%s | video=%s | сеанс=%s | причина=%s"
+            " | устройство=%s",
             user["user_id"], bunny_video_id, session_id, payload.player_fault,
+            (user_agent or "-")[:300],
         )
         record_watch_event(db, player_fault_event(
             user_id=user["user_id"],
@@ -854,6 +861,7 @@ def _save_progress(
 @router.post("/video/progress", response_class=JSONResponse)
 def save_video_progress_legacy(
     payload: VideoProgressUpdate,
+    request: Request,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
@@ -872,4 +880,5 @@ def save_video_progress_legacy(
         db=db,
         bunny_video_id=settings.bunny_stream_video_id,
         allow_client_duration=True,
+        user_agent=request.headers.get("user-agent"),
     )

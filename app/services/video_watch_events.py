@@ -41,12 +41,17 @@ KIND_PLAYER = "player"
 PLAYER_NO_MESSAGE = "no_message"
 PLAYER_ORIGIN = "origin"
 PLAYER_SRC = "src"
-PLAYER_FAULTS = (PLAYER_NO_MESSAGE, PLAYER_ORIGIN, PLAYER_SRC)
+# Player.js так и не ответил, просмотр шёл запасным каналом Bunny
+# (`bunnystream`, 10.10.2026, ученица id 288). Засчитывается как обычно —
+# это тоже диагностика, а не потеря.
+PLAYER_FALLBACK = "fallback"
+PLAYER_FAULTS = (PLAYER_NO_MESSAGE, PLAYER_ORIGIN, PLAYER_SRC, PLAYER_FALLBACK)
 
 PLAYER_FAULT_LABELS = {
     PLAYER_NO_MESSAGE: "Плеер молчал – просмотр не передавался",
     PLAYER_ORIGIN: "Плеер ответил с другого домена – связь восстановлена",
     PLAYER_SRC: "Плеер ответил с другим адресом – связь восстановлена",
+    PLAYER_FALLBACK: "Плеер ответил запасным каналом – просмотр засчитывался",
 }
 
 # Причины среза. Порядок проверки — в `classify_cut`.

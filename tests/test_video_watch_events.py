@@ -447,3 +447,24 @@ def test_backfill_parses_journal_lines():
     assert (cut.user_id, cut.reason, cut.created_at.hour) == (229, CUT_PAUSED_PLAYING, 14)
     assert (refusal.block_id, refusal.video_id, refusal.reason) == (114, "v2", REFUSAL_BELOW_THRESHOLD)
     assert (refusal.position_to, refusal.watched_seconds, refusal.duration_seconds) == (176, 171, 399)
+
+
+def test_player_script_falls_back_to_bunnystream_channel():
+    """Прод 10.10.2026, ученица id 288 (телефон, приложение с экрана «Домой»):
+    Player.js не прислал ни одного события, засчитано 0 секунд. Пока он
+    молчит, плеер берёт минуту из канала Bunny `bunnystream` — только из своей
+    рамки и только пока Player.js не готов, через те же обработчики."""
+    from pathlib import Path
+
+    from app.api.video import VideoProgressUpdate
+    from app.services.video_watch_events import PLAYER_FALLBACK, PLAYER_FAULTS
+
+    js = Path("app/static/js/video-player.js").read_text(encoding="utf-8")
+    channel = js.split("message.channel !== 'bunnystream'", 1)[0].rsplit("window.addEventListener('message'", 1)[1]
+    assert "player.isReady || event.source !== iframe.contentWindow" in channel
+    assert "postToFrame('activate')" in js
+    assert "handleTime(seconds, duration)" in js and "reportPlayerFault('fallback')" in js
+    # Живой запасной канал — не «плеер молчит».
+    assert "!player.isReady && !bunnyLive) return false;" in js
+    assert PLAYER_FALLBACK in PLAYER_FAULTS
+    assert VideoProgressUpdate(position_seconds=1, player_fault="fallback").player_fault == "fallback"

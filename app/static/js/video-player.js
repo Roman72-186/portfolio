@@ -599,7 +599,7 @@
             // Молчащий плеер не перезагружаем и честно говорим ученику, почему
             // просмотр не засчитывается.
             var playerSilent = false;
-            var playerFaultReported = false;
+            var playerFaultsReported = {};
             var PLAYER_SILENCE_MS = 20000;
 
             function showStatus(message, isError) {
@@ -763,8 +763,7 @@
                         var target = Number(jump.getAttribute('data-jump-to'));
                         if (!activePlayer || !Number.isFinite(target)) return;
                         hideCover();
-                        activePlayer.setCurrentTime(target);
-                        currentSeconds = target;
+                        seekTo(target);
                     });
                     watchMapEl.appendChild(bar);
                     watchMapEl.appendChild(text);
@@ -957,12 +956,40 @@
                 return advanceStartedAt !== null && now - advanceStartedAt >= PLAYBACK_PROOF_MS;
             }
 
+            // Обработчики событий плеера — общие для Player.js и запасного
+            // канала Bunny (`bunnystream` ниже): правило зачёта одно.
+            function handleTime(seconds, duration) {
+                currentSeconds = seconds;
+                if (duration !== null && duration > 0) durationSeconds = duration;
+                if (noteTick(seconds) && !isPlaying) markPlaying();
+                if (Date.now() - lastAutomaticSaveAt >= 10000) {
+                    lastAutomaticSaveAt = Date.now();
+                    saveProgress(false, false, false);
+                }
+            }
+            function handlePause() {
+                // Последний кусок до паузы тоже был просмотрен. Флаг активного
+                // воспроизведения должен попасть в тело запроса до смены состояния.
+                saveProgress(true, false, false);
+                setPlaying(false);
+                // Иначе первые тики после следующего «плей» сочтутся
+                // продолжением старой серии.
+                resetAdvance();
+            }
+            function handleEnded() {
+                if (durationSeconds !== null) currentSeconds = durationSeconds;
+                saveProgress(true, true, false);
+                setPlaying(false);
+            }
+
             // Разовая отметка о сбое плеера — серверу для статистики
             // (`video_watch_events.KIND_PLAYER`). Позиция та же, что в прошлой
             // отметке, поэтому на зачёт она не влияет.
             function reportPlayerFault(reason) {
-                if (playerFaultReported) return;
-                playerFaultReported = true;
+                // Каждая причина — раз за страницу: `fallback` приходит
+                // следом за `no_message` и должен дойти тоже.
+                if (playerFaultsReported[reason]) return;
+                playerFaultsReported[reason] = true;
                 sendProgress({
                     position_seconds: Math.max(0, currentSeconds || 0),
                     duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
@@ -1007,6 +1034,106 @@
                 reportPlayerFault(fault);
             });
 
+            // Запасной канал Bunny (10.10.2026, ученица id 288: телефон,
+            // приложение с экрана «Домой», без VPN). Видео играло три дня, а
+            // Player.js не прислал ни одного события: 16 сеансов на 0:00,
+            // засчитано 0 секунд, кружок отказан 39 раз. Player.js в рамке шлёт
+            // события только на домен из своего `document.referrer` и
+            // включается лишь на `loadeddata`; что из этого ломается на её
+            // телефоне, с сервера не видно. У страницы плеера Bunny есть второй
+            // канал: по команде `activate` она шлёт каждое событие с текущей
+            // минутой (`channel: 'bunnystream'`) на любой домен — `'*'`. Слушаем
+            // его, только пока Player.js не готов: тот остаётся главным.
+            // `activate` страница плеера принимает лишь после разбора списка
+            // качеств ролика, поэтому команду повторяем, пока не придёт ответ;
+            // каждый повтор подписывает события ещё раз — дубли отсекает
+            // `lastBunnyKey`. Позицию сервер проверяет тем же правилом.
+            var BUNNY_ACTIVATE_AT_MS = [0, 1000, 3000, 6000, 10000, 20000, 40000, 70000];
+            var bunnyLive = false;
+            var lastBunnyKey = null;
+            var bunnyResumePending = false;
+            function postToFrame(command, parameter) {
+                if (!iframe.contentWindow) return;
+                var message = { command: command };
+                if (parameter !== undefined) message.parameter = parameter;
+                iframe.contentWindow.postMessage(message, '*');
+            }
+            function activateBunnyChannel(generation, player) {
+                var step = 0;
+                function next() {
+                    if (generation !== playerGeneration || player.isReady || bunnyLive) return;
+                    postToFrame('activate');
+                    step += 1;
+                    if (step < BUNNY_ACTIVATE_AT_MS.length) {
+                        window.setTimeout(next, BUNNY_ACTIVATE_AT_MS[step] - BUNNY_ACTIVATE_AT_MS[step - 1]);
+                    }
+                }
+                if (frameWrap.classList.contains('is-ready')) next();
+                else iframe.addEventListener('load', next, { once: true });
+            }
+            // Переход на минуту: у запасного канала нет команды «перейти на»,
+            // только «вперёд/назад на N секунд».
+            function seekTo(target) {
+                if (activePlayer && activePlayer.isReady) {
+                    activePlayer.setCurrentTime(target);
+                } else if (bunnyLive) {
+                    var delta = target - currentSeconds;
+                    if (delta > 0) postToFrame('forward', delta);
+                    else if (delta < 0) postToFrame('rewind', -delta);
+                } else {
+                    return;
+                }
+                currentSeconds = target;
+            }
+            window.addEventListener('message', function (event) {
+                var player = activePlayer;
+                if (!player || player.isReady || event.source !== iframe.contentWindow) return;
+                var message = event.data;
+                if (!message || typeof message !== 'object' || message.channel !== 'bunnystream') return;
+                var status = message.status || {};
+                var seconds = finiteNumber(status.currentTime);
+                var duration = finiteNumber(status.duration);
+                var key = message.event + '|' + seconds + '|' + status.playing;
+                if (key === lastBunnyKey) return;
+                lastBunnyKey = key;
+                if (!bunnyLive) {
+                    bunnyLive = true;
+                    if (playerSilent) {
+                        playerSilent = false;
+                        setStatus('Место просмотра сохраняется автоматически.', false);
+                    }
+                    // На iPhone Player.js включается только после «плей», и
+                    // первым приходит этот канал. Сбоем считаем, если Player.js
+                    // не ответил и через 10 секунд.
+                    var generation = playerGeneration;
+                    window.setTimeout(function () {
+                        if (generation === playerGeneration && !player.isReady) reportPlayerFault('fallback');
+                    }, 10000);
+                }
+                if (duration !== null && duration > 0) durationSeconds = duration;
+                if (message.event === 'play' || message.event === 'playing') {
+                    markPlaying();
+                    if (bunnyResumePending) {
+                        bunnyResumePending = false;
+                        if (resumeSeconds >= 5 && (seconds === null || seconds < 1)) {
+                            postToFrame('forward', resumeSeconds);
+                            currentSeconds = resumeSeconds;
+                            resetAdvance();
+                            setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
+                        }
+                    }
+                } else if (message.event === 'timeupdate') {
+                    if (seconds !== null) handleTime(seconds, duration);
+                } else if (message.event === 'pause') {
+                    handlePause();
+                } else if (message.event === 'seeked') {
+                    if (seconds !== null) currentSeconds = seconds;
+                    saveProgress(true, false, false);
+                } else if (message.event === 'ended') {
+                    handleEnded();
+                }
+            });
+
             // Молчание отсчитывается, только пока плеер на экране и вкладка
             // открыта (09.10.2026). Плееры свёрнутых шагов и ушедшие за край
             // экрана `ready` не присылают, пока их не покажут: за первые сутки
@@ -1021,7 +1148,7 @@
                 var visible = !('IntersectionObserver' in window);
                 var observer = null;
                 function stale() {
-                    if (generation === playerGeneration && !player.isReady) return false;
+                    if (generation === playerGeneration && !player.isReady && !bunnyLive) return false;
                     if (timer) window.clearTimeout(timer);
                     if (observer) observer.disconnect();
                     return true;
@@ -1061,6 +1188,11 @@
                 activePlayer = player;
                 resetAdvance();
                 watchSilence(generation, player);
+                // Новая рамка — новый запасной канал: подписка прежней ушла с ней.
+                bunnyLive = false;
+                lastBunnyKey = null;
+                bunnyResumePending = resumeSeconds >= 5;
+                activateBunnyChannel(generation, player);
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
@@ -1105,13 +1237,7 @@
                     if (generation !== playerGeneration) return;
                     var timing = timingData(raw);
                     if (!timing || timing.seconds === null) return;
-                    currentSeconds = timing.seconds;
-                    if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
-                    if (noteTick(timing.seconds) && !isPlaying) markPlaying();
-                    if (Date.now() - lastAutomaticSaveAt >= 10000) {
-                        lastAutomaticSaveAt = Date.now();
-                        saveProgress(false, false, false);
-                    }
+                    handleTime(timing.seconds, timing.duration);
                 });
                 player.on('play', function () {
                     if (generation !== playerGeneration) return;
@@ -1119,13 +1245,7 @@
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;
-                    // Последний кусок до паузы тоже был просмотрен. Флаг активного
-                    // воспроизведения должен попасть в тело запроса до смены состояния.
-                    saveProgress(true, false, false);
-                    setPlaying(false);
-                    // Иначе первые тики после следующего «плей» сочтутся
-                    // продолжением старой серии.
-                    resetAdvance();
+                    handlePause();
                 });
                 player.on('seeked', function () {
                     if (generation !== playerGeneration) return;
@@ -1137,9 +1257,7 @@
                 });
                 player.on('ended', function () {
                     if (generation !== playerGeneration) return;
-                    if (durationSeconds !== null) currentSeconds = durationSeconds;
-                    saveProgress(true, true, false);
-                    setPlaying(false);
+                    handleEnded();
                 });
             }
 

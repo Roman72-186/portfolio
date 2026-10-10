@@ -95,7 +95,8 @@ def test_player_reports_success_only_after_server_confirmation():
     assert "ended: Boolean(completed)" in source
     # Текст сменился в 20f9334 (подсказка, откуда досматривать) — тест отстал.
     assert "Просмотр пока не засчитан" in source
-    pause_handler = source.split("player.on('pause'", 1)[1].split("});", 1)[0]
+    # Пауза общая для Player.js и запасного канала Bunny (10.10.2026).
+    pause_handler = source.split("function handlePause() {", 1)[1].split("\n            }", 1)[0]
     assert pause_handler.index("saveProgress") < pause_handler.index("setPlaying(false)")
 
 
@@ -106,14 +107,17 @@ def test_player_infers_playback_from_position_without_play_event():
     скачком (перемотка) и паузой."""
     source = _read("app/static/js/video-player.js")
 
+    # Обработчики общие для Player.js и запасного канала Bunny (10.10.2026).
     timeupdate = source.split("player.on('timeupdate'", 1)[1].split("});", 1)[0]
-    assert "noteTick(timing.seconds) && !isPlaying) markPlaying()" in timeupdate
+    assert "handleTime(timing.seconds, timing.duration)" in timeupdate
+    handle_time = source.split("function handleTime(seconds, duration) {", 1)[1].split("\n            }", 1)[0]
+    assert "noteTick(seconds) && !isPlaying) markPlaying()" in handle_time
     # Скорость шага ограничена теми же 2,25×, что у сервера: скачок ползунком
     # серию не продолжает.
     assert "step <= elapsed * 2.25 + 0.5" in source
     play = source.split("player.on('play'", 1)[1].split("});", 1)[0]
     assert "markPlaying()" in play
-    pause = source.split("player.on('pause'", 1)[1].split("});", 1)[0]
+    pause = source.split("function handlePause() {", 1)[1].split("\n            }", 1)[0]
     assert "resetAdvance()" in pause
     mark = source.split("function markPlaying()", 1)[1].split("}", 1)[0]
     assert "setPlaying(true)" in mark and "saveProgress(true, false, false)" in mark
