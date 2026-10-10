@@ -168,3 +168,159 @@ def test_unknown_tariff_refused(superadmin_client, db, role_factory):
     resp = _create(superadmin_client, moderator_role.id, "МАКСИМУМ", "Олег")
     assert "Тариф не найден" in resp.text
     assert db.query(User).filter(User.first_name == "Олег").first() is None
+
+
+def test_superadmin_links_viewer_to_curator(superadmin_client, db, role_factory, user_factory):
+    curator = user_factory(vk_id=991_041, name="Алёна Куратор", role_name="куратор")
+    moderator_role = role_factory("модератор", 3)
+    superadmin_client.post(
+        "/cabinet/superadmin/users/create-staff",
+        data={
+            "first_name": "Связь", "role_id": str(moderator_role.id),
+            "viewer_tariff": TARIFF_CONFIDENT_MAX, "viewer_owner_id": str(curator.id),
+            "csrf_token": "bypass",
+        },
+    )
+    staff = db.query(User).filter(User.first_name == "Связь").one()
+    assert staff.viewer_owner_id == curator.id
+
+
+def test_curator_button_needs_tariff(superadmin_client, db, role_factory, user_factory):
+    curator = user_factory(vk_id=991_042, name="Куратор Без", role_name="куратор")
+    moderator_role = role_factory("модератор", 3)
+    resp = superadmin_client.post(
+        "/cabinet/superadmin/users/create-staff",
+        data={
+            "first_name": "Безтарифа", "role_id": str(moderator_role.id),
+            "viewer_owner_id": str(curator.id), "csrf_token": "bypass",
+        },
+    )
+    assert "только для аккаунта с тарифом" in resp.text
+    assert db.query(User).filter(User.first_name == "Безтарифа").first() is None
+
+
+# ── Кнопка в кабинете куратора: пароль, вход, возврат ────────────────────────
+
+PASSWORD = "секрет-просмотра"
+
+
+@pytest.fixture()
+def linked(db, user_factory, viewer):
+    import bcrypt
+
+    curator = user_factory(vk_id=991_050, name="Алёна", role_name="куратор")
+    viewer.viewer_owner_id = curator.id
+    viewer.staff_login = "alena.view"
+    viewer.password_hash = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode()
+    db.commit()
+    return curator, viewer
+
+
+@pytest.fixture()
+def curator_client(client, session_factory, linked):
+    curator, _ = linked
+    session = session_factory(curator)
+    client.cookies.set("session_id", session.id)
+    return client, session
+
+
+def _enter(client, password):
+    return client.post(
+        "/cabinet/tariff-view",
+        data={"password": password, "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+
+def _adopt(client, resp):
+    """Куки ответа — в клиент одним экземпляром: иначе выставленная руками
+    `session_id` и пришедшая от сервера лежат в банке рядом как две разные."""
+    for name, value in resp.cookies.items():
+        client.cookies.delete(name)
+        client.cookies.set(name, value)
+
+
+def _exit(client):
+    resp = client.post("/cabinet/tariff-view/exit", data={"csrf_token": "bypass"}, follow_redirects=False)
+    _adopt(client, resp)
+    return resp
+
+
+def test_button_only_for_linked_curator(curator_client, client, session_factory, user_factory):
+    c, _ = curator_client
+    page = c.get("/cabinet/curator")
+    assert 'href="/cabinet/tariff-view"' in page.text
+    assert "Уверенный максимум" in page.text
+
+    other = user_factory(vk_id=991_051, name="Другой куратор", role_name="куратор")
+    c.cookies.set("session_id", session_factory(other).id)
+    assert 'href="/cabinet/tariff-view"' not in c.get("/cabinet/curator").text
+    assert c.get("/cabinet/tariff-view").status_code == 404
+    assert _enter(c, PASSWORD).status_code == 404
+
+
+def test_wrong_password_keeps_curator_session(curator_client):
+    c, session = curator_client
+    resp = _enter(c, "не тот")
+    assert resp.status_code == 200
+    assert "Неверный пароль" in resp.text
+    assert c.cookies.get("session_id") == session.id
+
+
+def test_enter_and_return(curator_client, db, students, linked):
+    c, curator_session = curator_client
+    _, viewer = linked
+    resp = _enter(c, PASSWORD)
+    assert resp.status_code == 303
+    _adopt(c, resp)
+    viewer_session_id = c.cookies.get("session_id")
+    assert viewer_session_id != curator_session.id
+
+    # Внутри — аккаунт просмотра: только тариф и кнопка обратно.
+    home = c.get("/cabinet", follow_redirects=False)
+    assert home.headers["location"] == "/cabinet/students"
+    page = c.get("/cabinet/students")
+    assert "Ученик Максимум" in page.text and "Ученик Сам" not in page.text
+    assert "В кабинет куратора" in page.text
+
+    back = _exit(c)
+    assert back.status_code == 303
+    assert c.cookies.get("session_id") == curator_session.id
+    assert c.get("/cabinet/curator").status_code == 200
+
+    from app.models.session import Session
+    db.expire_all()
+    assert db.get(Session, viewer_session_id).is_active is False
+
+
+def test_forged_return_cookie_logs_out(curator_client, db):
+    c, curator_session = curator_client
+    _adopt(c, _enter(c, PASSWORD))
+    c.cookies.delete("tariff_view_return")
+    c.cookies.set("tariff_view_return", "forged")
+    back = _exit(c)
+    assert back.status_code == 303
+    assert back.headers["location"] == "/"
+    assert c.cookies.get("session_id") != curator_session.id
+
+
+def test_return_refused_when_curator_session_ended(curator_client, db):
+    c, curator_session = curator_client
+    _adopt(c, _enter(c, PASSWORD))
+    curator_session.is_active = False
+    db.commit()
+    back = _exit(c)
+    assert back.headers["location"] == "/"
+
+
+def test_exit_is_404_for_non_viewer(curator_client):
+    c, session = curator_client
+    resp = c.post("/cabinet/tariff-view/exit", data={"csrf_token": "bypass"}, follow_redirects=False)
+    assert resp.status_code == 404
+    assert c.cookies.get("session_id") == session.id
+
+
+def test_password_login_page_unchanged(client):
+    page = client.get("/login")
+    assert 'name="login"' in page.text
+    assert "Вход по логину и паролю" in page.text

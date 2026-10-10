@@ -55,6 +55,9 @@ class User(Base):
     # статистики (`dependencies.get_current_user`, `student_access`). Пусто —
     # обычный модератор.
     viewer_tariff: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Куратор, у которого в кабинете кнопка входа в этот аккаунт просмотра:
+    # по паролю аккаунта и с возвратом обратно (`services/tariff_view.py`).
+    viewer_owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     tg_username: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     # Расхождение с живым Telegram (добавлено 12.09.2026). Раз в сутки
     # exam_scheduler._run_tg_username_check сверяет это поле с тем, что

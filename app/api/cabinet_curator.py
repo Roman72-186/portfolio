@@ -22,10 +22,11 @@ from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_M
 from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
+from app.services.tariff_view import linked_viewer
 from app.services.tz import MSK_TZ
 from app.services.user_management import rename_staff_self, validate_staff_name
 from app.services.utils import study_duration_text, group_works
-from app.tmpl import format_rich_text, templates
+from app.tmpl import format_rich_text, tariff_label, templates
 
 router = APIRouter(prefix="/cabinet")
 
@@ -122,13 +123,18 @@ def _check_student_access(student_id: int, user: dict, db: DBSession) -> User:
 def cabinet_curator_dashboard(
     request: Request,
     user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам."""
+    """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам.
+    Плюс кнопка входа в свой аккаунт просмотра тарифа, если он есть
+    (`services/tariff_view.py`, 10.10.2026)."""
+    viewer = None if user.get("impersonated_by_id") else linked_viewer(db, user["user_id"])
     return templates.TemplateResponse(request, "cabinet_curator_dashboard.html", {
         "request": request,
         "user": user,
         "nav_active": "dashboard",
         "renamed": request.query_params.get("renamed") == "1",
+        "tariff_view_label": tariff_label(viewer.viewer_tariff) if viewer else None,
     })
 
 

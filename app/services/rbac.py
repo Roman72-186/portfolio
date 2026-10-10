@@ -123,6 +123,9 @@ _MODERATOR_WRITE_EXACT = frozenset({
     "/logout",
     "/cabinet/notifications/mark-read",
     "/cabinet/superadmin/impersonate/stop",
+    # Возврат из аккаунта просмотра тарифа в кабинет куратора (10.10.2026);
+    # адрес сам отказывает всем, кроме такого аккаунта.
+    "/cabinet/tariff-view/exit",
 })
 
 

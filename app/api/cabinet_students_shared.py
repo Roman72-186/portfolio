@@ -45,6 +45,7 @@ from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.services.rbac import can_score as role_can_score, can_send_to_revision
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
+from app.services.tariff_view import RETURN_COOKIE as TARIFF_VIEW_RETURN_COOKIE
 from app.services.notify import notify
 from app.services.access_state import access_open_clause
 from app.services.activity_stats import student_statistics
@@ -635,6 +636,11 @@ def _render_students_panel(
         # Аккаунту одного тарифа кнопки тарифов не нужны: в списке он один.
         "tariffs": TARIFFS_CURRENT,
         "show_tariff_pills": not user.get("viewer_tariff"),
+        # Вошёл кнопкой из кабинета куратора — кнопка обратно
+        # (`services/tariff_view.py`); кука проверяется на выходе.
+        "tariff_view_return": bool(
+            user.get("viewer_tariff") and request.cookies.get(TARIFF_VIEW_RETURN_COOKIE)
+        ),
         # Подписи для JS карточки: фильтра `tariff_label` в скрипте нет.
         "tariff_labels": TARIFF_DISPLAY,
         "current_year": datetime.now(timezone.utc).year,

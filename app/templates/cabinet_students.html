@@ -28,6 +28,12 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
+        {% if tariff_view_return %}
+        <form class="sidebar-hard-filters" method="post" action="/cabinet/tariff-view/exit">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-outline">← В кабинет куратора</button>
+        </form>
+        {% endif %}
         {% if is_archive_view %}
         <div class="sidebar-hard-filters">
             <span class="filter-pill">

@@ -18,6 +18,7 @@ from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_sup
 from app.api import cabinet_students_shared, cabinet_tags, cases, photo_rotation
 from app.api import cycle_upload, feedback as feedback_router
 from app.api import legacy_portfolio, video, video_admin
+from app.api import tariff_view as tariff_view_router
 from app.api import guest_exam, cabinet_guest_exam_admin
 from app.api import cabinet_learning, cabinet_personal, cabinet_tracker_admin, cabinet_program
 from app.api import cabinet_digest_admin, cabinet_goal_admin
@@ -411,6 +412,7 @@ app.include_router(cabinet_access_admin.router)
 app.include_router(payments_router.router)
 app.include_router(cabinet_payment_import.router)
 app.include_router(cabinet_payments_admin.router)
+app.include_router(tariff_view_router.router)
 
 
 @app.get("/health")

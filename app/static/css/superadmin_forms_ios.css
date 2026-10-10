@@ -281,7 +281,7 @@
     outline: 2px solid var(--ios-blue); outline-offset: 1px;
 }
 .ios-sa-create-staff .create-staff-grid {
-    display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)) auto; gap: 12px; align-items: flex-end;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; align-items: flex-end;
 }
 .ios-sa-create-staff .create-staff-grid + .create-student-sub { margin: 10px 0 0; }
 

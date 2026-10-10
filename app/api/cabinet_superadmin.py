@@ -1647,6 +1647,7 @@ def _render_superadmin_create_staff(
         "user": user,
         "roles": roles,
         "tariffs": TARIFFS_CURRENT,
+        "curators": _load_superadmin_curators(db),
         "current_user_rank": user["role_rank"],
         "issued_creds": issued_creds,
         "page_error": page_error,
@@ -2067,6 +2068,7 @@ def superadmin_create_staff(
     last_name: str = Form(""),
     role_id: int = Form(...),
     viewer_tariff: str = Form(""),
+    viewer_owner_id: int = Form(0),
 ):
     first_name_clean = first_name.strip()
     last_name_clean = last_name.strip()
@@ -2090,6 +2092,16 @@ def superadmin_create_staff(
             )
         if viewer_tariff not in TARIFFS_CURRENT:
             return _render_superadmin_create_staff(request, user, db, page_error="Тариф не найден.")
+    # Кнопка входа в этот аккаунт в кабинете куратора (`services/tariff_view.py`).
+    viewer_owner = None
+    if viewer_owner_id:
+        if not viewer_tariff:
+            return _render_superadmin_create_staff(
+                request, user, db, page_error="Кнопка у куратора — только для аккаунта с тарифом.",
+            )
+        viewer_owner = get_curator_for_assignment(db, viewer_owner_id, active_only=True)
+        if viewer_owner is None:
+            return _render_superadmin_create_staff(request, user, db, page_error="Куратор не найден.")
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
     staff = User(
@@ -2105,6 +2117,7 @@ def superadmin_create_staff(
         # каждому новому куратору — из-за него он и висит сейчас у семи человек.
         tariff="",
         viewer_tariff=viewer_tariff or None,
+        viewer_owner_id=viewer_owner.id if viewer_owner else None,
     )
     db.add(staff)
     db.flush()

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Создать сотрудника{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=12">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
 {% endblock %}
 {% block content %}
 <div class="su-wrap ios-sa-create-staff">
@@ -65,9 +65,18 @@
                     {% endfor %}
                 </select>
             </label>
+            <label>
+                Кнопка у куратора
+                <select name="viewer_owner_id" aria-describedby="viewer-tariff-hint">
+                    <option value="0" selected>Нет</option>
+                    {% for c in curators %}
+                    <option value="{{ c.id }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
             <button type="submit" class="btn-blue sa-nowrap-btn">Создать сотрудника</button>
         </div>
-        <div class="create-student-sub" id="viewer-tariff-hint">Тариф – только для модератора: такой аккаунт видит одних учеников этого тарифа, без архива и статистики, и ничего не меняет.</div>
+        <div class="create-student-sub" id="viewer-tariff-hint">Тариф – только для модератора: такой аккаунт видит одних учеников этого тарифа, без архива и статистики, и ничего не меняет. Кнопка у куратора – в его кабинете появится вход в этот аккаунт по паролю, с возвратом обратно.</div>
     </form>
 
 </div>

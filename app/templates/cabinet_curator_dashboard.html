@@ -202,6 +202,15 @@
             </div>
         </a>
         {% endfor %}
+        {% if tariff_view_label %}
+        <a href="/cabinet/tariff-view" class="curator-nav-block">
+            <span class="curator-nav-block-icon" aria-hidden="true">{{ nav_block_icon("students") }}</span>
+            <div class="curator-nav-block-body">
+                <h2 class="curator-nav-block-title">{{ tariff_view_label }}</h2>
+                <span class="curator-nav-block-desc">Все ученики тарифа и их работы, только просмотр. Вход по паролю</span>
+            </div>
+        </a>
+        {% endif %}
     </div>
 
     <div style="height:96px"></div>
