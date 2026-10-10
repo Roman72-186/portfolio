@@ -192,7 +192,7 @@
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sfd-inline-form" data-confirm="Открыть кабинет: {{ c.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы.">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sfd-inline-form"{% if view_in_new_tab() %} target="_blank"{% else %} data-confirm="Открыть кабинет: {{ c.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы."{% endif %}>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
@@ -227,7 +227,7 @@
                         <input type="hidden" name="target_user_id" value="{{ a.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" class="sfd-inline-form" data-confirm="Открыть кабинет: {{ a.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы.">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" class="sfd-inline-form"{% if view_in_new_tab() %} target="_blank"{% else %} data-confirm="Открыть кабинет: {{ a.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы."{% endif %}>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>

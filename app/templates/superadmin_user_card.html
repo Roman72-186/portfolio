@@ -198,7 +198,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     </form>
 
-    <form id="impersonateForm" method="post" action="/cabinet/superadmin/impersonate/{{ target.id }}">
+    <form id="impersonateForm" method="post" action="/cabinet/superadmin/impersonate/{{ target.id }}"{% if view_in_new_tab() %} target="_blank"{% endif %}>
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     </form>
 </div>

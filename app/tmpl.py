@@ -212,6 +212,16 @@ templates.env.filters["plural"] = ru_plural
 templates.env.globals["can"] = _can
 
 
+def _view_in_new_tab() -> bool:
+    """Вход «глазами» открывает чужой кабинет новой вкладкой на адресе
+    просмотра, а свой остаётся (`services/view_host.py`, план 2026-10-08)."""
+    from app.services import view_host
+    return view_host.enabled()
+
+
+templates.env.globals["view_in_new_tab"] = _view_in_new_tab
+
+
 def _payments_staff(user: dict | None) -> bool:
     # Импорт внутри: сервис оплаты тянет модели, `tmpl` грузится раньше них.
     from app.services.payments import is_payments_staff

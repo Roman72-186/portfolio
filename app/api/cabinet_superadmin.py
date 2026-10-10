@@ -54,6 +54,7 @@ from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
 from app.services import section_access
+from app.services import view_host
 from app.services.mock_exam_access import (
     MOCK_EXAM_DEFAULT_DURATION_MINUTES,
     ticket_closes_at,
@@ -3013,6 +3014,113 @@ def _safe_return_path(value: str | None) -> str | None:
     return value
 
 
+# Адрес просмотра «глазами» (`services/view_host.py`, план 2026-10-08): вход с
+# основного адреса передаёт новой вкладке подписанный токен с сессией цели.
+# Две минуты — на один переход; одноразовость держит сама сессия: её включает
+# только условный UPDATE `is_active false → true`, а выход гасит и срок.
+_VIEW_HANDOFF_MAX_AGE = 120
+
+
+def _view_handoff_serializer() -> _UTS:
+    return _UTS(settings.session_secret, salt="impersonation-view-handoff-v1")
+
+
+@router.get("/superadmin/impersonate/enter")
+def superadmin_impersonate_enter(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+    t: str = "",
+):
+    """Вход на адресе просмотра по токену из `superadmin_impersonate_start`.
+
+    Без `get_current_user`: у этой вкладки ещё нет пропуска, его ставит этот
+    ответ. Права проверены на основном адресе при выпуске токена.
+    """
+    if not view_host.is_view_request(request):
+        raise HTTPException(status_code=404)
+    home = RedirectResponse(view_host.main_url("/cabinet"), status_code=303)
+    try:
+        payload = _view_handoff_serializer().loads(t, max_age=_VIEW_HANDOFF_MAX_AGE)
+        session_id = str(payload["s"])
+        return_to = _safe_return_path(payload.get("r"))
+    except (_BadData, KeyError, TypeError):
+        return home
+    now = datetime.now(timezone.utc)
+    switched = (
+        db.query(_DBSession)
+        .filter(
+            _DBSession.id == session_id,
+            _DBSession.is_active == False,  # noqa: E712
+            _DBSession.impersonated_by_id.isnot(None),
+            _DBSession.expires_at > now,
+        )
+        .update({_DBSession.is_active: True}, synchronize_session=False)
+    )
+    db.commit()
+    if switched != 1:
+        # Повтор того же токена или сессия уже закрыта — свой кабинет.
+        return home
+
+    response = RedirectResponse("/cabinet", status_code=303)
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=_IMPERSONATION_TTL_MIN * 60,
+        path="/",
+    )
+    if return_to:
+        response.set_cookie(
+            key=_IMPERSONATION_RETURN_COOKIE,
+            value=_impersonation_return_serializer().dumps(return_to),
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=_IMPERSONATION_MAX_AGE,
+            path="/",
+        )
+    return response
+
+
+def _leave_view(request: Request, db: DBSession) -> RedirectResponse:
+    """«Закрыть просмотр» на адресе просмотра: гасим сессию и уводим вкладку
+    на основной адрес, туда, откуда входили. Своя сессия на основном адресе
+    всё это время жила сама и восстанавливать её не нужно."""
+    session_id = request.cookies.get("session_id", "")
+    if session_id:
+        try:
+            imp_sess = db.query(_DBSession).filter(_DBSession.id == session_id).first()
+            if imp_sess and imp_sess.impersonated_by_id:
+                db.add(_AuditLog(
+                    action="impersonate_stop",
+                    performed_by_id=imp_sess.impersonated_by_id,
+                    target_user_id=imp_sess.user_id,
+                    details=f"session={session_id}",
+                ))
+                imp_sess.is_active = False
+                # Срок тоже в прошлое: иначе свежий токен входа включил бы
+                # закрытую сессию заново.
+                imp_sess.expires_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impersonate_stop(view): cleanup failed for %s: %s", session_id, exc)
+            db.rollback()
+        _invalidate_session_cache(session_id)
+
+    try:
+        return_to = _safe_return_path(_impersonation_return_serializer().loads(
+            request.cookies.get(_IMPERSONATION_RETURN_COOKIE, ""), max_age=_IMPERSONATION_MAX_AGE,
+        ))
+    except _BadData:
+        return_to = None
+    response = RedirectResponse(view_host.main_url(return_to or "/cabinet"), status_code=303)
+    response.delete_cookie("session_id", path="/")
+    response.delete_cookie(_IMPERSONATION_RETURN_COOKIE, path="/")
+    return response
+
+
 @router.get("/superadmin/curators", response_class=HTMLResponse)
 def superadmin_curators_list(
     request: Request,
@@ -3061,6 +3169,9 @@ def superadmin_impersonate_stop(request: Request, db: Annotated[DBSession, Depen
     «Выйти обратно» работала даже если имперсонируемый пользователь оказался
     заблокирован / удалён / без прав к текущей странице.
     """
+    if view_host.is_view_request(request):
+        return _leave_view(request, db)
+
     signed = request.cookies.get(_IMPERSONATION_COOKIE, "")
     impersonation_session_id = request.cookies.get("session_id", "")
 
@@ -3149,10 +3260,13 @@ def superadmin_impersonate_start(
         raise HTTPException(status_code=403, detail="Нельзя имперсонировать роль равную или выше своей")
 
     original_session_id = user["session_id"]
+    on_view_host = view_host.enabled()
     new_session = _DBSession(
         user_id=target.id,
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=_IMPERSONATION_TTL_MIN),
-        is_active=True,
+        # На адресе просмотра сессию включает одноразовый вход
+        # (`superadmin_impersonate_enter`), до него она не пускает никуда.
+        is_active=not on_view_host,
         impersonated_by_id=user["user_id"],
     )
     db.add(new_session)
@@ -3164,6 +3278,18 @@ def superadmin_impersonate_start(
     ))
     db.commit()
     db.refresh(new_session)
+
+    safe_return = _safe_return_path(return_to)
+    if on_view_host:
+        # Свой кабинет не трогаем: ни одной куки основного адреса. Новая
+        # вкладка уходит на адрес просмотра и там получает свой пропуск.
+        handoff = _view_handoff_serializer().dumps(
+            {"s": new_session.id, "r": safe_return or ""}
+        )
+        return RedirectResponse(
+            view_host.view_url(f"/cabinet/superadmin/impersonate/enter?t={handoff}"),
+            status_code=303,
+        )
 
     signed = _impersonation_serializer().dumps(original_session_id)
 
@@ -3188,7 +3314,6 @@ def superadmin_impersonate_start(
     )
     # Форма без адреса возврата («Люди», дашборд персонала) — выход на главную,
     # как раньше; кука от прошлого входа не должна увести не туда.
-    safe_return = _safe_return_path(return_to)
     if safe_return:
         response.set_cookie(
             key=_IMPERSONATION_RETURN_COOKIE,

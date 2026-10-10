@@ -1,0 +1,186 @@
+{#
+Черновик формы задания в конструкторе цикла (владелец 08.10.2026: «если вышел
+или перезагрузил страницу случайно, то настройки сохранились»). План —
+`plans/2026-10-08-apparchi-просмотр-глазами-и-черновики.md`.
+
+Подключается ВНУТРИ IIFE `cabinet_program_cycle_items.html`, после
+`fillItemForm`, и делит с ней контекст: `form`, `fields`, `topicId`,
+`editPayloads`, `fillItemForm`, `el`.
+
+Форма сама кладёт себя в хранилище браузера после каждой правки — теми же
+сборщиками, что и «Сохранить» (`collectFormBlocks`, `taskDeadlinePayload`), а
+восстанавливается тем же заполнением, что «Изменить» (`fillItemForm`): своего
+формата черновика нет. Ключ — сотрудник, цикл и задание (`new` — новое).
+Черновик стирают успешное «Сохранить» и «Отмена» (`taskDraft.clear()`),
+перезагрузка, закрытие вкладки и слетевшая сессия его не трогают.
+
+Ограничения: диагностика восстанавливается вопросами — результаты собирает
+только строгий сборщик при «Сохранить»; пустые «Ссылка», «Фото», «Видео»
+сборщик отбрасывает и при обычном сохранении. Легаси-вид archi_profile
+черновика не ведёт.
+#}
+var taskDraft = (function () {
+    var PREFIX = 'apparchi:task-draft:' + {{ user.user_id|tojson }} + ':' + topicId + ':';
+    // Состояние формы сразу после открытия — правка считается правкой,
+    // только когда снимок от него отличается. `null` — форма не отслеживается.
+    var baseline = null;
+    // Форму открыли из черновика: снимок, совпавший с исходным, — всё равно
+    // несохранённое, стирать его нельзя.
+    var restored = false;
+    var timer = null;
+
+    function store() {
+        try { return window.localStorage; } catch (e) { return null; }
+    }
+
+    function keyFor(itemId) {
+        return PREFIX + (itemId || 'new');
+    }
+
+    // Хранилище закрыто или переполнено — форма работает и без черновика.
+    // Блочных комментариев в этом файле нет: сторож скрипта страницы
+    // (`tests/test_routes_program_cycle_items.py::_strip_noise`) склеил бы
+    // их с маской картинок в строке общего конструктора и ослеп.
+    function forget(key) {
+        var s = store();
+        if (!s) return;
+        try { s.removeItem(key); } catch (e) { return; }
+    }
+
+    function snapshot() {
+        try {
+            var data = {
+                kind: form.dataset.itemKind || 'material',
+                title: fields.title.value,
+                subject: fields.subject.value || null,
+                description: fields.description.value,
+                is_required: fields.required.checked,
+                starts_on: fields.starts.value || null,
+                blocks: collectFormBlocks(form)
+            };
+            Object.assign(data, taskDeadlinePayload(form));
+            return JSON.stringify(data);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function tracked() {
+        return baseline !== null && !form.hidden
+            && form.dataset.itemKind !== 'archi_profile';
+    }
+
+    function save() {
+        timer = null;
+        var s = store();
+        if (!s || !tracked()) return;
+        var snap = snapshot();
+        if (snap === null) return;
+        var key = keyFor(fields.id.value);
+        if (snap === baseline && !restored) {
+            forget(key);
+            return;
+        }
+        try {
+            s.setItem(key, JSON.stringify({saved_at: Date.now(), data: JSON.parse(snap)}));
+        } catch (e) { return; }
+    }
+
+    function saveSoon() {
+        if (!tracked()) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(save, 400);
+    }
+
+    // Снимок сразу после открытия формы: `fillItemForm`/`resetForm` заполняют
+    // поля и блоки синхронно. Не откладывать: ввод, успевший раньше
+    // отложенного снимка, стал бы «исходным» и в черновик не попал.
+    function track(fromDraft) {
+        restored = !!fromDraft;
+        baseline = snapshot();
+    }
+
+    function clear() {
+        if (timer) { clearTimeout(timer); timer = null; }
+        forget(keyFor(fields.id.value));
+        baseline = null;
+        restored = false;
+    }
+
+    // Правки человека — ввод и выбор; добавление, удаление и перестановка
+    // блоков — кнопками; фото и запись приходят позже, мутацией разметки.
+    form.addEventListener('input', saveSoon);
+    form.addEventListener('change', saveSoon);
+    form.addEventListener('click', saveSoon);
+    new MutationObserver(saveSoon).observe(form, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['data-url', 'data-media-url']
+    });
+
+    window.addEventListener('beforeunload', function (event) {
+        if (!tracked()) return;
+        var snap = snapshot();
+        if (snap === null || (snap === baseline && !restored)) return;
+        save();
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
+    function savedAtText(ms) {
+        try {
+            return new Date(ms).toLocaleString('ru-RU', {
+                day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+            });
+        } catch (e) { return ''; }
+    }
+
+    // Плашка над формой — по одной на черновик этого цикла.
+    function showNotices() {
+        var s = store();
+        if (!s) return;
+        var found = [];
+        try {
+            for (var i = 0; i < s.length; i += 1) {
+                var key = s.key(i);
+                if (key && key.indexOf(PREFIX) === 0) found.push(key);
+            }
+        } catch (e) { return; }
+        found.forEach(function (key) {
+            var itemId = key.slice(PREFIX.length);
+            var entry = null;
+            try { entry = JSON.parse(s.getItem(key)); } catch (e) { entry = null; }
+            // Задание удалили, пока черновик лежал, — восстанавливать некуда.
+            if (!entry || !entry.data || (itemId !== 'new' && !editPayloads[itemId])) {
+                forget(key);
+                return;
+            }
+            var title = (entry.data.title || '').trim() || 'без названия';
+            var notice = el('div', 'prg-draft');
+            notice.setAttribute('role', 'status');
+            notice.appendChild(el('p', 'prg-draft-text',
+                (itemId === 'new' ? 'Есть несохранённое новое задание «' : 'Есть несохранённые правки задания «')
+                + title + '» от ' + savedAtText(entry.saved_at) + '.'));
+            var actions = el('div', 'prg-draft-actions');
+            var resume = el('button', 'btn-blue', 'Продолжить');
+            resume.type = 'button';
+            var drop = el('button', 'btn-outline', 'Удалить черновик');
+            drop.type = 'button';
+            actions.appendChild(resume);
+            actions.appendChild(drop);
+            notice.appendChild(actions);
+            resume.addEventListener('click', function () {
+                notice.remove();
+                fillItemForm(itemId === 'new' ? '' : itemId, entry.data);
+                track(true);
+            });
+            drop.addEventListener('click', function () {
+                forget(key);
+                notice.remove();
+            });
+            form.parentNode.insertBefore(notice, form);
+        });
+    }
+
+    showNotices();
+    return {track: track, clear: clear};
+})();

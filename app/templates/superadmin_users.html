@@ -353,7 +353,7 @@
                         </form>
                         {% endif %}
                         {% if can_impersonate and u.id in impersonatable_ids and u.is_active %}
-                        <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" class="su-inline-form">
+                        <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" class="su-inline-form"{% if view_in_new_tab() %} target="_blank"{% endif %}>
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 🔓 Войти в кабинет

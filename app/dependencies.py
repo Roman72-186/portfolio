@@ -13,6 +13,7 @@ from app.csrf import validate_csrf_token
 from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
+from app.services import view_host
 from app.services.access_state import access_expired as user_access_expired
 from app.services.portfolio_window import intake_portfolio_gate_required
 from app.services.rbac import (
@@ -159,6 +160,12 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Сессия не найдена")
 
     session, user = row
+
+    # Адрес просмотра «глазами» (план 2026-10-08) держит только сессии входа
+    # глазами: обычный вход там не нужен, а чужая кука сюда не доходит сама —
+    # она ставится без `Domain`.
+    if view_host.is_view_request(request) and not session.impersonated_by_id:
+        raise HTTPException(status_code=401, detail="Сессия просмотра не найдена")
 
     now = datetime.now(timezone.utc)
     expires_at = _as_utc(session.expires_at)

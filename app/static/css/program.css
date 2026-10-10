@@ -967,3 +967,14 @@
     .prg-deadline-row input[type="datetime-local"],
     .prg-blk-deadline input[type="datetime-local"] { flex: 1 1 auto; width: 100%; }
 }
+
+/* Плашка черновика формы задания (partials/program_task_draft_js.html, 08.10.2026):
+   «Есть несохранённое задание… Продолжить / Удалить черновик». */
+.prg-draft {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3);
+    margin-bottom: var(--s-3); padding: var(--s-3) var(--s-4);
+    background: var(--warning-soft); border: 1px solid var(--warning); border-radius: var(--r-md);
+    color: var(--warning-text);
+}
+.prg-draft-text { margin: 0; flex: 1 1 16rem; }
+.prg-draft-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }

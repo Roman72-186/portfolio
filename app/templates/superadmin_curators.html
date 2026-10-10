@@ -34,7 +34,7 @@
                 <div class="sc-row-actions">
                     <div class="sc-count">{{ c.student_count }} учеников</div>
                     {% if people_edit %}
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sc-inline-form">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sc-inline-form"{% if view_in_new_tab() %} target="_blank"{% endif %}>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         {% if c.is_active %}
                         <button type="submit" class="btn-blue btn-save">Войти как куратор</button>

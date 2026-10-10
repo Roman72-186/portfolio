@@ -43,6 +43,7 @@ from app.body_limit import BodySizeLimitMiddleware
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
 from app.services import telegram as telegram_service
+from app.services import view_host
 from app.services import telegram_login as telegram_login_service
 from app.services import drive as drive_service
 from app.services import exam_scheduler
@@ -210,6 +211,10 @@ async def unauthorized_handler(request: Request, exc):
     if "application/json" in accept or "application/json" in content_type:
         detail = getattr(exc, "detail", "Unauthorized")
         return JSONResponse(status_code=401, content={"detail": detail})
+    # Просмотр «глазами» закончился — вкладка уходит в свой кабинет на
+    # основном адресе: входа на адресе просмотра нет (`services/view_host.py`).
+    if view_host.is_view_request(request):
+        return RedirectResponse(view_host.main_url("/cabinet"), status_code=302)
     return RedirectResponse("/?error=session_expired", status_code=302)
 
 

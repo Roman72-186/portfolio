@@ -1,10 +1,15 @@
 {# Жёлтый банер — виден когда сессия имперсонирована. Ожидает user.impersonated_by_id. #}
 {% if user is defined and user and user.impersonated_by_id %}
 <div style="position:sticky;top:0;z-index:998;background:var(--warning-soft);border-bottom:2px solid var(--warning);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;font-size:13px;color:var(--warning-text);font-weight:700">
+    {% if view_in_new_tab() %}
+    {# Адрес просмотра (план 2026-10-08): свой кабинет живёт в соседней вкладке. #}
+    <span>👁 Кабинет: <strong>{{ user.last_name or '' }} {{ user.first_name or user.name }}</strong>{% if user.role_name %} ({{ user.role_name }}){% endif %}. Всё, что нажмёте здесь, сохранится от имени этого человека. Ваш кабинет открыт в соседней вкладке.</span>
+    {% else %}
     <span>⚠️ Вы вошли как <strong>{{ user.last_name or '' }} {{ user.first_name or user.name }}</strong>{% if user.role_name %} ({{ user.role_name }}){% endif %}</span>
+    {% endif %}
     <form method="post" action="/cabinet/superadmin/impersonate/stop" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <button type="submit" style="padding:6px 14px;border-radius:7px;background:var(--warning-fill);color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Выйти обратно</button>
+        <button type="submit" style="padding:6px 14px;border-radius:7px;background:var(--warning-fill);color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">{{ 'Закрыть просмотр' if view_in_new_tab() else 'Выйти обратно' }}</button>
     </form>
 </div>
 {% endif %}

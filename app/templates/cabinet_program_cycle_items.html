@@ -15,7 +15,7 @@
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=61">
+<link rel="stylesheet" href="/static/css/program.css?v=62">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=27">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -692,6 +692,7 @@ function uploadImage(file, url) {
         refreshSettingsPanels(form);
         collapseSettingsPanelsOnSwitch(form, fields.id.value || 'new');
         form.scrollIntoView({block: 'start'});
+        taskDraft.track();
     }
 
     // Карточка задания, из которой открыли правку (аудит 29.09.2026): форма
@@ -707,6 +708,8 @@ function uploadImage(file, url) {
     });
 
     form.querySelector('[data-form-cancel]').addEventListener('click', function () {
+        // «Отмена» — осознанный отказ от правок: черновик уходит вместе с ними.
+        taskDraft.clear();
         form.hidden = true;
         if (returnTo) {
             returnTo.closest('[data-item-id]').scrollIntoView({block: 'center'});
@@ -715,55 +718,67 @@ function uploadImage(file, url) {
         }
     });
 
+    // Заполнение формы сохранённым заданием — «Изменить» и восстановление
+    // черновика (`program_task_draft_js.html`) идут через одну функцию.
+    // `itemId` пустой — черновик нового задания.
+    function fillItemForm(itemId, data) {
+        resetForm();
+        form.dataset.itemKind = data.kind || 'material';
+        // Отдельный вид archi_profile (легаси-заготовка, владелец
+        // 24.09.2026 оставил её как есть) — своё содержимое только
+        // диагностика, общий редактор блоков и предпросмотр ей не нужны.
+        if (form.dataset.itemKind === 'archi_profile') {
+            fields.required.closest('.prg-field').hidden = true;
+            form.querySelector('[data-blocks-wrap]').hidden = true;
+            form.querySelector('[data-preview-wrap]').hidden = true;
+        }
+        // Диагностика внутри обычного «Задания» — те же поля рядом с
+        // остальными блоками, а не вместо них (второй способ, владелец
+        // 24.09.2026).
+        if (data.diagnostic) {
+            diagnosticBuilder.load(data.diagnostic);
+            form.querySelector('[data-diagnostic-note]').hidden = false;
+            form.querySelector('[data-diagnostic-trainer]').hidden = false;
+        }
+        fields.id.value = itemId;
+        fields.title.value = data.title || '';
+        fields.subject.value = data.subject || '';
+        fields.description.value = data.description || '';
+        window.RichTextField.refresh(fields.description);
+        fields.required.checked = !!data.is_required;
+        fields.starts.value = data.starts_on || '';
+        fillTaskDeadline(form, data);
+        // У archi_profile (легаси) отдельные блоки-вопросы диагностики
+        // сюда не попадают вовсе — их редактирует статичная панель выше
+        // (`data.diagnostic`). У обычного «Задания» диагностика — одна
+        // строка `block_type: 'diagnostic'` внутри `data.blocks`, на
+        // своём месте среди остальных блоков (владелец 24.09.2026,
+        // второй раунд); `renderFormBlocks`/`fillBlockRow` подхватывают
+        // её тем же общим циклом, что и любой другой тип.
+        renderFormBlocks(form, data.blocks || []);
+        // Тренажёр диагностики нужен реальные id из базы (владелец
+        // 22.09.2026) — они есть, только когда задание уже сохранено:
+        // у черновика нового задания тренажёра нет.
+        var diagnosticEditRow = form.querySelector('[data-block][data-block-type="diagnostic"]');
+        if (itemId && diagnosticEditRow) diagnosticEditRow.querySelector('[data-diagnostic-trainer]').hidden = false;
+        formTitle.textContent = !itemId ? 'Новое задание'
+            : form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
+        openForm();
+    }
+
     document.querySelectorAll('[data-item-edit]').forEach(function (button) {
         button.addEventListener('click', function () {
             var itemId = button.closest('[data-item-id]').getAttribute('data-item-id');
             var data = editPayloads[itemId];
             if (!data) return;
             returnTo = button;
-            resetForm();
-            form.dataset.itemKind = data.kind || 'material';
-            // Отдельный вид archi_profile (легаси-заготовка, владелец
-            // 24.09.2026 оставил её как есть) — своё содержимое только
-            // диагностика, общий редактор блоков и предпросмотр ей не нужны.
-            if (form.dataset.itemKind === 'archi_profile') {
-                fields.required.closest('.prg-field').hidden = true;
-                form.querySelector('[data-blocks-wrap]').hidden = true;
-                form.querySelector('[data-preview-wrap]').hidden = true;
-            }
-            // Диагностика внутри обычного «Задания» — те же поля рядом с
-            // остальными блоками, а не вместо них (второй способ, владелец
-            // 24.09.2026).
-            if (data.diagnostic) {
-                diagnosticBuilder.load(data.diagnostic);
-                form.querySelector('[data-diagnostic-note]').hidden = false;
-                form.querySelector('[data-diagnostic-trainer]').hidden = false;
-            }
-            fields.id.value = itemId;
-            fields.title.value = data.title || '';
-            fields.subject.value = data.subject || '';
-            fields.description.value = data.description || '';
-            window.RichTextField.refresh(fields.description);
-            fields.required.checked = !!data.is_required;
-            fields.starts.value = data.starts_on || '';
-            fillTaskDeadline(form, data);
-            // У archi_profile (легаси) отдельные блоки-вопросы диагностики
-            // сюда не попадают вовсе — их редактирует статичная панель выше
-            // (`data.diagnostic`). У обычного «Задания» диагностика — одна
-            // строка `block_type: 'diagnostic'` внутри `data.blocks`, на
-            // своём месте среди остальных блоков (владелец 24.09.2026,
-            // второй раунд); `renderFormBlocks`/`fillBlockRow` подхватывают
-            // её тем же общим циклом, что и любой другой тип.
-            renderFormBlocks(form, data.blocks || []);
-            // Тренажёр диагностики нужен реальные id из базы (владелец
-            // 22.09.2026) — они есть, только когда задание уже сохранено,
-            // то есть всегда в этом обработчике (правка, не создание).
-            var diagnosticEditRow = form.querySelector('[data-block][data-block-type="diagnostic"]');
-            if (diagnosticEditRow) diagnosticEditRow.querySelector('[data-diagnostic-trainer]').hidden = false;
-            formTitle.textContent = form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
-            openForm();
+            fillItemForm(itemId, data);
         });
     });
+
+    // Черновик формы: сам сохраняется при правке, плашка «Продолжить» после
+    // перезагрузки (владелец 08.10.2026).
+    {% include "partials/program_task_draft_js.html" %}
 
     form.querySelector('[data-item-save]').addEventListener('click', function () {
         var title = fields.title.value.trim();
@@ -838,6 +853,7 @@ function uploadImage(file, url) {
         api(url, payload).then(function () {
             // Явное подтверждение (владелец 22.09.2026): страница до этого
             // молча перезагружалась, и не было понятно, прошло сохранение.
+            taskDraft.clear();
             window.alert('Сохранено.');
             window.location.reload();
         }).catch(function (err) {

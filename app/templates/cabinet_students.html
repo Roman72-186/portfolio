@@ -197,7 +197,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
 </div>
 
 {# Вход в кабинет ученика — обычная форма: сервер ставит куки и уводит в кабинет. #}
-<form id="impersonate-form" method="post" action="" hidden>
+<form id="impersonate-form" method="post" action="" hidden{% if view_in_new_tab() %} data-new-tab{% endif %}>
     <input type="hidden" name="csrf_token" value="">
     <input type="hidden" name="return_to" value="">
 </form>
@@ -266,5 +266,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=25"></script>
+<script src="/static/js/cabinet_students.js?v=26"></script>
 {% endblock %}

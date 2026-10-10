@@ -1489,8 +1489,18 @@ function issueTelegramLink() {
 }
 
 function impersonateStudent() {
-    if (!confirm('Открыть кабинет ученика? Всё, что нажмёте там, сохранится от его имени.')) return;
     var form = document.getElementById('impersonate-form');
+    // Адрес просмотра (план 2026-10-08): кабинет ученика — новой вкладкой,
+    // своя остаётся, спрашивать «открыть?» незачем. Вкладку открываем сразу,
+    // на нажатии: после ожидания свежего ключа браузер счёл бы её всплывающим
+    // окном и не открыл. Форма уходит в неё по имени.
+    if (form.hasAttribute('data-new-tab')) {
+        var tabName = 'apparchi-view-' + _currentStudentId;
+        window.open('', tabName);
+        form.target = tabName;
+    } else if (!confirm('Открыть кабинет ученика? Всё, что нажмёте там, сохранится от его имени.')) {
+        return;
+    }
     form.action = '/cabinet/superadmin/impersonate/' + _currentStudentId;
     // «Выйти обратно» вернёт в эту же карточку, а не на главную.
     form.querySelector('[name="return_to"]').value = location.pathname + '?student=' + _currentStudentId;

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
 
     # Domain
     domain: str = "apparchi.ru"
+    # Адрес просмотра «глазами» (план 2026-10-08): `https://view.kodarhitektora.ru`.
+    # Пусто — вход «глазами» подменяет куку на основном адресе, как раньше.
+    view_origin: str = ""
+    # Основной адрес, куда уходит вкладка после «Закрыть просмотр». Пусто —
+    # `https://{domain}`; задаётся только на стенде, где адреса свои.
+    main_origin: str = ""
 
     # Google Drive
     google_drive_parent_id: str = "1fb5GyudhpI013B4EQsZ6nzOoxVRtfn1g"
