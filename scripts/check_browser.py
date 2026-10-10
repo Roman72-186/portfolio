@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Браузерный smoke-тест apparchi.ru: обход кабинетов под сессией суперадмина.
+"""Браузерный smoke-тест сайта (DOMAIN, по умолчанию kodarhitektora.ru): обход кабинетов под сессией суперадмина.
 
 Только чтение. Проверяет коды ответов, ошибки консоли, упавшие подзапросы,
 битые картинки и горизонтальное переполнение на мобильном; складывает
@@ -11,7 +11,7 @@
     python scripts/check_browser.py                       # куда смотрит DNS/hosts
     TARGET_IP=89.23.96.254 OUT_DIR=old python scripts/check_browser.py
 
-TARGET_IP маппит apparchi.ru на конкретный сервер в резолвере Chromium: SNI и
+TARGET_IP маппит домен (DOMAIN, по умолчанию kodarhitektora.ru) на конкретный сервер в резолвере Chromium: SNI и
 сертификат остаются настоящими, поэтому один и тот же обход можно прогнать
 против старого и нового сервера и сравнить отчёты и скриншоты попиксельно.
 """
@@ -28,7 +28,7 @@ OUT = pathlib.Path(os.environ.get("OUT_DIR", "."))
 SHOTS = OUT / "shots"
 SHOTS.mkdir(parents=True, exist_ok=True)
 
-BASE = "https://apparchi.ru"
+BASE = "https://" + os.environ.get("DOMAIN", "kodarhitektora.ru")
 
 
 def env_value(name: str) -> str:
@@ -78,9 +78,9 @@ failed_reqs: list[str] = []
 
 with sync_playwright() as p:
     # TARGET_IP позволяет прогнать тот же обход против старого прода,
-    # минуя hosts: резолвер Chromium маппится точечно, SNI остаётся apparchi.ru.
+    # минуя hosts: резолвер Chromium маппится точечно, SNI остаётся доменом сайта.
     target_ip = os.environ.get("TARGET_IP", "").strip()
-    launch_args = [f'--host-resolver-rules=MAP apparchi.ru {target_ip}'] if target_ip else []
+    launch_args = [f'--host-resolver-rules=MAP {BASE.split("://", 1)[1]} {target_ip}'] if target_ip else []
     if target_ip:
         print(f"цель: {target_ip}", flush=True)
     browser = p.chromium.launch(args=launch_args)

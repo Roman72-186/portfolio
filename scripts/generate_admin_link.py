@@ -36,7 +36,7 @@ def main() -> None:
         print("ERROR: DATABASE_URL is not set", file=sys.stderr)
         sys.exit(1)
 
-    domain = os.environ.get("DOMAIN", "apparchi.ru")
+    domain = os.environ.get("DOMAIN", "kodarhitektora.ru")
 
     import psycopg2
 

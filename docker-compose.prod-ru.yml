@@ -46,13 +46,46 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=web
-      # Основной роутер: apparchi.ru
-      - traefik.http.routers.portfolio-apparchi.rule=Host(`apparchi.ru`) || Host(`www.apparchi.ru`)
+      # Основной роутер: kodarhitektora.ru (переезд с apparchi.ru,
+      # plans/2026-10-08-apparchi-смена-домена.md). Имя роутера прежнее —
+      # меньше движения в конфиге Traefik.
+      - traefik.http.routers.portfolio-apparchi.rule=Host(`kodarhitektora.ru`) || Host(`www.kodarhitektora.ru`)
       - traefik.http.routers.portfolio-apparchi.tls=true
       - traefik.http.routers.portfolio-apparchi.entrypoints=websecure
       - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
       - traefik.http.routers.portfolio-apparchi.service=portfolio
       - traefik.http.routers.portfolio-apparchi.middlewares=sec-headers@docker
+      # Вход «глазами» — отдельный адрес со своим пропуском браузера
+      # (services/view_host.py, VIEW_ORIGIN в .env.prod).
+      - traefik.http.routers.portfolio-view.rule=Host(`view.kodarhitektora.ru`)
+      - traefik.http.routers.portfolio-view.tls=true
+      - traefik.http.routers.portfolio-view.entrypoints=websecure
+      - traefik.http.routers.portfolio-view.tls.certresolver=mytlschallenge
+      - traefik.http.routers.portfolio-view.service=portfolio
+      - traefik.http.routers.portfolio-view.middlewares=sec-headers@docker
+      # Вебхуки на старом адресе — как раньше, без переадресации: Продамус и
+      # Telegram за 301 на POST не пойдут, оплата потеряется молча. Живёт,
+      # пока заказчик не сменит адрес в Продамусе (вебхук бота
+      # перерегистрируется в день переезда). Приоритет выше переадресации.
+      - traefik.http.routers.portfolio-old-hooks.rule=Host(`apparchi.ru`) && (Path(`/payments/prodamus/webhook`) || Path(`/auth/telegram/webhook`))
+      - traefik.http.routers.portfolio-old-hooks.priority=200
+      - traefik.http.routers.portfolio-old-hooks.tls=true
+      - traefik.http.routers.portfolio-old-hooks.entrypoints=websecure
+      - traefik.http.routers.portfolio-old-hooks.tls.certresolver=mytlschallenge
+      - traefik.http.routers.portfolio-old-hooks.service=portfolio
+      - traefik.http.routers.portfolio-old-hooks.middlewares=sec-headers@docker
+      # Всё остальное на старом адресе — 301 на новый с тем же путём и
+      # параметрами. Снять, когда кончится оплата apparchi.ru.
+      - traefik.http.routers.portfolio-old-domain.rule=Host(`apparchi.ru`) || Host(`www.apparchi.ru`)
+      - traefik.http.routers.portfolio-old-domain.priority=100
+      - traefik.http.routers.portfolio-old-domain.tls=true
+      - traefik.http.routers.portfolio-old-domain.entrypoints=websecure
+      - traefik.http.routers.portfolio-old-domain.tls.certresolver=mytlschallenge
+      - traefik.http.routers.portfolio-old-domain.service=portfolio
+      - traefik.http.routers.portfolio-old-domain.middlewares=to-new-domain@docker
+      - "traefik.http.middlewares.to-new-domain.redirectregex.regex=^https?://(?:www\\.)?apparchi\\.ru(.*)"
+      - "traefik.http.middlewares.to-new-domain.redirectregex.replacement=https://kodarhitektora.ru$${1}"
+      - traefik.http.middlewares.to-new-domain.redirectregex.permanent=true
       - traefik.http.services.portfolio.loadbalancer.server.port=8000
       - "traefik.http.middlewares.sec-headers.headers.stsSeconds=31536000"
       - "traefik.http.middlewares.sec-headers.headers.stsIncludeSubdomains=true"

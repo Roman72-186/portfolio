@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     internal_api_token: str = ""
 
     # Domain
-    domain: str = "apparchi.ru"
+    domain: str = "kodarhitektora.ru"
     # Адрес просмотра «глазами» (план 2026-10-08): `https://view.kodarhitektora.ru`.
     # Пусто — вход «глазами» подменяет куку на основном адресе, как раньше.
     view_origin: str = ""
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # (раздел Login Widget бота), вписывает в .env.prod владелец.
     telegram_login_client_id: str = ""
     telegram_login_client_secret: str = ""
-    telegram_login_redirect_uri: str = "https://apparchi.ru/auth/telegram-login/callback"
+    telegram_login_redirect_uri: str = "https://kodarhitektora.ru/auth/telegram-login/callback"
 
     # Web Push (Фаза 3) — VAPID-ключи выпускает и вписывает в .env.prod владелец
     vapid_public_key: str = ""   # отдаётся браузеру для подписки (pushManager.subscribe)

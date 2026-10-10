@@ -9,7 +9,7 @@ KEY=$(grep -m1 '^ADMIN_ACCESS_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"'\r')
 if [ -z "$KEY" ]; then echo "ADMIN_ACCESS_TOKEN не найден в .env"; exit 1; fi
 
 JAR=$(mktemp)
-H='Host: apparchi.ru'
+H="Host: ${DOMAIN:-kodarhitektora.ru}"
 B='https://127.0.0.1'
 
 code() { curl -sk -o /dev/null -w '%{http_code}' -H "$H" -b "$JAR" -c "$JAR" "$B$1"; }

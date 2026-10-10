@@ -20,6 +20,7 @@ import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 
+from app.config import settings
 from app.db.database import SessionLocal
 from app.models.notification import Notification
 from app.models.user import User
@@ -49,7 +50,7 @@ REMINDER_TITLE = "Напоминание: имя и фамилия как в п�
 REMINDER_BODY = (
     "В профиле до сих пор стоит «{name}». Открой «Личную информацию» → "
     "«Изменить личные данные», впиши имя и фамилию из паспорта и нажми "
-    "«Сохранить»: https://apparchi.ru/cabinet/personal/contacts"
+    "«Сохранить»: https://" + settings.domain + "/cabinet/personal/contacts"
 )
 
 # `users.name` в момент первого уведомления. Исправил = имя сменилось и

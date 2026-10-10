@@ -138,7 +138,7 @@ function checkAccess() {
 
 showLockScreen(
   `Доступ только для участников группы.<br><br>` +
-  `Войди через <a href="https://apparchi.ru" style="color:#aaa">apparchi.ru</a> ` +
+  `Войди через <a href="${location.origin}" style="color:#aaa">${location.host}</a> ` +
   `или открой модуль из закрытой Telegram-группы, где у тебя есть доступ.`
 );
 

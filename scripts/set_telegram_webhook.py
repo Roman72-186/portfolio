@@ -24,7 +24,7 @@ except ImportError:
 def main() -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
-    domain = os.environ.get("DOMAIN", "apparchi.ru")
+    domain = os.environ.get("DOMAIN", "kodarhitektora.ru")
 
     if not token:
         print("ERROR: TELEGRAM_BOT_TOKEN is not set", file=sys.stderr)

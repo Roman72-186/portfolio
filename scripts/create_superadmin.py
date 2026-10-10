@@ -87,7 +87,7 @@ def main() -> None:
     print(f"  Login  : {STAFF_LOGIN}")
     print("  Password: <set from SUPERADMIN_STAFF_PASSWORD>")
     print(f"  Role   : суперадмин (rank 5)")
-    print(f"  Login URL: https://apparchi.ru/auth/staff/login")
+    print(f"  Login URL: https://{os.environ.get('DOMAIN', 'kodarhitektora.ru')}/auth/staff/login")
     print("=" * 50)
 
 
