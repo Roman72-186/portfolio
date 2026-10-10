@@ -324,3 +324,18 @@ def test_password_login_page_unchanged(client):
     page = client.get("/login")
     assert 'name="login"' in page.text
     assert "Вход по логину и паролю" in page.text
+
+
+def test_superadmin_eyes_sees_button_without_link(client, db, session_factory, user_factory, linked):
+    """Суперадмин «глазами» куратора видит кнопку, но перейти по ней не может."""
+    curator, _ = linked
+    sa = user_factory(vk_id=991_060, name="СА", role_name="суперадмин")
+    session = session_factory(curator)
+    session.impersonated_by_id = sa.id
+    db.commit()
+    client.cookies.set("session_id", session.id)
+    page = client.get("/cabinet/curator")
+    assert "Уверенный максимум" in page.text
+    assert "вход по ней закрыт" in page.text
+    assert 'href="/cabinet/tariff-view"' not in page.text
+    assert client.get("/cabinet/tariff-view").status_code == 403

@@ -128,13 +128,17 @@ def cabinet_curator_dashboard(
     """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам.
     Плюс кнопка входа в свой аккаунт просмотра тарифа, если он есть
     (`services/tariff_view.py`, 10.10.2026)."""
-    viewer = None if user.get("impersonated_by_id") else linked_viewer(db, user["user_id"])
+    viewer = linked_viewer(db, user["user_id"])
     return templates.TemplateResponse(request, "cabinet_curator_dashboard.html", {
         "request": request,
         "user": user,
         "nav_active": "dashboard",
         "renamed": request.query_params.get("renamed") == "1",
         "tariff_view_label": tariff_label(viewer.viewer_tariff) if viewer else None,
+        # Суперадмин «глазами» видит кнопку, как куратор, но без перехода:
+        # выход из второго аккаунта вернул бы его в сессию куратора
+        # (`api/tariff_view._viewer_for` отвечает 403).
+        "tariff_view_locked": bool(user.get("impersonated_by_id")),
     })
 
 

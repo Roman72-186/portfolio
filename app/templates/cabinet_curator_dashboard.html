@@ -203,13 +203,14 @@
         </a>
         {% endfor %}
         {% if tariff_view_label %}
-        <a href="/cabinet/tariff-view" class="curator-nav-block">
+        {% set _tv_tag = "div" if tariff_view_locked else "a" %}
+        <{{ _tv_tag }} {% if not tariff_view_locked %}href="/cabinet/tariff-view" {% endif %}class="curator-nav-block">
             <span class="curator-nav-block-icon" aria-hidden="true">{{ nav_block_icon("students") }}</span>
             <div class="curator-nav-block-body">
                 <h2 class="curator-nav-block-title">{{ tariff_view_label }}</h2>
-                <span class="curator-nav-block-desc">Все ученики тарифа и их работы, только просмотр. Вход по паролю</span>
+                <span class="curator-nav-block-desc">{% if tariff_view_locked %}Кнопка куратора. В режиме «глазами» вход по ней закрыт{% else %}Все ученики тарифа и их работы, только просмотр. Вход по паролю{% endif %}</span>
             </div>
-        </a>
+        </{{ _tv_tag }}>
         {% endif %}
     </div>
 
