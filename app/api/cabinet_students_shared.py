@@ -48,6 +48,7 @@ from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.notify import notify
 from app.services.access_state import access_open_clause
 from app.services.activity_stats import student_statistics
+from app.services.video_credit import credit_video_block, student_video_blocks
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
@@ -1088,7 +1089,32 @@ def get_statistics(
             db, student, today=today_msk(),
             with_staff_actions=senior, with_school_stats=senior,
         ),
+        # Ролики ученика для ручного зачёта — ГП и выше (10.10.2026).
+        "video_credit": student_video_blocks(db, student) if senior else None,
     })
+
+
+@router.post("/students/{student_id}/video-blocks/{block_id}/credit")
+def credit_student_video(
+    student_id: int,
+    block_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Засчитать просмотр» в карточке ученика — ГП и суперадмин (владелец
+    10.10.2026). Для случая, когда плеер не передал просмотр и ученик застрял
+    на кружке; правило — `services/video_credit.py`."""
+    student = _check_access(student_id, user, db)
+    state = credit_video_block(db, student, block_id, staff_id=user["user_id"])
+    if state is None:
+        raise HTTPException(status_code=404, detail="У ученика нет такого видео")
+    db.commit()
+    logger.info(
+        "Видео засчитано сотрудником | student=%s | block=%s | staff=%s",
+        student_id, block_id, user["user_id"],
+    )
+    return JSONResponse({"ok": True, "video_credit": student_video_blocks(db, student)})
 
 
 # ── POST: оценить работу ──────────────────────────────────────────────────────

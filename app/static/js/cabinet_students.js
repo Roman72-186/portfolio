@@ -1682,6 +1682,48 @@ function buildStatsVideos(sc) {
     }).join('') + '</ul>';
 }
 
+// «Засчитать просмотр» — ГП и суперадмин (владелец 10.10.2026, ученица id 288:
+// плеер три дня не передавал просмотр, кружок отказал 39 раз). Список — только
+// незасчитанные ролики ученика с циклом, сервер — `services/video_credit.py`.
+function buildVideoCredit(rows) {
+    var open = rows.filter(function(r) { return !r.done; });
+    var html = '<div class="manage-group" id="video-credit"><div class="section-title">Засчитать просмотр вручную</div>';
+    if (!open.length) {
+        return html + '<p class="profile-field-label">Все ролики ученика засчитаны.</p></div>';
+    }
+    html += '<p class="profile-field-label">Если плеер не передал просмотр и ученик не может поставить кружок. '
+        + 'Статистика просмотра останется как есть.</p>'
+        + '<div class="profile-grid">'
+        + manageField('Ролик', '<select class="profile-edit-select" id="video-credit-block">'
+            + open.map(function(r) {
+                return '<option value="' + r.block_id + '">' + esc(r.video + ' – ' + r.place + ', ' + r.task) + '</option>';
+            }).join('') + '</select>')
+        + '</div><div class="profile-edit-actions form-actions">'
+        + '<button type="button" class="btn-blue" onclick="creditVideo(this)">Засчитать просмотр</button></div>';
+    return html + '</div>';
+}
+
+function creditVideo(button) {
+    var select = document.getElementById('video-credit-block');
+    if (!select || !select.value) return;
+    var label = select.options[select.selectedIndex].text;
+    if (!confirm('Засчитать ученику просмотр?\n' + label)) return;
+    button.disabled = true;
+    window.csrfFetch('/cabinet/students/' + _currentStudentId + '/video-blocks/' + select.value + '/credit', {method: 'POST'})
+    .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, status: r.status, data: data}; }); })
+    .then(function(result) {
+        if (!result.ok) {
+            button.disabled = false;
+            alert(window.csrfFailure(result.status, result.data, 'Не удалось засчитать просмотр'));
+            return;
+        }
+        var box = document.getElementById('video-credit');
+        if (box) box.outerHTML = buildVideoCredit(result.data.video_credit || []);
+        showToast('Просмотр засчитан');
+    })
+    .catch(function() { button.disabled = false; alert(NET_ERROR); });
+}
+
 function buildStatistics(data) {
     var a = data.activity || {};
     var v = a.video || {};
@@ -1709,6 +1751,7 @@ function buildStatistics(data) {
         + activityTile('Последний просмотр', v.last_opened || 'Не смотрел', true)
         + '</div>';
     if (sc) html += buildStatsVideos(sc);
+    if (data.video_credit) html += buildVideoCredit(data.video_credit);
 
     html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
         + activityTile('Последний вход', a.last_login || 'Не входил', true)
