@@ -197,7 +197,11 @@ async def _send_push(target: _PushTarget, notification: _Message) -> None:
     payload = json.dumps({
         "title": notification.title,
         "body": notification.text or "",
-        "url": "/cabinet/notifications",
+        # Полный адрес, а не путь: подписку держит браузер того сайта, где её
+        # оформили, и путь он достраивает своим адресом. Подписки, заведённые
+        # на apparchi.ru до переезда 11.10.2026, иначе открывали бы мёртвый
+        # старый домен (`static/sw.js::notificationclick`).
+        "url": f"https://{settings.domain}/cabinet/notifications",
     })
     try:
         await webpush_async(
