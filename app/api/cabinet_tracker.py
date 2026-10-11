@@ -122,6 +122,7 @@ from app.services.task_blocks import (
     poll_submission_error,
     question_blocks as task_question_blocks,
     BlockViewer,
+    tasks_closed_to,
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
     timed_overrun as task_block_timed_overrun,
@@ -446,6 +447,13 @@ def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> Tracke
         task.topic_id is None and task.id in task_ids
     )
     if not accessible:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    # Все блоки закрыты ученику — задания для него нет, как и в ленте
+    # (`task_blocks.tasks_closed_to`): иначе по прямой ссылке его можно было
+    # бы открыть пустым и отметить.
+    student = db.get(User, user_id)
+    viewer = BlockViewer(db, user_id=user_id, tariff=student.tariff if student is not None else None)
+    if task.id in tasks_closed_to(db, [task.id], viewer=viewer):
         raise HTTPException(status_code=404, detail="Задача не найдена")
     # Вперёд нельзя (владелец 30.09.2026): задание цикла после долга не
     # открывается и не отмечается, пока долг не закрыт. Здесь, а не в каждом

@@ -1398,3 +1398,38 @@ def test_blocks_endpoint_hides_a_block_of_another_tariff(
     client.cookies.set("session_id", session_factory(top).id)
     body_top = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert [b["body"] for b in body_top["blocks"]] == ["Общая часть", "Вторая часть"]
+
+
+def test_task_of_another_tariff_is_not_found_by_direct_link(
+    client, db, user_factory, session_factory
+):
+    """Задание, все блоки которого закрыты чужим тарифом, по прямой ссылке не
+    открывается и не отмечается — его для ученика нет.
+
+    Прод 11.10.2026, «Занятие 11.10» из одного блока «только УВЕРЕННЫЙ
+    МАКСИМУМ»: ученики других тарифов видели пустое задание и закрывали его.
+    """
+    from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU
+    from app.models.task_block import TaskBlockTariff
+
+    staff = user_factory(vk_id=550_330, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id, is_required=False, blocks=[
+        {"block_type": BLOCK_TEXT, "title": "Прийти на занятие", "body": "Ссылка"},
+    ])
+    only_max = _blocks_of(db, task.id)[0]
+    db.add(TaskBlockTariff(block_id=only_max.id, tariff=TARIFF_CONFIDENT_MAX))
+    db.commit()
+
+    student = user_factory(
+        vk_id=550_331, name="Ученик", role_name="ученик", tariff=TARIFF_WITH_YOU
+    )
+    client.cookies.set("session_id", session_factory(student).id)
+    assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").status_code == 404
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 404
+
+    top = user_factory(
+        vk_id=550_332, name="Топ", role_name="ученик", tariff=TARIFF_CONFIDENT_MAX
+    )
+    client.cookies.set("session_id", session_factory(top).id)
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body["blocks"]] == ["Ссылка"]

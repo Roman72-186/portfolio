@@ -836,3 +836,33 @@ def test_feed_hides_a_block_of_another_tariff(db, regular_user, user_factory):
     assert [
         step["block"].title for step in _feed(db, top) if step["block"] is not None
     ] == ["Общая часть", "Уверенный максимум"]
+
+
+def test_feed_drops_a_task_whose_every_block_is_another_tariff(db, regular_user, user_factory):
+    """Задание, все блоки которого закрыты чужим тарифом, из ленты пропадает
+    целиком и хвост не запирает.
+
+    Прод 11.10.2026, «Занятие 11.10»: единственный блок — ссылка только для
+    «УВЕРЕННОГО МАКСИМУМА». Лента убирала блок, оставшееся пустым задание
+    принимала за задание без блоков (старое видео, домашку) и рисовала карточкой
+    «можно делать»; обязательное, оно запирало всё ниже. Ученики «Я С ВАМИ» и
+    «Я САМ» его видели и отмечали.
+    """
+    from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU
+    from app.models.task_block import TaskBlockTariff
+
+    _cycle(db, regular_user)
+    lesson = _task(db, regular_user, title="Занятие", is_required=True, order=0)
+    only_max = _block(db, lesson, title="Прийти на занятие", order=0, is_required=False)
+    db.add(TaskBlockTariff(block_id=only_max.id, tariff=TARIFF_CONFIDENT_MAX))
+    later = _task(db, regular_user, title="Следующее", is_required=False, order=1)
+    _block(db, later, title="Общий блок", order=0, is_required=False)
+    db.commit()
+
+    other = user_factory(vk_id=770_111, tariff=TARIFF_WITH_YOU)
+    steps = _feed(db, other)
+    assert [step["task"].title for step in steps] == ["Следующее"]
+    assert steps[0]["status"] == "current"
+
+    top = user_factory(vk_id=770_112, tariff=TARIFF_CONFIDENT_MAX)
+    assert [step["task"].title for step in _feed(db, top)] == ["Занятие", "Следующее"]

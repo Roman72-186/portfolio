@@ -472,6 +472,19 @@ def accessible_task_entries(
         .order_by(no_due_last, TrackerTask.due_at.asc(), TrackerTask.sort_order.asc(), TrackerTask.id.asc())
         .all()
     )
+    # Задание, все блоки которого закрыты ученику тарифом, уровнем или
+    # поимённо, для него не существует (`task_blocks.tasks_closed_to`, прод
+    # 11.10.2026). Здесь, а не в каждом экране: отсюда берут задания лента,
+    # трекер, прогресс цикла и гейты «цикл пройден».
+    if tasks:
+        from app.services.task_blocks import BlockViewer, tasks_closed_to
+
+        student = db.get(User, user_id)
+        viewer = BlockViewer(
+            db, user_id=user_id, tariff=student.tariff if student is not None else None
+        )
+        closed = tasks_closed_to(db, [task.id for task in tasks], viewer=viewer)
+        tasks = [task for task in tasks if task.id not in closed]
 
     states: dict[int, TrackerTaskState] = {}
     if tasks:

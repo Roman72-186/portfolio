@@ -477,6 +477,40 @@ def visible_blocks_for_student(
     ]
 
 
+def tasks_closed_to(db: DBSession, task_ids: list[int], *, viewer: BlockViewer) -> set[int]:
+    """Задания, которых для ученика нет: блоки есть, но ни один ему не открыт.
+
+    Тариф ставится на блок, у задания своей настройки видимости нет (владелец
+    28.09.2026: «всё должно быть в блоке»). Задание из одного блока «только
+    УВЕРЕННЫЙ МАКСИМУМ» после `visible_blocks_for_student` оставалось у
+    остальных пустым, и лента принимала его за задание без блоков — старое
+    видео или домашку, которые показывает одной карточкой. Прод 11.10.2026,
+    «Занятие 11.10»: ученики «Я С ВАМИ» и «Я САМ» видели пустую карточку и
+    отмечали её, а обязательность задания запирала всё ниже по ленте.
+
+    Задание вовсе без блоков сюда не попадает — это и есть старое видео или
+    домашка. Скрытые до закрытия вопросы видимость не меняют: они открыты
+    ученику, просто позже.
+    """
+    if not task_ids:
+        return set()
+    rows = (
+        db.query(TaskBlock.id, TaskBlock.task_id)
+        .filter(TaskBlock.task_id.in_(task_ids))
+        .all()
+    )
+    audiences = get_audiences(db, [block_id for block_id, _ in rows])
+    if not audiences:
+        return set()
+    with_blocks: set[int] = set()
+    opened: set[int] = set()
+    for block_id, task_id in rows:
+        with_blocks.add(task_id)
+        if is_block_open_to(audiences.get(block_id), viewer):
+            opened.add(task_id)
+    return with_blocks - opened
+
+
 # Тип задания для ученика — по главному блоку, сверху вниз по старшинству
 # (владелец 06.10.2026: «тип задания» в «Личном трекере», вариант «по
 # содержимому»). Поле `TrackerTask.kind` для этого не годится: у всех
