@@ -823,18 +823,50 @@ def test_video_block_refusal_is_logged_with_reason(
     "task_required,block_required",
     [(False, True), (True, False), (False, False)],
 )
-def test_optional_video_block_requires_watch_too(
+def test_video_block_that_does_not_hold_the_queue_closes_without_watch(
     client, db, user_factory, session_factory, task_required, block_required,
     watch_control_on,
 ):
-    """Владелец 05.10.2026: «проверять все». Необязательное задание или
-    необязательный блок контроль просмотра не снимают — до этого так
-    проверялись только 5 видео-блоков из 36."""
+    """Владелец 11.10.2026: просмотр — только у блока с галочкой «Блокирует
+    дальнейшую выдачу», то есть который держит очередь ленты (обязательны и
+    задание, и блок). Необязательный ролик отмечается кружком без просмотра.
+    Отменяет решение 05.10.2026 «проверять все»."""
     staff = user_factory(vk_id=550_326, name="Стафф", is_admin=True, role_name="админ")
     task, block, _video = _video_task_with_block(db, staff.id)
     task.is_required = task_required
     block.is_required = block_required
     db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["requires_watch"] is False
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 200, resp.text
+
+
+def test_video_block_required_only_for_another_tariff_closes_without_watch(
+    client, db, user_factory, session_factory, watch_control_on,
+):
+    """«Кого обязать выполнить» без тарифа ученика — блок ему не держит
+    очередь (`holds_sequence`), значит и просмотра не требует."""
+    from app.models.task_block import TaskBlockRequiredTariff
+
+    staff = user_factory(vk_id=550_328, name="Стафф", is_admin=True, role_name="админ")
+    task, block, _video = _video_task_with_block(db, staff.id)
+    db.add(TaskBlockRequiredTariff(block_id=block.id, tariff="Я С ВАМИ"))
+    db.commit()
+    _student_client(client, user_factory, session_factory)  # тариф «УВЕРЕННЫЙ»
+
+    assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]["requires_watch"] is False
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/watched").status_code == 200
+
+
+def test_video_block_that_holds_the_queue_requires_watch(
+    client, db, user_factory, session_factory, watch_control_on,
+):
+    staff = user_factory(vk_id=550_329, name="Стафф", is_admin=True, role_name="админ")
+    task, block, _video = _video_task_with_block(db, staff.id)  # задание и блок обязательны
     _student_client(client, user_factory, session_factory)
 
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()

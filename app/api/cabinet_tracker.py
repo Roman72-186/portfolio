@@ -109,6 +109,8 @@ from app.services.task_blocks import (
     list_submission_images as list_task_block_submission_images,
     mark_submitted as mark_task_block_submitted,
     get_blocks as get_task_blocks,
+    get_required_tariffs,
+    required_by_block_for_task,
     get_blocks_for_tasks as get_task_blocks_for_tasks,
     task_content_label,
     get_option_images as get_task_block_option_images,
@@ -654,10 +656,15 @@ def _video_block_requires_completion(
 ) -> bool:
     """Нужно ли требовать просмотр видео для закрытия блока.
 
-    Любой видео-блок, обязательный или нет (владелец 05.10.2026: «проверять
-    все»). С 17.09 по 05.10 проверялся только блок, у которого обязательны и
-    задание, и сам блок, — на проде это 5 видео-блоков из 36, остальные
-    закрывались кружком без просмотра. Пробник исключён по-прежнему.
+    Только у блока, который держит очередь этому ученику, — с галочкой
+    «Блокирует дальнейшую выдачу» (владелец 11.10.2026: «нужно, если стоит
+    галочка для обязательного просмотра и которая блокирует выдачу
+    дальнейшего задания»). Определение то же, что у очереди ленты:
+    обязательны задание и блок (`required_by_block_for_task`), а тариф ученика
+    входит в «Кого обязать выполнить» или там пусто. Необязательный ролик
+    отмечается кружком без просмотра. С 05.10 по 11.10.2026 проверялся любой
+    видео-блок («проверять все»), с 17.09 по 05.10 — тоже только обязательный.
+    Пробник исключён по-прежнему.
 
     Просмотр требуется, только если его можно сделать и засчитать: ролик
     отдаётся этому ученику (то же правило, что у плеера,
@@ -668,6 +675,14 @@ def _video_block_requires_completion(
     if not VIDEO_WATCH_CONTROL_ENABLED or task.kind == ITEM_MOCK_EXAM:
         return False
     if not block.video_id:
+        return False
+    # «Проба» меняет обязательность только у загрузки портфолио, видео-блока
+    # она не касается — отсюда `is_intake_student=False`.
+    required = required_by_block_for_task(
+        task, get_task_blocks(db, task.id), is_intake_student=False,
+    ).get(block.id, False)
+    required_tariffs = get_required_tariffs(db, [block.id]).get(block.id)
+    if not required or (required_tariffs and user.get("tariff") not in required_tariffs):
         return False
     video = get_published_video(db, block.video_id, viewer=user)
     return bool(video is not None and getattr(video, "duration_seconds", None))
