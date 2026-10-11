@@ -1234,11 +1234,24 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
     border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,.5);
     touch-action: none; user-select: none; -webkit-user-select: none;
     cursor: zoom-in;
+    /* Не сжиматься (11.10.2026): с `overflow: hidden` флекс разрешает рамке
+       ужаться ниже фото, и когда фото + кнопки + миниатюры не влезали по
+       высоте, рамка молча срезала низ рисунка — ученица решила, что так и
+       задумано, и спросила, считать ли пропорции по обрезанному мольберту. */
+    flex-shrink: 0;
 }
 .lightbox.is-zoomed .lightbox-frame { cursor: grab; }
 .lightbox.is-zoomed .lightbox-frame.is-gesturing { cursor: grabbing; }
+/* Высота фото — не больше того, что остаётся от видимого экрана после
+   кнопок, счётчика и миниатюр (`--lightbox-chrome`, замерено на стенде).
+   `dvh`, а не `vh`: на айфоне `vh` считается по экрану без панелей браузера
+   и Telegram, и фото выходило выше видимой части. Браузер без `dvh` берёт
+   прежнюю строку с `vh`. */
+.lightbox { --lightbox-chrome: 220px; }
+.lightbox.is-single { --lightbox-chrome: 110px; }
 #lightbox-img {
     max-width: 100%; max-height: 75vh; object-fit: contain; background: #000;
+    max-height: min(75vh, calc(100dvh - var(--lightbox-chrome)));
     transform-origin: center; transition: transform var(--duration-fast);
     -webkit-user-drag: none;
 }
@@ -1624,7 +1637,7 @@ button.desk-nav-item {
     .lightbox-next { right: 4px; }
     .lightbox-nav { width: 44px; height: 44px; font-size: 22px; }
     .lightbox-thumb img { width: 56px; height: 42px; }
-    #lightbox-img { max-height: 65vh; }
+    #lightbox-img { max-height: 65vh; max-height: min(65vh, calc(100dvh - var(--lightbox-chrome))); }
 }
 @media (max-width: 480px) {
     .page-header:not(.page-header--stacked) {
