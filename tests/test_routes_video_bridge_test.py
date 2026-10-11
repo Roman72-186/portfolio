@@ -8,6 +8,7 @@
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
+from tests.test_services_video_catalog import open_topic
 
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
@@ -30,6 +31,7 @@ def _published_video(db, title: str = "Урок про мост") -> LearningVid
         title=title,
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()
@@ -238,6 +240,7 @@ def _catalog_video(db):
         title="Урок про мост",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()

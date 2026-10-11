@@ -25,7 +25,7 @@ class LearningVideo(Base):
     original_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     original_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # Тема недели, к которой привязан урок. NULL — урок открыт всем ученикам.
+    # Тема недели, к которой привязан урок. NULL и нет блока в задании — ученику урок закрыт (11.10.2026).
     # Доступ считает app/services/video_topics.py; с пробниками не связано.
     topic_id: Mapped[int | None] = mapped_column(
         ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True

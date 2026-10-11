@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
+from tests.test_services_video_catalog import open_topic
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,7 @@ def _published_video(db) -> LearningVideo:
         title="Урок фазы 5",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()

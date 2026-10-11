@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from app.config import settings
 from app.models.learning_video import LearningVideo
 from app.services.video_topics import get_topic
+from tests.test_services_video_catalog import open_topic
 
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
@@ -659,6 +660,7 @@ def test_completion_uses_server_duration_not_client_claim(
         title="Урок на час",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
         duration_seconds=3600.0,
     )
     db.add(video)
@@ -714,6 +716,7 @@ def test_ended_event_allows_small_catalog_duration_mismatch(
         title="Урок с расхождением длительности",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
         duration_seconds=600.0,
     )
     db.add(video)
@@ -754,6 +757,7 @@ def test_rewatch_requires_fresh_watch_time_after_previous_completion(
         title="Повторный урок",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
         duration_seconds=600.0,
     )
     db.add(video)
@@ -832,6 +836,7 @@ def test_catalog_progress_requires_real_csrf(auth_client, db, monkeypatch):
         title="Урок с CSRF",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()
@@ -924,6 +929,7 @@ def test_completion_is_refused_when_server_duration_is_unknown(
         title="Урок без известной длительности",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()
@@ -959,6 +965,7 @@ def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypat
         title="Урок с нулевой длительностью",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
         duration_seconds=0.0,
     )
     db.add(video)

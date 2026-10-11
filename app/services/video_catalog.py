@@ -106,12 +106,13 @@ def is_video_accessible(db: Session, video, viewer: dict) -> bool:
 
     1. Ролик стоит блоком в элементе дня — доступ считается **только по
        блокам**: открыт, если открыт хотя бы один элемент, где он стоит.
-       Правило «нет темы значит открыт всем» здесь не применяется намеренно:
-       конструктор не пишет `topic_id`, и без этой ветки каждый поставленный
-       ролик утёк бы всей школе через каталог `/cabinet/videos`.
-    2. Урок без темы и без блоков открыт всем ученикам — так вели себя все
-       ролики до появления тем, и молча закрывать их при выкатке нельзя.
-    3. Привязанный к теме урок открыт вместе со своей темой.
+       Конструктор не пишет `topic_id`, поэтому тема здесь не смотрится.
+    2. Привязанный к теме урок открыт вместе со своей темой.
+    3. Ролик, не поставленный ни в одно задание и ни в одну тему, ученику
+       закрыт (владелец 11.10.2026: «не нужно показывать такие видео»).
+       До этого он считался общим и открывался всей школе через каталог
+       `/cabinet/videos`: повторная загрузка «Рисунок_11.10» осталась
+       непоставленной, и урок «только УВЕРЕННЫЙ МАКСИМУМ» увидели все тарифы.
     """
     if _is_staff_viewer(viewer):
         return True
@@ -122,7 +123,7 @@ def is_video_accessible(db: Session, video, viewer: dict) -> bool:
         )
     topic_id = getattr(video, "topic_id", None)
     if topic_id is None:
-        return True
+        return False
     return topic_id in accessible_topic_ids(db, viewer["user_id"])
 
 
@@ -159,7 +160,7 @@ def list_published_videos(db: Session, *, viewer: dict) -> list[LearningVideo]:
             if (
                 video.id in allowed_by_block
                 if video.id in in_blocks
-                else (video.topic_id is None or video.topic_id in allowed)
+                else (video.topic_id is not None and video.topic_id in allowed)
             )
         ]
     if db.query(LearningVideo.id).first() or not is_bunny_stream_available():

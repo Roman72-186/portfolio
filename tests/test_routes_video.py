@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
+from tests.test_services_video_catalog import open_topic
 
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
@@ -546,6 +547,7 @@ def test_player_url_endpoint_mints_a_fresh_signed_link(auth_client, db, monkeypa
         title="Урок с темой",
         status="ready",
         is_published=True,
+        topic_id=open_topic(db).id,
     )
     db.add(video)
     db.commit()

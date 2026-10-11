@@ -68,17 +68,30 @@ def _viewer(user) -> dict:
     return {"user_id": user.id, "role_rank": 1, "tariff": user.tariff}
 
 
-# --- старое поведение не меняется -------------------------------------------
+# --- ролик без задания и без темы ------------------------------------------
 
 
-def test_video_without_blocks_and_without_topic_stays_open_to_everyone(db, user_factory):
-    """Регресс на легаси: ролики, залитые до появления тем, не должны закрыться."""
+def test_video_without_blocks_and_without_topic_is_closed_to_students(db, user_factory):
+    """Владелец 11.10.2026: ролик, не поставленный ни в одно задание, ученику
+    не показывается. Прод: повторная загрузка «Рисунок_11.10» осталась
+    непоставленной, и урок «только УВЕРЕННЫЙ МАКСИМУМ» увидели все тарифы."""
     student = user_factory(vk_id=710_001, name="Ученик")
     video = _video(db)
     db.commit()
 
-    assert is_video_accessible(db, video, _viewer(student)) is True
-    assert video in list_published_videos(db, viewer=_viewer(student))
+    assert is_video_accessible(db, video, _viewer(student)) is False
+    assert list_published_videos(db, viewer=_viewer(student)) == []
+
+
+def test_staff_still_sees_video_without_blocks_and_topic(db, user_factory):
+    """Персоналу непоставленный ролик нужен: его выбирают в день программы."""
+    curator = user_factory(vk_id=710_011, name="Куратор", role_name="куратор")
+    video = _video(db)
+    db.commit()
+
+    viewer = {"user_id": curator.id, "role_rank": 2}
+    assert is_video_accessible(db, video, viewer) is True
+    assert video in list_published_videos(db, viewer=viewer)
 
 
 def test_video_bound_to_closed_topic_stays_closed(db, user_factory):
@@ -164,20 +177,21 @@ def test_unpublished_task_does_not_open_its_video(db, user_factory):
     assert is_video_accessible(db, video, _viewer(student)) is False
 
 
-def test_removing_block_returns_video_to_legacy_behaviour(db, user_factory):
-    """Убрали ролик из всех заданий — он снова «ничей» и ведёт себя как легаси."""
+def test_removing_block_keeps_video_closed(db, user_factory):
+    """Убрали ролик из всех заданий — он снова «ничей», а ничей ролик ученику
+    закрыт (11.10.2026): снятие блока не открывает его всей школе."""
     student = user_factory(vk_id=710_008, name="Ученик")
     video = _video(db)
-    task = _task(db, assign_to_all=False)
+    task = _task(db, assign_to_all=True)
     _put_video_in_task(db, task, video)
     db.commit()
-    assert is_video_accessible(db, video, _viewer(student)) is False
+    assert is_video_accessible(db, video, _viewer(student)) is True
 
     sync_blocks(db, task_id=task.id, items=[])
     db.commit()
 
     assert block_bound_video_ids(db) == set()
-    assert is_video_accessible(db, video, _viewer(student)) is True
+    assert is_video_accessible(db, video, _viewer(student)) is False
 
 
 def test_staff_sees_video_regardless_of_blocks(db, user_factory):
@@ -192,10 +206,10 @@ def test_staff_sees_video_regardless_of_blocks(db, user_factory):
     assert video in list_published_videos(db, viewer=viewer)
 
 
-def test_catalog_mixes_block_bound_and_legacy_videos(db, user_factory):
+def test_catalog_and_direct_link_agree(db, user_factory):
     """Список и прямой заход по ссылке обязаны решать одинаково."""
     student = user_factory(vk_id=710_010, name="Ученик")
-    legacy = _video(db, title="Легаси", bunny_id="v-legacy")
+    unplaced = _video(db, title="Непоставленный", bunny_id="v-unplaced")
     hidden = _video(db, title="Скрытый", bunny_id="v-hidden")
     shown = _video(db, title="Показанный", bunny_id="v-shown")
     _put_video_in_task(db, _task(db, assign_to_all=False), hidden)
@@ -203,10 +217,10 @@ def test_catalog_mixes_block_bound_and_legacy_videos(db, user_factory):
     db.commit()
 
     catalog = list_published_videos(db, viewer=_viewer(student))
-    assert {v.id for v in catalog} == {legacy.id, shown.id}
-    for video in (legacy, shown):
-        assert is_video_accessible(db, video, _viewer(student)) is True
-    assert is_video_accessible(db, hidden, _viewer(student)) is False
+    assert {v.id for v in catalog} == {shown.id}
+    assert is_video_accessible(db, shown, _viewer(student)) is True
+    for video in (unplaced, hidden):
+        assert is_video_accessible(db, video, _viewer(student)) is False
 
 
 # --- тарифный гейт блока (владелец 05.09.2026, ревью после первой реализации)

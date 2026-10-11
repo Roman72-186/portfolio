@@ -47,6 +47,21 @@ def _topic(db, owner, *, tag_id=None, assign_to_all=False, opens_in_days=-1,
     return topic
 
 
+def open_topic(db) -> LearningTopic:
+    """Тема, открытая всем ученикам со вчерашнего дня. Ролик без задания и без
+    темы ученику закрыт (11.10.2026), поэтому тесты, где ученик смотрит урок,
+    ставят его сюда. Её же берут тесты плеера из других файлов."""
+    topic = LearningTopic(
+        title="Общая тема",
+        opens_at=now_msk() - timedelta(days=1),
+        assign_to_all=True,
+        is_published=True,
+    )
+    db.add(topic)
+    db.commit()
+    return topic
+
+
 def _tag(db, user, name: str) -> Tag:
     tag = Tag(name=name)
     db.add(tag)
@@ -58,17 +73,20 @@ def _tag(db, user, name: str) -> Tag:
 
 def test_catalogue_exposes_only_ready_published_videos(db, monkeypatch, regular_user):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    published = _video(is_published=True, sort_order=2)
+    topic_id = open_topic(db).id
+    published = _video(is_published=True, sort_order=2, topic_id=topic_id)
     processing = _video(
         bunny_video_id="a9a2f23a-3dd6-4f93-b74e-31dd47e21fe8",
         status="processing",
         is_published=True,
         sort_order=1,
+        topic_id=topic_id,
     )
     hidden = _video(
         bunny_video_id="db60eaef-6898-4ec3-bf35-5f2d151239b7",
         is_published=False,
         sort_order=0,
+        topic_id=topic_id,
     )
     db.add_all([published, processing, hidden])
     db.commit()
@@ -179,14 +197,18 @@ def test_sync_updates_progress_and_duration_from_remote(db, monkeypatch):
 # Доступ по темам недели (ExamAssignment)
 # ---------------------------------------------------------------------------
 
-def test_video_without_topic_stays_open_to_every_student(db, monkeypatch, regular_user):
-    """Ролики, залитые до появления тем, не должны молча закрыться."""
+def test_video_without_topic_and_task_is_hidden_from_students(db, monkeypatch, regular_user):
+    """Владелец 11.10.2026: «не нужно показывать такие видео». Ролик, не
+    поставленный ни в задание, ни в тему, ученику не отдаётся — ни в каталоге,
+    ни по прямой ссылке."""
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
+    monkeypatch.setattr("app.services.video_catalog.settings.bunny_stream_enabled", True)
     video = _video(is_published=True)
     db.add(video)
     db.commit()
 
-    assert list_published_videos(db, viewer=_viewer(regular_user)) == [video]
+    assert list_published_videos(db, viewer=_viewer(regular_user)) == []
+    assert get_published_video(db, video.id, viewer=_viewer(regular_user)) is None
 
 
 def test_topic_assigned_to_all_opens_its_video(db, monkeypatch, regular_user, admin_user):
