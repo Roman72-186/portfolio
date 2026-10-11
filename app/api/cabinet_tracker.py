@@ -121,7 +121,10 @@ from app.services.task_blocks import (
     get_state as get_task_block_state,
     poll_submission_error,
     question_blocks as task_question_blocks,
+    BLOCK_HIDDEN,
     BlockViewer,
+    blocks_open_to_student,
+    student_block_refusal,
     tasks_closed_to,
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
@@ -488,6 +491,27 @@ def _writable_task_or_404(
     return task
 
 
+BLOCK_NOT_OPEN_DETAIL = "Этот шаг ещё не открылся"
+
+
+def _refuse_closed_block(db: DBSession, user: dict, block: TaskBlock, task: TrackerTask) -> None:
+    """Запись в блок — только в блок, который ученику адресован и уже открылся
+    (`task_blocks.student_block_refusal`). Зовут все маршруты записи по номеру
+    блока после проверки задания: до 11.10.2026 они смотрели только задание, и
+    блок чужого тарифа отмечался ручным запросом.
+
+    Чужой блок — 404, как чужое задание: ответ не подтверждает, что он есть.
+    Не открывшийся — 403 словами: этот шаг ученик видит в ленте с «Откроется …».
+    """
+    refusal = student_block_refusal(
+        db, block, task, viewer=BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff")),
+    )
+    if refusal == BLOCK_HIDDEN:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    if refusal is not None:
+        raise HTTPException(status_code=403, detail=BLOCK_NOT_OPEN_DETAIL)
+
+
 def _is_task_done(db: DBSession, task_id: int, user_id: int) -> bool:
     return task_done_for_user(db, task_id, user_id)
 
@@ -774,10 +798,14 @@ def cabinet_tracker_task_blocks(
     # каркас, а здесь приезжали название и `video_id`. Сам ролик и тогда не
     # отдавался (`video_catalog.is_video_accessible`), но ученик читал в ленте
     # имя чужого урока и ждал, что оно откроется.
+    # Не открывшийся по дате блок не уходит тоже (11.10.2026): лента рисует
+    # его пустым с «Откроется …», а здесь до этого лежали его текст, фото и
+    # ролик — `blocks_open_to_student`.
     blocks = [
-        b for b in visible_blocks_for_student(
-            db, get_task_blocks(db, task_id),
+        b for b in blocks_open_to_student(
+            db, get_task_blocks(db, task_id), task,
             viewer=BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff")),
+            task_done=task_done,
         )
         # Флаг бывает у вопроса и у шкалы опроса (`sync_blocks`), у остальных
         # типов он всегда False — проверять тип не нужно.
@@ -1309,7 +1337,8 @@ def start_timed_block_route(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_TIMED:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _writable_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    _refuse_closed_block(db, user, block, task)
     state = start_task_timed_block(db, block=block, user_id=user["user_id"])
     db.commit()
     return JSONResponse({
@@ -1340,6 +1369,9 @@ def confirm_video_block_watched(
     # цикле; опоздание видно в статистике «до срока / после срока»
     # (`activity_stats`). Срок отметку не запирает ни у одного типа.
     task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    # До проверки просмотра: ролик не открывшегося блока каталог не отдаёт, и
+    # `_video_block_requires_completion` пропустил бы кружок без просмотра.
+    _refuse_closed_block(db, user, block, task)
     if _video_block_requires_completion(db, task, block, user) and not _video_block_watched(
         db, block, user["user_id"]
     ):
@@ -1374,7 +1406,8 @@ def confirm_photo_block_done(
     if block is None or block.block_type not in (BLOCK_PHOTO, BLOCK_MEDIA):
         raise HTTPException(status_code=404, detail="Блок не найден")
     # Без гейта архива — по той же причине, что у видео выше.
-    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    _refuse_closed_block(db, user, block, task)
     source = "media_confirmed" if block.block_type == BLOCK_MEDIA else "photo_confirmed"
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source=source)
     db.commit()
@@ -1407,6 +1440,7 @@ def submit_compare_choice(
     if block is None or block.block_type != BLOCK_COMPARE:
         raise HTTPException(status_code=404, detail="Блок не найден")
     task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    _refuse_closed_block(db, user, block, task)
     # Срок — с тарифом ученика и сроком задания, как в ленте: без них
     # `deadline_reason` молча смотрел бы только на общий срок блока. Сравнение
     # идёт сюда, пока не закончено (повтор после итога отбивает
@@ -1467,6 +1501,7 @@ async def upload_task_block_work(
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )
+    _refuse_closed_block(db, user, block, task)
 
     # Каждый отказ пишется в лог. До 26.09.2026 их не было видно вовсе: в
     # журнале стоял только код ответа, а причина уезжала ученику в JSON — на
@@ -1600,6 +1635,7 @@ def edit_task_block_comment(
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )
+    _refuse_closed_block(db, user, block, task)
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None or submission.submitted_at is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -1631,6 +1667,7 @@ def delete_task_block_image(
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )
+    _refuse_closed_block(db, user, block, task)
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -1688,11 +1725,13 @@ def submit_cabinet_tracker_task_blocks(
     """
     task = _writable_task_or_404(db, user["user_id"], task_id)
     task_done = _is_task_done(db, task_id, user["user_id"])
-    # Ответ на блок чужого тарифа не принимается: клиент его не получал, а
-    # присланный руками `block_id` уйдёт в «Ответ на чужой вопрос» ниже.
-    all_blocks = visible_blocks_for_student(
-        db, get_task_blocks(db, task_id),
+    # Ответ на блок чужого тарифа и на не открывшийся по дате не принимается:
+    # клиент его не получал, а присланный руками `block_id` уйдёт в «Ответ на
+    # чужой вопрос» ниже. Набор блоков тот же, что отдаёт JSON задания.
+    all_blocks = blocks_open_to_student(
+        db, get_task_blocks(db, task_id), task,
         viewer=BlockViewer(db, user_id=user["user_id"], tariff=user.get("tariff")),
+        task_done=task_done,
     )
     questions = [
         b for b in task_question_blocks(all_blocks)

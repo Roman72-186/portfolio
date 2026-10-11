@@ -66,13 +66,15 @@ def _accessible_block_video_ids(
     # Локальные импорты: `tracker` тянет `video_topics`, и импорт на уровне
     # модуля замкнул бы кольцо через этот файл; `task_blocks` — по той же
     # причине, что и раньше не был затянут сюда без необходимости.
-    from app.services.task_blocks import BlockViewer, get_audiences, is_block_open_to
+    from app.services.task_blocks import (
+        BlockViewer, block_opened_for, get_audiences, get_states, is_block_open_to,
+    )
     from app.services.tracker import accessible_task_ids
 
     topic_ids = accessible_topic_ids(db, user_id)
     task_ids = accessible_task_ids(db, user_id)
     rows = (
-        db.query(TaskBlock.id, TaskBlock.video_id)
+        db.query(TaskBlock, TrackerTask)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .filter(
             TaskBlock.block_type.in_(VIDEO_BLOCK_TYPES),
@@ -89,13 +91,20 @@ def _accessible_block_video_ids(
     if not rows:
         return set()
     # Кому открыт блок — то же правило, что у ленты (`is_block_open_to`):
-    # тарифы, уровень точки А и ученики поимённо (06.10.2026).
-    audiences = get_audiences(db, [block_id for block_id, _video_id in rows])
+    # тарифы, уровень точки А и ученики поимённо (06.10.2026). И открылся ли
+    # он по дате задания и блока (`block_opened_for`, 11.10.2026): до этого
+    # ролик блока «откроется завтра» уже сегодня стоял в каталоге и играл по
+    # ссылке, хотя лента рисовала шаг пустым.
+    block_ids = [block.id for block, _task in rows]
+    audiences = get_audiences(db, block_ids)
+    states = get_states(db, block_ids=block_ids, user_id=user_id)
     viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
     accessible: set[int] = set()
-    for block_id, video_id in rows:
-        if is_block_open_to(audiences.get(block_id), viewer):
-            accessible.add(video_id)
+    for block, task in rows:
+        if is_block_open_to(audiences.get(block.id), viewer) and block_opened_for(
+            block, task, states.get(block.id)
+        ):
+            accessible.add(block.video_id)
     return accessible
 
 

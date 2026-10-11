@@ -511,6 +511,99 @@ def tasks_closed_to(db: DBSession, task_ids: list[int], *, viewer: BlockViewer) 
     return with_blocks - opened
 
 
+def not_open_yet(value: datetime | None, now: datetime) -> bool:
+    """Момент открытия ещё не наступил. `None` — открыто всегда.
+
+    Одна проверка на дату задания (`starts_at`) и дату блока (`opens_at`) для
+    ленты (`cycle_feed`), очереди (`is_block_accessible`) и выдачи содержимого
+    (`block_opened_for`)."""
+    if value is None:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value > now
+
+
+def block_opened_for(
+    block: TaskBlock, task, state: TaskBlockState | None, *,
+    task_done: bool = False, now: datetime | None = None,
+) -> bool:
+    """Открылось ли ученику содержимое блока по календарю: наступили дата
+    задания и дата блока.
+
+    Подсказка конструктора обещает: «Дата и время, раньше которых ученик блок
+    не увидит». До 11.10.2026 это держала только разметка ленты — шаг рисовался
+    пустым с «Откроется …», а JSON задания отдавал его текст, фото и ролик,
+    каталог открывал ролик, запись принималась (аудит
+    `plans/2026-10-11-аудит-доступности-блока.md`). Теперь эту функцию
+    спрашивают все пути выдачи: JSON и приём ответов (`blocks_open_to_student`),
+    запись в блок (`student_block_refusal`), каталог видео.
+
+    Сделанный шаг открыт всегда — как в ленте, где `done` идёт первым:
+    преподаватель передвинул дату вперёд, а ученик урок уже посмотрел. Текст и
+    ссылку отметить нечем, они «сделаны» вместе с заданием (`task_done`).
+    «Закроется» и очередь здесь не смотрятся — это другие вопросы
+    (`block_still_doable`, `holds_sequence`).
+    """
+    done = (state is not None and state.status == STATUS_DONE) or (
+        task_done and block.block_type not in COMPLETABLE_BLOCK_TYPES
+    )
+    if done:
+        return True
+    moment = now or _now()
+    return not (
+        not_open_yet(getattr(task, "starts_at", None), moment)
+        or not_open_yet(block.opens_at, moment)
+    )
+
+
+BLOCK_HIDDEN = "hidden"
+BLOCK_NOT_OPEN = "date"
+
+
+def student_block_refusal(
+    db: DBSession, block: TaskBlock, task, *, viewer: BlockViewer,
+    now: datetime | None = None,
+) -> str | None:
+    """Почему ученику нельзя писать в блок: `BLOCK_HIDDEN` — блок ему не
+    адресован (тариф, уровень, поимённо), `BLOCK_NOT_OPEN` — ещё не открылся по
+    дате; `None` — можно.
+
+    Маршруты записи по номеру блока (`/watched`, `/done`, `/start`,
+    `/compare`, `/upload` и правка сдачи) до 11.10.2026 проверяли только
+    доступ к заданию: блок «только УВЕРЕННЫЙ МАКСИМУМ» в общем задании
+    отмечался учеником другого тарифа ручным запросом, контрольная
+    запускалась до даты. Доступ к заданию по-прежнему проверяет маршрут.
+    """
+    if not is_block_open_to(get_audiences(db, [block.id]).get(block.id), viewer):
+        return BLOCK_HIDDEN
+    if viewer.user_id is None:
+        return None
+    state = get_state(db, block_id=block.id, user_id=viewer.user_id)
+    if not block_opened_for(block, task, state, now=now):
+        return BLOCK_NOT_OPEN
+    return None
+
+
+def blocks_open_to_student(
+    db: DBSession, blocks: list[TaskBlock], task, *, viewer: BlockViewer,
+    task_done: bool, now: datetime | None = None,
+) -> list[TaskBlock]:
+    """Блоки задания, чьё содержимое можно отдать ученику прямо сейчас:
+    адресованы ему (`visible_blocks_for_student`) и открылись по дате
+    (`block_opened_for`). Скрытые до закрытия задания вопросы решает
+    вызывающий — у JSON и приёма ответов правило одно, но живёт рядом с ними.
+    """
+    visible = visible_blocks_for_student(db, blocks, viewer=viewer)
+    if not visible or viewer.user_id is None:
+        return visible
+    states = get_states(db, block_ids=[b.id for b in visible], user_id=viewer.user_id)
+    return [
+        block for block in visible
+        if block_opened_for(block, task, states.get(block.id), task_done=task_done, now=now)
+    ]
+
+
 # Тип задания для ученика — по главному блоку, сверху вниз по старшинству
 # (владелец 06.10.2026: «тип задания» в «Личном трекере», вариант «по
 # содержимому»). Поле `TrackerTask.kind` для этого не годится: у всех
@@ -2259,12 +2352,8 @@ def is_block_accessible(
     """
     moment = now or _now()
     target = blocks[block_index]
-    opens_at = target.opens_at
-    if opens_at is not None:
-        if opens_at.tzinfo is None:
-            opens_at = opens_at.replace(tzinfo=timezone.utc)
-        if opens_at > moment:
-            return False
+    if not_open_yet(target.opens_at, moment):
+        return False
     # Закрытие по календарю; у нового портфолио абсолютный closes_at заменён
     # персональным окном — каждому ученику одинаковое число часов с его старта.
     if not block_still_doable(target, states.get(target.id), now=moment):

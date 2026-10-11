@@ -49,6 +49,7 @@ from app.services.task_blocks import (
     get_states,
     is_block_accessible,
     is_block_open_to,
+    not_open_yet,
     required_by_block_for_task,
     poll_inner_block_ids,
     shares_queue,
@@ -82,13 +83,8 @@ LOCK_BY_DATE = "date"
 LOCK_BY_CLOSED = "closed"
 
 
-def _not_open_yet(value: datetime | None, now: datetime) -> bool:
-    """Момент открытия ещё не наступил. `None` — открыто всегда."""
-    if value is None:
-        return False
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value > now
+# Одна проверка даты на ленту и выдачу содержимого (`task_blocks.block_opened_for`).
+_not_open_yet = not_open_yet
 
 
 def feed_window(
