@@ -104,7 +104,7 @@ def parse_defaults(start: str, end: str, month: str) -> Defaults:
     for raw in (start, end):
         text = (raw or "").strip()
         if text and not text.isdigit():
-            raise payments.PaymentSettingsError("День окна оплаты – число от 1 до 28")
+            raise payments.PaymentSettingsError(f"День окна оплаты – число от 1 до {payments.WINDOW_LAST_DAY_MAX}")
         days.append(int(text) if text else None)
     error = payments.validate_window(*days)
     if error:

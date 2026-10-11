@@ -93,6 +93,15 @@ def test_unpaid_state_follows_window(db, prices, make_payer, now, state, detail)
     assert (row.state, row.detail, row.amount_kop) == (state, detail, 1325500)
 
 
+def test_february_window_ends_on_last_day(db, prices, make_payer):
+    """Окно 25–30 в феврале идёт по 28-е и закрывается 1 марта в 2:00."""
+    make_payer(window=(25, 30))
+    feb = date(2027, 2, 1)
+    assert pb.month_board(db, feb, _msk(2027, 2, 27, 12, 0)).rows[0].detail == "Окно до 28.02"
+    assert pb.month_board(db, feb, _msk(2027, 3, 1, 1, 59)).rows[0].state == pb.STATE_OPEN
+    assert pb.month_board(db, feb, _msk(2027, 3, 1, 2, 0)).rows[0].state == pb.STATE_OVERDUE
+
+
 def test_month_paid_in_settings_counts_as_paid(db, prices, make_payer, people):
     student = make_payer()
     ps.apply_payment_settings(db, people["chief"].id, student, window_start=10, window_end=15,

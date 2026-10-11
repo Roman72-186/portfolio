@@ -1166,7 +1166,10 @@ function saveProfile() {
 // на адреса «Людей» (`/cabinet/superadmin/users/{id}/…`) — права на них держат
 // действия `people:*`, а сервер отдаёт в `manage` флаги тех же проверок.
 
+// Путь от корня (`/cabinet/...`) берётся как есть: «Отметить оплату» пишет
+// в адрес экрана «Оплаты», а не в адреса карточки.
 function manageUrl(path) {
+    if (path.charAt(0) === '/') return path;
     return '/cabinet/superadmin/users/' + _currentStudentId + '/' + path;
 }
 
@@ -1287,7 +1290,7 @@ function buildManage(s) {
 function buildManagePayment(p, dis, canEdit) {
     if (!p) return '';
     var dayInput = function(id, value) {
-        return '<input type="number" min="1" max="28" step="1" class="profile-edit-input" id="' + id + '" value="'
+        return '<input type="number" min="1" max="31" step="1" class="profile-edit-input" id="' + id + '" value="'
             + esc(value == null ? '' : String(value)) + '"' + dis + '>';
     };
     var cohorts = [['', 'Не указан']].concat(p.pay_cohorts);
@@ -1300,7 +1303,7 @@ function buildManagePayment(p, dis, canEdit) {
     html += manageField('Окно оплаты с', dayInput('manage-pay-start', p.pay_window_start),
         false, 'День месяца. Пусто – ученик платит не через сайт');
     html += manageField('Окно оплаты по', dayInput('manage-pay-end', p.pay_window_end),
-        false, 'Не позже 28-го');
+        false, 'В коротком месяце – по его последний день');
     html += manageField('Набор',
         '<select class="profile-edit-select" id="manage-pay-cohort"' + dis + '>'
         + manageOptions(cohorts, p.pay_cohort) + '</select>',
@@ -1315,7 +1318,29 @@ function buildManagePayment(p, dis, canEdit) {
     if (canEdit) {
         html += '<div class="profile-edit-actions form-actions"><button type="button" class="btn-blue btn-save" onclick="savePayment()">Сохранить оплату</button></div>';
     }
-    return html + '</div>';
+    return html + '</div>' + (canEdit ? buildManageMark(p, dis) : '');
+}
+
+// «Отметить оплату» (11.10.2026) – то же, что кнопка на экране «Оплаты»:
+// перевод на расчётный счёт, `payments.mark_paid_manually`. Без окна сервер
+// отметку не примет, поэтому и формы нет.
+function buildManageMark(p, dis) {
+    var html = '<div class="manage-group"><div class="section-title">Отметить оплату</div>';
+    if (!p.mark_month) {
+        return html + '<div class="field-hint">Сначала задайте окно оплаты и сохраните.</div></div>';
+    }
+    html += '<div class="field-hint">Для перевода на расчётный счёт школы. Ученик и служба заботы получат уведомление, как при оплате через Продамус.</div>';
+    html += '<div class="profile-grid">';
+    html += manageField('За месяц',
+        '<input type="month" class="profile-edit-input" id="manage-mark-month" value="' + esc(p.mark_month) + '"' + dis + '>');
+    html += manageField('Сумма, ₽',
+        '<input class="profile-edit-input" id="manage-mark-amount" inputmode="decimal" value="' + esc(p.mark_amount) + '"' + dis + '>');
+    html += manageField('Деньги пришли',
+        '<input type="date" class="profile-edit-input" id="manage-mark-date" value="' + esc(p.today) + '"' + dis + '>');
+    html += manageField('Комментарий',
+        '<input class="profile-edit-input" id="manage-mark-comment" maxlength="300" placeholder="Номер платёжки, от кого перевод"' + dis + '>');
+    html += '</div>';
+    return html + '<div class="profile-edit-actions form-actions"><button type="button" class="btn-outline" onclick="markPayment()">Отметить оплату</button></div></div>';
 }
 
 function managePost(path, fields) {
@@ -1402,6 +1427,16 @@ function savePayment() {
         pay_price: document.getElementById('manage-pay-price').value,
         paid_month: document.getElementById('manage-paid-month').value
     }, 'Оплата сохранена', 'Не удалось сохранить оплату');
+}
+
+function markPayment() {
+    manageSave('/cabinet/superadmin/payments/mark', {
+        user_id: _currentStudentId,
+        month: document.getElementById('manage-mark-month').value,
+        amount: document.getElementById('manage-mark-amount').value,
+        paid_on: document.getElementById('manage-mark-date').value,
+        comment: document.getElementById('manage-mark-comment').value
+    }, 'Оплата отмечена', 'Не удалось отметить оплату');
 }
 
 function saveLabels() {

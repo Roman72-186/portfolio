@@ -6,9 +6,10 @@
 Как устроено:
 
 - У ученика своё **окно оплаты** — дни месяца «с» и «по» (`User.pay_window_*`).
-  Месяц платят внутри его окна: октябрь — 10–15 октября.
-- **Отсечка** — утро после последнего дня окна (`CUTOFF_HOUR_MSK`). Не оплатил
-  к отсечке — при включённой блокировке кабинет закрывается
+  Месяц платят внутри его окна: октябрь — 10–15 октября. Окно 25–30 в феврале
+  кончается 28-го (29-го): день за концом месяца — последний день месяца.
+- **Отсечка** — 2:00 по Москве после последнего дня окна (`CUTOFF_HOUR_MSK`).
+  Не оплатил к отсечке — при включённой блокировке кабинет закрывается
   (`services/access_state.py`).
 - `User.paid_until` — отсечка окна **следующего** неоплаченного месяца.
   Оплатил октябрь — `paid_until` = отсечка ноябрьского окна. Отсюда же
@@ -74,12 +75,13 @@ def is_payments_staff(user: dict | None) -> bool:
 
 
 # Во сколько по Москве после последнего дня окна закрывается доступ.
-# Заказчик: «не оплатил к утру после окна — доступ закрыт». Точный час —
-# открытый вопрос № 2 плана (00:00 или 09:00); до ответа — 09:00.
-CUTOFF_HOUR_MSK = 9
+# Служба заботы 10.10.2026: «в 2:00 ночи» — окно 10–15 закрывается 16-го в 2:00.
+CUTOFF_HOUR_MSK = 2
 
-# Крайний день окна — не позже 28-го, чтобы окно было в любом месяце.
-WINDOW_LAST_DAY_MAX = 28
+# Окно ставят теми днями, что говорит школа (10–15, 25–30), вплоть до 31-го.
+# В месяце короче окно кончается его последним днём (`window_day`): школа
+# 11.10.2026 — «февраль до конца месяца».
+WINDOW_LAST_DAY_MAX = 31
 
 ORDER_PREFIX = "ap-"
 
@@ -127,15 +129,31 @@ def validate_window(start: int | None, end: int | None) -> str | None:
     return None
 
 
+def window_day(period: date, day: int) -> date:
+    """День окна в месяце `period`; за концом месяца — его последний день.
+
+    Окно 25–30 в феврале — 25–28, окно 30–31 в апреле — 30–30. Окно хранит
+    дни как их назвала школа, укорачивается оно только здесь — так что
+    открытие, отсечка и тексты всегда говорят об одном и том же дне.
+    """
+    last = calendar.monthrange(period.year, period.month)[1]
+    return period.replace(day=min(day, last))
+
+
+def window_last_day(user: User, period: date) -> date:
+    """Последний день окна месяца `period` — «оплатить до … включительно»."""
+    return window_day(period, user.pay_window_end)
+
+
 def window_opens_at(user: User, period: date) -> datetime:
     """Начало окна месяца `period` — 00:00 первого дня окна по Москве, в UTC."""
-    opens = datetime.combine(period.replace(day=user.pay_window_start), time(0), MSK_TZ)
+    opens = datetime.combine(window_day(period, user.pay_window_start), time(0), MSK_TZ)
     return opens.astimezone(timezone.utc)
 
 
 def window_cutoff(user: User, period: date) -> datetime:
-    """Отсечка окна месяца `period` — утро после последнего дня окна, в UTC."""
-    last_day = period.replace(day=user.pay_window_end)
+    """Отсечка окна месяца `period` — 2:00 после последнего дня окна, в UTC."""
+    last_day = window_last_day(user, period)
     cutoff = datetime.combine(last_day + timedelta(days=1), time(CUTOFF_HOUR_MSK), MSK_TZ)
     return cutoff.astimezone(timezone.utc)
 
@@ -149,13 +167,15 @@ def due_period(user: User, now: datetime) -> date:
     """Какой месяц ученик должен оплатить следующим.
 
     `paid_until` — отсечка окна следующего неоплаченного месяца, значит этот
-    месяц — тот, в котором лежит отсечка (минус час: отсечка может прийтись
-    на 1-е число, если окно кончается последним днём месяца). Оплат ещё не
+    месяц — тот, в котором лежит последний день окна, за сутки до отсечки
+    (сама отсечка приходится на 1-е число, если окно кончается последним днём
+    месяца). Сутки, а не час: срок, поставленный при другом `CUTOFF_HOUR_MSK`
+    (до 11.10.2026 — 9:00), должен указывать на тот же месяц. Оплат ещё не
     было — текущий месяц по Москве.
     """
     if user.paid_until is not None:
-        cutoff_msk = _as_utc(user.paid_until).astimezone(MSK_TZ) - timedelta(hours=CUTOFF_HOUR_MSK + 1)
-        return month_start(cutoff_msk.date())
+        last_day_msk = _as_utc(user.paid_until).astimezone(MSK_TZ) - timedelta(days=1)
+        return month_start(last_day_msk.date())
     return month_start(_as_utc(now).astimezone(MSK_TZ).date())
 
 
@@ -447,7 +467,7 @@ def student_payment_view(db: DBSession, user: User, now: datetime) -> dict | Non
     period = due_period(user, now)
     amount = price_kop(db, user)
     cutoff = window_cutoff(user, period)
-    last_day = period.replace(day=user.pay_window_end)
+    last_day = window_last_day(user, period)
     return {
         "month": MONTHS_NOM[period.month],
         "amount_text": rub_text(amount) if amount else "",
@@ -576,10 +596,20 @@ def _rub_input(amount_kop: int | None) -> str:
 
 
 def manage_view(db: DBSession, student: User) -> dict:
-    """Поля оплаты для блока «Управление» в карточке ученика."""
+    """Поля оплаты для блока «Управление» в карточке ученика.
+
+    `mark_*` — что подставить в «Отметить оплату» той же карточки: должный
+    месяц и цена ученика. Пишет форма тем же `POST /payments/mark`, что на
+    экране «Оплаты», — своей отметки у карточки нет.
+    """
     month = paid_month(student)
     reference = reference_price_kop(db, student.tariff, student.pay_cohort)
+    now = datetime.now(timezone.utc)
+    windowed = has_window(student)
     return {
+        "mark_month": due_period(student, now).strftime("%Y-%m") if windowed else "",
+        "mark_amount": _rub_input(price_kop(db, student)) if windowed else "",
+        "today": _as_utc(now).astimezone(MSK_TZ).date().isoformat(),
         "pay_window_start": student.pay_window_start,
         "pay_window_end": student.pay_window_end,
         "pay_cohort": student.pay_cohort or "",

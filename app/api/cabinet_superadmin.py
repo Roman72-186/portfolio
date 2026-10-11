@@ -2586,7 +2586,7 @@ def _parse_window_day(raw: str) -> int | None:
     if not text:
         return None
     if not text.isdigit():
-        raise payments.PaymentSettingsError("День окна оплаты – число от 1 до 28")
+        raise payments.PaymentSettingsError(f"День окна оплаты – число от 1 до {payments.WINDOW_LAST_DAY_MAX}")
     return int(text)
 
 

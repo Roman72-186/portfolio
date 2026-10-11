@@ -147,7 +147,7 @@ def month_board(db: DBSession, period: date, now: datetime) -> Board:
         if now < opens:
             state, detail = STATE_UPCOMING, f"Окно откроется {_msk_day(opens)}"
         elif now < cutoff:
-            state, detail = STATE_OPEN, f"Окно до {student.pay_window_end:02d}.{period.month:02d}"
+            state, detail = STATE_OPEN, f"Окно до {payments.window_last_day(student, period).strftime('%d.%m')}"
         else:
             state, detail = STATE_OVERDUE, f"Окно закрылось {_msk_day(cutoff)}"
         rows.append(BoardRow(student, state, window, payments.price_kop(db, student), None, detail, problems))

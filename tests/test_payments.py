@@ -73,8 +73,8 @@ def payer(db, user_factory):
 def test_window_bounds_in_moscow_time(payer):
     october = date(2026, 10, 1)
     assert ps.window_opens_at(payer, october) == _msk(2026, 10, 10, 0, 0)
-    # Отсечка — утро после последнего дня окна.
-    assert ps.window_cutoff(payer, october) == _msk(2026, 10, 16, ps.CUTOFF_HOUR_MSK, 0)
+    # Отсечка — 2:00 ночи после последнего дня окна (служба заботы 10.10.2026).
+    assert ps.window_cutoff(payer, october) == _msk(2026, 10, 16, 2, 0)
 
 
 def test_paid_month_extends_to_next_month_cutoff(payer):
@@ -98,6 +98,49 @@ def test_due_period_when_window_ends_on_28th(payer):
     assert ps.due_period(payer, _msk(2026, 11, 1)) == date(2026, 11, 1)
 
 
+def test_window_beyond_month_end_ends_on_last_day(payer):
+    """Окно 25–30: в феврале — по 28-е (в високосный — по 29-е), в 31-дневном
+    месяце — как есть. Школа 11.10.2026: «февраль до конца месяца»."""
+    payer.pay_window_start, payer.pay_window_end = 25, 30
+    assert ps.window_last_day(payer, date(2027, 2, 1)) == date(2027, 2, 28)
+    assert ps.window_last_day(payer, date(2028, 2, 1)) == date(2028, 2, 29)
+    assert ps.window_last_day(payer, date(2026, 10, 1)) == date(2026, 10, 30)
+    assert ps.window_cutoff(payer, date(2027, 2, 1)) == _msk(2027, 3, 1, 2, 0)
+    assert ps.window_opens_at(payer, date(2027, 2, 1)) == _msk(2027, 2, 25, 0, 0)
+
+
+def test_window_start_beyond_month_end(payer):
+    """Окно 30–31 в феврале сжимается в один последний день, а не ломается."""
+    payer.pay_window_start, payer.pay_window_end = 30, 31
+    assert ps.window_opens_at(payer, date(2027, 2, 1)) == _msk(2027, 2, 28, 0, 0)
+    assert ps.window_cutoff(payer, date(2027, 2, 1)) == _msk(2027, 3, 1, 2, 0)
+    assert ps.window_cutoff(payer, date(2027, 4, 1)) == _msk(2027, 5, 1, 2, 0)
+
+
+def test_due_period_across_february_window(payer):
+    """Оплачен январь при окне 25–30: срок — 1 марта 2:00, должен февраль."""
+    payer.pay_window_start, payer.pay_window_end = 25, 30
+    payer.paid_until = ps.paid_until_after(payer, date(2027, 1, 1))
+    assert payer.paid_until == _msk(2027, 3, 1, 2, 0)
+    assert ps.due_period(payer, _msk(2027, 2, 26)) == date(2027, 2, 1)
+    assert ps.paid_month(payer) == date(2027, 1, 1)
+
+
+def test_due_period_reads_paid_until_set_at_old_cutoff_hour(payer):
+    """Срок, поставленный до 11.10.2026 при отсечке 9:00, указывает на тот же
+    месяц: должный месяц ищется за сутки до отсечки, а не за час."""
+    payer.pay_window_start, payer.pay_window_end = 25, 31
+    payer.paid_until = _msk(2026, 11, 1, 9, 0)   # отсечка октябрьского окна по-старому
+    assert ps.due_period(payer, _msk(2026, 10, 28)) == date(2026, 10, 1)
+
+
+def test_student_sees_last_day_of_short_month(db, prices, payer, prodamus):
+    payer.pay_window_start, payer.pay_window_end = 25, 30
+    view = ps.student_payment_view(db, payer, _msk(2027, 2, 26, 12, 0))
+    assert view["until_text"] == "28.02"
+    assert not view["overdue"]
+
+
 def test_pay_button_only_from_first_day_of_window(payer):
     assert not ps.can_pay_now(payer, _msk(2026, 10, 9, 23, 59))
     assert ps.can_pay_now(payer, _msk(2026, 10, 10, 0, 0))
@@ -112,8 +155,8 @@ def test_no_window_no_payments(user_factory):
 
 
 @pytest.mark.parametrize("start,end,ok", [
-    (10, 15, True), (1, 28, True), (None, None, True),
-    (15, 10, False), (0, 5, False), (20, 31, False), (10, None, False),
+    (10, 15, True), (1, 28, True), (25, 30, True), (20, 31, True), (None, None, True),
+    (15, 10, False), (0, 5, False), (20, 32, False), (10, None, False),
 ])
 def test_validate_window(start, end, ok):
     assert (ps.validate_window(start, end) is None) is ok
@@ -434,7 +477,7 @@ def test_settings_paid_month_becomes_next_cutoff(db, user_factory):
     assert _settings(db, student, student) is True
 
     # Оплачен октябрь — срок до отсечки ноябрьского окна 10–15.
-    assert student.paid_until == _msk(2026, 11, 16, 9)
+    assert student.paid_until == _msk(2026, 11, 16, 2)
     assert ps.paid_month(student) == date(2026, 10, 1)
     db.flush()
     [log] = db.query(AuditLog).filter(AuditLog.action == "payment_settings_change").all()
@@ -450,7 +493,7 @@ def test_settings_window_change_moves_paid_until(db, user_factory):
 
     _settings(db, student, student, window_start=20, window_end=25)
 
-    assert student.paid_until == _msk(2026, 11, 26, 9)
+    assert student.paid_until == _msk(2026, 11, 26, 2)
     assert ps.paid_month(student) == date(2026, 10, 1)
 
 
@@ -524,7 +567,37 @@ def test_card_saves_payment_settings(db, client, session_factory, prices, card):
 
     p = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]["payment"]
     assert (p["pay_window_start"], p["pay_window_end"], p["pay_cohort"]) == (10, 15, COHORT_FROM)
-    assert p["paid_until_text"] == "16.11.2026 в 09:00"
+    assert p["paid_until_text"] == "16.11.2026 в 02:00"
+    # «Отметить оплату» в карточке: должный месяц (октябрь оплачен — ноябрь)
+    # и цена ученика.
+    assert (p["mark_month"], p["mark_amount"]) == ("2026-11", "12000,50")
+
+
+def test_card_mark_form_needs_window(db, client, session_factory, card):
+    """Без окна отметку не примет `mark_paid_manually` — форме нечего подставить."""
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["chief"]).id)
+
+    p = client.get(f"/cabinet/students/{card['student'].id}/profile").json()["student"]["manage"]["payment"]
+
+    assert (p["mark_month"], p["mark_amount"]) == ("", "")
+
+
+def test_card_window_day_up_to_31(db, client, session_factory, prices, card):
+    student = card["student"]
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["chief"]).id)
+
+    ok = client.post(f"/cabinet/superadmin/users/{student.id}/payment",
+                     data=_payment_form(pay_window_start="25", pay_window_end="30"))
+    bad = client.post(f"/cabinet/superadmin/users/{student.id}/payment",
+                      data=_payment_form(pay_window_start="25", pay_window_end="32"),
+                      headers={"Accept": "application/json"})
+
+    assert ok.status_code == 200, ok.text
+    assert bad.status_code == 400
+    db.refresh(student)
+    assert (student.pay_window_start, student.pay_window_end) == (25, 30)
 
 
 def test_card_refuses_garbage_price_without_changes(db, client, session_factory, card):

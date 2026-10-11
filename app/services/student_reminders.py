@@ -586,7 +586,7 @@ def _cycle_debt_message(item: _Item) -> tuple[str, str]:
 
 
 def _pay_window_message(item: _Item) -> tuple[str, str]:
-    """Последний день окна — сутки до отсечки: отсечка утром после окна."""
+    """Последний день окна — сутки до отсечки: отсечка в 2:00 после окна."""
     month = item.title.split()[0]
     last_day = (_utc(item.moment).astimezone(MSK_TZ) - timedelta(days=1)).strftime("%d.%m")
     amount = f"Сумма – {payments.rub_text(item.amount_kop)}. " if item.amount_kop else ""
