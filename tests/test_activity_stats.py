@@ -644,7 +644,7 @@ def test_named_student_summary_moved_from_users_page(
     assert 'data-student-username="@missing_portfolio"' in page
     assert 'data-student-tariff=' in page
     assert 'data-portfolio-uploaded="1"' in uploaded_row
-    assert 'href="/cabinet/admin/registration-stats.csv?' in page
+    assert 'href="/cabinet/admin/registration-stats.xlsx?' in page
 
 
 def test_registration_card_follows_date_filter(superadmin_client, db, user_factory):

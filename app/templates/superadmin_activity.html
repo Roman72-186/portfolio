@@ -296,7 +296,7 @@
 
     {# Регистрации и поимённая сводка переехали сюда с «Пользователей»
        25.09.2026. Данные считает staff_dashboard.py — те же функции кормят
-       CSV-выгрузку. Карточка регистраций раскрыта, пока задан фильтр:
+       выгрузку в Excel. Карточка регистраций раскрыта, пока задан фильтр:
        иначе после «Применить» она схлопнется и результата не видно. #}
     <details class="ss-acc"{% if registration_filtered %} open{% endif %}>
         <summary><h2 class="ss-acc-title">Регистрации по тарифам</h2><span class="ss-acc-badge">{{ tariff_registration_stats.total }} зарегистрировались</span></summary>
@@ -311,7 +311,7 @@
                 </select></label>
                 <button type="submit" class="btn-blue btn-save">Применить</button>
                 {% if registration_filtered %}<a class="ss-link" href="/cabinet/superadmin/activity">Сбросить</a>{% endif %}
-                <a class="ss-export-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}?registration_from={{ tariff_registration_stats.period_from }}{% if tariff_registration_stats.period_to %}&amp;registration_to={{ tariff_registration_stats.period_to }}{% endif %}{% if tariff_registration_stats.tariff_filter %}&amp;registration_tariff={{ tariff_registration_stats.tariff_filter }}{% endif %}" download>⬇ CSV</a>
+                <a class="ss-export-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.xlsx{% else %}/cabinet/admin/registration-stats.xlsx{% endif %}?registration_from={{ tariff_registration_stats.period_from }}{% if tariff_registration_stats.period_to %}&amp;registration_to={{ tariff_registration_stats.period_to }}{% endif %}{% if tariff_registration_stats.tariff_filter %}&amp;registration_tariff={{ tariff_registration_stats.tariff_filter }}{% endif %}" download>⬇ Excel</a>
             </form>
             <div class="ss-stats-strip">
                 {% for item in tariff_registration_stats.by_tariff %}<div class="ss-stat"><div class="ss-stat-val">{{ item.count }}</div><div class="ss-stat-lbl">{{ item.label }}</div></div>{% endfor %}

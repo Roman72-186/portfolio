@@ -107,7 +107,7 @@ _MODERATOR_READ_EXACT = frozenset({
     # модератор с личной галочкой сохранял через ключ из разметки и не
     # продлевал сессию (04.10.2026). Чужих данных адрес не отдаёт.
     "/csrf",
-    "/cabinet/admin/registration-stats.csv",  # выгрузка со «Статистики активности»
+    "/cabinet/admin/registration-stats.xlsx",  # выгрузка со «Статистики активности»
     "/health",
     "/sw.js",
 })

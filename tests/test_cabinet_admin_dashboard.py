@@ -130,19 +130,24 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
     assert chief_counts["Без тарифа"] == 1
     assert sum(chief_counts.values()) == 4
     assert _registration_counts(superadmin_response.text) == chief_counts
-    assert 'href="/cabinet/admin/registration-stats.csv?' in chief_response.text
-    assert 'href="/cabinet/superadmin/registration-stats.csv?' in superadmin_response.text
+    assert 'href="/cabinet/admin/registration-stats.xlsx?' in chief_response.text
+    assert 'href="/cabinet/superadmin/registration-stats.xlsx?' in superadmin_response.text
 
-    chief_csv = client.get("/cabinet/admin/registration-stats.csv", cookies={"session_id": chief_session.id})
-    superadmin_csv = client.get(
-        "/cabinet/superadmin/registration-stats.csv",
+    import io
+    import openpyxl
+
+    chief_xlsx = client.get("/cabinet/admin/registration-stats.xlsx", cookies={"session_id": chief_session.id})
+    superadmin_xlsx = client.get(
+        "/cabinet/superadmin/registration-stats.xlsx",
         cookies={"session_id": superadmin_session.id},
     )
-    assert chief_csv.status_code == 200
-    assert superadmin_csv.status_code == 200
-    assert chief_csv.headers["content-disposition"] == "attachment; filename=registration-stats.csv"
-    assert "Имя;Username;Тариф;Дата регистрации" in chief_csv.content.decode("utf-8-sig")
-    assert "@student_self" in superadmin_csv.content.decode("utf-8-sig")
+    assert chief_xlsx.status_code == 200
+    assert superadmin_xlsx.status_code == 200
+    assert chief_xlsx.headers["content-disposition"] == "attachment; filename=registration-stats.xlsx"
+    chief_rows = list(openpyxl.load_workbook(io.BytesIO(chief_xlsx.content)).active.values)
+    assert chief_rows[0][:4] == ("Фамилия Имя", "Ник Telegram", "Тариф", "Год поступления в вуз")
+    superadmin_rows = list(openpyxl.load_workbook(io.BytesIO(superadmin_xlsx.content)).active.values)
+    assert "@student_self" in [row[1] for row in superadmin_rows]
 
 
 # ---------------------------------------------------------------------------

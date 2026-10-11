@@ -64,7 +64,8 @@ from app.services.mock_exam_access import (
     ticket_start_cutoff_at,
 )
 from app.services.staff_dashboard import (
-    build_tariff_registration_csv,
+    XLSX_MEDIA_TYPE,
+    build_tariff_registration_xlsx,
     get_student_activity_overview,
     get_tariff_registration_stats,
     load_staff_dashboard,
@@ -144,7 +145,7 @@ def cabinet_superadmin(
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
-@router.get("/superadmin/registration-stats.csv")
+@router.get("/superadmin/registration-stats.xlsx")
 def download_superadmin_registration_stats(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
@@ -154,9 +155,9 @@ def download_superadmin_registration_stats(
 ):
     stats = get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff)
     return Response(
-        content=build_tariff_registration_csv(stats),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=registration-stats.csv"},
+        content=build_tariff_registration_xlsx(db, stats),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=registration-stats.xlsx"},
     )
 
 

@@ -236,8 +236,8 @@ _RULES: tuple[_Rule, ...] = (
     _rule("statistics", _exact("/cabinet/students"), _GET, ("tab", "statistics")),
     _rule("statistics", _tree("/cabinet/superadmin/activity")),
     _rule("statistics", _tree("/cabinet/superadmin/stats")),
-    _rule("statistics", _exact("/cabinet/admin/registration-stats.csv")),
-    _rule("statistics", _exact("/cabinet/superadmin/registration-stats.csv")),
+    _rule("statistics", _exact("/cabinet/admin/registration-stats.xlsx")),
+    _rule("statistics", _exact("/cabinet/superadmin/registration-stats.xlsx")),
     _rule("statistics", r"^/cabinet/staff/program/cycles/\d+/stats$"),
     # ── Ученики ──
     _rule("students", _exact("/cabinet/students"), _GET),

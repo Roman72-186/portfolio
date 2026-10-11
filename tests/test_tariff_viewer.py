@@ -76,7 +76,7 @@ def test_archive_closed_even_for_archived_student_of_same_tariff(viewer_client, 
     [
         "/cabinet/superadmin/activity",
         "/cabinet/superadmin/stats",
-        "/cabinet/admin/registration-stats.csv",
+        "/cabinet/admin/registration-stats.xlsx",
         "/cabinet/students?tab=statistics",
     ],
 )

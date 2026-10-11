@@ -16,7 +16,8 @@ from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
 from app.services.student_access import get_student_for_staff_access
 from app.services.staff_dashboard import (
-    build_tariff_registration_csv,
+    XLSX_MEDIA_TYPE,
+    build_tariff_registration_xlsx,
     get_tariff_registration_stats,
     load_staff_dashboard,
     parse_registration_date,
@@ -47,7 +48,7 @@ def cabinet_admin(
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
-@router.get("/admin/registration-stats.csv")
+@router.get("/admin/registration-stats.xlsx")
 def download_admin_registration_stats(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
@@ -57,9 +58,9 @@ def download_admin_registration_stats(
 ):
     stats = get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff)
     return Response(
-        content=build_tariff_registration_csv(stats),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=registration-stats.csv"},
+        content=build_tariff_registration_xlsx(db, stats),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": "attachment; filename=registration-stats.xlsx"},
     )
 
 

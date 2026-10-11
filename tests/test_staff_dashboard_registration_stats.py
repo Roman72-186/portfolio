@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.staff_dashboard import (
     REGISTRATION_STATS_SINCE,
-    build_tariff_registration_csv,
+    build_tariff_registration_xlsx,
     get_student_activity_overview,
     get_tariff_registration_stats,
 )
@@ -85,9 +85,12 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
     assert len(stats["students"]) == 5  # четыре в сводке + legacy для проверки
     gone = {inactive_student.id, archived_student.id, deleted_student.id, expired_student.id}
     assert not gone & {student["id"] for student in stats["students"]}
-    tariff_labels = [student["tariff_label"] for student in stats["students"]]
-    assert tariff_labels == sorted(tariff_labels, key=str.casefold)
-    assert stats["students"][-1]["username"] == "@self_student"
+    # Служба заботы 10.10.2026: «сначала уверенный максимум, потом я с вами,
+    # потом я сам»; отработавшие следом, без тарифа — в конце.
+    assert [student["id"] for student in stats["students"]] == [
+        max_student.id, with_you_student.id, self_student.id, legacy_student.id, no_tariff_student.id,
+    ]
+    assert stats["students"][2]["username"] == "@self_student"
     assert all(student["id"] != 199 for student in stats["students"])
 
 
@@ -100,15 +103,69 @@ def test_tariff_registration_stats_return_zero_buckets(db):
     assert stats["students"] == []
 
 
-def test_tariff_registration_csv_contains_visible_students_and_headers(db, user_factory):
-    student = user_factory(vk_id=810_100, tariff=TARIFF_SELF, name="CSV Student")
-    student.tg_username = "csv_student"
+def _xlsx_rows(db) -> list[dict]:
+    import io
+    import openpyxl
+
+    content = build_tariff_registration_xlsx(db, get_tariff_registration_stats(db))
+    header, *rows = openpyxl.load_workbook(io.BytesIO(content)).active.values
+    return [dict(zip(header, row)) for row in rows]
+
+
+def test_tariff_registration_xlsx_has_student_card_data(db, user_factory):
+    """Служба заботы 10–11.10.2026: «имя фамилия, ник, тариф, год
+    поступления, балл за Р, за К, точка А» — и всё, что есть по ученику."""
+    student = user_factory(vk_id=810_100, tariff=TARIFF_SELF, name="Xlsx Student")
+    student.last_name, student.first_name = "Петрова", "Анна"
+    student.tg_username = "xlsx_student"
+    student.university_year = 2028
+    student.city = "Казань"
+    student.pay_price_kop = 1_325_500
+    block = _control(db)  # контрольная на время по рисунку
+    homework = TaskBlock(task_id=block.task_id, block_type="photo_upload", title="ДЗ", subject="Композиция")
+    db.add(homework)
+    db.flush()
+    _scored(db, block, student, 60)
+    _scored(db, homework, student, 70)
     db.commit()
 
-    csv_text = build_tariff_registration_csv(get_tariff_registration_stats(db))
+    row = _xlsx_rows(db)[0]
 
-    assert csv_text.startswith("\ufeffИмя;Username;Тариф;Дата регистрации\r\n")
-    assert "CSV Student;@csv_student;" in csv_text
+    assert row["Фамилия Имя"] == "Петрова Анна"
+    assert row["Ник Telegram"] == "@xlsx_student"
+    assert row["Тариф"] == "Я сам"
+    assert row["Год поступления в вуз"] == 2028
+    # Средний — как в шапке карточки, по всем сдачам; контрольные — только `timed`.
+    assert row["Р — средний балл"] == 60
+    assert row["К — средний балл"] == 70
+    assert row["Р — контрольные"] == 60
+    assert row["К — контрольные"] is None
+    # Точка А без работ — балла нет, так и написано.
+    assert row["Точка А — балл"] is None
+    assert row["Точка А — оценено"] == "нет работ"
+    assert row["Стоимость в месяц, ₽"] == 13255
+    assert row["Город"] == "Казань"
+    assert row["ID"] == student.id
+
+
+def test_tariff_registration_xlsx_point_a_score_only_when_fully_scored(db, user_factory):
+    """Балл и уровень точки А — как в карточке: только у разобранной целиком."""
+    student = user_factory(vk_id=810_110, tariff=TARIFF_CONFIDENT_MAX)
+    db.add(Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="Сентябрь", year=2026,
+                filename="before.jpg", status="success", s3_url="https://s3.example/before.jpg"))
+    db.commit()
+
+    row = _xlsx_rows(db)[0]
+    assert row["Точка А — балл"] is None
+    assert row["Точка А — оценено"] == "0 из 1"
+
+    student.portfolio_before_score = 70
+    db.commit()
+
+    row = _xlsx_rows(db)[0]
+    assert row["Точка А — балл"] == 70
+    assert row["Точка А — уровень"] == 2
+    assert row["Точка А — оценено"] == "1 из 1"
 
 
 def test_student_activity_overview_tracks_logins_and_portfolio_uploads(db, user_factory):

@@ -1,6 +1,5 @@
 """Shared aggregates for the Chief Teacher and Superadmin dashboards."""
 
-import csv
 import io
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
@@ -11,9 +10,12 @@ from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
+from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
 from app.models.tracker import STATUS_DONE, TrackerTask
-from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_CURRENT, TARIFF_DISPLAY
+from app.constants import (
+    MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS, STUDY_MODE_LABELS, TARIFF_CONFIDENT_MAX,
+    TARIFF_DISPLAY, TARIFF_SELF, TARIFF_WITH_YOU, TARIFFS_CURRENT,
+)
 from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
@@ -27,10 +29,11 @@ from app.services.task_blocks import (
 from app.services.tracker import (
     cycle_deadline_lookup, program_learners, program_students, task_audience_user_ids,
 )
-from app.services.tz import msk_midnight, msk_text
+from app.services.tz import msk_date_text, msk_midnight, msk_text
 
 
 REGISTRATION_STATS_SINCE = date(2026, 9, 19)
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def parse_registration_date(raw: str | None, fallback: date | None = None) -> date | None:
@@ -132,7 +135,7 @@ def get_tariff_registration_stats(
             }
         )
 
-    students.sort(key=lambda student: (student["tariff_label"].casefold(), student["name"].casefold()))
+    students.sort(key=lambda student: (_tariff_rank(student["tariff"]), student["tariff_label"].casefold(), student["name"].casefold()))
 
     by_tariff = [
         {
@@ -154,20 +157,166 @@ def get_tariff_registration_stats(
     }
 
 
-def build_tariff_registration_csv(stats: TariffRegistrationStats) -> str:
-    """Serialize the visible registration list for spreadsheet downloads."""
-    output = io.StringIO(newline="")
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow(["Имя", "Username", "Тариф", "Дата регистрации"])
+# Порядок тарифов в списке и выгрузке — служба заботы 10.10.2026: «сначала все
+# уверенный максимум, потом я с вами, потом я сам». Отработавшие — следом,
+# без тарифа — в конце.
+_TARIFF_ORDER = (TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU, TARIFF_SELF)
+
+
+def _tariff_rank(tariff: str) -> int:
+    if tariff in _TARIFF_ORDER:
+        return _TARIFF_ORDER.index(tariff)
+    return len(_TARIFF_ORDER) + (1 if not tariff else 0)
+
+
+def _timed_scores_by_subject(db: DBSession, student_ids: list[int]) -> dict[int, dict[str, int]]:
+    """Средний балл за контрольные на время по предметам, на ученика.
+
+    Та же выборка, что у шапки карточки (`stats.avg_score_by_subject_all_time`),
+    сужена до блоков `timed`: служба заботы 11.10.2026 просила «оценку за
+    контрольные». Предмет — у блока, если пусто — у задания.
+    """
+    if not student_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockSubmission.user_id, TaskBlock.subject, TrackerTask.subject, TaskBlockSubmission.score)
+        .join(TaskBlock, TaskBlockSubmission.block_id == TaskBlock.id)
+        .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
+        .filter(
+            TaskBlockSubmission.user_id.in_(student_ids),
+            TaskBlockSubmission.score.isnot(None),
+            TaskBlock.block_type == BLOCK_TIMED,
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    )
+    collected: dict[int, dict[str, list[float]]] = {}
+    for user_id, block_subject, task_subject, score in rows:
+        subject = block_subject or task_subject
+        if subject in MOCK_SUBJECTS:
+            collected.setdefault(user_id, {}).setdefault(subject, []).append(float(score))
+    return {
+        user_id: {subject: round(sum(values) / len(values)) for subject, values in by_subject.items()}
+        for user_id, by_subject in collected.items()
+    }
+
+
+# (заголовок, ширина колонки)
+_REGISTRATION_XLSX_COLUMNS = (
+    ("Фамилия Имя", 30),
+    ("Ник Telegram", 22),
+    ("Тариф", 20),
+    ("Год поступления в вуз", 12),
+    ("Р — средний балл", 10),
+    ("К — средний балл", 10),
+    ("Р — контрольные", 10),
+    ("К — контрольные", 10),
+    ("Точка А — балл", 10),
+    ("Точка А — уровень", 10),
+    ("Точка А — оценено", 12),
+    ("Стоимость в месяц, ₽", 14),
+    ("Набор", 14),
+    ("Оплачено до", 12),
+    ("Начало обучения", 12),
+    ("Регистрация", 20),
+    ("Последний вход", 20),
+    ("Куратор", 24),
+    ("Формат", 10),
+    ("Предметы экзамена", 20),
+    ("Город", 16),
+    ("Дата рождения", 12),
+    ("Телефон", 16),
+    ("Родитель", 22),
+    ("Телефон родителя", 16),
+    ("Email", 26),
+    ("ID", 7),
+)
+
+
+def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats) -> bytes:
+    """Excel-выгрузка списка «Регистрации по тарифам» со всем, что есть по ученику.
+
+    Служба заботы 10–11.10.2026: «имя фамилия, ник, тариф, год поступления,
+    балл за Р, за К, точка А — и я внесу стоимость, какую платят ежемесячно».
+    Строки и их порядок — те же, что в списке на странице. Баллы заново не
+    считаются: Р/К — как в шапке карточки (`stats.avg_score_by_subject_all_time`),
+    точка А — `point_a.student_point_a`, балл и уровень только у разобранной
+    целиком, как в карточке. Цена — `payments.price_kop` (своя или из
+    справочника), пусто — вписать руками.
+    """
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    from app.models.payment import COHORT_LABELS
+    from app.services.payments import price_kop
+    from app.services.point_a import point_a_level, student_point_a
+    from app.services.stats import avg_score_by_subject_all_time
+
+    student_ids = [student["id"] for student in stats["students"]]
+    users = {user.id: user for user in db.query(User).filter(User.id.in_(student_ids))} if student_ids else {}
+    curator_ids = {user.curator_id for user in users.values() if user.curator_id}
+    curators = {
+        curator.id: f"{curator.last_name or ''} {curator.first_name or curator.name or ''}".strip()
+        for curator in db.query(User).filter(User.id.in_(curator_ids))
+    } if curator_ids else {}
+    timed = _timed_scores_by_subject(db, student_ids)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Ученики"
+    ws.append([title for title, _ in _REGISTRATION_XLSX_COLUMNS])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(fill_type="solid", fgColor="2563EB")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for index, (_, width) in enumerate(_REGISTRATION_XLSX_COLUMNS, 1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+
     for student in stats["students"]:
-        created_at = student["created_at"]
-        writer.writerow([
+        user = users.get(student["id"])
+        if user is None:
+            continue
+        scores = avg_score_by_subject_all_time(db, user.id)
+        controls = timed.get(user.id, {})
+        point_a = student_point_a(db, user, with_images=False)
+        point_a_score = point_a.average if point_a.is_done else None
+        price = price_kop(db, user)
+        ws.append([
             student["name"],
             student["username"],
             student["tariff_label"],
-            created_at.strftime("%d.%m.%Y %H:%M") if created_at else "",
+            user.university_year,
+            scores.get("Рисунок"),
+            scores.get("Композиция"),
+            controls.get("Рисунок"),
+            controls.get("Композиция"),
+            point_a_score,
+            point_a_level(point_a_score) if point_a_score is not None else None,
+            f"{point_a.scored_count} из {len(point_a.plates)}" if point_a.plates else "нет работ",
+            price / 100 if price else None,
+            COHORT_LABELS.get(user.pay_cohort or "", ""),
+            msk_date_text(user.paid_until),
+            user.enrolled_at.strftime("%m.%Y") if user.enrolled_at else "",
+            msk_text(user.created_at),
+            msk_text(user.last_login_at),
+            curators.get(user.curator_id, ""),
+            STUDY_MODE_LABELS.get(user.study_mode or "", ""),
+            user.exam_subjects or "",
+            user.city or "",
+            user.birth_date.strftime("%d.%m.%Y") if user.birth_date else "",
+            user.phone or "",
+            user.parent_name or "",
+            user.parent_phone or "",
+            user.email or "",
+            user.id,
         ])
-    return "\ufeff" + output.getvalue()
+
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = ws.dimensions
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
 
 
 _ACTIVITY_LABELS = {
