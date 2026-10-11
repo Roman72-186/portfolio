@@ -37,7 +37,15 @@
     function isTail(map, gap) {
         return gap[1] >= map.duration - 0.05;
     }
-    window.lrnVideoPlayer.gapsAdvice = function (map) {
+    // Позиция плеера дальше начала хвоста больше чем на столько — ученик
+    // перемотал хвост, а не досматривает его по порядку.
+    var TAIL_SKIPPED_SECONDS = 15;
+    // `position` — где сейчас плеер (есть только у подсказки под плеером, у
+    // отказа кружка её нет). Прод 11.10.2026, ученик id 265: перетащил
+    // ползунок 1,5-часовой записи в конец и видел только «Не просмотрено:
+    // с 0:19 до конца» — ни что делать, ни кнопки, чтобы вернуться (кнопка
+    // была только у дыры позади). 25 отказов кружка за 12 минут.
+    window.lrnVideoPlayer.gapsAdvice = function (map, position) {
         if (!map || !map.duration || !map.gaps) return null;
         if (map.covered >= map.threshold) {
             // Просмотрено достаточно, зачёт ждёт только позицию у конца
@@ -58,12 +66,30 @@
         var shown = parts.slice(0, 3).join(', ')
             + (parts.length > 3 ? ' и ещё ' + (parts.length - 3) : '');
         var hole = map.gaps.filter(function (gap) { return !isTail(map, gap); })[0];
-        var jumpTo = hole ? Math.max(0, hole[0] - GAP_LEAD_SECONDS) : null;
+        if (hole) {
+            var holeJump = Math.max(0, hole[0] - GAP_LEAD_SECONDS);
+            return {
+                label: 'Не просмотрено: ' + shown + '. Перемотанное не засчитывается.',
+                circle: 'Кружок не поставлен: не досмотрено ' + shown + '. Нажми «Досмотреть с '
+                    + clock(holeJump) + '» под роликом, посмотри пропущенное без перемотки'
+                    + ' и нажми кружок ещё раз.',
+                jumpTo: holeJump,
+                jumpLabel: 'Досмотреть с ' + clock(holeJump)
+            };
+        }
+        var tailStart = map.gaps[0][0];
+        var skippedTail = typeof position === 'number' && position > tailStart + TAIL_SKIPPED_SECONDS;
+        var tailJump = Math.max(0, tailStart - GAP_LEAD_SECONDS);
         return {
-            label: 'Не просмотрено: ' + shown,
-            circle: 'Не досмотрено: ' + shown + '. Досмотри без перемотки, и кружок поставится.',
-            jumpTo: jumpTo,
-            jumpLabel: jumpTo === null ? '' : 'Досмотреть с ' + clock(jumpTo)
+            label: skippedTail
+                ? 'Не просмотрено: ' + shown + '. Перемотку система не засчитывает – вернись к '
+                    + clock(tailStart) + ' и смотри по порядку, ускорять можно до 2×.'
+                : 'Не просмотрено: ' + shown,
+            circle: 'Кружок не поставлен: не досмотрено ' + shown + '. Включи ролик с '
+                + clock(tailStart) + ' и смотри до конца без перемотки, ускорять можно до 2×.'
+                + ' Потом нажми кружок ещё раз.',
+            jumpTo: skippedTail ? tailJump : null,
+            jumpLabel: skippedTail ? 'Вернуться к ' + clock(tailJump) : ''
         };
     };
 
@@ -742,7 +768,9 @@
             var watchMapEl = null;
             function renderWatchMap(map) {
                 if (!watchRequired || !progressStatus) return;
-                var advice = map && map.covered > 0 ? window.lrnVideoPlayer.gapsAdvice(map) : null;
+                var advice = map && map.covered > 0
+                    ? window.lrnVideoPlayer.gapsAdvice(map, currentSeconds)
+                    : null;
                 if (!advice) {
                     if (watchMapEl) watchMapEl.hidden = true;
                     return;

@@ -182,6 +182,9 @@ def test_gaps_advice_texts_in_node():
       both: a({duration: 600, threshold: 570, covered: 400, gaps: [[100, 150], [450, 600]]}),
       enough: a({duration: 600, threshold: 570, covered: 580, gaps: [[100, 110]]}),
       none: a(null),
+      // Прод 11.10.2026, ученик id 265: 19 секунд просмотра, ползунок в конце.
+      skipped: a({duration: 5475, threshold: 5445, covered: 19, gaps: [[19, 5475]]}, 5475),
+      watching: a({duration: 600, threshold: 570, covered: 200, gaps: [[200, 600]]}, 205),
     };
     console.log(JSON.stringify(out));
     """ % json.dumps(str(ROOT / "app/static/js/video-player.js"))
@@ -189,15 +192,35 @@ def test_gaps_advice_texts_in_node():
         ["node", "-e", script], capture_output=True, text=True, check=True, encoding="utf-8",
     ).stdout)
 
-    assert out["prod"]["label"] == "Не просмотрено: 1:07–1:40"
-    assert out["prod"]["circle"] == "Не досмотрено: 1:07–1:40. Досмотри без перемотки, и кружок поставится."
+    assert out["prod"]["label"] == "Не просмотрено: 1:07–1:40. Перемотанное не засчитывается."
+    assert out["prod"]["circle"] == (
+        "Кружок не поставлен: не досмотрено 1:07–1:40. Нажми «Досмотреть с 1:02» под роликом,"
+        " посмотри пропущенное без перемотки и нажми кружок ещё раз."
+    )
     assert out["prod"]["jumpTo"] == pytest.approx(62.8)
     assert out["prod"]["jumpLabel"] == "Досмотреть с 1:02"
 
     assert out["linear"]["label"] == "Не просмотрено: с 3:20 до конца"
     assert out["linear"]["jumpTo"] is None
+    assert out["linear"]["circle"] == (
+        "Кружок не поставлен: не досмотрено с 3:20 до конца. Включи ролик с 3:20 и смотри"
+        " до конца без перемотки, ускорять можно до 2×. Потом нажми кружок ещё раз."
+    )
 
-    assert out["both"]["label"] == "Не просмотрено: 1:40–2:30, с 7:30 до конца"
+    # Перемотал хвост — говорим, что делать, и даём кнопку назад.
+    assert out["skipped"]["label"] == (
+        "Не просмотрено: с 0:19 до конца. Перемотку система не засчитывает – вернись к 0:19"
+        " и смотри по порядку, ускорять можно до 2×."
+    )
+    assert out["skipped"]["jumpTo"] == 14
+    assert out["skipped"]["jumpLabel"] == "Вернуться к 0:14"
+    # Досматривает хвост по порядку — кнопка назад не нужна.
+    assert out["watching"]["label"] == "Не просмотрено: с 3:20 до конца"
+    assert out["watching"]["jumpTo"] is None
+
+    assert out["both"]["label"] == (
+        "Не просмотрено: 1:40–2:30, с 7:30 до конца. Перемотанное не засчитывается."
+    )
     assert out["both"]["jumpTo"] == 95
 
     assert out["enough"]["jumpLabel"] == "К концу ролика"
