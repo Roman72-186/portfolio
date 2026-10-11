@@ -668,7 +668,7 @@ def test_completion_uses_server_duration_not_client_claim(
 
     forged = client.post(
         f"/cabinet/videos/{video.id}/progress",
-        json={"position_seconds": 0, "duration_seconds": 1},
+        json={"position_seconds": 0, "duration_seconds": 1, "playback_active": True},
     )
 
     assert forged.status_code == 200
@@ -937,7 +937,7 @@ def test_completion_is_refused_when_server_duration_is_unknown(
 
     forged = client.post(
         f"/cabinet/videos/{video.id}/progress",
-        json={"position_seconds": 0, "duration_seconds": 1},
+        json={"position_seconds": 0, "duration_seconds": 1, "playback_active": True},
     )
 
     assert forged.status_code == 200
@@ -973,7 +973,7 @@ def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypat
 
     response = client.post(
         f"/cabinet/videos/{video.id}/progress",
-        json={"position_seconds": 0, "duration_seconds": 1},
+        json={"position_seconds": 0, "duration_seconds": 1, "playback_active": True},
     )
 
     assert response.json()["completed"] is False

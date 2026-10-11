@@ -499,6 +499,42 @@ def _watch(db, user_id, session, start, end, at, *, step=10, rate=1.0, duration=
     return decision, at
 
 
+def test_idle_mark_does_not_touch_last_watch(db, regular_user):
+    """Прод 11.10.2026: лента держит плееры всех роликов, при сворачивании
+    вкладки каждый шлёт отметку без проигрывания. Она не просмотр: «смотрел …»
+    (`updated_at`) остаётся прежним, а позиция пишется как раньше."""
+    uid = regular_user.id
+    _watch(db, uid, "tab", 0.0, 60.0, 0)
+    before = get_video_progress(db, user_id=uid, video_id=VIDEO_ID).updated_at
+
+    decision = _beat(db, uid, "feed", 60.0, 3600, active=False)
+
+    progress = get_video_progress(db, user_id=uid, video_id=VIDEO_ID)
+    assert decision.credited_this_pass == 60.0
+    assert progress.updated_at == before
+    assert progress.position_seconds == 60.0
+    assert progress.covered_seconds == 60.0
+
+
+def test_idle_mark_of_never_played_video_creates_no_progress(db, regular_user):
+    """Ролик соседнего шага не запускали — строки «смотрел» у него нет."""
+    _beat(db, regular_user.id, "feed", 0.0, 0, active=False)
+
+    assert get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID) is None
+
+
+def test_paused_seek_forward_still_counts_as_activity(db, regular_user):
+    """Перемотка на паузе — действие ученика: срез записан, время обновлено."""
+    uid = regular_user.id
+    _watch(db, uid, "tab", 0.0, 60.0, 0)
+    before = get_video_progress(db, user_id=uid, video_id=VIDEO_ID).updated_at
+
+    decision = _beat(db, uid, "tab", 400.0, 80, active=False)
+
+    assert decision.skipped_seconds >= 1
+    assert get_video_progress(db, user_id=uid, video_id=VIDEO_ID).updated_at > before
+
+
 def test_two_players_at_once_neither_lose_nor_inflate(db, regular_user):
     """Владелец 06.10.2026, 18:14 UTC: две вкладки одного ролика, позиции
     «пилой» 46→110, 56→110, 66→122. Раньше отстающий получал ноль, передний —

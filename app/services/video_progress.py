@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.constants import (
     VIDEO_WATCH_MAX_PLAYBACK_RATE,
@@ -196,6 +197,8 @@ def watch_shortfall_seconds(progress: VideoProgress | None) -> float:
 # «играет» из хода позиции за 2 с (до 4,5 с ролика на 2,25×) — без запаса
 # начало дыры так и осталось бы непросмотренным.
 RESUME_GAP_LEAD_SECONDS = 5.0
+# Ближе к началу места продолжения нет — ролик начинается с нуля.
+RESUME_MIN_SECONDS = 5.0
 
 
 def resume_gap(
@@ -243,7 +246,7 @@ def get_resume_position(progress: VideoProgress | None, gap: dict | None = None)
     # хвоста не закрывает дыру в середине ролика.
     if gap is not None:
         return round(max(0.0, gap["start"] - RESUME_GAP_LEAD_SECONDS), 1)
-    if progress.position_seconds < 5:
+    if progress.position_seconds < RESUME_MIN_SECONDS:
         return 0.0
     duration = progress.duration_seconds
     # Засчитанный ролик, досмотренный до конца, начинается сначала. Позицию
@@ -472,6 +475,22 @@ def record_watch(
         decision=decision,
         now=now,
     )
+    # Плеер не играл, ничего не засчитано и не перемотано — это не просмотр
+    # (прод 11.10.2026): лента держит плееры всех роликов, и при сворачивании
+    # вкладки каждый шлёт отметку. Раньше она двигала `updated_at` всех
+    # роликов ученика, и «смотрел …» в статистике врало, а у незапущенного
+    # ролика появлялась строка «смотрел». Позиция сохраняется как раньше,
+    # отрезок сеанса записан выше — от него считается следующая отметка.
+    # Строку не заводим, только если и запоминать нечего: плеер в начале.
+    idle = (
+        not (playback_active or ended)
+        and decision.extend_to is None
+        and not decision.completed
+        and decision.skipped_seconds < 1
+    )
+    if idle and existing is None and position_seconds < RESUME_MIN_SECONDS:
+        db.commit()
+        return decision, was_completed
     save_video_progress(
         db,
         user_id=user_id,
@@ -482,6 +501,7 @@ def record_watch(
         watched_seconds=decision.watched_seconds,
         # Зачёт начинает новый проход — покрытие с нуля, отрезки стёрты.
         covered_seconds=0.0 if decision.completed else decision.credited_this_pass,
+        touch=not idle,
     )
     return decision, was_completed
 
@@ -496,6 +516,7 @@ def save_video_progress(
     completed: bool,
     watched_seconds: float | None = None,
     covered_seconds: float | None = None,
+    touch: bool = True,
 ) -> bool:
     """Persist position, first completion, and latest confirmed completion.
 
@@ -503,6 +524,11 @@ def save_video_progress(
     (покрытие текущего прохода) уже посчитаны `evaluate_watch`. `None`
     оставляет колонку как есть при обновлении и заводит с нуля при первой
     строке — прямым юнит-тестам этой функции они не нужны.
+
+    `touch=False` — отметка без просмотра (`record_watch`): позиция пишется,
+    а `updated_at` — «смотрел …» в статистике — остаётся прежним. `ON CONFLICT
+    DO UPDATE` питоновский `onupdate` колонки не применяет, так что достаточно
+    не класть её в `set_`.
     """
     now = datetime.now(timezone.utc)
     completed_at = now if completed else None
@@ -541,6 +567,8 @@ def save_video_progress(
         ),
         "updated_at": now,
     }
+    if not touch:
+        del update_values["updated_at"]
     if watched_seconds is not None:
         update_values["watched_seconds"] = watched_seconds
     if covered_seconds is not None:
@@ -576,7 +604,11 @@ def save_video_progress(
                 progress.watched_seconds = watched_seconds
             if covered_seconds is not None:
                 progress.covered_seconds = covered_seconds
-            progress.updated_at = now
+            if touch:
+                progress.updated_at = now
+            else:
+                # Без явного значения ORM подставит `onupdate` колонки.
+                flag_modified(progress, "updated_at")
             if completed and progress.completed_at is None:
                 progress.completed_at = now
             if completed:
