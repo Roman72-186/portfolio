@@ -223,18 +223,12 @@ _REGISTRATION_XLSX_COLUMNS = (
     ("Куратор", 24),
     ("Формат", 10),
     ("Предметы экзамена", 20),
-    ("Город", 16),
-    ("Дата рождения", 12),
-    ("Телефон", 16),
-    ("Родитель", 22),
-    ("Телефон родителя", 16),
-    ("Email", 26),
     ("ID", 7),
 )
 
 
 def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats) -> bytes:
-    """Excel-выгрузка списка «Регистрации по тарифам» со всем, что есть по ученику.
+    """Excel-выгрузка списка «Регистрации по тарифам»: всё про учёбу ученика.
 
     Служба заботы 10–11.10.2026: «имя фамилия, ник, тариф, год поступления,
     балл за Р, за К, точка А — и я внесу стоимость, какую платят ежемесячно».
@@ -243,6 +237,10 @@ def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats
     точка А — `point_a.student_point_a`, балл и уровень только у разобранной
     целиком, как в карточке. Цена — `payments.price_kop` (своя или из
     справочника), пусто — вписать руками.
+
+    Контактов нет намеренно — ни телефонов, ни почты, ни данных родителя,
+    ни города и даты рождения (владелец 11.10.2026: «оставь всё, что
+    касается учебного процесса»): файл уходит из кабинета по чатам.
     """
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -303,12 +301,6 @@ def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats
             curators.get(user.curator_id, ""),
             STUDY_MODE_LABELS.get(user.study_mode or "", ""),
             user.exam_subjects or "",
-            user.city or "",
-            user.birth_date.strftime("%d.%m.%Y") if user.birth_date else "",
-            user.phone or "",
-            user.parent_name or "",
-            user.parent_phone or "",
-            user.email or "",
             user.id,
         ])
 

@@ -120,6 +120,8 @@ def test_tariff_registration_xlsx_has_student_card_data(db, user_factory):
     student.tg_username = "xlsx_student"
     student.university_year = 2028
     student.city = "Казань"
+    student.phone = "+79990001122"
+    student.parent_name = "Петров Иван"
     student.pay_price_kop = 1_325_500
     block = _control(db)  # контрольная на время по рисунку
     homework = TaskBlock(task_id=block.task_id, block_type="photo_upload", title="ДЗ", subject="Композиция")
@@ -144,7 +146,9 @@ def test_tariff_registration_xlsx_has_student_card_data(db, user_factory):
     assert row["Точка А — балл"] is None
     assert row["Точка А — оценено"] == "нет работ"
     assert row["Стоимость в месяц, ₽"] == 13255
-    assert row["Город"] == "Казань"
+    # Только учёба: контактов и личных данных в файле нет (владелец 11.10.2026).
+    assert not {"Телефон", "Телефон родителя", "Родитель", "Email", "Город", "Дата рождения"} & row.keys()
+    assert "+79990001122" not in row.values() and "Казань" not in row.values()
     assert row["ID"] == student.id
 
 
