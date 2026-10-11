@@ -214,3 +214,36 @@ def test_date_refusal_says_when(client, db, user_factory, session_factory):
 
     assert resp.status_code == 403
     assert resp.json()["detail"] == "Этот шаг ещё не открылся"
+
+
+# ── «вперёд нельзя» ────────────────────────────────────────────────────────
+
+def test_video_of_a_cycle_locked_by_debt_is_hidden_until_the_debt_is_closed(db, regular_user):
+    """Владелец 11.10.2026 («прячь»): ролик цикла, запертого долгом, каталог и
+    прямая ссылка не отдают, как не отдают его лента и задание
+    (`_accessible_task_or_404`). Прод: 68 учеников, не закрывших «1 неделю»,
+    видели в «Видеоуроках» ролики «2 недели». Закрыл долг — ролик открылся."""
+    from tests.test_cycle_lock import _program
+
+    from app.services.tracker import close_task_for_user
+
+    _stage, (_c2, _c3, _c4), (t2, t3, t4) = _program(db, regular_user)
+    video = LearningVideo(
+        bunny_library_id=1, bunny_video_id="matrix-lock", title="Урок цикла 4",
+        status="ready", is_published=True,
+    )
+    db.add(video)
+    db.flush()
+    db.add(TaskBlock(task_id=t4.id, sort_order=0, block_type=BLOCK_VIDEO, video_id=video.id))
+    db.commit()
+    viewer = _viewer(regular_user)
+
+    assert video.id not in {v.id for v in list_published_videos(db, viewer=viewer)}
+    assert get_published_video(db, video.id, viewer=viewer) is None
+
+    for task in (t2, t3):
+        close_task_for_user(db, task, regular_user.id, source="manual")
+    db.commit()
+
+    assert video.id in {v.id for v in list_published_videos(db, viewer=viewer)}
+    assert get_published_video(db, video.id, viewer=viewer) is not None

@@ -69,9 +69,15 @@ def _accessible_block_video_ids(
     from app.services.task_blocks import (
         BlockViewer, block_opened_for, get_audiences, get_states, is_block_open_to,
     )
-    from app.services.tracker import accessible_task_ids
+    from app.services.tracker import accessible_task_ids, locked_cycle_ids
+    from app.services.tz import today_msk
 
-    topic_ids = accessible_topic_ids(db, user_id)
+    # Вперёд нельзя (владелец 11.10.2026, «прячь»): цикл, запертый долгом,
+    # ролики не отдаёт — как не отдают его лента и задание по прямой ссылке
+    # (`_accessible_task_or_404`). До этого 68 учеников, не закрывших
+    # «1 неделю», смотрели в «Видеоуроках» ролики «2 недели». Правило замка
+    # одно — `tracker.locked_cycle_ids`.
+    topic_ids = accessible_topic_ids(db, user_id) - locked_cycle_ids(db, user_id, today_msk())
     task_ids = accessible_task_ids(db, user_id)
     rows = (
         db.query(TaskBlock, TrackerTask)
