@@ -160,3 +160,91 @@ def test_circle_route_closes_the_task(auth_client, db):
 
     assert resp.status_code == 200
     assert _state(db, task, student).status == STATUS_DONE
+
+
+# ── Необязательное проход не держит (владелец 11.10.2026) ─────────────────
+
+def test_required_steps_done_close_the_task_with_optional_left(db, regular_user):
+    """Ролики без галочки «Блокирует дальнейшую выдачу» «не должны блокировать
+    дальнейший проход». Прод 11.10.2026: 14 учеников сдали всё обязательное, а
+    неделя после была заперта долгом из-за неотмеченного ролика или
+    необязательной домашки."""
+    task = _task(db, regular_user)
+    required = _block(db, task, order=1)
+    required.is_required = True
+    db.commit()
+    _block(db, task, order=2)  # необязательный
+
+    _mark(db, required, regular_user)
+
+    state = _state(db, task, regular_user)
+    assert state is not None and state.status == STATUS_DONE
+    assert state.completion_source == "required_done"
+
+
+def test_task_without_required_steps_still_waits_for_every_step(db, regular_user):
+    task = _task(db, regular_user)
+    first = _block(db, task, order=1)
+    _block(db, task, order=2)
+
+    _mark(db, first, regular_user)
+
+    assert _state(db, task, regular_user) is None
+
+
+def test_optional_task_flag_keeps_the_old_rule(db, regular_user):
+    """Флаг задания над флагами блоков: задание не обязательно — обязательных
+    шагов нет, автозакрытие ждёт всех."""
+    task = _task(db, regular_user)
+    task.is_required = False
+    required = _block(db, task, order=1)
+    required.is_required = True
+    db.commit()
+    _block(db, task, order=2)
+
+    _mark(db, required, regular_user)
+
+    assert _state(db, task, regular_user) is None
+
+
+def test_backfill_closes_tasks_whose_required_steps_were_already_done(db, regular_user):
+    task = _task(db, regular_user)
+    required = _block(db, task, order=1)
+    required.is_required = True
+    db.commit()
+    _block(db, task, order=2)
+    db.add(TaskBlockState(block_id=required.id, user_id=regular_user.id, status=STATUS_DONE))
+    db.commit()
+
+    assert close_tasks_with_all_blocks_done(db) == 1
+    db.commit()  # бэкфилл не коммитит сам
+    assert _state(db, task, regular_user).completion_source == "required_done"
+
+
+def test_required_done_task_lifts_the_cycle_debt_but_not_the_stage_archive(db, regular_user):
+    """Долг недели снят, а этап в архив не уходит, пока не сделано и
+    необязательное (владелец 06.10.2026: «не сделал вообще всё, включая
+    необязательное»)."""
+    from tests.test_cycle_lock import TODAY, _program
+
+    from app.services.cycle_feed import stage_finished_by_user
+    from app.services.tracker import close_task_for_user, cycle_debt
+
+    stage, (c2, _c3, _c4), (t2, t3, t4) = _program(db, regular_user)
+    for other in (t3, t4):  # этап держит только t2
+        close_task_for_user(db, other, regular_user.id, source="manual")
+    required = _block(db, t2, order=1)
+    required.is_required = True
+    db.commit()
+    optional = _block(db, t2, order=2)
+
+    assert cycle_debt(db, regular_user.id, TODAY)["cycle"].id == c2.id
+    _mark(db, required, regular_user)
+
+    debt = cycle_debt(db, regular_user.id, TODAY)
+    assert debt is None or debt["cycle"].id != c2.id
+    kwargs = dict(user_id=regular_user.id, user_tariff=regular_user.tariff, stage=stage, today=TODAY)
+    assert not stage_finished_by_user(db, **kwargs)
+
+    _mark(db, optional, regular_user)
+    assert stage_finished_by_user(db, **kwargs)

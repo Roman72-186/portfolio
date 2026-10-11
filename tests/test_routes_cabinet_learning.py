@@ -570,17 +570,19 @@ def test_completion_button_waits_for_required_steps(auth_client, db):
     выполнены». Кнопка смотрела только на вопросы — ученик закрывал задание с
     несданной обязательной работой и снимал этим долг цикла. Теперь она выключена
     с названием шага, сервер отказывает тем же текстом; необязательный ролик
-    по-прежнему можно пропустить."""
+    по-прежнему можно пропустить. С 11.10.2026 пропускать его кнопкой не
+    нужно: сданное обязательное закрывает задание само (необязательное проход
+    не держит), и кнопка пропадает."""
+    from app.models.tracker import TrackerTaskState
+
     client, user = auth_client
     task, upload = _task_with_required_and_optional_step(db, user)
     reason = "Сначала сделай обязательный шаг: Домашнее задание"
 
+    # Кнопки нет: задание закроется само, как только сдана работа
+    # (`completion_button_needed`). Ручной запрос сервер отвергает с причиной.
     html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
-    assert "disabled" in button
-    assert (
-        f'<p class="lrn-card-note" id="task-completion-note-{task.id}">{reason}</p>'
-    ) in html
+    assert f'data-toggle-task="{task.id}"' not in html
     blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
     assert blocked.status_code == 409
     assert blocked.json()["detail"] == reason
@@ -588,11 +590,12 @@ def test_completion_button_waits_for_required_steps(auth_client, db):
     close_block_for_user(db, upload, user.id, source="upload")
     db.commit()
 
+    state = db.query(TrackerTaskState).filter_by(task_id=task.id, user_id=user.id).one()
+    assert state.status == "done" and state.completion_source == "required_done"
+    # Закрытое задание — та же кнопка в нажатом виде: «Задание выполнено».
     html = client.get("/cabinet/learning").text
     button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
-    assert "disabled" not in button
-    toggle = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
-    assert toggle.status_code == 200, toggle.text
+    assert 'aria-pressed="true"' in button
 
 
 def test_completion_button_ignores_a_required_step_that_closed_for_good(auth_client, db):

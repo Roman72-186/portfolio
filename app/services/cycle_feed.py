@@ -38,6 +38,7 @@ from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
+    REQUIRED_DONE_SOURCE,
     BlockViewer,
     autoclose_steps,
     block_still_doable,
@@ -574,6 +575,17 @@ def started_cycles(
     return list(reversed(started))
 
 
+def _closed_by_required_only(db: Session, task_id: int, user_id: int) -> bool:
+    from app.models.tracker import TrackerTaskState
+
+    source = (
+        db.query(TrackerTaskState.completion_source)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .scalar()
+    )
+    return source == REQUIRED_DONE_SOURCE
+
+
 def _task_finished_by_user(
     db: Session, entry: dict, *, user_id: int, user_tariff: str | None, now: datetime
 ) -> bool:
@@ -589,7 +601,10 @@ def _task_finished_by_user(
     «сдал — значит сделал»).
     """
     task = entry["task"]
-    if _task_done(entry):
+    # Закрытое само по обязательным шагам (`REQUIRED_DONE_SOURCE`, 11.10.2026)
+    # этап не отпускает: необязательное в нём может быть ещё не сделано, а
+    # архив ждёт всего. Закрытое кнопкой «Завершить задание» — сделано.
+    if _task_done(entry) and not _closed_by_required_only(db, task.id, user_id):
         return True
     if not get_blocks(db, task.id):
         if task.kind == ITEM_HOMEWORK:

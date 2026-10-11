@@ -648,6 +648,42 @@ def unfinished_required_steps(
     (владелец 06.10.2026). Скрытые до сдачи
     (`hidden_until_done`) не входят: ученик их не видит.
     """
+    candidates = required_steps_for_student(
+        db, task_id=task_id, user_id=user_id, user_tariff=user_tariff,
+    )
+    if not candidates:
+        return []
+    viewer = BlockViewer(db, user_id=user_id, tariff=user_tariff)
+    block_ids = [block.id for block in candidates]
+    states = get_states(db, block_ids=block_ids, user_id=user_id)
+    audiences_by_block = get_audiences(db, block_ids)
+    now = _now()
+    return [
+        block for block in candidates
+        if holds_sequence(
+            block,
+            states=states,
+            audiences_by_block=audiences_by_block,
+            viewer=viewer,
+            required_by_block={block_id: True for block_id in block_ids},
+            now=now,
+        )
+    ]
+
+
+def required_steps_for_student(
+    db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
+) -> list[TaskBlock]:
+    """Шаги задания, обязательные этому ученику, — те, что держат очередь ленты,
+    пока не сделаны (галочка «Блокирует дальнейшую выдачу»).
+
+    Обязательность — `required_by_block_for_task` (флаги задания и блока), и
+    тариф ученика входит в «Кого обязать выполнить» или там пусто — как в
+    `holds_sequence`. Видимые ученику блоки без скрытых до сдачи. Одно
+    определение на кнопку «Завершить задание» (`unfinished_required_steps`,
+    `completion_button_needed`) и на автозакрытие по обязательным
+    (`maybe_close_task_by_blocks`).
+    """
     from app.models.tracker import TrackerTask
     from app.models.user import User
 
@@ -669,22 +705,10 @@ def unfinished_required_steps(
     candidates = [block for block in blocks if required_by_block[block.id]]
     if not candidates:
         return []
-    block_ids = [block.id for block in candidates]
-    states = get_states(db, block_ids=block_ids, user_id=user_id)
-    audiences_by_block = get_audiences(db, block_ids)
-    required_tariffs_by_block = get_required_tariffs(db, block_ids)
-    now = _now()
+    required_tariffs = get_required_tariffs(db, [block.id for block in candidates])
     return [
         block for block in candidates
-        if holds_sequence(
-            block,
-            states=states,
-            audiences_by_block=audiences_by_block,
-            viewer=viewer,
-            required_tariffs_by_block=required_tariffs_by_block,
-            required_by_block=required_by_block,
-            now=now,
-        )
+        if not required_tariffs.get(block.id) or user_tariff in required_tariffs[block.id]
     ]
 
 
@@ -2151,6 +2175,13 @@ def close_block_for_user(
     return state
 
 
+# Задание закрыто автоматически по обязательным шагам, необязательные ещё не
+# сделаны (11.10.2026). Архив этапа по этой пометке продолжает ждать всех
+# шагов (`cycle_feed._task_finished_by_user`: «сделал всё, включая
+# необязательное», владелец 06.10.2026).
+REQUIRED_DONE_SOURCE = "required_done"
+
+
 # Задания, которые закрываются своими путями, — у них и кнопки
 # «Завершить задание» нет (`partials/task_action.html`, `autocloses`).
 _SELF_CLOSING_TASK_KINDS = ("homework", "mock_exam")
@@ -2183,24 +2214,26 @@ def completion_button_needed(
     """Нужна ли ученику кнопка «Завершить задание» у незакрытого задания из блоков.
 
     Владелец 01.10.2026 (аудит АОП, находка 8): «убираем лишнюю». Лишняя она там,
-    где задание закроется само, как только ученик сделает обязательное, — то есть
-    все шаги автозакрытия обязательные. Кнопка остаётся:
+    где задание закроется само, как только ученик сделает обязательное: с
+    11.10.2026 это любое задание, где есть обязательный шаг
+    (`maybe_close_task_by_blocks`, необязательные проход не держат). Кнопка
+    остаётся:
 
     - у задания без шагов (только текст и ссылка) — закрыть его больше нечем;
-    - если хоть один шаг необязательный: автозакрытие ждёт и его, и без кнопки
-      необязательный ролик стал бы обязательным;
-    - если все шаги уже отмечены, а задание открыто (отметки до автозакрытия
-      30.09.2026, сбой) — страховка от тупика.
+    - у задания без обязательных шагов — оно закроется само, только когда
+      отмечено всё, а без кнопки необязательный ролик стал бы обязательным;
+    - если обязательное уже сделано, а задание открыто (отметки до правила,
+      сбой) — страховка от тупика.
     """
     steps = autoclose_steps(db, task_id, user_id=user_id, user_tariff=user_tariff)
-    if not steps or not all(
-        is_block_required_for_user(block, is_intake_student=False) for block in steps
+    if not steps:
+        return True
+    if not required_steps_for_student(
+        db, task_id=task_id, user_id=user_id, user_tariff=user_tariff,
     ):
         return True
-    states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
-    return all(
-        states.get(block.id) is not None and states[block.id].status == STATUS_DONE
-        for block in steps
+    return not unfinished_required_steps(
+        db, task_id=task_id, user_id=user_id, user_tariff=user_tariff,
     )
 
 
@@ -2241,12 +2274,27 @@ def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> boo
     if not steps:
         return False
     states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
-    if not all(
+    if all(
         states.get(block.id) is not None and states[block.id].status == STATUS_DONE
         for block in steps
     ):
+        close_task_for_user(db, task, user_id, source="blocks_done")
+        return True
+    # Необязательные шаги проход не держат (владелец 11.10.2026: ролики без
+    # галочки «Блокирует дальнейшую выдачу» «не должны блокировать дальнейший
+    # проход»). Сделаны все обязательные — задание выполнено, долг недели
+    # снят; необязательное остаётся доступным. Прод в тот день: 14 учеников
+    # сдали всё обязательное, а следующая неделя была заперта из-за
+    # неотмеченного ролика или необязательной домашки. Задание без
+    # обязательных шагов по-прежнему ждёт всех шагов или кнопки.
+    tariff = user.tariff if user else None
+    if not required_steps_for_student(
+        db, task_id=task_id, user_id=user_id, user_tariff=tariff,
+    ) or unfinished_required_steps(
+        db, task_id=task_id, user_id=user_id, user_tariff=tariff,
+    ):
         return False
-    close_task_for_user(db, task, user_id, source="blocks_done")
+    close_task_for_user(db, task, user_id, source=REQUIRED_DONE_SOURCE)
     return True
 
 
