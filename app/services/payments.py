@@ -362,6 +362,10 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
     запроса `do=link` за короткой: при нажатии «Оплатить» нет похода к
     Продамусу и нечему падать. Предмет расчёта и НДС для чека — из настроек
     магазина в Продамусе, в ссылке их нет.
+
+    `do=pay` обязателен и входит в подпись: без него Продамус не узнаёт ссылку
+    и показывает пустую заблокированную форму «Согласуйте заказ с менеджером»
+    (12.10.2026, первая живая оплата).
     """
     tariff = TARIFF_DISPLAY.get(payment.tariff, payment.tariff) if payment.tariff else ""
     name = f"Обучение Apparchi, {period_label(payment.period)}"
@@ -378,6 +382,7 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
         "urlSuccess": f"{base_url}/cabinet/personal?paid=1",
         "urlReturn": f"{base_url}/cabinet/personal",
         "sys": "",
+        "do": "pay",
     }
     if user.phone:
         data["customer_phone"] = user.phone

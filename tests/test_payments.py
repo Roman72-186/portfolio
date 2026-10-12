@@ -250,6 +250,8 @@ def test_payment_link_is_signed_and_reuses_pending(db, prices, payer, prodamus):
     assert ps.prodamus_verify(ps.nest_form(unsigned), KEY, signature)
     assert dict(fields)["order_id"] == f"ap-{payment.id}"
     assert dict(fields)["products[0][price]"] == "13255.00"
+    # Без do=pay Продамус показывает пустую форму вместо оплаты (12.10.2026).
+    assert dict(fields)["do"] == "pay"
 
     # Повторное нажатие — та же ссылка, второго заказа нет.
     again = ps.get_or_create_payment(db, payer, now, "https://apparchi.ru")
