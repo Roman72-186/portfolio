@@ -8,6 +8,7 @@
 Тесты с настоящим ffmpeg пропускаются, если его нет на машине; остальные
 подменяют перекодирование и проверяют, что его зовёт каждый вход.
 """
+import io
 import json
 import shutil
 import subprocess
@@ -84,6 +85,108 @@ def test_telegram_voice_is_ogg_opus(tmp_path):
     assert info["format"]["format_name"] == "ogg"
     assert [s["codec_name"] for s in info["streams"]] == ["opus"]
     assert float(info["format"]["duration"]) == pytest.approx(3, abs=0.2)
+
+
+@needs_ffmpeg
+def test_telegram_voice_in_opus_is_copied_without_reencoding(tmp_path):
+    """Жалоба 12.10.2026 «голосовые в рассылке плохого качества»: запись
+    браузера уже Opus, раньше её перекодировали в 48 кбит/с моно. Теперь
+    звук перекладывается в OGG как есть — каналы и битрейт исходника."""
+    webm = _lavfi(tmp_path, "src.webm", [
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+        "-ac", "2", "-c:a", "libopus", "-b:a", "128k",
+    ])
+
+    name, data, mime = media_transcode.telegram_voice("rec.webm", webm, "audio/webm")
+
+    assert (name, mime) == ("rec.ogg", "audio/ogg")
+    info = _probe(tmp_path, "out.ogg", data)
+    assert info["format"]["format_name"] == "ogg"
+    (stream,) = info["streams"]
+    assert (stream["codec_name"], stream["channels"]) == ("opus", 2)
+    assert int(info["format"]["bit_rate"]) > 100_000
+    assert float(info["format"]["duration"]) == pytest.approx(3, abs=0.2)
+
+
+@needs_ffmpeg
+def test_telegram_note_is_square_640_in_good_quality(tmp_path):
+    """Кружок Telegram — квадрат до 640. Жалоба 12.10.2026 «кружочки плохого
+    качества»: было crf 28; теперь у кадра 720p битрейт не урезается в мыло."""
+    webm = _lavfi(tmp_path, "src.webm", [
+        "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30:duration=2",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-c:v", "libvpx", "-b:v", "4M", "-c:a", "libopus", "-shortest",
+    ])
+
+    name, data, mime = media_transcode.telegram_note("note.webm", webm, "video/webm")
+
+    assert (name, mime) == ("note.mp4", "video/mp4")
+    info = _probe(tmp_path, "out.mp4", data)
+    video = next(s for s in info["streams"] if s["codec_type"] == "video")
+    assert (video["codec_name"], video["width"], video["height"]) == ("h264", 640, 640)
+    assert int(video["bit_rate"]) > 1_000_000
+
+
+# ── Фото рассылки ──────────────────────────────────────────────────────────
+
+def _image(fmt: str, size: tuple[int, int], *, mode: str = "RGB", **save) -> bytes:
+    from PIL import Image
+
+    color = (0, 0, 0, 0) if mode == "RGBA" else (30, 140, 200)
+    buf = io.BytesIO()
+    Image.new(mode, size, color).save(buf, fmt, **save)
+    return buf.getvalue()
+
+
+def test_telegram_photo_keeps_pixels_and_quality():
+    """Жалоба 12.10.2026 «фото плохого качества»: было 1600 px и JPEG 82."""
+    from PIL import Image, JpegImagePlugin
+
+    name, data, mime = media_transcode.telegram_photo(_image("PNG", (2400, 1600)))
+
+    assert (name, mime) == ("photo.jpg", "image/jpeg")
+    img = Image.open(io.BytesIO(data))
+    assert img.size == (2400, 1600)
+    # 4:4:4 — цвет не прореживается, у мелкого текста и тонких линий нет каймы.
+    assert JpegImagePlugin.get_sampling(img) == 0
+
+
+def test_telegram_photo_larger_than_telegram_keeps_is_shrunk_to_2560():
+    from PIL import Image
+
+    _, data, _ = media_transcode.telegram_photo(_image("JPEG", (5120, 2880)))
+
+    assert Image.open(io.BytesIO(data)).size == (2560, 1440)
+
+
+def test_telegram_photo_applies_rotation_and_drops_metadata():
+    """Поворот из EXIF — в пиксели (иначе вертикальное фото ляжет набок), а
+    метаданные, в том числе место съёмки, ученикам не уходят."""
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x0112] = 6  # Orientation: повернуть на 90° по часовой
+    exif[0x010F] = "Camera maker"
+    source = _image("JPEG", (400, 300), exif=exif.tobytes())
+
+    _, data, _ = media_transcode.telegram_photo(source)
+
+    img = Image.open(io.BytesIO(data))
+    assert img.size == (300, 400)
+    assert not dict(img.getexif())
+
+
+def test_telegram_photo_transparency_becomes_white():
+    from PIL import Image
+
+    _, data, _ = media_transcode.telegram_photo(_image("PNG", (40, 40), mode="RGBA"))
+
+    assert Image.open(io.BytesIO(data)).getpixel((5, 5)) == (255, 255, 255)
+
+
+def test_telegram_photo_that_is_not_an_image_is_refused():
+    with pytest.raises(ValueError):
+        media_transcode.telegram_photo(b"not an image")
 
 
 @needs_ffmpeg

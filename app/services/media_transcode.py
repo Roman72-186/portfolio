@@ -12,6 +12,9 @@ Safari), причём «как трансляцию»: у файла нет дл
 оглавлением в начале файла (`+faststart`). Перекодируется любой вход, не только
 webm: одно правило вместо списка «хороших» форматов, для голоса это доли секунды.
 
+Фото рассылки для Telegram (`telegram_photo`) тоже здесь, хотя идёт через
+Pillow: модуль — владелец правила «в каком виде вложение уходит в Telegram».
+
 Не справился ffmpeg (нет бинаря, битый файл, таймаут) — возвращается исходный
 файл и пишется ошибка в лог: запись преподавателя лучше сохранить как есть, чем
 потерять. Функции синхронные и тяжёлые — звать из executor/`asyncio.to_thread`,
@@ -19,6 +22,7 @@ webm: одно правило вместо списка «хороших» фо�
 """
 from __future__ import annotations
 
+import io
 import logging
 import shutil
 import subprocess
@@ -38,9 +42,16 @@ _VOICE_ARGS = [
 # Голосовое сообщение Telegram — OGG с кодеком Opus, родной формат его
 # голосовых. Кодек задаётся явно: для `.ogg` ffmpeg по умолчанию берёт Vorbis,
 # а такой файл Telegram показывает документом, а не голосовым.
+#
+# Качество — как у исходника (жалоба на рассылки 12.10.2026: «голосовые плохого
+# качества»). Запись браузера и голосовые из Telegram уже Opus: такой звук
+# только перекладывается в OGG без перекодирования (`_TELEGRAM_VOICE_COPY_ARGS`).
+# Остальное кодируется с запасом, каналы не сводятся: прикреплённая музыка
+# остаётся стерео. Раньше было 48 кбит/с моно в режиме «речь» поверх 64 кбит/с
+# записи — вторая потеря на каждом голосовом.
+_TELEGRAM_VOICE_COPY_ARGS = ["-vn", "-c:a", "copy"]
 _TELEGRAM_VOICE_ARGS = [
-    "-vn", "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000",
-    "-application", "voip",
+    "-vn", "-c:a", "libopus", "-b:a", "128k", "-ar", "48000",
 ]
 # Кружок у ученика — круг до 360 px (`.lrn-blk-note`), 640 по ширине с запасом.
 # Чётные стороны и yuv420p обязательны для libx264, иначе он падает, и молча
@@ -56,12 +67,19 @@ _NOTE_ARGS = [
 # только квадрат, сторона до 640 и не длиннее минуты, иначе Telegram отказывает.
 # Браузер пишет кружок обычным прямоугольником (круг — маска на экране), поэтому
 # центр вырезается квадратом. Кавычки в фильтре держат запятую внутри `min`.
+#
+# Кружок рассылки уходит каждому ученику и хранится один раз, поэтому
+# кодируется на качество, а не на скорость (жалоба 12.10.2026: «кружочки
+# плохого качества» — было crf 28 и veryfast): crf 20, preset medium,
+# уменьшение lanczos. Потолок битрейта держит минуту кружка в пределах ~30 МБ:
+# Telegram принимает от бота файл до 50 МБ, а грузится он через прокси.
 TELEGRAM_NOTE_MAX_SECONDS = 60
 _TELEGRAM_NOTE_ARGS = [
     "-t", str(TELEGRAM_NOTE_MAX_SECONDS),
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
-    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale='trunc(min(640,iw)/2)*2':'trunc(min(640,iw)/2)*2',setsar=1",
-    "-c:a", "aac", "-b:a", "96k", "-ac", "1",
+    "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+    "-maxrate", "4M", "-bufsize", "8M", "-pix_fmt", "yuv420p",
+    "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale='trunc(min(640,iw)/2)*2':'trunc(min(640,iw)/2)*2':flags=lanczos,setsar=1",
+    "-c:a", "aac", "-b:a", "128k",
     "-movflags", "+faststart", "-threads", "2",
 ]
 
@@ -90,13 +108,49 @@ def telegram_voice(filename: str, data: bytes, content_type: str) -> tuple[str, 
     """Голосовое → `.ogg` (Opus) для `sendVoice` в Telegram.
 
     В S3 голосовое лежит m4a (его играет `<audio>` на сайте), а Telegram
-    рисует голосовое сообщение с волной из OGG/Opus. Не справился ffmpeg —
-    вернётся исходный m4a: его `sendVoice` тоже принимает загрузкой файла.
+    рисует голосовое сообщение с волной из OGG/Opus. Звук в Opus только
+    перекладывается в OGG, без потерь; не вышло — кодируется. Не справился
+    ffmpeg — вернётся исходный файл: `sendVoice` принимает и m4a, и mp3.
     """
+    if _audio_codec(data) == "opus":
+        copied = _transcode(
+            filename, data, content_type,
+            out_ext="ogg", out_type="audio/ogg", args=_TELEGRAM_VOICE_COPY_ARGS,
+            timeout=VOICE_TIMEOUT_SEC,
+        )
+        if copied[1] is not data:
+            return copied
     return _transcode(
         filename, data, content_type,
         out_ext="ogg", out_type="audio/ogg", args=_TELEGRAM_VOICE_ARGS, timeout=VOICE_TIMEOUT_SEC,
     )
+
+
+def _audio_codec(data: bytes) -> str | None:
+    """Кодек первой звуковой дорожки (`opus`, `aac`…) или None, если не понять.
+
+    Ошибка здесь не страшна: без ответа голосовое просто перекодируется.
+    """
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    with tempfile.TemporaryDirectory(prefix="media-") as tmp:
+        src = Path(tmp) / "input"
+        src.write_bytes(data)
+        try:
+            result = subprocess.run(
+                [
+                    ffprobe, "-v", "error", *_INPUT_GUARD,
+                    "-select_streams", "a:0", "-show_entries", "stream=codec_name",
+                    "-of", "default=noprint_wrappers=1:nokey=1", str(src),
+                ],
+                capture_output=True, timeout=VOICE_TIMEOUT_SEC,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.decode("utf-8", errors="replace").strip() or None
 
 
 def playable_note(filename: str, data: bytes, content_type: str) -> tuple[str, bytes, str]:
@@ -120,6 +174,72 @@ def telegram_note(filename: str, data: bytes, content_type: str) -> tuple[str, b
         filename, data, content_type,
         out_ext="mp4", out_type="video/mp4", args=_TELEGRAM_NOTE_ARGS, timeout=NOTE_TIMEOUT_SEC,
     )
+
+
+# Фото для `sendPhoto`. Telegram сам ужимает любое фото до своих размеров (самое
+# крупное — 2560 по длинной стороне), поэтому больше 2560 слать незачем, а
+# меньше — значит потерять качество до него (жалоба 12.10.2026: было 1600 px и
+# JPEG 82, и Telegram сжимал уже сжатое). Пределы Bot API: файл до 10 МБ,
+# ширина плюс высота — до 10000.
+TELEGRAM_PHOTO_MAX_SIDE = 2560
+TELEGRAM_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+_PHOTO_QUALITIES = (95, 90, 85)
+
+
+def telegram_photo(data: bytes) -> tuple[str, bytes, str]:
+    """Фото рассылки → JPEG почти без потерь. Возвращает (filename, data, content_type).
+
+    Пиксели не уменьшаются, если длинная сторона до 2560; JPEG 95 без
+    прореживания цвета (4:4:4) на глаз от исходника не отличить. Пересохранение
+    всё равно нужно: HEIC с iPhone не открывают ни Telegram, ни браузер, поворот
+    из EXIF надо применить к пикселям, а сами метаданные (в том числе место
+    съёмки) — не отдавать ученикам вместе с файлом из хранилища.
+
+    Не картинка — ValueError с текстом для человека.
+    """
+    from PIL import Image, ImageFile, ImageOps
+
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
+    try:
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        img = Image.open(io.BytesIO(data))
+        img.load()
+        img = ImageOps.exif_transpose(img)
+    except Exception as exc:
+        logger.warning("broadcast photo unreadable: %s", exc)
+        raise ValueError("Не получилось открыть фото — попробуйте другой файл") from exc
+
+    if img.mode in ("RGBA", "LA", "P"):
+        # Прозрачность у JPEG нет: без белой подложки прозрачное стало бы чёрным.
+        rgba = img.convert("RGBA")
+        img = Image.new("RGB", rgba.size, (255, 255, 255))
+        img.paste(rgba, mask=rgba.getchannel("A"))
+    elif img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    if max(img.size) > TELEGRAM_PHOTO_MAX_SIDE:
+        img.thumbnail((TELEGRAM_PHOTO_MAX_SIDE, TELEGRAM_PHOTO_MAX_SIDE), Image.LANCZOS)
+
+    out = b""
+    while True:
+        for quality in _PHOTO_QUALITIES:
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, subsampling=0, optimize=True)
+            out = buf.getvalue()
+            if len(out) <= TELEGRAM_PHOTO_MAX_BYTES:
+                logger.info(
+                    "broadcast photo: %dx%d, quality %d, %d -> %d bytes",
+                    img.width, img.height, quality, len(data), len(out),
+                )
+                return "photo.jpg", out, "image/jpeg"
+        # Шум на 2560 px может не влезть в 10 МБ даже на 85 — тогда меньше пикселей.
+        img = img.resize((img.width * 3 // 4, img.height * 3 // 4), Image.LANCZOS)
+
 
 def _transcode(
     filename: str, data: bytes, content_type: str,

@@ -51,7 +51,6 @@ from app.services import s3 as s3_service
 from app.services.point_a import POINT_A_LEVEL_2_MIN_AVERAGE
 from app.services.tz import parse_msk_local
 from app.services.upload_validation import is_allowed_image
-from app.services.utils import compress_image
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/broadcasts")
@@ -283,8 +282,8 @@ async def _read_media(
         raise ValueError(f"Фото больше {MAX_PHOTO_INPUT_SIZE // (1024 * 1024)} МБ")
     if not data:
         return None
-    data = await asyncio.to_thread(compress_image, data)
-    return kind, "photo.jpg", data, "image/jpeg"
+    name, data, content_type = await asyncio.to_thread(media_transcode.telegram_photo, data)
+    return kind, name, data, content_type
 
 
 @router.post("/{broadcast_id}")

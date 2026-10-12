@@ -321,6 +321,47 @@ def test_video_note_text_goes_as_second_message(gp_client, db, student, fake_tg,
     assert sent[1][1]["text"] == "<b>Привет</b>"
 
 
+def _png(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (200, 120, 40)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_photo_keeps_full_size_for_telegram(gp_client, db, student, fake_tg, s3_store):
+    """Жалоба 12.10.2026 «фото в рассылке плохого качества»: раньше фото
+    ужималось до 1600 px и JPEG 82, а потом его ещё раз сжимал Telegram.
+    Теперь до 2560 px пиксели не трогаются — Telegram получает то же, что
+    прислал преподаватель."""
+    import io
+
+    from PIL import Image
+
+    client, _ = gp_client
+    student(chat=101)
+    bid = _create(client)
+    files = {"photo": ("big.png", _png(2400, 1800), "image/png")}
+    assert _save(client, bid, action="preview", files=files).headers["location"].endswith("ok=preview")
+
+    (stored,) = s3_store.values()
+    assert Image.open(io.BytesIO(stored)).size == (2400, 1800)
+    upload = fake_tg.to(ADMIN_CHAT)[0]
+    assert upload[0] == "sendPhoto" and upload[2]["photo"][1] == stored
+
+
+def test_unreadable_photo_is_an_error_not_a_broken_attachment(gp_client, db, s3_store):
+    client, _ = gp_client
+    bid = _create(client)
+    resp = _save(client, bid, files={"photo": ("x.jpg", b"not an image", "image/jpeg")})
+    assert "error=" in resp.headers["location"]
+    assert s3_store == {}
+    db.expire_all()
+    assert db.get(Broadcast, bid).media_kind is None
+
+
 def test_caption_limit_and_single_attachment(gp_client, db, s3_store, no_transcode):
     client, _ = gp_client
     bid = _create(client)

@@ -134,7 +134,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                         <button type="button" class="btn-outline" data-bc-attach-keep>Оставить прежнее</button>
                     </p>
                     {% endif %}
-                    <div data-media-recorder data-mrf-modes="voice note"
+                    <div data-media-recorder data-mrf-modes="voice note" data-mrf-quality="high"
                          data-mrf-form-status="Сохранится по кнопке «Сохранить»{% if broadcast.media_kind %} и заменит прежнее{% endif %}"></div>
                     <div class="file-pick" data-bc-photo-pick>
                         <input id="bcPhoto" class="file-pick-input" type="file" name="photo" accept="image/*" data-bc-photo>
@@ -294,6 +294,6 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 </div>
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
-<script src="/static/js/media-recorder-field.js?v=9"></script>
+<script src="/static/js/media-recorder-field.js?v=10"></script>
 <script src="/static/js/broadcasts.js?v=5"></script>
 {% endblock %}

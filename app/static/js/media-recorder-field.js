@@ -22,6 +22,9 @@
  *                                   первый `input[name=csrf_token]`); основной
  *                                   путь — свежий ключ из `window.csrfFresh`
  *                                   (`static/js/csrf.js`), см. `upload`;
+ *   data-mrf-quality="high"       — запись в высоком качестве (рассылки):
+ *                                   кружок 720 px и 4 Мбит/с, звук 128 кбит/с
+ *                                   вместо 480 px, 1 Мбит/с и 64 кбит/с;
  *   data-mrf-attach-only          — обычное видео файлом (пункт правил,
  *                                   владелец 04.10.2026): без кнопки
  *                                   «Записать…», только «Прикрепить», и превью
@@ -60,13 +63,23 @@
     if (window.MediaRecorderField) return;
 
     // Кружок как в Telegram — до минуты. Голосовое — до десяти минут:
-    // при 64 кбит/с это около 5 МБ, с запасом от лимита сервера в 25 МБ.
+    // при 64 кбит/с это около 5 МБ, при 128 (рассылки) — около 10, с запасом
+    // от лимита сервера в 25 МБ. Минута кружка на 4 Мбит/с — около 30 МБ из 100.
     var LIMIT_SECONDS = {voice: 600, note: 60};
     var MIME_CANDIDATES = {
         voice: ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'],
         note: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
     };
     var START_LABELS = {voice: 'Записать голосовое', note: 'Записать кружок'};
+    // Качество записи. Обычное — для переписки и заданий, где запись смотрят
+    // на сайте. Высокое — для рассылки (жалоба 12.10.2026: «кружочки и
+    // голосовые плохого качества»): кружок уходит в Telegram квадратом до
+    // 640 px, и 480 px с 1 Мбит/с давали мыло ещё до сервера. Сторона —
+    // только пожелание камере, лишнее сервер обрежет.
+    var QUALITY = {
+        standard: {side: 480, video: 1000000, audio: 64000},
+        high: {side: 720, video: 4000000, audio: 128000}
+    };
     // «Прикрепить файл» (владелец 25.09.2026: «чтобы можно было загрузить
     // голосовое в любом формате и видео») — рядом с живой записью, не вместо
     // неё. `accept` только подсказка для системного диалога выбора файла,
@@ -179,6 +192,7 @@
             .split(/\s+/).filter(function (m) { return LIMIT_SECONDS[m]; });
         root.classList.add('mrf');
         this.attachOnly = root.hasAttribute('data-mrf-attach-only');
+        this.quality = QUALITY[root.getAttribute('data-mrf-quality')] || QUALITY.standard;
         root.innerHTML = markup(modes.length ? modes : ['voice', 'note'], this.attachOnly);
         this.stream = null;
         this.recorder = null;
@@ -281,7 +295,11 @@
         }
         var constraints = kind === 'voice'
             ? {audio: true}
-            : {audio: true, video: {facingMode: 'user', width: {ideal: 480}, height: {ideal: 480}}};
+            : {audio: true, video: {
+                facingMode: 'user',
+                width: {ideal: this.quality.side},
+                height: {ideal: this.quality.side}
+            }};
         navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
             self.prepare(kind, stream);
         }).catch(function (err) {
@@ -319,9 +337,9 @@
         var kind = this.kind;
         this.chunks = [];
         var mime = pickMime(kind);
-        var options = {audioBitsPerSecond: 64000};
+        var options = {audioBitsPerSecond: this.quality.audio};
         if (mime) options.mimeType = mime;
-        if (kind === 'note') options.videoBitsPerSecond = 1000000;
+        if (kind === 'note') options.videoBitsPerSecond = this.quality.video;
         try {
             this.recorder = new MediaRecorder(this.stream, options);
         } catch (e) {
