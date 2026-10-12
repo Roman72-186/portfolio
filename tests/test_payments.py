@@ -257,6 +257,25 @@ def test_payment_link_is_signed_and_reuses_pending(db, prices, payer, prodamus):
     assert db.query(Payment).count() == 1
 
 
+def test_real_link_fits_link_url_column(db, payer, prodamus):
+    """12.10.2026 первая живая оплата упала с 500: ссылка с русским названием
+    услуги, телефоном и почтой длиннее 500 символов, а `link_url` был
+    VARCHAR(500). SQLite длину не проверяет — сверяем ссылку с колонкой сами."""
+    payer.name = "Константинопольская Александра-Виктория"
+    payer.tariff = "УВЕРЕННЫЙ МАКСИМУМ"
+    payer.pay_price_kop = 1925500
+    payer.phone = "+79991234567"
+    payer.email = "konstantinopolskaya.aleksandra@example.ru"
+    db.commit()
+
+    payment = ps.get_or_create_payment(db, payer, _msk(2026, 10, 12, 10, 0), "https://kodarhitektora.ru")
+    db.commit()
+
+    assert len(payment.link_url) > 500  # иначе тест не про то
+    limit = Payment.__table__.c.link_url.type.length
+    assert limit is None or len(payment.link_url) <= limit
+
+
 def test_price_change_cancels_old_link(db, prices, payer, prodamus):
     now = _msk(2026, 10, 12)
     first = ps.get_or_create_payment(db, payer, now, "https://apparchi.ru")

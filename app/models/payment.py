@@ -92,7 +92,9 @@ class Payment(Base):
     source: Mapped[str] = mapped_column(String(10), nullable=False, default=SOURCE_PRODAMUS)
 
     # Ссылка Продамуса и до какого момента она живёт (`link_expired`).
-    link_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Text, а не String(500): подписанная ссылка с русским названием услуги —
+    # около 1 100 символов, 12.10.2026 «Оплатить» на ней падал с 500.
+    link_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     link_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Номер заказа в Продамусе (`order_id` вебхука). Уникален: повтор
     # вебхука не засчитает оплату второй раз.
