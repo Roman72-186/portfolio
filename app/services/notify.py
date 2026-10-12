@@ -49,6 +49,10 @@ _PUSH_GONE_STATUSES = {404, 410}
 NOTIFY_CONCURRENCY = 5
 # Тайм-аут одного push-запроса. Без него `webpush_async` ждал ответа минутами.
 PUSH_TIMEOUT_SEC = 15
+# Сколько push-сервис держит пуш для недоступного устройства. По умолчанию
+# `pywebpush` шлёт TTL=0: push-сервис отдаёт такой пуш, только если устройство
+# на связи прямо сейчас, спящий телефон его теряет.
+PUSH_TTL_SEC = 24 * 60 * 60
 # Страховка на одно уведомление целиком: Telegram с повторами, голосовое
 # (скачать + перекодировать) и все push-подписки получателя.
 NOTIFY_TIMEOUT_SEC = 180
@@ -213,6 +217,8 @@ async def _send_push(target: _PushTarget, notification: _Message) -> None:
             vapid_private_key=settings.vapid_private_key,
             vapid_claims={"sub": f"mailto:{settings.vapid_claim_email}"},
             timeout=PUSH_TIMEOUT_SEC,
+            ttl=PUSH_TTL_SEC,
+            headers={"Urgency": "high"},
         )
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None

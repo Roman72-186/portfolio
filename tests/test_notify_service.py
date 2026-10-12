@@ -310,6 +310,19 @@ def test_push_has_timeout(db, user_factory, monkeypatch):
     assert push.await_args.kwargs["timeout"] == notify_module.PUSH_TIMEOUT_SEC
 
 
+def test_push_survives_sleeping_device(db, user_factory, monkeypatch):
+    """`pywebpush` по умолчанию шлёт TTL=0: спящий телефон такой пуш теряет."""
+    _sub, n = _push_subscription(db, user_factory)
+    push = AsyncMock()
+    monkeypatch.setattr(notify_module, "webpush_async", push)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
+
+    asyncio.run(notify_module.notify(n.id))
+
+    assert push.await_args.kwargs["ttl"] == notify_module.PUSH_TTL_SEC > 0
+    assert push.await_args.kwargs["headers"] == {"Urgency": "high"}
+
+
 def test_push_link_is_absolute_on_current_domain(db, user_factory, monkeypatch):
     """Подписка, оформленная на прежнем домене, достраивает путь своим адресом:
     после переезда 11.10.2026 нажатие вело бы на мёртвый apparchi.ru."""
