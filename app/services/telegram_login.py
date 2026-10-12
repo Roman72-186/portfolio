@@ -48,10 +48,36 @@ _client: httpx.AsyncClient | None = None
 _jwks_client: PyJWKClient | None = None
 
 
+class _JWKClient(PyJWKClient):
+    """Ключи Telegram скачивает httpx, а не urllib внутри PyJWT.
+
+    `oauth.telegram.org` примерно на каждый третий запрос отдаёт JWKS сжатым
+    (`Content-Encoding: gzip`), даже когда сжатие не просили. urllib его не
+    распаковывает, PyJWT разбирает сжатые байты (начало 1f 8b) как JSON и падает с
+    «'utf-8' codec can't decode byte 0x8b» — вход через Telegram не проходит,
+    со второй попытки проходит (прод: 4–6 в день, 13 за вечер переезда
+    11.10.2026, когда входили все разом). httpx распаковывает сам; кеш и
+    обработка ошибок остаются у PyJWKClient.
+    """
+
+    def fetch_data(self):
+        try:
+            resp = httpx.get(self.uri, headers=self.headers, timeout=self.timeout)
+            resp.raise_for_status()
+            jwk_set = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise jwt.PyJWKClientConnectionError(
+                f'Fail to fetch data from the url, err: "{exc}"'
+            ) from exc
+        if self.jwk_set_cache is not None:
+            self.jwk_set_cache.put(jwk_set)
+        return jwk_set
+
+
 async def init_client() -> None:
     global _client, _jwks_client
     _client = httpx.AsyncClient(timeout=15.0)
-    _jwks_client = PyJWKClient(_JWKS_URL)
+    _jwks_client = _JWKClient(_JWKS_URL)
 
 
 async def close_client() -> None:
@@ -111,7 +137,7 @@ def verify_id_token(id_token: str) -> dict:
     """
     global _jwks_client
     if _jwks_client is None:
-        _jwks_client = PyJWKClient(_JWKS_URL)
+        _jwks_client = _JWKClient(_JWKS_URL)
     signing_key = _jwks_client.get_signing_key_from_jwt(id_token)
     return jwt.decode(
         id_token,
