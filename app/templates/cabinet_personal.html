@@ -36,7 +36,7 @@
             {% elif payment_url %}
             <a href="{{ payment_url }}" target="_blank" rel="noopener noreferrer" class="btn-blue">Оплатить обучение</a>
             {% endif %}
-            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
+            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
         </div>
         <p class="prs-pay-error" data-pay-error hidden></p>
     </div>
@@ -64,16 +64,17 @@
         {% else %}
         <p>{{ payment.amount_text }}, оплатить до {{ payment.until_text }} включительно.</p>
         {% endif %}
-        {% if payment.has_price %}
-        <p class="prs-pay-note" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span><span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</span></p>
-        {% endif %}
         <div class="prs-access-closed-actions">
             {% if payment.has_price %}
             <button type="button" class="btn-blue" data-pay-button>Оплатить</button>
             {% endif %}
-            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
+            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
         </div>
         <p class="prs-pay-error" data-pay-error hidden></p>
+        {# Владелец 12.10.2026: пометка про тариф — под кнопкой службы заботы, о ней и речь. #}
+        {% if payment.has_price %}
+        <p class="prs-pay-note prs-pay-note--below" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span><span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</span></p>
+        {% endif %}
     </div>
     {% endif %}
 

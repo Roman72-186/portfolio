@@ -342,6 +342,8 @@
     border-radius: 12px;
     padding: 12px 14px;
 }
+/* Под кнопками (владелец 12.10.2026): у `p` блока отступ только снизу. */
+.ios-personal .prs-access-closed .prs-pay-note--below { margin: 16px 0 0; }
 .ios-personal .prs-pay-note-mark {
     flex: 0 0 auto;
     font-weight: 800;
@@ -357,6 +359,22 @@
     flex: 1 1 200px;
     justify-content: center;
     text-align: center;
+}
+/* Рамка `--line` на жёлтой плашке не видна — кнопка терялась (владелец
+   12.10.2026). Фиолетовая, как «Оплатить», видна в обеих темах. */
+.ios-personal .prs-access-closed-actions > .btn-outline {
+    border-color: var(--blue-fill);
+}
+/* Тёмная тема: жёлтая плашка остаётся светлой (`--warning-soft` в тёмном блоке
+   не переопределён), а `--ink`, `--surface` и `--blue-text` темнеют/светлеют —
+   надпись кнопки выходила белой по жёлтому, белая пометка — чёрной (12.10.2026).
+   Внутри плашки — цвета, одинаковые в обеих темах. */
+:root[data-theme="dark"] .ios-personal .prs-access-closed-actions > .btn-outline {
+    color: var(--warning-ink);
+}
+:root[data-theme="dark"] .ios-personal .prs-access-closed .prs-pay-note {
+    background: var(--on-color);
+    color: var(--blue-deep);
 }
 
 /* ── Строка-документ как <button>, а не <a> — сброс нативного вида кнопки,
