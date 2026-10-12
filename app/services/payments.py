@@ -434,7 +434,7 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
         .first()
     )
     if already_paid:
-        raise PaymentUnavailable(f"Оплата за {MONTHS_NOM[period.month]} уже получена")
+        raise PaymentUnavailable("Оплата за следующий месяц обучения уже получена")
 
     pending = (
         db.query(Payment)
@@ -710,7 +710,6 @@ def record_paid(
             user.paid_until = new_until
             extended = f", оплачено до {new_until.astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')}"
 
-    month = MONTHS_NOM[payment.period.month]
     db.add(AuditLog(
         action="payment_paid",
         performed_by_id=performed_by_id,
@@ -724,8 +723,9 @@ def record_paid(
     if user is not None:
         student_note = Notification(
             user_id=user.id,
-            title=f"Оплата за {month} принята",
-            text=f"Получили {rub_text(paid_sum_kop)}. Спасибо!",
+            # Школа 12.10.2026: ученику — «месяц обучения», не календарный месяц.
+            title="Оплата принята",
+            text=f"Получили {rub_text(paid_sum_kop)} за следующий месяц обучения. Спасибо!",
         )
         db.add(student_note)
         created.append(student_note)
@@ -733,7 +733,7 @@ def record_paid(
         created += _notify_staff(
             db,
             f"Оплата: {_who(user)}",
-            f"{_who(user)} оплатил(а) {month}, {rub_text(paid_sum_kop)} ({how}).",
+            f"{_who(user)} оплатил(а) следующий месяц обучения, {rub_text(paid_sum_kop)} ({how}).",
         )
     return created
 

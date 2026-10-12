@@ -384,7 +384,7 @@ def test_webhook_success_pays_and_extends_access(db, client, payer, prodamus, no
     assert payer.paid_until == ps.paid_until_after(payer, date(2026, 10, 1))
     assert db.query(AuditLog).filter(AuditLog.action == "payment_paid").count() == 1
     titles = [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
-    assert "Оплата за октябрь принята" in titles
+    assert "Оплата принята" in titles
 
     # Повтор того же уведомления ничего не меняет.
     again = _post_webhook(client, _fields(payment.id))
@@ -487,6 +487,9 @@ def test_pay_button_returns_link(db, client, session_factory, prices, payer, pro
 
     page = client.get("/cabinet/personal")
     assert "data-pay-button" in page.text
+    # Школа 12.10.2026: «месяц обучения с 15 по 15» и пометка про смену тарифа.
+    assert "Оплата за следующий месяц обучения (с 15 по 15)" in page.text
+    assert "data-pay-tariff-note" in page.text
 
     resp = client.post("/cabinet/personal/pay")
     assert resp.status_code == 200
@@ -692,7 +695,7 @@ def test_pay_window_reminder_once_on_first_day(db, prices, payer, prodamus):
     run_student_reminders(db, _msk(2026, 10, 12, 10, 0))   # второй раз — тишина
     notes = _pay_reminders(db, payer.id)
     assert [(n.title, n.text) for n in notes] == [(
-        "Пора оплатить обучение за октябрь",
+        "Пора оплатить следующий месяц обучения",
         "Сумма – 13 255 ₽. Оплати до 15.10 включительно: кнопка «Оплатить» в «Личной информации».",
     )]
 
