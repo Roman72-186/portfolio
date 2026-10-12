@@ -221,7 +221,10 @@ async def _send_push(target: _PushTarget, notification: _Message) -> None:
             headers={"Urgency": "high"},
         )
     except WebPushException as exc:
-        status = exc.response.status_code if exc.response is not None else None
+        # `webpush_async` кладёт сюда ответ aiohttp — код в `.status`;
+        # `.status_code` — у синхронного `webpush` (requests).
+        resp = exc.response
+        status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
         if status in _PUSH_GONE_STATUSES:
             _deactivate_subscription(target.id)
         else:

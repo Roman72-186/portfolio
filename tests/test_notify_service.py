@@ -341,7 +341,10 @@ def test_push_link_is_absolute_on_current_domain(db, user_factory, monkeypatch):
 
 def test_gone_push_subscription_is_deactivated(db, user_factory, monkeypatch):
     sub, n = _push_subscription(db, user_factory)
-    gone = notify_module.WebPushException("gone", response=Mock(status_code=410))
+    # Ответ как у aiohttp: код в `.status`, `.status_code` нет. До 12.10.2026
+    # тест подсовывал `status_code`, а прод на первом же отказе падал с
+    # AttributeError и мёртвые подписки не гасил.
+    gone = notify_module.WebPushException("gone", response=Mock(spec=["status"], status=410))
     monkeypatch.setattr(notify_module, "webpush_async", AsyncMock(side_effect=gone))
     monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
 
@@ -349,6 +352,22 @@ def test_gone_push_subscription_is_deactivated(db, user_factory, monkeypatch):
 
     db.expire_all()
     assert sub.is_active is False
+
+
+def test_push_refusal_keeps_subscription_and_does_not_crash(db, user_factory, monkeypatch):
+    sub, n = _push_subscription(db, user_factory)
+    refused = notify_module.WebPushException("bad", response=Mock(spec=["status"], status=400))
+    push = AsyncMock(side_effect=refused)
+    monkeypatch.setattr(notify_module, "webpush_async", push)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "key")
+    errors = []
+    monkeypatch.setattr(notify_module.logger, "exception", lambda *a, **k: errors.append(a))
+
+    asyncio.run(notify_module.notify(n.id))
+
+    db.expire_all()
+    assert sub.is_active is True
+    assert errors == []
 
 
 def test_push_network_error_keeps_subscription(db, user_factory, monkeypatch):
