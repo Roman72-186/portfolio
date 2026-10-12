@@ -20,7 +20,7 @@
     {% endif %}
 
     {% if paid_return %}
-    <div class="prs-saved">Спасибо! Как только Продамус подтвердит оплату, придёт уведомление и доступ продлится. Обычно это занимает минуту.</div>
+    <div class="prs-saved" data-paid-thanks>{% for line in paid_thanks.split('\n') %}{% if not loop.first %}<br>{% endif %}{{ line | urlize(target="_blank") }}{% endfor %}</div>
     {% endif %}
 
     {% if user.access_expired %}

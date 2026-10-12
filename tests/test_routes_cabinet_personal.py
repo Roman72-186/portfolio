@@ -30,6 +30,23 @@ def test_personal_shows_own_contacts(auth_client, db):
     assert "@self_view" in resp.text
 
 
+def test_personal_after_payment_thanks_with_tariff(auth_client, db):
+    """Возврат из Продамуса: благодарность школы с тарифом ученика и ссылкой
+    на канал — владелец 12.10.2026."""
+    client, user = auth_client
+    user.tariff = "Я С ВАМИ"
+    db.commit()
+
+    resp = client.get("/cabinet/personal?paid=1")
+    assert resp.status_code == 200
+    assert ("Благодарю за оплату следующего месяца годового онлайн-курса"
+            " на тарифе Я с вами<br>Администратор тг-канала") in resp.text
+    assert 'href="https://t.me/creativeanalytic"' in resp.text
+    assert "Продамус подтвердит" not in resp.text
+
+    assert "Благодарю за оплату" not in client.get("/cabinet/personal").text
+
+
 def test_personal_shows_anketa_data(auth_client, db):
     """Личная информация показывает поля анкеты первого входа (12-13.09.2026:
     дата рождения, город, часовой пояс, email, родитель, СДЭК),

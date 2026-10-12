@@ -264,10 +264,11 @@
 }
 .ios-personal .prs-cancel-link:hover { text-decoration: underline; }
 
-/* «Сохранено» над списком контактов после возврата с формы */
+/* «Сохранено» над списком контактов после возврата с формы и благодарность
+   после оплаты. Цвет — токеном: числом #1B7F3B в тёмной теме не читался. */
 .ios-personal .prs-saved {
     margin-bottom: 12px; padding: 10px 14px; border-radius: 14px;
-    background: rgba(52,199,89,0.12); color: #1B7F3B;
+    background: rgba(52,199,89,0.12); color: var(--success);
     font: 500 14px/1.35 var(--ios-font);
 }
 
