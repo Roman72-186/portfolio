@@ -383,8 +383,12 @@ def test_webhook_success_pays_and_extends_access(db, client, payer, prodamus, no
     assert payment.paid_sum_kop == 1325500
     assert payer.paid_until == ps.paid_until_after(payer, date(2026, 10, 1))
     assert db.query(AuditLog).filter(AuditLog.action == "payment_paid").count() == 1
-    titles = [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
-    assert "Оплата принята" in titles
+    notes = {n.title: n.text for n in db.query(Notification).filter(Notification.user_id == payer.id)}
+    # Владелец 12.10.2026: тот же текст, что на странице Продамуса, с тарифом ученика.
+    assert notes["Оплата принята"] == (
+        "Благодарю за оплату следующего месяца годового онлайн-курса на тарифе Я с вами\n"
+        "Администратор тг-канала https://t.me/creativeanalytic свяжется с вами"
+    )
 
     # Повтор того же уведомления ничего не меняет.
     again = _post_webhook(client, _fields(payment.id))

@@ -357,6 +357,22 @@ def payment_id_from_order(order_num: str | None) -> int | None:
     return int(tail) if tail.isdigit() else None
 
 
+def _tariff_name(tariff: str | None) -> str:
+    """Тариф так, как его видит ученик: «Я с вами», а не код из базы."""
+    return TARIFF_DISPLAY.get(tariff, tariff) if tariff else ""
+
+
+def paid_thanks_text(tariff: str | None) -> str:
+    """Благодарность после оплаты: страница Продамуса (`paid_content`) и
+    уведомление ученику «Оплата принята». Дословно по владельцу 12.10.2026."""
+    name = _tariff_name(tariff)
+    on_tariff = f" на тарифе {name}" if name else ""
+    return (
+        f"Благодарю за оплату следующего месяца годового онлайн-курса{on_tariff}\n"
+        f"Администратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с вами"
+    )
+
+
 def build_link(payment: Payment, user: User, base_url: str) -> str:
     """Подписанная ссылка на платёжную страницу Продамуса.
 
@@ -372,9 +388,8 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
     Название, категория (`type=course` — «Доступ к курсу») и текст после оплаты
     (`paid_content`) — дословно по школе, 12.10.2026.
     """
-    tariff = TARIFF_DISPLAY.get(payment.tariff, payment.tariff) if payment.tariff else ""
+    tariff = _tariff_name(payment.tariff)
     name = f"Годовой онлайн-курс тариф {tariff}" if tariff else "Годовой онлайн-курс"
-    on_tariff = f" на тарифе {tariff}" if tariff else ""
     data = {
         "order_id": order_number(payment),
         "products": [{
@@ -383,10 +398,7 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
             "quantity": "1",
             "type": "course",
         }],
-        "paid_content": (
-            f"Благодарю за оплату следующего месяца годового онлайн-курса{on_tariff}\n"
-            f"Администратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с вами"
-        ),
+        "paid_content": paid_thanks_text(payment.tariff),
         "customer_extra": f"Ученик #{user.id}, {user.name or ''}".strip(", "),
         "urlSuccess": f"{base_url}/cabinet/personal?paid=1",
         "urlReturn": f"{base_url}/cabinet/personal",
@@ -723,9 +735,9 @@ def record_paid(
     if user is not None:
         student_note = Notification(
             user_id=user.id,
-            # Школа 12.10.2026: ученику — «месяц обучения», не календарный месяц.
+            # Тот же текст, что Продамус показывает после оплаты, — владелец 12.10.2026.
             title="Оплата принята",
-            text=f"Получили {rub_text(paid_sum_kop)} за следующий месяц обучения. Спасибо!",
+            text=paid_thanks_text(payment.tariff or user.tariff),
         )
         db.add(student_note)
         created.append(student_note)
