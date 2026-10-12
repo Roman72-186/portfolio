@@ -259,6 +259,24 @@ def test_payment_link_is_signed_and_reuses_pending(db, prices, payer, prodamus):
     assert db.query(Payment).count() == 1
 
 
+def test_link_names_course_as_school_asked(db, payer, prodamus):
+    """Название, категория «Доступ к курсу» и текст после оплаты — дословно
+    по школе 12.10.2026."""
+    payer.tariff = "УВЕРЕННЫЙ МАКСИМУМ"
+    payer.pay_price_kop = 1875500
+    db.commit()
+
+    payment = ps.get_or_create_payment(db, payer, _msk(2026, 10, 12, 10, 0), "https://kodarhitektora.ru")
+    fields = dict(parse_qsl(urlsplit(payment.link_url).query, keep_blank_values=True))
+
+    assert fields["products[0][name]"] == "Годовой онлайн-курс тариф Уверенный максимум"
+    assert fields["products[0][type]"] == "course"
+    assert fields["paid_content"] == (
+        "Благодарю за оплату следующего месяца годового онлайн-курса на тарифе Уверенный максимум\n"
+        "Администратор тг-канала https://t.me/creativeanalytic свяжется с вами"
+    )
+
+
 def test_real_link_fits_link_url_column(db, payer, prodamus):
     """12.10.2026 первая живая оплата упала с 500: ссылка с русским названием
     услуги, телефоном и почтой длиннее 500 символов, а `link_url` был

@@ -84,6 +84,8 @@ CUTOFF_HOUR_MSK = 2
 WINDOW_LAST_DAY_MAX = 31
 
 ORDER_PREFIX = "ap-"
+# Канал школы в тексте после оплаты (`paid_content`), дословно по школе 12.10.2026.
+SCHOOL_CHANNEL_URL = "https://t.me/creativeanalytic"
 
 MONTHS_NOM = (
     "", "январь", "февраль", "март", "апрель", "май", "июнь",
@@ -366,18 +368,25 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
     `do=pay` обязателен и входит в подпись: без него Продамус не узнаёт ссылку
     и показывает пустую заблокированную форму «Согласуйте заказ с менеджером»
     (12.10.2026, первая живая оплата).
+
+    Название, категория (`type=course` — «Доступ к курсу») и текст после оплаты
+    (`paid_content`) — дословно по школе, 12.10.2026.
     """
     tariff = TARIFF_DISPLAY.get(payment.tariff, payment.tariff) if payment.tariff else ""
-    name = f"Обучение Apparchi, {period_label(payment.period)}"
-    if tariff:
-        name = f"Обучение Apparchi, тариф «{tariff}», {period_label(payment.period)}"
+    name = f"Годовой онлайн-курс тариф {tariff}" if tariff else "Годовой онлайн-курс"
+    on_tariff = f" на тарифе {tariff}" if tariff else ""
     data = {
         "order_id": order_number(payment),
         "products": [{
             "name": name,
             "price": kop_to_rub_str(payment.amount_kop),
             "quantity": "1",
+            "type": "course",
         }],
+        "paid_content": (
+            f"Благодарю за оплату следующего месяца годового онлайн-курса{on_tariff}\n"
+            f"Администратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с вами"
+        ),
         "customer_extra": f"Ученик #{user.id}, {user.name or ''}".strip(", "),
         "urlSuccess": f"{base_url}/cabinet/personal?paid=1",
         "urlReturn": f"{base_url}/cabinet/personal",
