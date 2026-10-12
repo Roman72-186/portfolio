@@ -12,8 +12,8 @@ services:
       - ./lab-assets:/app/lab-assets:ro
     labels:
       - traefik.enable=true
-      # Main app on apparchi.ru (canonical domain)
-      - traefik.http.routers.portfolio-apparchi.rule=Host(`apparchi.ru`) || Host(`www.apparchi.ru`)
+      # Основной адрес — kodarhitektora.ru (с 11.10.2026; apparchi.ru не наш, не использовать)
+      - traefik.http.routers.portfolio-apparchi.rule=Host(`kodarhitektora.ru`) || Host(`www.kodarhitektora.ru`)
       - traefik.http.routers.portfolio-apparchi.tls=true
       - traefik.http.routers.portfolio-apparchi.entrypoints=web,websecure
       - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
