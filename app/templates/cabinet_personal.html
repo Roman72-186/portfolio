@@ -65,7 +65,7 @@
         <p>{{ payment.amount_text }}, оплатить до {{ payment.until_text }} включительно.</p>
         {% endif %}
         {% if payment.has_price %}
-        <p class="prs-pay-note" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</p>
+        <p class="prs-pay-note" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span><span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</span></p>
         {% endif %}
         <div class="prs-access-closed-actions">
             {% if payment.has_price %}
