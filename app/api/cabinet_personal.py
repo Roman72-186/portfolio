@@ -141,9 +141,10 @@ def cabinet_personal(
             db, db.get(User, user["user_id"]), datetime.now(timezone.utc),
         ),
         "paid_return": request.query_params.get("paid") == "1",
-        # Возврат из Продамуса — тот же текст, что на его странице и в
-        # уведомлении «Оплата принята» (владелец 12.10.2026).
-        "paid_thanks": payment_service.paid_thanks_text(user.get("tariff")),
+        # Возврат из Продамуса — та же благодарность, что на его странице и в
+        # уведомлении «Оплата принята» (владелец 12.10.2026), но без строки про
+        # администратора канала (владелец 13.10.2026).
+        "paid_thanks": payment_service.paid_thanks_text(user.get("tariff"), with_contact=False),
         "access_until_text": msk_text(user.get("access_until")),
         # Динамика самооценки навыков (владелец 03.09.2026): «в начале
         # обучения было так, в середине уже вот так» — сравнение по датам.

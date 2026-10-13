@@ -370,15 +370,17 @@ def tariff_to_pay(user: User) -> str:
     return user.pay_next_tariff or user.tariff or ""
 
 
-def paid_thanks_text(tariff: str | None) -> str:
-    """Благодарность после оплаты: страница Продамуса (`paid_content`) и
-    уведомление ученику «Оплата принята». Дословно по владельцу 12.10.2026."""
+def paid_thanks_text(tariff: str | None, *, with_contact: bool = True) -> str:
+    """Благодарность после оплаты: страница Продамуса (`paid_content`),
+    уведомление ученику «Оплата принята» и плашка на сайте после возврата.
+    Дословно по владельцу 12.10.2026. На плашке сайта строки про
+    администратора канала нет (`with_contact=False`, владелец 13.10.2026)."""
     name = _tariff_name(tariff)
     on_tariff = f" на тарифе {name}" if name else ""
-    return (
-        f"Благодарю за оплату следующего месяца годового онлайн-курса{on_tariff}\n"
-        f"Администратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с вами"
-    )
+    text = f"Благодарю за оплату следующего месяца годового онлайн-курса{on_tariff}"
+    if with_contact:
+        text += f"\nАдминистратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с вами"
+    return text
 
 
 def build_link(payment: Payment, user: User, base_url: str) -> str:

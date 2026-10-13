@@ -40,8 +40,9 @@ def test_personal_after_payment_thanks_with_tariff(auth_client, db):
     resp = client.get("/cabinet/personal?paid=1")
     assert resp.status_code == 200
     assert ("Благодарю за оплату следующего месяца годового онлайн-курса"
-            " на тарифе Я с вами<br>Администратор тг-канала") in resp.text
-    assert 'href="https://t.me/creativeanalytic"' in resp.text
+            " на тарифе Я с вами</div>") in resp.text
+    # Владелец 13.10.2026: строки про администратора канала на сайте нет.
+    assert "Администратор тг-канала" not in resp.text
     assert "Продамус подтвердит" not in resp.text
 
     assert "Благодарю за оплату" not in client.get("/cabinet/personal").text

@@ -23,7 +23,7 @@
     {% endif %}
 
     {% if paid_return %}
-    <div class="prs-saved" data-paid-thanks>{% for line in paid_thanks.split('\n') %}{% if not loop.first %}<br>{% endif %}{{ line | urlize(target="_blank") }}{% endfor %}</div>
+    <div class="prs-saved" data-paid-thanks>{{ paid_thanks }}</div>
     {% endif %}
 
     {% if user.access_expired %}
