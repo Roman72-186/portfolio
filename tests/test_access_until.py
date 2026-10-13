@@ -49,6 +49,8 @@ def test_expired_student_can_open_personal(db, client, session_factory, user_fac
 
     assert resp.status_code == 200
     assert "Доступ закрыт" in resp.text
+    # Владелец 13.10.2026: пометка про смену тарифа — и здесь, перед оплатой.
+    assert "Если хочешь перейти на другой тариф" in resp.text
     # Меню проверяем на самой странице, а не вызовом `student_nav_items`:
     # признак едет через шаблон с `|default(false)`, и потеряйся он по дороге —
     # ученик получил бы полное меню из ссылок, которые тут же его отбрасывают.

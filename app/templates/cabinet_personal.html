@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% from "partials/notif_gear.html" import notif_gear_widget with context %}
 {% from "components/hint.html" import hint %}
+{# Пометка про смену тарифа (школа 12.10.2026): под «Написать в службу заботы» —
+   в блоке оплаты и на «Доступ закрыт» (владелец 13.10.2026). #}
+{% macro tariff_note() %}<p class="prs-pay-note prs-pay-note--below" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span><span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</span></p>{% endmacro %}
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=2">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=20">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=21">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -39,6 +42,7 @@
             <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
         </div>
         <p class="prs-pay-error" data-pay-error hidden></p>
+        {{ tariff_note() }}
     </div>
     {% elif user.tg_username_mismatch %}
     <div class="prs-access-closed">
@@ -73,7 +77,7 @@
         <p class="prs-pay-error" data-pay-error hidden></p>
         {# Владелец 12.10.2026: пометка про тариф — под кнопкой службы заботы, о ней и речь. #}
         {% if payment.has_price %}
-        <p class="prs-pay-note prs-pay-note--below" data-pay-tariff-note><span class="prs-pay-note-mark" aria-hidden="true">!</span><span>Если хочешь перейти на другой тариф, напиши в службу заботы <strong>до</strong> оплаты следующего месяца.</span></p>
+        {{ tariff_note() }}
         {% endif %}
     </div>
     {% endif %}
