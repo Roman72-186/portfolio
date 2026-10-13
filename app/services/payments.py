@@ -743,11 +743,36 @@ def record_paid(
         created.append(student_note)
         how = "перевод на счёт, отметил ГП" if source == SOURCE_MANUAL else "Продамус"
         created += _notify_staff(
-            db,
-            f"Оплата: {_who(user)}",
-            f"{_who(user)} оплатил(а) следующий месяц обучения, {rub_text(paid_sum_kop)} ({how}).",
+            db, f"Оплата: {_who(user)}", _paid_staff_text(user, payment, paid_sum_kop, how),
         )
     return created
+
+
+def _paid_period_text(user: User, period: date) -> str:
+    """Месяц обучения, за который оплата: «15.10.2026 – 15.11.2026» — от
+    последнего дня окна до него же через месяц (школа: «с 15 по 15»)."""
+    if not has_window(user):
+        return period_label(period)
+    start = window_last_day(user, period)
+    end = window_last_day(user, add_months(period, 1))
+    return f"{start.strftime('%d.%m.%Y')} – {end.strftime('%d.%m.%Y')}"
+
+
+def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str) -> str:
+    """Уведомление службе заботы об оплате — владелец 13.10.2026: ФИО, почта,
+    сумма, период. Отчества на платформе нет — ФИО это `User.name`."""
+    tg = normalize_tg_username(user.tg_username or "")
+    tariff = _tariff_name(payment.tariff or user.tariff)
+    lines = [
+        f"{user.name or f'#{user.id}'} оплатил(а) следующий месяц обучения.",
+        f"ФИО: {user.name or '—'}",
+        f"Почта: {user.email or 'не указана'}",
+        f"Telegram: @{tg}" if tg else "Telegram: не указан",
+        f"Тариф: {tariff or '—'}",
+        f"Сумма: {rub_text(paid_sum_kop)} ({how})",
+        f"Период: {_paid_period_text(user, payment.period)}",
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

@@ -403,6 +403,13 @@ def test_webhook_notifies_care_service(db, client, payer, user_factory, prodamus
     _post_webhook(client, _fields(payment.id))
     texts = [n.text for n in db.query(Notification).filter(Notification.user_id == care.id)]
     assert any("13 255 ₽" in (t or "") for t in texts)
+    # Владелец 13.10.2026: ФИО, почта, сумма и период — в одном сообщении.
+    paid = next(t for t in texts if "оплатил(а)" in (t or ""))
+    assert f"ФИО: {payer.name}" in paid
+    assert "Почта: " in paid
+    assert "Сумма: 13 255 ₽ (Продамус)" in paid
+    assert "Тариф: Я с вами" in paid
+    assert "Период: " in paid
 
 
 def test_webhook_sum_mismatch_does_not_extend(db, client, payer, prodamus, no_delivery):
@@ -718,3 +725,14 @@ def test_pay_window_reminder_skips_paid_and_unconfigured(db, prices, payer, user
     monkeypatch.setattr(settings, "prodamus_secret_key", "")
     run_student_reminders(db, _msk(2026, 11, 10, 12, 0))
     assert _pay_reminders(db, payer.id) == []
+
+
+def test_staff_period_is_month_of_study(payer):
+    """Период в уведомлении службе заботы — «с 15 по 15» по окну ученика,
+    в феврале окно 25–30 кончается последним днём месяца."""
+    payer.pay_window_start, payer.pay_window_end = 10, 15
+    assert ps._paid_period_text(payer, date(2026, 10, 1)) == "15.10.2026 – 15.11.2026"
+    payer.pay_window_start, payer.pay_window_end = 25, 30
+    assert ps._paid_period_text(payer, date(2027, 1, 1)) == "30.01.2027 – 28.02.2027"
+    payer.pay_window_start = payer.pay_window_end = None
+    assert ps._paid_period_text(payer, date(2026, 10, 1)) == "октябрь 2026"
