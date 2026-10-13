@@ -468,7 +468,11 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     for row in pending:
         alive = row.link_expires_at is None or _as_utc(row.link_expires_at) > _as_utc(now)
         # Тариф — в названии чека: поставили следующий тариф — нужна новая ссылка.
-        if row.amount_kop == amount and alive and row.link_url and row.tariff == tariff_to_pay(user):
+        # Адрес страницы — тоже: школа сменила его 13.10.2026, старый отвечает
+        # 404, и живая ссылка на него вела бы ученика в никуда.
+        same_page = (row.link_url or "").startswith(settings.prodamus_form_url)
+        if (row.amount_kop == amount and alive and row.link_url and same_page
+                and row.tariff == tariff_to_pay(user)):
             return row
         row.status = STATUS_CANCELLED
         row.note = _append_note(row.note, "ссылка заменена новой")

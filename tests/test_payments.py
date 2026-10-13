@@ -869,3 +869,20 @@ def test_card_sets_and_keeps_next_tariff(db, client, session_factory, prices, ca
     bad = client.post(url, data=_payment_form(pay_next_tariff="ЗОЛОТОЙ"))
     assert bad.status_code == 400
     assert "тариф" in bad.json()["detail"].lower()
+
+
+def test_link_on_old_page_address_is_replaced(db, payer, prodamus, monkeypatch):
+    """Школа сменила адрес платёжной страницы (13.10.2026): живая ссылка на
+    старый адрес не отдаётся — там 404, собираем новую."""
+    now = _msk(2026, 10, 12, 10, 0)
+    payer.pay_price_kop = 1275500
+    db.commit()
+    first = ps.get_or_create_payment(db, payer, now, "https://kodarhitektora.ru")
+    db.commit()
+    monkeypatch.setattr(settings, "prodamus_form_url", "https://new-school.payform.ru/")
+
+    second = ps.get_or_create_payment(db, payer, now, "https://kodarhitektora.ru")
+
+    assert second.id != first.id
+    assert second.link_url.startswith("https://new-school.payform.ru/")
+    assert first.status == STATUS_CANCELLED
