@@ -75,3 +75,14 @@ def test_no_upload_is_read_without_a_size_limit():
         if re.search(r"await\s+(?!request\b)\w+\.read\(\s*\)", line)
     ]
     assert offenders == []
+
+
+@pytest.mark.parametrize("content_type, filename", [
+    ("image/svg+xml", "work.svg"),
+    ("image/svg+xml", "work.jpg"),
+    ("application/octet-stream", "work.svg"),
+    ("", "work.svg"),
+])
+def test_is_allowed_image_rejects_svg(content_type, filename):
+    """SVG исполняет скрипты, а Pillow его не читает (код-ревью 12.10.2026)."""
+    assert is_allowed_image(content_type, filename) is False

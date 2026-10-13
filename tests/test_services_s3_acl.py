@@ -64,3 +64,41 @@ def test_move_omits_acl_when_disabled(s3_client, monkeypatch):
     assert s3_module.move_s3_object("old.jpg", "new.jpg") is True
     assert "ACL" not in s3_client.copy_object.call_args.kwargs
     s3_client.delete_object.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Тип объекта в публичном бакете (код-ревью 12.10.2026, P1 № 2)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("content_type, stored", [
+    ("image/jpeg", "image/jpeg"),
+    ("video/mp4", "video/mp4"),
+    ("video/quicktime", "video/quicktime"),
+    ("audio/webm;codecs=opus", "audio/webm"),
+    ("Audio/MP4", "audio/mp4"),
+])
+def test_upload_keeps_media_content_type(s3_client, content_type, stored):
+    s3_module.upload_to_s3("path/file.bin", b"data", content_type)
+
+    kwargs = s3_client.put_object.call_args.kwargs
+    assert kwargs["ContentType"] == stored
+    assert "ContentDisposition" not in kwargs
+
+
+@pytest.mark.parametrize("content_type", [
+    "text/html",
+    "image/svg+xml",
+    "application/xhtml+xml",
+    "application/javascript",
+    "",
+    None,
+    "video/mp4\r\nX-Evil: 1",
+])
+def test_upload_turns_foreign_content_type_into_download(s3_client, content_type):
+    """Видео и голосовое в диалоге ОС проверяются «тип или расширение»:
+    `clip.mp4` с типом `text/html` ложился в бакет веб-страницей."""
+    s3_module.upload_to_s3("path/clip.mp4", b"<script>alert(1)</script>", content_type)
+
+    kwargs = s3_client.put_object.call_args.kwargs
+    assert kwargs["ContentType"] == "application/octet-stream"
+    assert kwargs["ContentDisposition"] == "attachment"

@@ -10,6 +10,7 @@ Path conventions:
   RETAKE:    Отработки/{тариф}/{тариф}_{vk_id}/{YYYY-MM}/{тариф}_{vk_id}_{random8}.ext
 """
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -275,18 +276,50 @@ def download_from_s3(s3_path: str) -> bytes | None:
         return None
 
 
+# Тип объекта в публичном бакете — только тот, который браузер не исполняет:
+# картинка, видео, аудио. До 13.10.2026 сюда доходил `Content-Type` из запроса:
+# видео и голосовое в диалоге ОС проверяются «тип или расширение», и
+# `clip.mp4` с типом `text/html` ложился в бакет веб-страницей; гостевой
+# пробник так же клал SVG со скриптом (код-ревью 12.10.2026, P1 № 2). Проверка
+# здесь, а не у каждого маршрута: через эту функцию идёт любая запись в бакет.
+# SVG — картинка, которая исполняет скрипты, поэтому исключён отдельно.
+_INLINE_CONTENT_TYPE_RE = re.compile(r"(image|video|audio)/[a-z0-9][a-z0-9.+-]*")
+_SCRIPTABLE_CONTENT_TYPES = {"image/svg+xml"}
+FALLBACK_CONTENT_TYPE = "application/octet-stream"
+
+
+def safe_content_type(content_type: str | None) -> str | None:
+    """Тип без параметров, если его можно отдавать из бакета как есть, иначе
+    None — объект тогда пишется как файл для скачивания."""
+    base = (content_type or "").split(";", 1)[0].strip().lower()
+    if base in _SCRIPTABLE_CONTENT_TYPES or not _INLINE_CONTENT_TYPE_RE.fullmatch(base):
+        return None
+    return base
+
+
 def upload_to_s3(s3_path: str, data: bytes, content_type: str = "image/jpeg") -> str | None:
-    """Upload bytes to S3. Returns public URL or None on failure / unconfigured."""
+    """Upload bytes to S3. Returns public URL or None on failure / unconfigured.
+
+    `content_type` проходит через `safe_content_type`: чужой тип становится
+    `application/octet-stream` с `Content-Disposition: attachment`."""
     if not is_configured():
         logger.debug("S3 not configured — skipping upload")
         return None
+    inline_type = safe_content_type(content_type)
+    type_kwargs = (
+        {"ContentType": inline_type}
+        if inline_type
+        else {"ContentType": FALLBACK_CONTENT_TYPE, "ContentDisposition": "attachment"}
+    )
+    if not inline_type:
+        logger.warning("S3 upload %s: тип %r не из белого списка — пишем как файл", s3_path, content_type)
     try:
         client = _get_client()
         client.put_object(
             Bucket=settings.s3_bucket,
             Key=s3_path,
             Body=data,
-            ContentType=content_type,
+            **type_kwargs,
             **_acl_kwargs(),
         )
         url = s3_public_url(s3_path)

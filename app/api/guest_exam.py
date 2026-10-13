@@ -242,9 +242,9 @@ async def guest_upload(
     s3_path = (
         f"guest-exam/{token}/{participant.participant_code}/{subject}/{uuid.uuid4().hex[:8]}.{ext}"
     )
-    s3_url = s3_service.upload_to_s3(
-        s3_path, compressed, content_type=photo.content_type or "image/jpeg"
-    )
+    # `image/jpeg`, как у всех загрузок фото: `compress_image` отдаёт JPEG, а
+    # тип из запроса — это слово браузера, а не содержимое файла.
+    s3_url = s3_service.upload_to_s3(s3_path, compressed, content_type="image/jpeg")
 
     guest_exam_service.record_upload(db, submission, s3_url, s3_path)
 

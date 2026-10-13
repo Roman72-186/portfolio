@@ -108,3 +108,77 @@ def test_consume_revoked_token_returns_error(db, user_factory):
 
     _, _, error = consume_one_time_login_token(db, raw_token=_raw_token_from_url(url1))
     assert error == "revoked"
+
+
+# ---------------------------------------------------------------------------
+# Вид токена: ссылка входа на сайт против входа в 3D-лабораторию
+# (код-ревью 12.10.2026, P1 № 1)
+# ---------------------------------------------------------------------------
+
+def test_sso_token_is_not_a_login_link(db, user_factory):
+    """Токен лаборатории уходит к ней в адресе — на сайт по нему не войти,
+    и сам он при этом не гасится: лаборатория погасит его своей проверкой."""
+    from app.services.auth_links import PURPOSE_SSO, issue_sso_token
+
+    user = user_factory()
+    raw, _ = issue_sso_token(db, user=user, ttl_minutes=2)
+
+    _, returned_user, error = consume_one_time_login_token(db, raw_token=raw)
+    assert error == "invalid"
+    assert returned_user is None
+
+    _, returned_user, error = consume_one_time_login_token(db, raw_token=raw, purpose=PURPOSE_SSO)
+    assert error is None
+    assert returned_user.id == user.id
+
+
+def test_login_link_is_not_an_sso_token(db, user_factory):
+    from app.services.auth_links import PURPOSE_SSO
+
+    user = user_factory()
+    url, _ = issue_one_time_login_link(db, user=user, base_url="https://x.com")
+    raw = _raw_token_from_url(url)
+
+    _, _, error = consume_one_time_login_token(db, raw_token=raw, purpose=PURPOSE_SSO)
+    assert error == "invalid"
+
+    _, returned_user, error = consume_one_time_login_token(db, raw_token=raw)
+    assert error is None
+    assert returned_user.id == user.id
+
+
+def test_opening_lab_keeps_issued_login_link(db, user_factory):
+    """Ученик открыл лабораторию — ссылка входа от куратора остаётся живой."""
+    from app.services.auth_links import issue_sso_token
+
+    user = user_factory()
+    url, _ = issue_one_time_login_link(db, user=user, base_url="https://x.com")
+    issue_sso_token(db, user=user, ttl_minutes=2)
+    db.expire_all()
+
+    _, _, error = consume_one_time_login_token(db, raw_token=_raw_token_from_url(url))
+    assert error is None
+
+
+def test_new_login_link_keeps_sso_token(db, user_factory):
+    from app.services.auth_links import PURPOSE_SSO, issue_sso_token
+
+    user = user_factory()
+    raw, _ = issue_sso_token(db, user=user, ttl_minutes=2)
+    issue_one_time_login_link(db, user=user, base_url="https://x.com")
+    db.expire_all()
+
+    _, _, error = consume_one_time_login_token(db, raw_token=raw, purpose=PURPOSE_SSO)
+    assert error is None
+
+
+def test_new_sso_token_revokes_previous_sso_token(db, user_factory):
+    from app.services.auth_links import PURPOSE_SSO, issue_sso_token
+
+    user = user_factory()
+    raw1, _ = issue_sso_token(db, user=user, ttl_minutes=2)
+    issue_sso_token(db, user=user, ttl_minutes=2)
+    db.expire_all()
+
+    _, _, error = consume_one_time_login_token(db, raw_token=raw1, purpose=PURPOSE_SSO)
+    assert error == "revoked"

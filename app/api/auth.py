@@ -31,7 +31,7 @@ from app.models.session import Session
 from app.models.user import User
 from app.models.activity_event import StudentActivityEvent
 from app.services.auth_links import (
-    consume_one_time_login_token, consume_telegram_link_token,
+    PURPOSE_SSO, consume_one_time_login_token, consume_telegram_link_token,
     issue_one_time_login_link, issue_sso_token, issue_telegram_link_token,
     next_manual_vk_id,
 )
@@ -1128,7 +1128,9 @@ def sso_verify(
     _: Annotated[None, Depends(require_lab3d_token)],
 ):
     """Verify a cross-service SSO token. Called server-side by 3D Lab."""
-    login_token, user, error = consume_one_time_login_token(db, raw_token=payload.token)
+    login_token, user, error = consume_one_time_login_token(
+        db, raw_token=payload.token, purpose=PURPOSE_SSO,
+    )
 
     if error:
         return JSONResponse(status_code=400, content={"ok": False, "reason": error})

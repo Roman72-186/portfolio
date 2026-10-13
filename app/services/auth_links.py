@@ -16,6 +16,39 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Токен входа в 3D-лабораторию лежит в той же таблице, что и ссылки входа на
+# сайт, — отличает его только `issued_by`. До 13.10.2026 погашение было одно на
+# оба вида: токен, который лаборатория получает в адресе редиректа, открывал
+# обычную сессию на сайте, а ссылка входа проходила проверку лаборатории
+# (код-ревью 12.10.2026, P1 № 1). Теперь вызывающий называет вид, токен другого
+# вида — «invalid», и выдача нового токена отзывает только токены своего вида.
+SSO_ISSUED_BY = "3dlab-sso"
+PURPOSE_LOGIN = "login"
+PURPOSE_SSO = "sso"
+
+
+def _is_sso(token: LoginToken) -> bool:
+    return token.issued_by == SSO_ISSUED_BY
+
+
+def _revoke_active(db: DBSession, *, user_id: int, sso: bool, now: datetime) -> None:
+    """Отозвать живые токены пользователя того же вида, что выдаётся сейчас."""
+    kind = (
+        LoginToken.issued_by == SSO_ISSUED_BY
+        if sso else LoginToken.issued_by.is_distinct_from(SSO_ISSUED_BY)
+    )
+    db.query(LoginToken).filter(
+        LoginToken.user_id == user_id,
+        LoginToken.used_at.is_(None),
+        LoginToken.revoked_at.is_(None),
+        LoginToken.expires_at > now,
+        kind,
+    ).update(
+        {LoginToken.revoked_at: now},
+        synchronize_session=False,
+    )
+
+
 def _hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
@@ -37,15 +70,7 @@ def issue_one_time_login_link(
     issued_by: str = "system",
 ) -> tuple[str, LoginToken]:
     now = _now()
-    db.query(LoginToken).filter(
-        LoginToken.user_id == user.id,
-        LoginToken.used_at.is_(None),
-        LoginToken.revoked_at.is_(None),
-        LoginToken.expires_at > now,
-    ).update(
-        {LoginToken.revoked_at: now},
-        synchronize_session=False,
-    )
+    _revoke_active(db, user_id=user.id, sso=False, now=now)
 
     raw_token = secrets.token_urlsafe(32)
     login_token = LoginToken(
@@ -71,24 +96,17 @@ def issue_sso_token(
     """Issue a short-lived cross-service SSO token (no login URL built).
 
     Returns (raw_token, LoginToken). The caller builds the redirect URL.
-    Revokes all previous active tokens for this user, same as issue_one_time_login_link.
+    Revokes previous active SSO tokens only: a login link issued by staff
+    must survive the student opening the lab.
     """
     now = _now()
-    db.query(LoginToken).filter(
-        LoginToken.user_id == user.id,
-        LoginToken.used_at.is_(None),
-        LoginToken.revoked_at.is_(None),
-        LoginToken.expires_at > now,
-    ).update(
-        {LoginToken.revoked_at: now},
-        synchronize_session=False,
-    )
+    _revoke_active(db, user_id=user.id, sso=True, now=now)
 
     raw_token = secrets.token_urlsafe(32)
     login_token = LoginToken(
         user_id=user.id,
         token_hash=_hash_token(raw_token),
-        issued_by="3dlab-sso",
+        issued_by=SSO_ISSUED_BY,
         expires_at=now + timedelta(minutes=ttl_minutes),
     )
     db.add(login_token)
@@ -101,10 +119,14 @@ def consume_one_time_login_token(
     db: DBSession,
     *,
     raw_token: str,
+    purpose: str = PURPOSE_LOGIN,
 ) -> tuple[LoginToken | None, User | None, str | None]:
+    """Погасить токен вида `purpose`: `PURPOSE_LOGIN` — ссылка входа на сайт,
+    `PURPOSE_SSO` — вход в 3D-лабораторию. Токен другого вида не гасится и
+    отвечает «invalid», как несуществующий."""
     token_hash = _hash_token(raw_token)
     login_token = db.query(LoginToken).filter(LoginToken.token_hash == token_hash).first()
-    if not login_token:
+    if not login_token or _is_sso(login_token) != (purpose == PURPOSE_SSO):
         return None, None, "invalid"
 
     now = _now()

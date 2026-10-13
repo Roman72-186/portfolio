@@ -12,8 +12,12 @@ IMAGE_EXTENSIONS = {
     ".webp",
     ".heic", ".heif", ".avif",
     ".gif", ".bmp", ".tif", ".tiff",
-    ".svg",
 }
+
+# SVG — картинка, которая исполняет скрипты, а Pillow её не читает: работа
+# в SVG вышла бы битой, а сам файл — скриптом в публичном бакете
+# (код-ревью 12.10.2026, P1 № 2). Не принимаем ни по типу, ни по расширению.
+_SCRIPTABLE_IMAGE_TYPES = ("image/svg+xml",)
 
 
 class ReadableUpload(Protocol):
@@ -28,6 +32,8 @@ def is_allowed_image(content_type: str | None, filename: str | None) -> bool:
     ct = (content_type or "").lower()
     ext = ("." + filename.rsplit(".", 1)[-1].lower()) if filename and "." in filename else ""
 
+    if ct.startswith(_SCRIPTABLE_IMAGE_TYPES) or ext == ".svg":
+        return False
     if ct.startswith("image/"):
         return True
     if ct.startswith(("video/", "audio/", "text/", "application/pdf", "application/zip")):

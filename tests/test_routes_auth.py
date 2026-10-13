@@ -96,6 +96,34 @@ def test_auth_link_valid_token_creates_session_and_redirects(client, db, user_fa
     assert "session_id" in resp.cookies
 
 
+def test_auth_link_rejects_3dlab_sso_token(client, db, user_factory):
+    """Токен лаборатории уходит к ней в адресе редиректа — сессию на сайте он
+    не открывает (код-ревью 12.10.2026, P1 № 1)."""
+    user = user_factory()
+    raw_token, _ = issue_sso_token(db, user=user, ttl_minutes=2)
+
+    resp = client.get(f"/auth/link?token={raw_token}", follow_redirects=False)
+
+    assert resp.status_code == 200
+    assert "недействительна" in resp.text
+    assert "session_id" not in resp.cookies
+
+
+def test_sso_verify_rejects_login_link(client, db, user_factory):
+    user = user_factory()
+    url, _ = issue_one_time_login_link(db, user=user, base_url="https://testserver")
+    token = url.split("token=")[-1]
+
+    with patch.object(_app_settings, "lab3d_internal_token", _LAB_TOKEN):
+        resp = client.post(
+            "/auth/internal/sso/verify",
+            json={"token": token},
+            headers={"X-Internal-Token": _LAB_TOKEN},
+        )
+    assert resp.status_code == 400
+    assert resp.json()["reason"] == "invalid"
+
+
 def test_auth_link_expired_token_shows_error(client, db, user_factory):
     user = user_factory()
     url, issued_token = issue_one_time_login_link(db, user=user, base_url="https://testserver")
