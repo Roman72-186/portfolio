@@ -982,6 +982,32 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         )
         return WebhookResult(200, "duplicate payment", notes)
 
+    # Платёж снят сотрудником — возвратом или отменой ручной отметки. Зачислить
+    # его заново значило бы вернуть ученику оплаченный месяц и «Оплата принята»
+    # за деньги, которых у школы нет (код-ревью 12.10.2026, P2 № 5: Продамус
+    # повторяет уведомление, если не дождался ответа). Стоит до сверки суммы:
+    # та переписала бы статус возврата на `sum_mismatch`. Отменённая *ссылка*
+    # Продамуса (`cancelled` + `prodamus`) сюда не попадает — её оплата законна.
+    if payment.status == STATUS_REFUNDED or (
+        payment.status == STATUS_CANCELLED and payment.source == SOURCE_MANUAL
+    ):
+        user = db.get(User, payment.user_id)
+        what = "возвращён" if payment.status == STATUS_REFUNDED else "отменён вручную"
+        repeat = bool(prodamus_order_id) and payment.prodamus_order_id == prodamus_order_id
+        logger.warning("Prodamus: оплата по снятому платежу #%s (%s), заказ %s",
+                       payment.id, payment.status, prodamus_order_id)
+        notes = _notify_staff(
+            db, "Оплата по снятому платежу",
+            f"{_who(user) if user else payment.user_id}: Продамус прислал оплату "
+            f"{data.get('sum')} ₽ за {period_label(payment.period)} "
+            f"(№ {prodamus_order_id or '—'}), а платёж #{payment.id} уже {what}. "
+            "Не зачислено. "
+            + ("Похоже на повтор прежнего уведомления – проверьте в кабинете Продамуса, "
+               "что возврат прошёл." if repeat else
+               "Если деньги пришли заново – решите вручную: зачесть или вернуть."),
+        )
+        return WebhookResult(200, "payment withdrawn", notes)
+
     if paid_sum is None or paid_sum != payment.amount_kop:
         payment.status = STATUS_SUM_MISMATCH
         payment.paid_sum_kop = paid_sum

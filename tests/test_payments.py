@@ -20,6 +20,7 @@ from app.models.payment import (
     STATUS_CANCELLED,
     STATUS_PAID,
     STATUS_PENDING,
+    STATUS_REFUNDED,
     STATUS_SUM_MISMATCH,
     Payment,
     PaymentPrice,
@@ -454,6 +455,50 @@ def test_webhook_on_cancelled_link_still_counts(db, client, payer, prodamus, no_
     db.refresh(payment)
     assert payment.status == STATUS_PAID
     assert "отменённая" in (payment.note or "")
+
+
+def test_webhook_repeat_after_refund_is_not_credited(db, client, payer, user_factory, prodamus, no_delivery, monkeypatch):
+    """Код-ревью 12.10.2026, P2 № 5: Продамус повторяет уведомление, если не
+    дождался ответа. После возврата тот же `success` снова оплачивал месяц,
+    продлевал срок и слал ученику «Оплата принята»."""
+    care = user_factory(vk_id=200_278, name="Служба заботы")
+    monkeypatch.setattr(ps, "PAYMENT_NOTIFY_RECIPIENT_IDS", frozenset({care.id}))
+    payment = _pending(db, payer)
+    assert _post_webhook(client, _fields(payment.id)).status_code == 200
+    db.refresh(payment)
+    ps.revert_paid(db, payment, refund=True, performed_by_id=care.id, now=_msk(2026, 10, 13))
+    db.commit()
+    db.refresh(payer)
+    paid_until = payer.paid_until
+    thanks = db.query(Notification).filter(Notification.user_id == payer.id).count()
+
+    for total in ("13255.00", "100.00"):  # и повтор, и чужая сумма статус возврата не трогают
+        resp = _post_webhook(client, _fields(payment.id, total=total))
+        assert resp.status_code == 200
+        db.refresh(payment)
+        db.refresh(payer)
+        assert payment.status == STATUS_REFUNDED
+        assert payer.paid_until == paid_until
+    assert db.query(Notification).filter(Notification.user_id == payer.id).count() == thanks
+    assert db.query(AuditLog).filter(AuditLog.action == "payment_paid").count() == 1
+    staff = [n.text for n in db.query(Notification).filter(
+        Notification.user_id == care.id, Notification.title == "Оплата по снятому платежу")]
+    assert len(staff) == 2 and "Не зачислено" in staff[0]
+
+
+def test_webhook_on_cancelled_manual_mark_is_not_credited(db, client, payer, prodamus, no_delivery):
+    """Ручная отметка, снятая сотрудником, ссылки Продамуса не имела — оплата по
+    её номеру не зачисляется, решает человек."""
+    payment = _pending(db, payer)
+    payment.status = STATUS_CANCELLED
+    payment.source = "manual"
+    db.commit()
+    resp = _post_webhook(client, _fields(payment.id))
+    assert resp.status_code == 200
+    db.refresh(payment)
+    db.refresh(payer)
+    assert payment.status == STATUS_CANCELLED
+    assert payer.paid_until is None
 
 
 def test_paid_until_only_grows(db, payer):
