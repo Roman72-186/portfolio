@@ -229,3 +229,11 @@ def _payments_staff(user: dict | None) -> bool:
 
 
 templates.env.globals["payments_staff"] = _payments_staff
+
+
+def _payments_viewer(user: dict | None) -> bool:
+    from app.services.payments import is_payments_viewer
+    return is_payments_viewer(user)
+
+
+templates.env.globals["payments_viewer"] = _payments_viewer

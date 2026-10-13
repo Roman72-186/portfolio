@@ -814,6 +814,9 @@ def test_next_tariff_goes_into_link_and_switches_on_payment(
     staff = next(n.text for n in db.query(Notification).filter(Notification.user_id == care.id)
                  if "оплатил(а)" in (n.text or ""))
     assert "Тариф: Уверенный максимум (сменился с этой оплатой, был Я с вами)" in staff
+    # Прежний тариф — и в самом платеже, для статистики оплат.
+    db.refresh(payment)
+    assert "тариф сменился с этой оплатой, был Я с вами" in payment.note
 
 
 def test_old_link_paid_does_not_switch_tariff(db, client, payer, prodamus, no_delivery):

@@ -8,16 +8,18 @@
 Экран «Оплаты» (план оплаты, шаг 3): кто оплатил за месяц, кто нет.
 Считает `services/payment_board.py`. Своего <style> нет: полоса месяца,
 таблица, метки и форма — классы `program.css`, как у статистики цикла.
-Кнопки — у того, кому открыто действие `people:students`; сервер проверяет
-то же самое и ранг ≥ 4.
+Смотреть и скачивать Excel — `payments_viewer` (суперадмин и ГП). Кнопки —
+у `payments_staff` с действием `people:students`; сервер проверяет то же.
+Статистика оплат — `plans/2026-10-13-payment-stats.md`.
 #}
-{% set can_mark = can(user, "people:students") %}
+{% set can_mark = payments_staff(user) and can(user, "people:students") %}
 <div class="prg-page">
     <div class="prg-head">
         <div>
             <h1>Оплаты</h1>
-            <p>Кто оплатил обучение за месяц. Оплаченным месяц считается и тогда,
-               когда его отметили в карточке ученика или загрузили списком.</p>
+            <p>Кто оплатил обучение за месяц. Суммы считаются по оплатам через Продамус
+               и отмеченным переводам. Месяц, закрытый сроком в карточке или загрузкой
+               списка, идёт отдельно – как «{{ no_payment_text|lower }}».</p>
         </div>
         <a class="btn-outline" href="/cabinet/superadmin/users">К пользователям</a>
     </div>
@@ -27,16 +29,16 @@
         <h2>{{ month_title }}</h2>
         <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ next_month }}" aria-label="Следующий месяц">→</a>
     </div>
-    {% if not is_current %}
     <div class="prg-actions">
-        <a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}">Текущий месяц</a>
+        {% if not is_current %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}">Текущий месяц</a>{% endif %}
+        <a class="btn-outline" href="/cabinet/superadmin/payments/export?month={{ month_value }}">Скачать Excel</a>
     </div>
-    {% endif %}
 
     <section class="prg-items">
         <div class="prg-meta">
-            <span>Оплатили: {{ board.counts.paid }}{% if board.paid_total_kop %} на {{ rub(board.paid_total_kop) }}{% endif %}</span>
-            <span>Просрочено: {{ board.counts.overdue }}</span>
+            <span>Оплатили: {{ board.paid_count }}{% if board.paid_total_kop %} на {{ rub(board.paid_total_kop) }}{% endif %}</span>
+            {% if board.no_payment_count %}<span>{{ no_payment_text }}: {{ board.no_payment_count }}</span>{% endif %}
+            <span>Должники: {{ board.counts.overdue }}{% if board.debt_total_kop %} на {{ rub(board.debt_total_kop) }}{% endif %}</span>
             <span>Окно идёт: {{ board.counts.open }}</span>
             <span>Окно впереди: {{ board.counts.upcoming }}</span>
             <span>Без окна оплаты: {{ board.no_window|length }}</span>
@@ -54,6 +56,7 @@
                         <th>Тариф</th>
                         <th>Окно</th>
                         <th>Сумма</th>
+                        <th>Оплата</th>
                         <th>Статус</th>
                         {% if can_mark %}<th>Действия</th>{% endif %}
                     </tr>
@@ -62,13 +65,31 @@
                     {% for row in board.rows %}
                     {% set label = state_labels[row.state] %}
                     <tr>
-                        <td><a href="/cabinet/students?student={{ row.student.id }}">{{ display_name(row.student) }}</a></td>
-                        <td>{{ tariff_text(row.student.tariff) }}</td>
+                        <td>
+                            <a href="/cabinet/students?student={{ row.student.id }}">{{ display_name(row.student) }}</a>
+                            {% set contacts = contacts_text(row.student) %}
+                            {% if contacts %}<div class="prg-hint">{{ contacts }}</div>{% endif %}
+                        </td>
+                        <td>{{ tariff_text(row.tariff) }}</td>
                         <td>{{ row.window_text }}</td>
                         <td>{{ rub(row.amount_kop) if row.amount_kop else '–' }}</td>
                         <td>
+                            {% if row.payment %}
+                            {{ row.paid_on }}
+                            <div class="prg-hint">{{ row.method }}</div>
+                            {% if row.payment.prodamus_order_id %}<div class="prg-hint">Заказ {{ row.payment.prodamus_order_id }}</div>{% endif %}
+                            {% else %}–{% endif %}
+                        </td>
+                        <td>
+                            {% if row.no_payment %}
+                            {# Срок без строки платежа — денег в системе нет, зелёная метка «Оплачено» здесь врала бы (сентябрь 2026). #}
+                            <span class="prg-badge">Без платежа</span>
+                            <div class="prg-hint">Месяц закрыт сроком из карточки или списка</div>
+                            {% else %}
                             <span class="prg-badge {{ label[1] }}">{{ label[0] }}</span>
-                            <div class="prg-hint">{{ row.detail }}</div>
+                            {% if not row.payment %}<div class="prg-hint">{{ row.detail }}</div>{% endif %}
+                            {% endif %}
+                            {% if row.payment and row.payment.note %}<div class="prg-hint">{{ row.payment.note }}</div>{% endif %}
                             {% for problem in row.problems %}<div class="prg-hint">{{ problem }}</div>{% endfor %}
                         </td>
                         {% if can_mark %}
@@ -96,6 +117,56 @@
         <p class="prg-hint">Ни у одного ученика пока нет окна оплаты. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
         {% endif %}
     </section>
+
+    {% if board.by_tariff %}
+    <section class="prg-items">
+        <h2>По тарифам</h2>
+        <p class="prg-hint">У оплативших – тариф, за который заплатили, даже если оплата его сменила. У остальных – нынешний.</p>
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr><th>Тариф</th><th>Оплатили</th><th>Без платежа</th><th>Должники</th><th>Ждём оплату</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in board.by_tariff %}
+                    <tr>
+                        <td>{{ tariff_text(t.tariff) }}</td>
+                        <td>{{ t.paid_count }}{% if t.paid_kop %} · {{ rub(t.paid_kop) }}{% endif %}</td>
+                        <td>{{ t.no_payment_count }}</td>
+                        <td>{{ t.debt_count }}{% if t.debt_kop %} · {{ rub(t.debt_kop) }}{% endif %}</td>
+                        <td>{{ t.waiting_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if summary %}
+    <section class="prg-items">
+        <h2>По месяцам</h2>
+        <p class="prg-hint">Долг за прошлые месяцы посчитан по сегодняшним ценам и нынешнему списку учеников.</p>
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr><th>Месяц</th><th>Оплатили</th><th>Без платежа</th><th>Должники</th><th>Ждём оплату</th></tr>
+                </thead>
+                <tbody>
+                    {% for m in summary %}
+                    <tr>
+                        <td><a href="/cabinet/superadmin/payments?month={{ m.period.strftime('%Y-%m') }}">{{ period_label(m.period)|capitalize }}</a></td>
+                        <td>{{ m.paid_count }}{% if m.paid_kop %} · {{ rub(m.paid_kop) }}{% endif %}</td>
+                        <td>{{ m.no_payment_count }}</td>
+                        <td>{{ m.debt_count }}{% if m.debt_kop %} · {{ rub(m.debt_kop) }}{% endif %}</td>
+                        <td>{{ m.waiting_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
 
     {% if can_mark %}
     <form class="prg-form" data-role="mark-form" hidden>

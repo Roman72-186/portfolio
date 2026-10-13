@@ -75,6 +75,17 @@ def is_payments_staff(user: dict | None) -> bool:
     return bool(user) and int(user.get("role_rank") or 0) >= STAFF_MIN_RANK
 
 
+# Кому открыт экран «Оплаты» и его Excel только на чтение — статистика оплат.
+# Владелец 13.10.2026: суперадмину и ГП. Отметка, отмена, возврат, карточка
+# и «Оплата списком» остаются за `STAFF_MIN_RANK`.
+VIEW_MIN_RANK = 4
+
+
+def is_payments_viewer(user: dict | None) -> bool:
+    """Видит ли сотрудник статистику оплат (`VIEW_MIN_RANK`)."""
+    return bool(user) and int(user.get("role_rank") or 0) >= VIEW_MIN_RANK
+
+
 # Во сколько по Москве после последнего дня окна закрывается доступ.
 # Служба заботы 10.10.2026: «в 2:00 ночи» — окно 10–15 закрывается 16-го в 2:00.
 CUTOFF_HOUR_MSK = 2
@@ -764,6 +775,11 @@ def record_paid(
         tariff_from = user.tariff or ""
         apply_tariff_change(db, performed_by_id, user, user.pay_next_tariff)
         user.pay_next_tariff = ""
+        # Прежний тариф — в самом платеже: статистика оплат показывает
+        # пометку о смене, журнал хранит её только текстом.
+        payment.note = _append_note(
+            payment.note, f"тариф сменился с этой оплатой, был {_tariff_name(tariff_from) or '—'}",
+        )
         extended += f", тариф {_tariff_name(tariff_from) or '—'} → {_tariff_name(user.tariff)}"
 
     db.add(AuditLog(

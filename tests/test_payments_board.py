@@ -110,8 +110,108 @@ def test_month_paid_in_settings_counts_as_paid(db, prices, make_payer, people):
 
     board = pb.month_board(db, OCT, _msk(2026, 10, 20, 12, 0))
 
-    assert (board.rows[0].state, board.rows[0].detail) == (pb.STATE_PAID, "Отмечено в настройках оплаты")
+    assert (board.rows[0].state, board.rows[0].detail) == (pb.STATE_PAID, "Отмечено без платежа")
     assert board.counts[pb.STATE_PAID] == 1
+    # Денег по такому месяцу нет: в итоги он идёт отдельным счётчиком
+    # (сентябрь 2026 — техническая отметка запуска у всех 91).
+    assert (board.paid_count, board.paid_total_kop, board.no_payment_count) == (0, 0, 1)
+    assert board.rows[0].no_payment
+
+
+# ── Статистика оплат (план 2026-10-13-payment-stats) ─────────────────────────
+
+def _prodamus_paid(db, student, *, tariff="Я С ВАМИ", amount=1325500, period=OCT, order="777", note=None):
+    payment = Payment(
+        user_id=student.id, period=period, amount_kop=amount, paid_sum_kop=amount, tariff=tariff,
+        status=STATUS_PAID, source=SOURCE_PRODAMUS, prodamus_order_id=order,
+        paid_at=_msk(2026, 10, 13, 20, 25), note=note,
+    )
+    db.add(payment)
+    db.commit()
+    return payment
+
+
+def test_paid_row_shows_tariff_of_payment(db, prices, make_payer):
+    """Оплата сменила тариф («Тариф после оплаты»): строка месяца — с тарифом
+    платежа, а не с нынешним тарифом ученика."""
+    student = make_payer(email="anna@example.com", tg_username="@anna")
+    _prodamus_paid(db, student, tariff="УВЕРЕННЫЙ МАКСИМУМ", amount=1875500,
+                   note="тариф сменился с этой оплатой, был Я с вами")
+    student.tariff = "Я САМ"
+    db.commit()
+
+    row = pb.month_board(db, OCT, _msk(2026, 10, 14, 12, 0)).rows[0]
+
+    assert (row.tariff, row.amount_kop) == ("УВЕРЕННЫЙ МАКСИМУМ", 1875500)
+    assert (row.paid_on, row.method) == ("13.10.2026", "Продамус")
+    assert pb.contacts_text(student) == "anna@example.com · @anna"
+
+
+def test_board_totals_by_tariff_and_debt(db, prices, make_payer, people):
+    paid = make_payer("Аникина Ая")
+    _prodamus_paid(db, paid)
+    late = make_payer("Борисова Бэла", window=(1, 5))
+    waiting = make_payer("Волкова Вера", window=(20, 25))
+    marked = make_payer("Глебова Гуля")
+    ps.apply_payment_settings(db, people["chief"].id, marked, window_start=10, window_end=15,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=OCT)
+    other = make_payer("Дёмина Дарья", window=(1, 5), tariff="Я САМ", pay_price_kop=677500)
+    db.commit()
+
+    board = pb.month_board(db, OCT, _msk(2026, 10, 14, 12, 0))
+
+    assert (board.paid_count, board.paid_total_kop, board.no_payment_count) == (1, 1325500, 1)
+    assert (board.counts[pb.STATE_OVERDUE], board.debt_total_kop) == (2, 1325500 + 677500)
+    totals = {t.tariff: t for t in board.by_tariff}
+    assert (totals["Я С ВАМИ"].paid_count, totals["Я С ВАМИ"].paid_kop) == (1, 1325500)
+    assert (totals["Я С ВАМИ"].debt_count, totals["Я С ВАМИ"].no_payment_count) == (1, 1)
+    assert totals["Я С ВАМИ"].waiting_count == 1
+    assert (totals["Я САМ"].debt_count, totals["Я САМ"].debt_kop) == (1, 677500)
+    assert {late.id, other.id} == {r.student.id for r in board.rows if r.state == pb.STATE_OVERDUE}
+    assert waiting.id in {r.student.id for r in board.rows if r.state == pb.STATE_UPCOMING}
+
+
+def test_months_summary_from_first_payment_to_now(db, prices, make_payer, people):
+    """Сводка — от первого месяца с платежом, свежий первым. Сентябрь,
+    закрытый одной отметкой, в неё не попадает."""
+    student = make_payer()
+    ps.apply_payment_settings(db, people["chief"].id, student, window_start=10, window_end=15,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=SEP)
+    db.commit()
+    _prodamus_paid(db, student)
+
+    summary = pb.months_summary(db, _msk(2026, 11, 20, 12, 0))
+
+    assert [m.period for m in summary] == [NOV, OCT]
+    assert (summary[1].paid_count, summary[1].paid_kop) == (1, 1325500)
+    assert (summary[0].debt_count, summary[0].debt_kop) == (1, 1325500)
+
+
+def test_months_summary_without_payments_is_current_month(db, prices, make_payer):
+    make_payer()
+    assert [m.period for m in pb.months_summary(db, _msk(2026, 10, 12, 12, 0))] == [OCT]
+
+
+def test_month_xlsx_has_four_sheets(db, prices, make_payer):
+    import io
+
+    import openpyxl
+
+    student = make_payer("Иванова Анна", email="anna@example.com", tg_username="anna")
+    _prodamus_paid(db, student, order="12345")
+    make_payer("Петрова Поля", window=(1, 5))
+    now = _msk(2026, 10, 14, 12, 0)
+
+    content = pb.build_month_xlsx(pb.month_board(db, OCT, now), pb.months_summary(db, now))
+
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    assert wb.sheetnames == ["Ученики", "По тарифам", "Должники", "По месяцам"]
+    students = [[c.value for c in row] for row in wb["Ученики"].iter_rows(min_row=2)]
+    anna = next(r for r in students if r[0] == "Иванова Анна")
+    assert anna[1:4] == ["anna@example.com", "@anna", pb.tariff_text("Я С ВАМИ")]
+    assert "12345" in anna and 13255 in anna and "13.10.2026" in anna
+    assert [r[0].value for r in wb["Должники"].iter_rows(min_row=2)] == ["Петрова Поля"]
+    assert wb["По месяцам"]["A2"].value == "Октябрь 2026"
 
 
 def test_board_lists_only_accounted_students(db, prices, make_payer, monkeypatch):
@@ -263,6 +363,19 @@ def test_page_shows_month(db, client, session_factory, prices, make_payer, peopl
     assert resp.status_code == 200
     assert "Октябрь 2026" in resp.text and "Иванова Анна" in resp.text
     assert "Отметить оплату" in resp.text
+    assert "По тарифам" in resp.text and "По месяцам" in resp.text
+    assert "/cabinet/superadmin/payments/export?month=2026-10" in resp.text
+
+
+def test_export_route_returns_xlsx(db, client, session_factory, prices, make_payer, people):
+    make_payer("Иванова Анна")
+    client.cookies.set("session_id", session_factory(people["chief"]).id)
+
+    resp = client.get("/cabinet/superadmin/payments/export?month=2026-10")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert "2026-10.xlsx" in resp.headers["content-disposition"]
 
 
 def test_routes_mark_cancel_refund(db, client, session_factory, prices, make_payer, people, no_delivery):
@@ -304,11 +417,13 @@ def test_curator_has_no_access(db, client, session_factory, prices, make_payer, 
     client.cookies.set("session_id", session_factory(people["curator"]).id)
 
     page = client.get("/cabinet/superadmin/payments", follow_redirects=False)
+    export = client.get("/cabinet/superadmin/payments/export", follow_redirects=False)
     mark = client.post("/cabinet/superadmin/payments/mark", headers={"Accept": "application/json"}, data={
         "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
     })
 
     assert page.status_code in (302, 303, 403)
+    assert export.status_code in (302, 303, 403)
     assert mark.status_code == 403
     assert db.query(Payment).count() == 0
 
@@ -324,25 +439,31 @@ def test_mark_refused_for_archived(db, client, session_factory, prices, make_pay
     assert resp.status_code == 409
 
 
-# ── Пока владелец тестирует — только суперадмин (08.10.2026) ────────────────
+# ── ГП: статистика оплат только на чтение (владелец 13.10.2026) ─────────────
 
-def test_head_teacher_sees_nothing_about_payments(db, client, session_factory, prices, make_payer, user_factory):
-    """`payments.STAFF_MIN_RANK = 5`: ГП не видит вкладок, группы в карточке и
-    не проходит ни один адрес оплаты."""
+def test_head_teacher_sees_stats_but_changes_nothing(db, client, session_factory, prices, make_payer, user_factory):
+    """`payments.VIEW_MIN_RANK = 4`: ГП видит экран «Оплаты» и Excel.
+    `STAFF_MIN_RANK = 5`: ни кнопок, ни «Оплаты списком», ни группы в
+    карточке, ни одного адреса, который меняет оплату."""
     head = user_factory(vk_id=990_050, name="ГП", is_admin=True, role_name="админ")
-    student = make_payer()
+    student = make_payer("Иванова Анна")
     client.cookies.set("session_id", session_factory(head).id)
 
     users_page = client.get("/cabinet/superadmin/users")
     assert users_page.status_code == 200
-    assert "/cabinet/superadmin/payments" not in users_page.text
+    assert "/cabinet/superadmin/payments" in users_page.text
     assert "/cabinet/superadmin/payment-import" not in users_page.text
+
+    page = client.get("/cabinet/superadmin/payments?month=2026-10")
+    assert page.status_code == 200 and "Иванова Анна" in page.text
+    assert "Отметить оплату" not in page.text and 'data-role="mark-form"' not in page.text
+    export = client.get("/cabinet/superadmin/payments/export?month=2026-10")
+    assert export.status_code == 200 and export.content[:2] == b"PK"
 
     manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
     assert manage["payment"] is None
 
     json_headers = {"Accept": "application/json"}
-    assert client.get("/cabinet/superadmin/payments", headers=json_headers).status_code == 403
     assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
     assert client.post("/cabinet/superadmin/payments/mark", headers=json_headers, data={
         "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
@@ -352,6 +473,7 @@ def test_head_teacher_sees_nothing_about_payments(db, client, session_factory, p
     }).status_code == 403
     db.refresh(student)
     assert student.paid_until is None
+    assert db.query(Payment).count() == 0
 
 
 def test_superadmin_sees_payment_tabs(db, client, session_factory, people):

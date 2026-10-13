@@ -3,15 +3,17 @@
 Расчёт — `services/payment_board.py`, деньги — `services/payments.py`
 (`mark_paid_manually` → `record_paid`, `revert_paid`). Экран живёт в разделе
 «Люди» (`section_access`, дерево `/cabinet/superadmin/payments`), записи —
-действие `people:students`. Все адреса — `payments.STAFF_MIN_RANK`: по плану
-ГП и суперадмин (ранг ≥ 4), пока владелец тестирует — только суперадмин.
-Куратору и модератору ни экрана, ни кнопок (план, «Ручная отметка оплаты»).
+действие `people:students`. Экран и его Excel (статистика оплат,
+`plans/2026-10-13-payment-stats.md`) — `payments.VIEW_MIN_RANK`, суперадмин и
+ГП; отметка, отмена и возврат — `payments.STAFF_MIN_RANK`, пока только
+суперадмин. Куратору и модератору ни экрана, ни кнопок (план, «Ручная
+отметка оплаты»).
 """
 from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import REPORT_EXCLUDED_USER_IDS
@@ -28,32 +30,38 @@ from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
 
-# Кому открыто — `payments.STAFF_MIN_RANK` (пока только суперадмин).
+# Смотреть — `payments.VIEW_MIN_RANK` (суперадмин и ГП), менять —
+# `payments.STAFF_MIN_RANK` (пока только суперадмин).
+require_payments_viewer = require_role(payments.VIEW_MIN_RANK)
 require_payments_staff = require_role(payments.STAFF_MIN_RANK)
 
+_BADGE_CLASSES = {
+    payment_board.STATE_OVERDUE: "prg-badge--error",
+    payment_board.STATE_PAID: "prg-badge--done",
+}
 STATE_LABELS = {
-    payment_board.STATE_OVERDUE: ("Просрочено", "prg-badge--error"),
-    payment_board.STATE_OPEN: ("Окно идёт", ""),
-    payment_board.STATE_UPCOMING: ("Окно впереди", ""),
-    payment_board.STATE_PAID: ("Оплачено", "prg-badge--done"),
+    state: (label, _BADGE_CLASSES.get(state, ""))
+    for state, label in payment_board.STATE_LABELS.items()
 }
 
 
 @router.get("/payments", response_class=HTMLResponse)
 def payments_board_page(
     request: Request,
-    user: Annotated[dict, Depends(require_payments_staff)],
+    user: Annotated[dict, Depends(require_payments_viewer)],
     db: Annotated[DBSession, Depends(get_db)],
     month: str = Query(""),
 ):
     now = datetime.now(timezone.utc)
     period = payment_board.parse_month(month, now)
     board = payment_board.month_board(db, period, now)
+    summary = payment_board.months_summary(db, now)
     current = payment_board.parse_month("", now)
     return templates.TemplateResponse(request, "superadmin_payments.html", {
         "request": request,
         "user": user,
         "board": board,
+        "summary": summary,
         "month_title": payments.period_label(period).capitalize(),
         "month_value": period.strftime("%Y-%m"),
         "prev_month": payments.add_months(period, -1).strftime("%Y-%m"),
@@ -66,7 +74,32 @@ def payments_board_page(
         "rub_input": payments._rub_input,
         "display_name": payment_board.display_name,
         "tariff_text": payment_board.tariff_text,
+        "contacts_text": payment_board.contacts_text,
+        "period_label": payments.period_label,
+        "no_payment_text": payment_board.NO_PAYMENT_TEXT,
     })
+
+
+@router.get("/payments/export")
+def payments_export(
+    user: Annotated[dict, Depends(require_payments_viewer)],
+    db: Annotated[DBSession, Depends(get_db)],
+    month: str = Query(""),
+):
+    """Excel экрана «Оплаты» за месяц: ученики, по тарифам, должники, по месяцам."""
+    from urllib.parse import quote
+
+    now = datetime.now(timezone.utc)
+    period = payment_board.parse_month(month, now)
+    content = payment_board.build_month_xlsx(
+        payment_board.month_board(db, period, now), payment_board.months_summary(db, now),
+    )
+    fname = f"оплаты-{period.strftime('%Y-%m')}.xlsx"
+    return Response(
+        content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
 
 
 def _student(db: DBSession, student_id: int) -> User:
