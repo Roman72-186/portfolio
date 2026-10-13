@@ -1,0 +1,17 @@
+[Unit]
+Description=Apparchi VPN keys (AmneziaWG peers for students)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vpn-keys/env
+ExecStart=/usr/bin/python3 /opt/vpn-keys/vpn_keys_server.py
+Restart=on-failure
+RestartSec=5
+StateDirectory=vpn-keys
+RuntimeDirectory=vpn-keys
+SyslogIdentifier=vpn-keys
+
+[Install]
+WantedBy=multi-user.target

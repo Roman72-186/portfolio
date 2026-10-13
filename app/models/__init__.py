@@ -89,3 +89,4 @@ from app.models.tracker import (
     TrackerTaskState,
     TrackerTaskTag,
 )
+from app.models.vpn_key import VpnKey

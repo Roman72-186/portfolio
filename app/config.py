@@ -123,6 +123,15 @@ class Settings(BaseSettings):
     # ходить в Bunny напрямую, как раньше.
     bunny_player_proxy_base: str = ""
 
+    # Свой VPN для учеников (план 2026-10-13-vpn-amnezia): ключ AmneziaWG выдаёт
+    # бот по /vpn, ключи создаёт служба `deploy/vpn_keys/` на сервере в
+    # Нидерландах. Пустой адрес — выдача выключена, бот отвечает «пока
+    # недоступно». Сертификат службы самоподписанный: приложение доверяет только
+    # ему (PEM в base64 одной строкой). Значения вносит владелец в `.env.prod`.
+    vpn_keys_url: str = ""          # https://<IP>:8443
+    vpn_keys_token: str = ""
+    vpn_keys_cert_b64: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

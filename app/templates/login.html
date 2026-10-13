@@ -152,6 +152,10 @@
             Войти через Telegram
         </a>
         <p class="tg-hint">Если Telegram предложит на выбор способ входа – выбирай вариант «по номеру телефона», а не «продолжить через приложение».</p>
+        {# Свой VPN (план 2026-10-13-vpn-amnezia): у части учеников провайдер не пускает на oauth.telegram.org. #}
+        <p class="tg-hint">Окно Telegram не открывается? Подключи VPN: ключ пришлёт
+            {% if settings.telegram_bot_username %}<a href="https://t.me/{{ settings.telegram_bot_username }}" target="_blank" rel="noopener noreferrer">наш бот</a>{% else %}наш бот{% endif %},
+            если написать ему /vpn.</p>
         {% endif %}
 
         {% if not telegram_login_enabled %}

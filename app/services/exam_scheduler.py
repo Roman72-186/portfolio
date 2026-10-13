@@ -627,6 +627,25 @@ def _run_broadcast_schedule() -> None:
 
     asyncio.run(run_due_broadcasts())
 
+
+def _run_vpn_reconcile() -> None:
+    """Ключи своего VPN (план 2026-10-13-vpn-amnezia): отозвать у тех, кто
+    потерял право (архив, блокировка, удаление), и привести список пиров на
+    сервере к базе. Логика — `services/vpn_keys.reconcile`; без настроенной
+    службы ничего не делает."""
+    from app.services import vpn_keys
+
+    if not vpn_keys.enabled():
+        return
+    db = SessionLocal()
+    try:
+        asyncio.run(vpn_keys.reconcile(db))
+    except Exception:
+        logger.exception("Ошибка в сверке ключей VPN")
+        db.rollback()
+    finally:
+        db.close()
+
 # Прод поднимает uvicorn с `--workers 4` (`docker-compose.prod-ru.yml`), и
 # каждый воркер проходит lifespan и звал `start_scheduler` — все job шли
 # вчетверо почти одновременно. Идемпотентность через флаг в базе такой гонки
@@ -746,12 +765,22 @@ def start_scheduler() -> None:
         max_instances=1,
         misfire_grace_time=120,
     )
+    _scheduler.add_job(
+        _run_vpn_reconcile,
+        trigger="interval",
+        minutes=15,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=3),
+        id="vpn_reconcile",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=600,
+    )
     _scheduler.start()
     logger.info(
         "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
         "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC, "
-        "student_reminders=30min, broadcast_schedule=1min)"
+        "student_reminders=30min, broadcast_schedule=1min, vpn_reconcile=15min)"
     )
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -47,6 +48,7 @@ from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import broadcast_delivery
 from app.services import telegram as telegram_service
+from app.services import vpn_keys as vpn_keys_service
 from app.services.user_management import open_program_from_now, restore_deleted_user
 
 logger = logging.getLogger(__name__)
@@ -1004,10 +1006,60 @@ async def _handle_telegram_new_start(
     await _confirm_telegram_connection(chat_id)
 
 
+_VPN_SUPPORT_BUTTON = {"inline_keyboard": [[{"text": "Написать в поддержку", "url": _SUPPORT_URL}]]}
+
+
+def _vpn_key_message(key: str) -> str:
+    return (
+        "Твой ключ VPN – нажми на него, и он скопируется:\n\n"
+        f"<code>{html.escape(key)}</code>\n\n"
+        "Куда вставить:\n"
+        "• Android и компьютер – приложение AmneziaVPN из Google Play или с amnezia.org\n"
+        "• iPhone – DefaultVPN из App Store\n\n"
+        "В приложении нажми «+», потом «Вставить» и «Подключиться».\n\n"
+        "Ключ личный. Если им начнёт пользоваться кто-то ещё, его отключат."
+    )
+
+
+async def _handle_vpn_request(db: DBSession, *, chat_id: int) -> None:
+    """/vpn — ключ своего VPN (план 2026-10-13-vpn-amnezia). Только тому, чей
+    Telegram уже привязан к кабинету: новичку без привязки поддержка выдаёт
+    ссылку «привязать Telegram» (`superadmin_user_issue_telegram_link`),
+    после неё бот его знает. Чужим людям бесплатный VPN бот не раздаёт."""
+    user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    if user is None:
+        await telegram_service.send_message(
+            chat_id,
+            "Этот Telegram пока не привязан к кабинету, поэтому ключ выдать не могу. "
+            "Напиши в поддержку – пришлём ссылку для привязки, и после неё ключ будет здесь.",
+            reply_markup=_VPN_SUPPORT_BUTTON,
+        )
+        return
+    if not vpn_keys_service.is_eligible(user):
+        await telegram_service.send_message(chat_id, "Твой доступ отключён. Обратись к администратору.")
+        return
+    try:
+        key = await vpn_keys_service.get_or_issue(db, user)
+    except vpn_keys_service.VpnKeysUnavailable as exc:
+        logger.warning("vpn: ключ для user_id=%s не выдан: %s", user.id, exc)
+        await telegram_service.send_message(
+            chat_id,
+            "Сейчас не получается выдать ключ. Попробуй через несколько минут, "
+            "а если не выйдет – напиши в поддержку.",
+            reply_markup=_VPN_SUPPORT_BUTTON,
+        )
+        return
+    await telegram_service.send_message(chat_id, _vpn_key_message(key))
+
+
 async def _handle_telegram_message(db: DBSession, message: _TgMessage) -> None:
     text = (message.text or "").strip()
     command, _sep, payload = text.partition(" ")
-    if command.split("@")[0] != "/start":
+    command = command.split("@")[0]
+    if command == "/vpn":
+        await _handle_vpn_request(db, chat_id=message.chat.id)
+        return
+    if command != "/start":
         return
 
     chat_id = message.chat.id
