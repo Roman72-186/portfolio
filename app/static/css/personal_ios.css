@@ -331,6 +331,12 @@
     color: var(--warning-text);
     margin: 0 0 16px;
 }
+/* Окно «Открываем оплату» (владелец 13.10.2026): `.gate-modal` + `.spinner`
+   из base.css, здесь только крупный значок на светлой карточке. */
+.prs-pay-spinner {
+    width: 36px; height: 36px; margin: 4px auto 14px; display: block;
+    border-width: 3px; border-color: var(--line); border-top-color: var(--blue-fill);
+}
 /* Сумма и срок оплаты — крупнее, срок жирным (владелец 13.10.2026). */
 .ios-personal .prs-access-closed .prs-pay-due {
     font-size: 17px;

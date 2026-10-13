@@ -7,7 +7,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=2">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=22">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=23">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -229,8 +229,30 @@
 {% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/hint.js?v=1"></script>
 {% if payment and payment.has_price %}
+{# Пока грузится страница Продамуса (6–9 с после смены адреса 13.10.2026),
+   ученик видит окно, а не застывшую кнопку — владелец 13.10.2026. #}
+<div class="gate-modal" id="payOpeningModal" role="dialog" aria-modal="true" aria-labelledby="payOpeningTitle" aria-hidden="true">
+    <div class="card status-card gate-modal-card" aria-live="polite">
+        <span class="spinner prs-pay-spinner" aria-hidden="true"></span>
+        <div class="card-title" id="payOpeningTitle">Открываем оплату</div>
+        <p class="card-desc">Страница Продамуса загружается до 10 секунд. Не закрывай окно – она откроется сама.</p>
+    </div>
+</div>
 <script>
 (function () {
+    var modal = document.getElementById('payOpeningModal');
+    function showOpening(on) {
+        if (!modal) return;
+        modal.classList.toggle('open', on);
+        modal.setAttribute('aria-hidden', on ? 'false' : 'true');
+    }
+    // Вернулся кнопкой «Назад» со страницы Продамуса — браузер достаёт
+    // страницу из кэша вместе с открытым окном и неактивной кнопкой.
+    window.addEventListener('pageshow', function (event) {
+        if (!event.persisted) return;
+        showOpening(false);
+        document.querySelectorAll('[data-pay-button]').forEach(function (b) { b.disabled = false; });
+    });
     // «Оплатить»: сервер создаёт ссылку Продамуса на должный месяц
     // (`POST /cabinet/personal/pay`), страница уходит на неё. Ключ CSRF —
     // свежий через csrfFetch: вкладка на телефоне живёт сутками.
@@ -238,6 +260,7 @@
         button.addEventListener('click', function () {
             var errorBox = document.querySelector('[data-pay-error]');
             button.disabled = true;
+            showOpening(true);
             window.csrfFetch('/cabinet/personal/pay', {method: 'POST'})
                 .then(function (resp) {
                     return resp.json().catch(function () { return {}; }).then(function (body) {
@@ -252,6 +275,7 @@
                     throw new Error(result.body.error || result.body.detail || 'Не получилось открыть оплату. Обнови страницу и попробуй ещё раз.');
                 })
                 .catch(function (err) {
+                    showOpening(false);
                     button.disabled = false;
                     if (errorBox) {
                         errorBox.textContent = err.message || 'Нет связи. Попробуй ещё раз.';
