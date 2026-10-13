@@ -284,7 +284,7 @@
     {# Код колокольчика — в `/static/js/notif-bell.js` (с 01.10.2026, аудит АОП ученика,
        п. 4.1): он на каждой странице, встроенным качался заново при каждом заходе.
        Правишь файл — поднимай `?v=` здесь. #}
-    <script src="/static/js/notif-bell.js?v=1" data-csrf-token="{{ csrf_token(request) }}"></script>
+    <script src="/static/js/notif-bell.js?v=2" data-csrf-token="{{ csrf_token(request) }}"></script>
     {% endif %}
 
     {# Меню — по родной роли (`nav_rank`): в разделе, открытом сверх роли,

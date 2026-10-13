@@ -1093,7 +1093,7 @@ def _enable_telegram_login(monkeypatch):
     monkeypatch.setattr(settings, "telegram_login_client_secret", "secret")
 
 
-def _mock_telegram_callback(monkeypatch, *, chat_id: int, extra: dict, claims: dict | None = None):
+def _mock_telegram_callback(client, monkeypatch, *, chat_id: int, extra: dict, claims: dict | None = None):
     """Мокает обмен кода/проверку id_token и подсовывает PKCE из Redis с
     заданным `extra` (purpose + guest_token)."""
     import app.api.auth as auth_module
@@ -1114,6 +1114,9 @@ def _mock_telegram_callback(monkeypatch, *, chat_id: int, extra: dict, claims: d
     } if state == "redis-state" else None)
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
+    # Браузер, начавший вход, несёт подписанную куку с тем же state — без неё
+    # колбэк отказывает (код-ревью 12.10.2026, P3: вход не привязан к браузеру).
+    client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "cookie-verifier", "st": "redis-state"}))
     return auth_module
 
 
@@ -1186,7 +1189,7 @@ def test_guest_telegram_callback_creates_participant_without_user(
     import app.api.auth as auth_module
     config = guest_config_factory()
     _mock_telegram_callback(
-        monkeypatch,
+        client, monkeypatch,
         chat_id=880_001,
         extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
     )
@@ -1223,7 +1226,7 @@ def test_guest_telegram_callback_skips_channel_membership_check(
     import app.api.auth as auth_module
     config = guest_config_factory()
     _mock_telegram_callback(
-        monkeypatch,
+        client, monkeypatch,
         chat_id=880_002,
         extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
     )
@@ -1253,13 +1256,14 @@ def test_guest_telegram_callback_returns_same_participant(
     import app.api.auth as auth_module
     config = guest_config_factory()
     _mock_telegram_callback(
-        monkeypatch,
+        client, monkeypatch,
         chat_id=880_003,
         extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
     )
 
     for _ in range(2):
         client.cookies.clear()
+        client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "cookie-verifier", "st": "redis-state"}))
         resp = client.get(
             "/auth/telegram-login/callback?code=good-code&state=redis-state",
             follow_redirects=False,
@@ -1283,7 +1287,7 @@ def test_guest_telegram_callback_attaches_to_cookie_participant(
     guest_exam_service.issue_ticket(db, participant, "Рисунок")
 
     _mock_telegram_callback(
-        monkeypatch,
+        client, monkeypatch,
         chat_id=880_004,
         extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
     )
@@ -1307,7 +1311,7 @@ def test_guest_telegram_callback_survives_redis_miss_via_cookie(
     должно пережить его, иначе гость уедет в ветку ученика."""
     import app.api.auth as auth_module
     config = guest_config_factory()
-    _mock_telegram_callback(monkeypatch, chat_id=880_005, extra={})
+    _mock_telegram_callback(client, monkeypatch, chat_id=880_005, extra={})
     monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda _state: None)
 
     signed = auth_module._signer.dumps({
@@ -1365,11 +1369,12 @@ def test_guest_telegram_callback_scopes_participant_per_config(
 
     for config in (first, second):
         _mock_telegram_callback(
-            monkeypatch,
+            client, monkeypatch,
             chat_id=880_006,
             extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
         )
         client.cookies.clear()
+        client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "cookie-verifier", "st": "redis-state"}))
         resp = client.get(
             "/auth/telegram-login/callback?code=good-code&state=redis-state",
             follow_redirects=False,

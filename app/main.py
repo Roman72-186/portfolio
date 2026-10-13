@@ -342,7 +342,8 @@ async def force_mock_exam_session_refresh(request: Request, call_next):
             .filter(DbSession.id == session_id, DbSession.is_active == True)  # noqa: E712
             .first()
         )
-        if session is None:
+        # Вход «глазами» не продлевается: его срок — предел (`Session.slides`).
+        if session is None or not session.slides:
             return response
         now = datetime.now(timezone.utc)
         expires_at = session.expires_at

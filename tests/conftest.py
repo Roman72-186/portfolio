@@ -19,6 +19,11 @@ sys.path.insert(0, _BASE)
 
 # ─── Set DATABASE_URL before any app imports so pydantic-settings picks it up.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Redis в тестах нет. Лимитер (`app/limiter.py`) держит счётчики в Redis по
+# `REDIS_URL` — здесь память процесса, иначе каждый тест ждал бы отказа
+# соединения. Кэш (`app/cache.py`) на такой адрес отвечает «Redis недоступен»
+# и работает без него, как и раньше без локального Redis.
+os.environ["REDIS_URL"] = "memory://"
 
 import pytest                                         # noqa: E402
 from fastapi.testclient import TestClient             # noqa: E402

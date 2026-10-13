@@ -9,6 +9,8 @@
   админа на /cabinet/admin-panel.
 - Нельзя имперсонировать роль ≥ собственной.
 """
+from datetime import datetime, timedelta, timezone
+
 from itsdangerous import URLSafeTimedSerializer
 
 
@@ -293,3 +295,72 @@ def test_student_card_sends_return_address():
 
     assert "[name=\"return_to\"]').value = location.pathname + '?student=' + _currentStudentId" in body
     assert '<input type="hidden" name="return_to" value="">' in template
+
+
+def _expires(db, session_id):
+    from app.models.session import Session
+    sess = db.query(Session).filter(Session.id == session_id).one()
+    db.refresh(sess)
+    value = sess.expires_at
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def test_impersonation_session_is_not_extended(client, db, session_factory, user_factory):
+    """Код-ревью 12.10.2026, P2 № 3: скользящее продление считало половину от
+    суточного срока, и первый же запрос растягивал 30 минут «глазами» до суток.
+    Ни страница кабинета, ни `GET /csrf` срок не двигают и куку не переставляют."""
+    sa = user_factory(vk_id=900_200, name="SA Ttl", role_name="суперадмин")
+    student = user_factory(vk_id=900_201, name="Student Ttl", role_name="ученик")
+    sa_sess = session_factory(sa)
+    client.cookies.set("session_id", sa_sess.id)
+    started = datetime.now(timezone.utc)
+    r = client.post(
+        f"/cabinet/superadmin/impersonate/{student.id}",
+        data={"csrf_token": _csrf_for(client, sa_sess.id)},
+        follow_redirects=False,
+    )
+    imp_id = r.cookies["session_id"]
+    deadline = _expires(db, imp_id)
+    assert deadline <= started + timedelta(minutes=31)
+
+    client.cookies.clear()
+    client.cookies.set("session_id", imp_id)
+    for path in ("/csrf", "/cabinet/personal"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code < 400, (path, resp.status_code)
+        assert "session_id" not in resp.cookies, path
+        assert _expires(db, imp_id) == deadline, path
+
+
+def test_impersonation_session_ends_after_its_deadline(client, db, session_factory, user_factory):
+    from app.models.session import Session
+    sa = user_factory(vk_id=900_210, name="SA End", role_name="суперадмин")
+    student = user_factory(vk_id=900_211, name="Student End", role_name="ученик")
+    sa_sess = session_factory(sa)
+    client.cookies.set("session_id", sa_sess.id)
+    r = client.post(
+        f"/cabinet/superadmin/impersonate/{student.id}",
+        data={"csrf_token": _csrf_for(client, sa_sess.id)},
+        follow_redirects=False,
+    )
+    imp_id = r.cookies["session_id"]
+    # 31 минута спустя — срок ушёл, и тот же запрос получает 401.
+    db.query(Session).filter(Session.id == imp_id).update(
+        {Session.expires_at: datetime.now(timezone.utc) - timedelta(minutes=1)}
+    )
+    db.commit()
+    client.cookies.clear()
+    client.cookies.set("session_id", imp_id)
+    resp = client.get("/cabinet/personal", headers={"accept": "application/json"}, follow_redirects=False)
+    assert resp.status_code == 401
+
+
+def test_ordinary_session_still_slides(client, db, session_factory, user_factory):
+    student = user_factory(vk_id=900_220, name="Student Slide", role_name="ученик")
+    sess = session_factory(student, hours=1)
+    before = _expires(db, sess.id)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/csrf")
+    assert resp.status_code == 200
+    assert resp.cookies.get("session_id") == sess.id
+    assert _expires(db, sess.id) > before + timedelta(hours=1)

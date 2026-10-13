@@ -20,10 +20,12 @@
         if (!bells.length || !pop || !body) return;
         var CSRF = csrfToken;
 
+        // textContent → innerHTML кавычек не экранирует, а результат идёт и в
+        // `href="…"` (код-ревью 12.10.2026, P3): кавычки — сами.
         function esc(s){
             var d = document.createElement('div');
             d.textContent = (s == null ? '' : String(s));
-            return d.innerHTML;
+            return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
         function clearBadge(){
             badges.forEach(function(badge){ badge.hidden = true; badge.textContent = '0'; });

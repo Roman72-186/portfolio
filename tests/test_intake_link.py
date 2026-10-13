@@ -35,7 +35,7 @@ def _make_link(db, *, is_active: bool, access_until=DEADLINE) -> IntakeLink:
     return link
 
 
-def _mock_callback(monkeypatch, *, chat_id: int, intake_slug: str | None, state: str = "redis-state"):
+def _mock_callback(client, monkeypatch, *, chat_id: int, intake_slug: str | None, state: str = "redis-state"):
     """Мокает redis PKCE + обмен кода + членство — общий хвост для callback-тестов."""
     extra = {"purpose": auth_module.TG_PURPOSE_LOGIN}
     if intake_slug:
@@ -56,6 +56,9 @@ def _mock_callback(monkeypatch, *, chat_id: int, intake_slug: str | None, state:
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
     monkeypatch.setattr(auth_module.telegram_service, "check_channel_membership", fake_check_membership)
+    # Браузер, начавший вход, несёт подписанную куку с тем же state — без неё
+    # колбэк отказывает (код-ревью 12.10.2026, P3: вход не привязан к браузеру).
+    client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "cookie-verifier", "st": state}))
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +158,7 @@ def test_proba_live_session_redirects_to_cabinet(auth_client):
 
 def test_new_user_via_intake_gets_deadline(client, db, monkeypatch):
     _make_link(db, is_active=True)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     resp = client.get(
         "/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False,
@@ -172,7 +175,7 @@ def test_new_user_via_intake_gets_no_tariff(client, db, monkeypatch):
     при создании получает «УВЕРЕННЫЙ» по умолчанию, и вход по ссылке его
     снимает — иначе пробнику открылись бы материалы старшего тарифа."""
     _make_link(db, is_active=True)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -186,7 +189,7 @@ def test_existing_student_via_intake_keeps_tariff(client, db, monkeypatch, user_
     user = user_factory(vk_id=-904, tariff="УВЕРЕННЫЙ")
     user.telegram_chat_id = CHAT_ID
     db.commit()
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -198,7 +201,7 @@ def test_new_user_without_deadline_keeps_default_tariff(client, db, monkeypatch)
     """Ссылка без даты никого не помечает: ни срока, ни снятого тарифа —
     иначе человек остался бы без тарифа и без метки, по которой его ищут."""
     _make_link(db, is_active=False, access_until=None)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -208,7 +211,7 @@ def test_new_user_without_deadline_keeps_default_tariff(client, db, monkeypatch)
 
 def test_repeat_login_by_intake_link_does_not_move_deadline(client, db, monkeypatch):
     link = _make_link(db, is_active=True)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
     user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
@@ -230,7 +233,7 @@ def test_existing_student_with_empty_deadline_keeps_it_empty(client, db, monkeyp
     user = user_factory(vk_id=-900)
     user.telegram_chat_id = CHAT_ID
     db.commit()
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -243,7 +246,7 @@ def test_staff_with_linked_telegram_gets_no_deadline(client, db, monkeypatch, us
     curator = user_factory(vk_id=-901, role_name="куратор")
     curator.telegram_chat_id = CHAT_ID
     db.commit()
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -253,7 +256,7 @@ def test_staff_with_linked_telegram_gets_no_deadline(client, db, monkeypatch, us
 
 def test_regular_login_without_intake_slug_gets_no_deadline(client, db, monkeypatch):
     _make_link(db, is_active=True)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=None)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=None)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
@@ -264,7 +267,7 @@ def test_regular_login_without_intake_slug_gets_no_deadline(client, db, monkeypa
 
 def test_intake_slug_with_empty_deadline_creates_user_without_crash(client, db, monkeypatch):
     _make_link(db, is_active=False, access_until=None)
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     resp = client.get(
         "/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False,
@@ -286,7 +289,7 @@ def test_reactivated_archived_user_via_intake_gets_no_deadline(client, db, monke
     user.deleted_at = datetime.now(timezone.utc)
     user.is_active = False
     db.commit()
-    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 

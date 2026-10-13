@@ -473,35 +473,41 @@ async def telegram_login_callback(
         logger.warning("Telegram login callback: state missing")
         return fail("Ошибка безопасности. Попробуй снова.")
 
-    code_verifier: str | None = None
-    stored_state: str | None = None
-
+    # Списываем state из Redis сразу: даже отвергнутый ниже, второй раз он не
+    # пригодится никому.
     redis_pkce = pop_telegram_oidc_pkce(state)
-    if redis_pkce:
-        code_verifier = redis_pkce.get("code_verifier")
-        stored_state = state
-        purpose = redis_pkce.get("purpose") or TG_PURPOSE_LOGIN
-        guest_token = redis_pkce.get("guest_token")
-        intake_slug = redis_pkce.get("intake_slug")
-    else:
+    if not redis_pkce:
         logger.warning("Telegram login callback: PKCE missing in Redis for state=%s", state[:12])
-        cookie_pkce, cookie_error = _load_telegram_pkce_cookie(request)
-        if not cookie_pkce:
-            return fail(cookie_error)
-        code_verifier = cookie_pkce["cv"]
-        stored_state = cookie_pkce["st"]
-        purpose = cookie_pkce.get("purpose") or TG_PURPOSE_LOGIN
-        guest_token = cookie_pkce.get("guest_token")
-        intake_slug = cookie_pkce.get("intake_slug")
 
-    if not code_verifier or not stored_state:
-        return fail("Ошибка сессии. Попробуй снова или очисти cookies.")
-
+    # State из адреса сверяется с подписанной кукой этого браузера всегда, а не
+    # только при промахе Redis (код-ревью 12.10.2026, P3). Иначе чужие `code` и
+    # `state` из незавершённого входа атакующего, подсунутые ссылкой, заводили
+    # жертву в его аккаунт (login CSRF): Redis знает state, но не браузер.
+    cookie_pkce, cookie_error = _load_telegram_pkce_cookie(request)
+    if not cookie_pkce:
+        if redis_pkce:
+            logger.warning("Telegram login callback: state есть в Redis, а куки браузера нет")
+        return fail(cookie_error)
+    stored_state = cookie_pkce["st"]
     # Сравнение за постоянное время и по байтам: строкой не-ASCII (state из
     # адреса) compare_digest бросил бы TypeError (код-ревью 28.09.2026, P3).
     if not secrets.compare_digest(stored_state.encode(), state.encode()):
         logger.warning("Telegram login callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
         return fail("Ошибка безопасности. Попробуй снова.")
+
+    if redis_pkce:
+        code_verifier = redis_pkce.get("code_verifier")
+        purpose = redis_pkce.get("purpose") or TG_PURPOSE_LOGIN
+        guest_token = redis_pkce.get("guest_token")
+        intake_slug = redis_pkce.get("intake_slug")
+    else:
+        code_verifier = cookie_pkce["cv"]
+        purpose = cookie_pkce.get("purpose") or TG_PURPOSE_LOGIN
+        guest_token = cookie_pkce.get("guest_token")
+        intake_slug = cookie_pkce.get("intake_slug")
+
+    if not code_verifier:
+        return fail("Ошибка сессии. Попробуй снова или очисти cookies.")
 
     try:
         token_data = await tg_exchange_code(code, code_verifier)
@@ -719,7 +725,13 @@ def auth_handoff(
     выпускаем новый короткоживущий токен, и внешний браузер, открыв эту ссылку,
     оказывается залогинен. Ответ — same-origin JSON; токен покидает устройство
     только через собственный браузерный «прыжок» пользователя.
+
+    Из режима «глазами» — 403 (код-ревью 12.10.2026, P2 № 4): ссылка открыла бы
+    обычную сессию цели — без пометки просмотра, без 30 минут и мимо журнала.
+    Скрипт `base.html` на отказ открывает текущий адрес без токена.
     """
+    if user.get("impersonated_by_id"):
+        return JSONResponse({"ok": False}, status_code=403)
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     if not db_user or not db_user.is_active:
         return JSONResponse({"ok": False}, status_code=403)

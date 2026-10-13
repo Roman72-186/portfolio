@@ -186,8 +186,9 @@ def get_current_user(
     # extend it and refresh the cookie's max-age. Without this, a long-lived
     # but actively-used tab (e.g. the 4h mock exam) can outlive a fixed
     # session_id cookie expiry and the browser drops the cookie mid-session.
+    # Вход «глазами» не продлевается: его срок — предел (`Session.slides`).
     ttl = timedelta(hours=settings.session_ttl_hours)
-    if expires_at - now < ttl / 2:
+    if session.slides and expires_at - now < ttl / 2:
         session.expires_at = now + ttl
         db.commit()
         response.set_cookie(

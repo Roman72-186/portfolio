@@ -8,6 +8,8 @@ cookie fallback), но проверка id_token и обмен кода замо
 """
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+
 import app.api.auth as auth_module
 
 
@@ -16,6 +18,13 @@ def _enable_telegram_login(monkeypatch):
     monkeypatch.setattr(settings, "telegram_login_client_id", "123456")
     monkeypatch.setattr(settings, "telegram_login_client_secret", "secret")
 
+
+
+def _browser_started_login(client, state: str = "redis-state") -> None:
+    """Кука, которую ставит браузеру старт входа (`telegram_oauth_redirect`):
+    колбэк сверяет с ней state всегда, а не только при промахе Redis
+    (код-ревью 12.10.2026, P3)."""
+    client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "cookie-verifier", "st": state}))
 
 def test_telegram_login_disabled_when_not_configured(client, monkeypatch):
     from app.config import settings
@@ -89,6 +98,7 @@ def test_telegram_login_callback_creates_new_user_and_session(client, db, monkey
     monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
         "code_verifier": "redis-verifier",
     } if state == "redis-state" else None)
+    _browser_started_login(client)
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
     monkeypatch.setattr(auth_module.telegram_service, "check_channel_membership", fake_check_membership)
@@ -126,6 +136,7 @@ def test_telegram_login_callback_matches_existing_user_by_chat_id(client, db, us
     monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
         "code_verifier": "redis-verifier",
     } if state == "redis-state" else None)
+    _browser_started_login(client)
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
     monkeypatch.setattr(auth_module.telegram_service, "check_channel_membership", fake_check_membership)
@@ -169,6 +180,7 @@ def test_telegram_login_callback_denied_when_not_member(client, db, monkeypatch)
     monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
         "code_verifier": "redis-verifier",
     } if state == "redis-state" else None)
+    _browser_started_login(client)
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
     monkeypatch.setattr(auth_module.telegram_service, "check_channel_membership", fake_check_membership)
@@ -198,6 +210,7 @@ def test_telegram_login_callback_inconclusive_membership_shows_retry(client, mon
     monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
         "code_verifier": "redis-verifier",
     } if state == "redis-state" else None)
+    _browser_started_login(client)
     monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
     monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
     monkeypatch.setattr(auth_module.telegram_service, "check_channel_membership", fake_check_membership)
@@ -232,3 +245,38 @@ def test_telegram_callback_compares_state_in_constant_time(client, monkeypatch):
     assert resp.status_code == 200
     assert "Ошибка безопасности" in resp.text
     assert spy.call_count == 1
+
+
+def _attacker_state_in_redis(monkeypatch):
+    """State незавершённого входа атакующего лежит в Redis; обмен кода, если до
+    него дойдёт, заведёт в аккаунт атакующего."""
+    exchanged = []
+
+    async def fake_exchange_code(*_a, **_k) -> dict:
+        exchanged.append(True)
+        return {"id_token": "fake.jwt.token"}
+
+    monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
+        "code_verifier": "attacker-verifier",
+    } if state == "attacker-state" else None)
+    monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
+    return exchanged
+
+
+@pytest.mark.parametrize("victim_cookie_state", [None, "victim-own-state"])
+def test_telegram_callback_refuses_state_not_started_in_this_browser(client, monkeypatch, victim_cookie_state):
+    """Код-ревью 12.10.2026, P3 (login CSRF): кука сверялась только при промахе
+    Redis. Чужие `code`+`state`, подсунутые ссылкой, заводили жертву в аккаунт
+    атакующего. Теперь без куки этого же входа — отказ до обмена кода."""
+    exchanged = _attacker_state_in_redis(monkeypatch)
+    if victim_cookie_state:
+        _browser_started_login(client, victim_cookie_state)
+
+    resp = client.get(
+        "/auth/telegram-login/callback?code=attacker-code&state=attacker-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "session_id" not in resp.cookies
+    assert exchanged == []

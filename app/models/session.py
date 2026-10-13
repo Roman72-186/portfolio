@@ -22,3 +22,16 @@ class Session(Base):
     impersonated_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True
     )
+
+    @property
+    def slides(self) -> bool:
+        """Продлевается ли сессия, пока человек работает.
+
+        Вход «глазами» — нет: его 30 минут (`cabinet_superadmin.
+        _IMPERSONATION_TTL_MIN`) — предел, а не срок простоя. До 13.10.2026
+        скользящее продление считало половину от `SESSION_TTL_HOURS`, и первый же
+        запрос растягивал 30 минут до суток (код-ревью 12.10.2026, P2 № 3).
+        Читают оба места продления: `dependencies.get_current_user` и
+        `main.force_mock_exam_session_refresh`.
+        """
+        return self.impersonated_by_id is None

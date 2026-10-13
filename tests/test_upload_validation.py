@@ -86,3 +86,29 @@ def test_no_upload_is_read_without_a_size_limit():
 def test_is_allowed_image_rejects_svg(content_type, filename):
     """SVG исполняет скрипты, а Pillow его не читает (код-ревью 12.10.2026)."""
     assert is_allowed_image(content_type, filename) is False
+
+
+def test_prodamus_webhook_ignores_file_parts():
+    """Вебхук Продамуса читал файловую часть формы целиком без предела и отдавал
+    её в разбор рядом с подписанными полями (код-ревью 12.10.2026). Теперь в
+    разбор идут только подписанные текстовые поля, файл не читается."""
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from app.api import payments as payments_api
+
+    seen = {}
+    mini = FastAPI()
+
+    @mini.post("/hook")
+    async def hook(request: Request):
+        seen.update(await payments_api._signed_fields(request))
+        return {}
+
+    with TestClient(mini) as c:
+        resp = c.post(
+            "/hook",
+            data={"order_num": "ap-1", "sum": "100.00"},
+            files={"products": ("products.json", b'{"x": 1}' * 100_000, "application/json")},
+        )
+    assert resp.status_code == 200
+    assert seen == {"order_num": "ap-1", "sum": "100.00"}

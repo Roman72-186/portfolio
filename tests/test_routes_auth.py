@@ -192,6 +192,30 @@ def test_auth_handoff_issues_working_fresh_login_link(client, db, user_factory):
     assert "/cabinet" in fresh.headers["location"]
 
 
+def test_auth_handoff_refuses_impersonation_session(client, db, user_factory):
+    """Код-ревью 12.10.2026, P2 № 4: из режима «глазами» ссылка входа за цель
+    открыла бы её обычную сессию — без пометки просмотра, без 30 минут, мимо
+    журнала. Отказ, и ни одного токена не выпущено."""
+    from app.models.login_token import LoginToken
+    admin = user_factory(vk_id=930_001, name="GP Handoff", role_name="админ")
+    curator = user_factory(vk_id=930_002, name="Curator Handoff", role_name="куратор")
+    imp = DbSession(
+        user_id=curator.id,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+        is_active=True,
+        impersonated_by_id=admin.id,
+    )
+    db.add(imp)
+    db.commit()
+    client.cookies.set("session_id", imp.id)
+
+    resp = client.get("/auth/handoff", headers={"Accept": "application/json"})
+
+    assert resp.status_code == 403
+    assert resp.json() == {"ok": False}
+    assert db.query(LoginToken).filter(LoginToken.user_id == curator.id).count() == 0
+
+
 # ---------------------------------------------------------------------------
 # POST /logout
 # ---------------------------------------------------------------------------
@@ -486,3 +510,38 @@ def test_telegram_login_keeps_name_but_syncs_username(db, user_factory):
 
     assert (user.first_name, user.last_name, user.name) == ("Анна", "Смирнова", "Анна Смирнова")
     assert user.tg_username == "anya_tg"
+
+
+# ---------------------------------------------------------------------------
+# Лимит попыток входа — общий для всех воркеров (код-ревью 12.10.2026, P2 № 6)
+# ---------------------------------------------------------------------------
+
+def test_rate_limit_counter_lives_in_redis_url():
+    """Счётчик — в Redis приложения, а не в памяти каждого из четырёх воркеров:
+    иначе `10/minute` на входе пропускал до 40 попыток. В тестах `REDIS_URL`
+    — память процесса (`conftest.py`)."""
+    from app.limiter import limiter
+    assert limiter._storage_uri == _app_settings.redis_url
+
+
+def test_rate_limit_survives_redis_outage():
+    """Redis недоступен — вход не падает, лимит держит запасной счётчик в памяти."""
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from slowapi.errors import RateLimitExceeded
+    from slowapi import _rate_limit_exceeded_handler
+    from app.limiter import build_limiter
+
+    dead = build_limiter("redis://127.0.0.1:1/0")
+    mini = FastAPI()
+    mini.state.limiter = dead
+    mini.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    @mini.post("/login")
+    @dead.limit("2/minute")
+    def login(request: Request):
+        return {"ok": True}
+
+    with TestClient(mini) as c:
+        codes = [c.post("/login").status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
