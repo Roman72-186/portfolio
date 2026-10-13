@@ -736,3 +736,91 @@ def test_staff_period_is_month_of_study(payer):
     assert ps._paid_period_text(payer, date(2027, 1, 1)) == "30.01.2027 – 28.02.2027"
     payer.pay_window_start = payer.pay_window_end = None
     assert ps._paid_period_text(payer, date(2026, 10, 1)) == "октябрь 2026"
+
+
+# ── Тариф с ближайшей оплаты (владелец 13.10.2026) ──────────────────────────
+
+def test_next_tariff_goes_into_link_and_switches_on_payment(
+        db, client, payer, user_factory, prodamus, no_delivery, monkeypatch):
+    """Сменил тариф до оплаты — ссылка и чек уже с новым, а тариф на
+    платформе переключается только когда пришла оплата."""
+    care = user_factory(vk_id=200_278, name="Служба заботы")
+    monkeypatch.setattr(ps, "PAYMENT_NOTIFY_RECIPIENT_IDS", frozenset({care.id}))
+    payer.pay_price_kop = 1875500
+    payer.pay_next_tariff = "УВЕРЕННЫЙ МАКСИМУМ"
+    db.commit()
+
+    payment = ps.get_or_create_payment(db, payer, _msk(2026, 10, 12, 10, 0), "https://kodarhitektora.ru")
+    db.commit()
+    fields = dict(parse_qsl(urlsplit(payment.link_url).query, keep_blank_values=True))
+    assert fields["products[0][name]"] == "Годовой онлайн-курс тариф Уверенный максимум"
+    assert payment.tariff == "УВЕРЕННЫЙ МАКСИМУМ"
+    db.refresh(payer)
+    assert payer.tariff == "Я С ВАМИ"  # до оплаты тариф прежний
+
+    resp = _post_webhook(client, _fields(payment.id, total="18755.00"))
+    assert resp.status_code == 200, resp.text
+
+    db.refresh(payer)
+    assert payer.tariff == "УВЕРЕННЫЙ МАКСИМУМ"
+    assert payer.pay_next_tariff == ""
+    assert db.query(AuditLog).filter(AuditLog.action == "tariff_change",
+                                     AuditLog.target_user_id == payer.id).count() == 1
+    staff = next(n.text for n in db.query(Notification).filter(Notification.user_id == care.id)
+                 if "оплатил(а)" in (n.text or ""))
+    assert "Тариф: Уверенный максимум (сменился с этой оплатой, был Я с вами)" in staff
+
+
+def test_old_link_paid_does_not_switch_tariff(db, client, payer, prodamus, no_delivery):
+    """Оплачена ссылка, созданная до смены тарифа, — за старый тариф: тариф
+    не переключаем, следующий остаётся ждать своей оплаты."""
+    payment = _pending(db, payer)  # тариф «Я С ВАМИ»
+    payer.pay_next_tariff = "Я САМ"
+    db.commit()
+
+    _post_webhook(client, _fields(payment.id))
+
+    db.refresh(payer)
+    assert payer.tariff == "Я С ВАМИ"
+    assert payer.pay_next_tariff == "Я САМ"
+
+
+def test_next_tariff_makes_new_link(db, payer, prodamus):
+    """Живая ссылка со старым тарифом не отдаётся повторно — в чеке был бы
+    не тот тариф."""
+    now = _msk(2026, 10, 12, 10, 0)
+    payer.pay_price_kop = 1275500
+    db.commit()
+    first = ps.get_or_create_payment(db, payer, now, "https://kodarhitektora.ru")
+    db.commit()
+    payer.pay_next_tariff = "Я САМ"
+    db.commit()
+
+    second = ps.get_or_create_payment(db, payer, now, "https://kodarhitektora.ru")
+
+    assert second.id != first.id
+    assert second.tariff == "Я САМ"
+    assert first.status == STATUS_CANCELLED
+
+
+def test_card_sets_and_keeps_next_tariff(db, client, session_factory, prices, card):
+    student = card["student"]
+    db.commit()
+    client.cookies.set("session_id", session_factory(card["chief"]).id)
+    url = f"/cabinet/superadmin/users/{student.id}/payment"
+
+    ok = client.post(url, data=_payment_form(pay_next_tariff="Я САМ"))
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["pay_next_tariff"] == "Я САМ"
+    # Форма без поля (старая страница) — тариф после оплаты не трогаем.
+    client.post(url, data=_payment_form())
+    db.refresh(student)
+    assert student.pay_next_tariff == "Я САМ"
+    # Тот же, что сейчас, — значит «не меняется».
+    client.post(url, data=_payment_form(pay_next_tariff="Я С ВАМИ"))
+    db.refresh(student)
+    assert student.pay_next_tariff == ""
+
+    bad = client.post(url, data=_payment_form(pay_next_tariff="ЗОЛОТОЙ"))
+    assert bad.status_code == 400
+    assert "тариф" in bad.json()["detail"].lower()

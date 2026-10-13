@@ -177,6 +177,10 @@ class User(Base):
     pay_window_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pay_cohort: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
     pay_price_kop: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Тариф, на который ученик переходит с ближайшей оплаты (владелец
+    # 13.10.2026): ссылка Продамуса уже с ним, `record_paid` переключает
+    # `tariff` в момент оплаты и очищает поле. Пусто — тариф не меняется.
+    pay_next_tariff: Mapped[str] = mapped_column(String(50), nullable=False, default="", server_default="")
     # До какого момента оплачено: отсечка после окна следующего месяца.
     # Наступила — кабинет закрывается так же, как по `access_until`, но
     # только при включённой блокировке (`settings.payments_block_enabled`).

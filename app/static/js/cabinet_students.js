@@ -1314,6 +1314,12 @@ function buildManagePayment(p, dis, canEdit) {
     html += manageField('Оплачено по',
         '<input type="month" class="profile-edit-input" id="manage-paid-month" value="' + esc(p.paid_month) + '"' + dis + '>',
         false, paidHint);
+    // Владелец 13.10.2026: сменил тариф до оплаты – платит уже по новому,
+    // а тариф переключается в момент оплаты (`payments.record_paid`).
+    html += manageField('Тариф после оплаты',
+        '<select class="profile-edit-select" id="manage-pay-next-tariff"' + dis + '>'
+        + manageOptions([['', 'Не меняется']].concat(p.pay_tariff_choices), p.pay_next_tariff) + '</select>',
+        false, 'Ссылка на оплату – уже с ним, тариф сменится, когда придёт оплата. Цену проверь в «Своей цене»');
     html += '</div>';
     if (canEdit) {
         html += '<div class="profile-edit-actions form-actions"><button type="button" class="btn-blue btn-save" onclick="savePayment()">Сохранить оплату</button></div>';
@@ -1425,7 +1431,8 @@ function savePayment() {
         pay_window_end: document.getElementById('manage-pay-end').value,
         pay_cohort: document.getElementById('manage-pay-cohort').value,
         pay_price: document.getElementById('manage-pay-price').value,
-        paid_month: document.getElementById('manage-paid-month').value
+        paid_month: document.getElementById('manage-paid-month').value,
+        pay_next_tariff: document.getElementById('manage-pay-next-tariff').value
     }, 'Оплата сохранена', 'Не удалось сохранить оплату');
 }
 

@@ -2601,10 +2601,13 @@ def superadmin_user_set_payment(
     pay_cohort: str = Form(""),
     pay_price: str = Form(""),
     paid_month: str = Form(""),
+    pay_next_tariff: str | None = Form(None),
 ):
     """Настройки оплаты из блока «Управление» карточки ученика (JSON): окно,
-    набор, индивидуальная цена рублями, последний оплаченный месяц. Форма
-    шлёт все поля, пустое значит «снять». Право — `people:students` и
+    набор, индивидуальная цена рублями, последний оплаченный месяц, тариф с
+    ближайшей оплаты. Форма шлёт все поля, пустое значит «снять»; тариф после
+    оплаты не прислан вовсе (старая страница в кэше) — не трогаем. Право —
+    `people:students` и
     `payments.is_payments_staff`."""
     if not payments.is_payments_staff(user):
         raise HTTPException(status_code=403, detail="Оплата пока открыта только суперадмину")
@@ -2623,6 +2626,7 @@ def superadmin_user_set_payment(
             cohort=pay_cohort.strip(),
             price_kop=price_kop,
             paid_through=payments.parse_paid_month(paid_month),
+            next_tariff=pay_next_tariff,
         )
     except payments.PaymentSettingsError as exc:
         db.rollback()

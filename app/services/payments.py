@@ -38,7 +38,7 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
-from app.constants import PAYMENT_NOTIFY_RECIPIENT_IDS, TARIFF_DISPLAY
+from app.constants import PAYMENT_NOTIFY_RECIPIENT_IDS, TARIFF_DISPLAY, TARIFFS_CURRENT
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.payment import (
@@ -58,6 +58,7 @@ from app.models.payment import (
 from app.models.user import User
 from app.services.contacts import normalize_tg_username
 from app.services.tz import MSK_TZ, _as_utc, msk_text
+from app.services.user_management import apply_tariff_change
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +363,13 @@ def _tariff_name(tariff: str | None) -> str:
     return TARIFF_DISPLAY.get(tariff, tariff) if tariff else ""
 
 
+def tariff_to_pay(user: User) -> str:
+    """Тариф, за который ученик платит ближайшую оплату: следующий, если его
+    поставили (`User.pay_next_tariff`), иначе текущий. Он и в названии чека,
+    и в строке платежа — по нему `record_paid` переключает тариф."""
+    return user.pay_next_tariff or user.tariff or ""
+
+
 def paid_thanks_text(tariff: str | None) -> str:
     """Благодарность после оплаты: страница Продамуса (`paid_content`) и
     уведомление ученику «Оплата принята». Дословно по владельцу 12.10.2026."""
@@ -457,7 +465,8 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     )
     for row in pending:
         alive = row.link_expires_at is None or _as_utc(row.link_expires_at) > _as_utc(now)
-        if row.amount_kop == amount and alive and row.link_url:
+        # Тариф — в названии чека: поставили следующий тариф — нужна новая ссылка.
+        if row.amount_kop == amount and alive and row.link_url and row.tariff == tariff_to_pay(user):
             return row
         row.status = STATUS_CANCELLED
         row.note = _append_note(row.note, "ссылка заменена новой")
@@ -471,7 +480,7 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
         period=period,
         kind=KIND_MONTH,
         amount_kop=amount,
-        tariff=user.tariff or "",
+        tariff=tariff_to_pay(user),
         status=STATUS_PENDING,
         source=SOURCE_PRODAMUS,
         link_expires_at=expires,
@@ -555,6 +564,7 @@ def apply_payment_settings(
     cohort: str,
     price_kop: int | None,
     paid_through: date | None,
+    next_tariff: str | None = None,
 ) -> bool:
     """Окно оплаты, набор, индивидуальная цена и «оплачено по» ученика.
 
@@ -569,6 +579,10 @@ def apply_payment_settings(
     по неоплате кабинет не закроется. Срок здесь может и уменьшиться — это
     исправление ошибки, в отличие от оплаты.
 
+    `next_tariff` — тариф с ближайшей оплаты (`User.pay_next_tariff`); `None`
+    — не трогать (загрузка списка его не знает), пусто или текущий тариф —
+    снять.
+
     Возвращает True, если что-то изменилось. Не коммитит.
     """
     error = validate_window(window_start, window_end)
@@ -580,18 +594,27 @@ def apply_payment_settings(
         raise PaymentSettingsError("Цена должна быть больше нуля")
     if paid_through is not None and not (window_start and window_end):
         raise PaymentSettingsError("Чтобы указать оплаченный месяц, задайте окно оплаты")
+    if next_tariff is not None:
+        next_tariff = next_tariff.strip()
+        if next_tariff and next_tariff not in TARIFFS_CURRENT:
+            raise PaymentSettingsError("Неверный тариф после оплаты")
+        if next_tariff == (student.tariff or ""):
+            next_tariff = ""
 
     old_window = (student.pay_window_start, student.pay_window_end)
     old_cohort = student.pay_cohort or ""
     old_price = student.pay_price_kop
     old_month = paid_month(student)
     old_until = student.paid_until
+    old_next = student.pay_next_tariff or ""
 
     student.pay_window_start = window_start
     student.pay_window_end = window_end
     student.pay_cohort = cohort
     student.pay_price_kop = price_kop
     student.paid_until = paid_until_after(student, paid_through) if paid_through else None
+    if next_tariff is not None:
+        student.pay_next_tariff = next_tariff
 
     changes = []
     if old_window != (window_start, window_end):
@@ -602,6 +625,8 @@ def apply_payment_settings(
         changes.append(f"цена: {_price_text(old_price)} → {_price_text(price_kop)}")
     if old_month != paid_through or (old_until is None) != (student.paid_until is None):
         changes.append(f"оплачено по: {_month_text(old_month)} → {_month_text(paid_through)}")
+    if next_tariff is not None and old_next != next_tariff:
+        changes.append(f"тариф после оплаты: {_tariff_name(old_next) or '—'} → {_tariff_name(next_tariff) or '—'}")
     if not changes:
         return False
     db.add(AuditLog(
@@ -643,6 +668,8 @@ def manage_view(db: DBSession, student: User) -> dict:
         "pay_price": _rub_input(student.pay_price_kop),
         "pay_reference_text": rub_text(reference) if reference else "",
         "paid_month": month.strftime("%Y-%m") if month else "",
+        "pay_next_tariff": student.pay_next_tariff or "",
+        "pay_tariff_choices": [[t, _tariff_name(t)] for t in TARIFFS_CURRENT],
         "paid_until_text": msk_text(student.paid_until),
         "payments_block_enabled": settings.payments_block_enabled,
     }
@@ -722,6 +749,17 @@ def record_paid(
             user.paid_until = new_until
             extended = f", оплачено до {new_until.astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')}"
 
+    # Смена тарифа с этой оплаты (владелец 13.10.2026): переключаем только
+    # когда оплачен именно новый тариф — не раньше, тариф сразу меняет доступ
+    # к материалам. Возврат платежа тариф назад не возвращает — это решает
+    # сотрудник в карточке.
+    tariff_from = ""
+    if user is not None and user.pay_next_tariff and payment.tariff == user.pay_next_tariff:
+        tariff_from = user.tariff or ""
+        apply_tariff_change(db, performed_by_id, user, user.pay_next_tariff)
+        user.pay_next_tariff = ""
+        extended += f", тариф {_tariff_name(tariff_from) or '—'} → {_tariff_name(user.tariff)}"
+
     db.add(AuditLog(
         action="payment_paid",
         performed_by_id=performed_by_id,
@@ -743,7 +781,8 @@ def record_paid(
         created.append(student_note)
         how = "перевод на счёт, отметил ГП" if source == SOURCE_MANUAL else "Продамус"
         created += _notify_staff(
-            db, f"Оплата: {_who(user)}", _paid_staff_text(user, payment, paid_sum_kop, how),
+            db, f"Оплата: {_who(user)}",
+            _paid_staff_text(user, payment, paid_sum_kop, how, tariff_from),
         )
     return created
 
@@ -758,7 +797,8 @@ def _paid_period_text(user: User, period: date) -> str:
     return f"{start.strftime('%d.%m.%Y')} – {end.strftime('%d.%m.%Y')}"
 
 
-def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str) -> str:
+def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str,
+                     tariff_from: str = "") -> str:
     """Уведомление службе заботы об оплате — владелец 13.10.2026: ФИО, почта,
     сумма, период. Отчества на платформе нет — ФИО это `User.name`."""
     tg = normalize_tg_username(user.tg_username or "")
@@ -768,7 +808,8 @@ def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str) 
         f"ФИО: {user.name or '—'}",
         f"Почта: {user.email or 'не указана'}",
         f"Telegram: @{tg}" if tg else "Telegram: не указан",
-        f"Тариф: {tariff or '—'}",
+        f"Тариф: {tariff or '—'}"
+        + (f" (сменился с этой оплатой, был {_tariff_name(tariff_from) or '—'})" if tariff_from else ""),
         f"Сумма: {rub_text(paid_sum_kop)} ({how})",
         f"Период: {_paid_period_text(user, payment.period)}",
     ]
@@ -815,7 +856,7 @@ def mark_paid_manually(
         period=period,
         kind=KIND_MONTH,
         amount_kop=amount_kop,
-        tariff=student.tariff or "",
+        tariff=tariff_to_pay(student),
         status=STATUS_PENDING,
         source=SOURCE_MANUAL,
     )
