@@ -379,6 +379,36 @@ def soft_delete_user(
     return True
 
 
+def restore_deleted_user(db: DBSession, user: User) -> None:
+    """Удалённый вошёл сам (Telegram или ссылка) — аккаунт возвращается, но
+    блокировка нет (владелец 13.10.2026, вопрос код-ревью 12.10.2026).
+
+    Удаление ставит `is_active=False` поверх прежнего состояния, поэтому
+    прежнее берётся из журнала: блокирует только `toggle_user_active`, и
+    каждое её переключение там есть (`user_block`/`user_unblock`). Последняя
+    запись — блокировка, значит, был заблокирован до удаления и остаётся.
+    Архив держит своё поле: архивный остаётся с `is_active=False`, иначе
+    вышел бы «активный в архиве». До 13.10.2026 вход ставил `is_active=True`
+    всем. Анкета идёт заново, как и раньше. Не коммитит."""
+    if user.deleted_at is None:
+        return
+    last_toggle = (
+        db.query(AuditLog.action)
+        .filter(AuditLog.target_user_id == user.id,
+                AuditLog.action.in_(("user_block", "user_unblock")))
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    blocked = last_toggle is not None and last_toggle[0] == "user_block"
+    user.deleted_at = None
+    user.is_active = not blocked and user.archived_at is None
+    user.profile_completed = False
+    state = "остался заблокированным" if blocked else (
+        "остался в архиве" if user.archived_at is not None else "доступ открыт")
+    _log(db, "user_restore", user.id, user.id,
+         f"Восстановлен входом: {user.name} (id={user.id}), {state}")
+
+
 def _foreign_actor_refs(db: DBSession, target_user_id: int, *,
                          work_ids: list[int], submission_ids: list[int],
                          block_submission_ids: list[int]) -> list[str]:

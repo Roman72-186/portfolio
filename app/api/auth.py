@@ -47,7 +47,7 @@ from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import broadcast_delivery
 from app.services import telegram as telegram_service
-from app.services.user_management import open_program_from_now
+from app.services.user_management import open_program_from_now, restore_deleted_user
 
 logger = logging.getLogger(__name__)
 
@@ -173,10 +173,9 @@ def _upsert_user(
     now = _now()
     user = db.query(User).filter(User.vk_id == vk_id).first()
     if user:
-        if user.deleted_at is not None:
-            user.deleted_at = None
-            user.is_active = True
-            user.profile_completed = False
+        # Удалённый возвращается сам, но блокировка и архив остаются
+        # (владелец 13.10.2026) — правило в `user_management`.
+        restore_deleted_user(db, user)
         if not _keeps_manual_name(user):
             user.name = name
             if first_name is not None:
@@ -860,10 +859,9 @@ def _upsert_telegram_user(
     доступа ставится только новичку (см. telegram_login_callback)."""
     user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
     if user:
-        if user.deleted_at is not None:
-            user.deleted_at = None
-            user.is_active = True
-            user.profile_completed = False
+        # Удалённый возвращается сам, но блокировка и архив остаются
+        # (владелец 13.10.2026) — правило в `user_management`.
+        restore_deleted_user(db, user)
         # Ник синхронизируем всегда, ФИО — только пока своего нет
         # (`_keeps_manual_name`): иначе правка имени в «Личной информации»
         # откатывалась бы при каждом входе через бота.

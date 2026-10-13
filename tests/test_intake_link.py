@@ -371,3 +371,69 @@ def test_toggle_can_now_activate_after_deadline_set(admin_client, db):
 
     link = db.query(IntakeLink).filter(IntakeLink.slug == INTAKE_TRIAL_SLUG).first()
     assert link.is_active is True
+
+
+def _deleted_by_staff(db, user_factory, student, *, block_first=False, unblock_after=False, archive_first=False):
+    """Удаление теми же сервисами, что экран «Людей», — журнал пишется как на проде."""
+    from app.services import user_management as um
+    sa = user_factory(vk_id=-990, name="СА", role_name="суперадмин")
+    if archive_first:
+        um.archive_user(db, student.id, sa.id)
+    if block_first:
+        um.toggle_user_active(db, student.id, sa.id)
+        if unblock_after:
+            um.toggle_user_active(db, student.id, sa.id)
+    assert um.soft_delete_user(db, student.id, sa.id) is True
+    db.refresh(student)
+
+
+def test_deleted_blocked_student_is_restored_but_stays_blocked(client, db, monkeypatch, user_factory):
+    """Владелец 13.10.2026 (вопрос код-ревью 12.10.2026): удалённый ученик
+    возвращается входом через Telegram, но блокировку, поставленную до
+    удаления, вход не снимает — экран «Доступ закрыт», сессии нет."""
+    from app.models.audit_log import AuditLog
+    student = user_factory(vk_id=-904)
+    student.telegram_chat_id = CHAT_ID
+    db.commit()
+    _deleted_by_staff(db, user_factory, student, block_first=True)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=None)
+
+    resp = client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    db.refresh(student)
+    assert student.deleted_at is None
+    assert student.is_active is False
+    assert resp.status_code == 200 and "session_id" not in resp.cookies
+    restore = db.query(AuditLog).filter(AuditLog.action == "user_restore").one()
+    assert "заблокированным" in restore.details
+
+
+def test_deleted_after_unblock_is_restored_open(client, db, monkeypatch, user_factory):
+    student = user_factory(vk_id=-905)
+    student.telegram_chat_id = CHAT_ID
+    db.commit()
+    _deleted_by_staff(db, user_factory, student, block_first=True, unblock_after=True)
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=None)
+
+    resp = client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    db.refresh(student)
+    assert (student.deleted_at, student.is_active) == (None, True)
+    assert resp.status_code == 302
+
+
+def test_deleted_archived_student_stays_in_archive(client, db, monkeypatch, user_factory):
+    """До 13.10.2026 вход ставил `is_active=True` и архивному — «активный в архиве»."""
+    student = user_factory(vk_id=-906)
+    student.telegram_chat_id = CHAT_ID
+    db.commit()
+    _deleted_by_staff(db, user_factory, student, archive_first=True)
+    assert student.archived_at is not None
+    _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=None)
+
+    client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    db.refresh(student)
+    assert student.deleted_at is None
+    assert student.archived_at is not None
+    assert student.is_active is False

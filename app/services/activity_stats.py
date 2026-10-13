@@ -662,6 +662,7 @@ _AUDIT_LABELS = {
     "tariff_change": "Смена тарифа",
     "user_rename": "Смена имени",
     "user_delete": "Удаление",
+    "user_restore": "Восстановление входом",
     "user_block": "Блокировка",
     "user_unblock": "Разблокировка",
     # Действия над учеником — лента в его карточке (`student_activity`).
