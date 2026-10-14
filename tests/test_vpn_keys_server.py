@@ -59,7 +59,7 @@ def _template() -> dict:
     last_config = {
         "H1": "1", "Jc": "4", "Jmax": "50", "Jmin": "10",
         "client_ip": "10.8.1.1", "client_priv_key": "OWNERPRIV=",
-        "client_pub_key": "OWNERPUB=", "psk_key": "OWNERPSK=",
+        "client_pub_key": "OWNERPUB=", "clientId": "OWNERPUB=", "psk_key": "OWNERPSK=",
         "server_pub_key": "SERVERPUB=", "hostName": "203.0.113.10",
         "port": 5858, "mtu": "1376", "config": CLIENT_CONF,
     }
@@ -124,10 +124,12 @@ def test_encode_decode_roundtrip():
 
 def test_build_client_key_swaps_only_client_fields():
     key = vks.build_client_key(_template(), private_key="NEWPRIV=", public_key="NEWPUB=",
-                               psk="NEWPSK=", address="10.8.1.7")
+                               psk="NEWPSK=", address="10.8.1.7", name="Код архитектора")
     data = vks.decode_vpn_key(key)
     cfg = json.loads(data["containers"][0]["awg"]["last_config"])
     assert cfg["client_priv_key"] == "NEWPRIV=" and cfg["client_ip"] == "10.8.1.7"
+    assert cfg["clientId"] == "NEWPUB="
+    assert data["description"] == "Код архитектора"
     assert "PrivateKey = NEWPRIV=" in cfg["config"]
     assert "Address = 10.8.1.7/32" in cfg["config"]
     assert "PresharedKey = NEWPSK=" in cfg["config"]

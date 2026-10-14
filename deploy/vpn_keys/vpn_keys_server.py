@@ -94,7 +94,7 @@ def _replace_conf_line(text: str, key: str, value: str) -> str:
 
 
 def build_client_key(template: dict, *, private_key: str, public_key: str,
-                     psk: str, address: str) -> str:
+                     psk: str, address: str, name: str | None = None) -> str:
     """Ключ нового клиента: эталон, в котором заменены только поля клиента.
 
     `last_config` в ключах Amnezia — JSON, упакованный строкой внутри JSON;
@@ -108,6 +108,8 @@ def build_client_key(template: dict, *, private_key: str, public_key: str,
 
     cfg["client_priv_key"] = private_key
     cfg["client_pub_key"] = public_key
+    if "clientId" in cfg:  # AmneziaWG 3.1: тот же публичный ключ
+        cfg["clientId"] = public_key
     cfg["psk_key"] = psk
     cfg["client_ip"] = address
     text = cfg.get("config")
@@ -119,6 +121,10 @@ def build_client_key(template: dict, *, private_key: str, public_key: str,
     cfg["config"] = text
 
     awg["last_config"] = json.dumps(cfg, ensure_ascii=False) if last_is_str else cfg
+    if name:
+        # Имя сервера в приложении ученика; в эталоне — то, что владелец
+        # назвал у себя (14.10.2026 — «balanc»).
+        data["description"] = name
     return encode_vpn_key(data)
 
 
@@ -202,6 +208,7 @@ class Config:
     port: int
     cert: str | None
     key: str | None
+    name: str | None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -221,6 +228,7 @@ class Config:
             port=int(env.get("VPN_KEYS_PORT", "8443")),
             cert=env.get("VPN_KEYS_CERT") or None,
             key=env.get("VPN_KEYS_KEY") or None,
+            name=env.get("VPN_KEYS_NAME") or None,
         )
 
 
@@ -312,7 +320,7 @@ class PeerStore:
             private, public = self.docker.genkey()
             psk = self.docker.genpsk()
             key = build_client_key(self.template, private_key=private, public_key=public,
-                                   psk=psk, address=address)
+                                   psk=psk, address=address, name=self.cfg.name)
             now = datetime.now(timezone.utc)
 
             self.docker.write(self.cfg.conf_path, conf.rstrip("\n") + "\n" + peer_block(public, psk, address))
