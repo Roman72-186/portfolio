@@ -1,5 +1,5 @@
-"""Свой VPN для учеников: выдача ключа ботом по /vpn и сверка
-(`app/services/vpn_keys.py`, `app/api/auth.py::_handle_vpn_request`).
+"""Свой VPN для учеников: запрос ключа с экрана входа, отправка ботом и сверка
+(`app/services/vpn_keys.py`, `app/api/auth.py::vpn_key_request`).
 
 Служба ключей на VPN-сервере подменена `httpx.MockTransport` со словарём
 пиров — сеть не нужна, контракт тот же, что у `deploy/vpn_keys/`.
@@ -86,15 +86,6 @@ def student(db, user_factory):
     return user
 
 
-def _vpn(client, text="/vpn"):
-    return client.post(
-        "/auth/telegram/webhook",
-        json={"update_id": 1, "message": {"chat": {"id": CHAT_ID}, "text": text,
-                                           "from": {"id": CHAT_ID, "first_name": "Арина"}}},
-        headers={"X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET},
-    )
-
-
 # ── право ───────────────────────────────────────────────────────────────────
 
 def test_eligibility(db, student):
@@ -178,45 +169,111 @@ def test_reconcile_survives_service_down(db, student, service):
     assert vpn_keys.live_key(db, student.id) is not None, "отзыв добьёт следующая сверка"
 
 
-# ── бот ─────────────────────────────────────────────────────────────────────
+# ── запрос с экрана входа ────────────────────────────────────────────────────
 
-def test_bot_gives_key_to_linked_student(client, db, student, service, sent):
-    assert _vpn(client).status_code == 200
+def _send(nick: str) -> None:
+    asyncio.run(vpn_keys.send_key_by_username(nick))
+
+
+def test_send_by_username_delivers_key_and_links(db, student, service, sent):
+    _send("@Arriri")
+    assert len(sent) == 1 and sent[0]["chat_id"] == CHAT_ID
+    text = sent[0]["text"]
+    assert "<code>vpn://key-1</code>" in text
+    for url in (vpn_keys.ANDROID_URL, vpn_keys.IOS_URL, vpn_keys.DESKTOP_URL, vpn_keys.DESKTOP_MIRROR_URL):
+        assert f'href="{url}"' in text
+    assert "DefaultVPN" in text and "AmneziaVPN" in text
+    assert service.created == 1
+
+
+def test_send_by_username_reuses_key(db, student, service, sent):
+    _send("arriri")
+    _send("arriri")
+    assert service.created == 1
+    assert ["<code>vpn://key-1</code>" in m["text"] for m in sent] == [True, True]
+
+
+def test_send_by_username_respects_cooldown(db, student, service, sent, monkeypatch):
+    import app.cache as cache
+    claims = iter([True, False])
+    monkeypatch.setattr(cache, "claim_vpn_key_send", lambda user_id, ttl: next(claims))
+    _send("arriri")
+    _send("arriri")
     assert len(sent) == 1
-    assert "<code>vpn://key-1</code>" in sent[0]["text"]
-    assert "DefaultVPN" in sent[0]["text"] and "AmneziaVPN" in sent[0]["text"]
-    _vpn(client, "/vpn@test_apparchi_bot")
-    assert service.created == 1, "повторный /vpn — тот же ключ"
-    assert "<code>vpn://key-1</code>" in sent[1]["text"]
 
 
-def test_bot_refuses_unknown_chat(client, db, service, sent):
-    _vpn(client)
-    assert service.created == 0
-    assert "не привязан" in sent[0]["text"]
-    assert sent[0]["reply_markup"]["inline_keyboard"][0][0]["url"] == "https://t.me/roman_chatbots"
+def test_send_by_username_unknown_nick_sends_nothing(db, student, service, sent):
+    _send("@someone_else")
+    assert sent == [] and service.created == 0
 
 
-def test_bot_refuses_archived(client, db, student, service, sent):
+def test_send_by_username_unlinked_student_sends_nothing(db, student, service, sent):
+    student.telegram_chat_id = None
+    db.commit()
+    _send("arriri")
+    assert sent == [] and service.created == 0
+
+
+def test_send_by_username_archived_sends_nothing(db, student, service, sent):
     student.archived_at = datetime.now(timezone.utc)
     student.is_active = False
     db.commit()
-    _vpn(client)
-    assert service.created == 0
-    assert "отключён" in sent[0]["text"]
+    _send("arriri")
+    assert sent == [] and service.created == 0
 
 
-def test_bot_service_down_answers_politely(client, db, student, service, sent):
+def test_send_by_username_service_down_says_so(db, student, service, sent):
     service.down = True
-    assert _vpn(client).status_code == 200
-    assert "не получается" in sent[0]["text"]
+    _send("arriri")
+    assert len(sent) == 1 and sent[0]["text"] == vpn_keys.UNAVAILABLE_MESSAGE
     assert db.query(VpnKey).count() == 0
 
 
-def test_login_page_shows_vpn_hint(client, monkeypatch):
-    monkeypatch.setattr(_app_settings, "telegram_bot_username", "test_apparchi_bot")
-    monkeypatch.setattr(auth_module, "_telegram_login_enabled", lambda: True)
-    resp = client.get("/")  # экран входа ученика — login.html (`entry_point`)
+def test_request_route_answers_the_same_for_any_nick(client, service, monkeypatch):
+    calls = []
+
+    async def fake_send(nick):
+        calls.append(nick)
+
+    monkeypatch.setattr(vpn_keys, "send_key_by_username", fake_send)
+    for nick in ("@arriri", "@nobody"):
+        resp = client.post("/auth/vpn-request", data={"tg_username": nick}, follow_redirects=False)
+        assert resp.status_code == 303 and resp.headers["location"] == "/?vpn=sent"
+    assert calls == ["@arriri", "@nobody"]
+
+
+def test_request_route_does_nothing_when_disabled(client, monkeypatch):
+    monkeypatch.setattr(_app_settings, "vpn_keys_url", "")
+    calls = []
+
+    async def fake_send(nick):
+        calls.append(nick)
+
+    monkeypatch.setattr(vpn_keys, "send_key_by_username", fake_send)
+    resp = client.post("/auth/vpn-request", data={"tg_username": "@arriri"}, follow_redirects=False)
+    assert resp.status_code == 303 and calls == []
+
+
+def test_login_page_offers_vpn_request(client, service):
+    page = client.get("/").text
+    assert 'action="/auth/vpn-request"' in page
+    assert "Окно Telegram не открывается?" in page
+    sent_page = client.get("/?vpn=sent").text
+    assert "придут в Telegram" in sent_page
+    assert 'action="/auth/vpn-request"' not in sent_page
+
+
+def test_login_page_hides_vpn_request_when_disabled(client, monkeypatch):
+    monkeypatch.setattr(_app_settings, "vpn_keys_url", "")
+    assert "/auth/vpn-request" not in client.get("/").text
+
+
+def test_bot_no_longer_answers_vpn_command(client, db, student, service, sent):
+    resp = client.post(
+        "/auth/telegram/webhook",
+        json={"update_id": 1, "message": {"chat": {"id": CHAT_ID}, "text": "/vpn",
+                                           "from": {"id": CHAT_ID, "first_name": "Арина"}}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET},
+    )
     assert resp.status_code == 200
-    assert "/vpn" in resp.text
-    assert "https://t.me/test_apparchi_bot" in resp.text
+    assert sent == [] and service.created == 0

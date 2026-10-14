@@ -135,3 +135,20 @@ def invalidate_unread(user_id: int) -> None:
         _client.delete(f"unread:{user_id}")
     except Exception as exc:
         _warn("invalidate_unread", exc)
+
+
+# ── Ключ VPN с экрана входа: пауза на ученика ──────────────────────────────────
+
+def claim_vpn_key_send(user_id: int, ttl: int) -> bool:
+    """Занять отправку ключа VPN ученику на `ttl` секунд (`vpn_keys.send_key_by_username`).
+
+    True — можно слать, False — уже слали недавно. Redis недоступен — True:
+    форму держит ещё и лимит по адресу (`/auth/vpn-request`), а ученик без
+    ключа хуже, чем лишнее сообщение."""
+    if not _client:
+        return True
+    try:
+        return bool(_client.set(f"vpn_send:{user_id}", "1", nx=True, ex=ttl))
+    except Exception as exc:
+        _warn("claim_vpn_key_send", exc)
+        return True

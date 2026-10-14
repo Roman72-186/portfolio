@@ -152,10 +152,26 @@
             Войти через Telegram
         </a>
         <p class="tg-hint">Если Telegram предложит на выбор способ входа – выбирай вариант «по номеру телефона», а не «продолжить через приложение».</p>
-        {# Свой VPN (план 2026-10-13-vpn-amnezia): у части учеников провайдер не пускает на oauth.telegram.org. #}
-        <p class="tg-hint">Окно Telegram не открывается? Подключи VPN: ключ пришлёт
-            {% if settings.telegram_bot_username %}<a href="https://t.me/{{ settings.telegram_bot_username }}" target="_blank" rel="noopener noreferrer">наш бот</a>{% else %}наш бот{% endif %},
-            если написать ему /vpn.</p>
+        {% endif %}
+
+        {# Свой VPN (план 2026-10-13-vpn-amnezia): у части учеников провайдер не
+           пускает на oauth.telegram.org. Ключ и инструкцию бот шлёт в Telegram
+           только знакомому ученику — vpn_keys.send_key_by_username. #}
+        {% if vpn_request_enabled %}
+        {% if vpn_sent %}
+        <div class="alert alert-success">Если ты уже учишься у нас, ключ VPN и инструкция придут в Telegram от бота школы в течение минуты. Не пришло – напиши в поддержку.</div>
+        {% else %}
+        <a href="#vpn-form" class="tg-support-btn" id="vpn-open" role="button"
+           onclick="this.hidden = true; var f = document.getElementById('vpn-form'); f.hidden = false; f.querySelector('input').focus(); return false;">Окно Telegram не открывается?</a>
+        <form id="vpn-form" method="post" action="/auth/vpn-request" class="login-actions" hidden>
+            <p class="tg-hint">Подключи VPN – с ним окно входа откроется. Ключ и инструкцию бот школы пришлёт тебе в Telegram. Если ты у нас впервые, напиши в поддержку.</p>
+            <label class="field-label" for="vpn-nick">Твой ник в Telegram</label>
+            <input id="vpn-nick" class="field-input" type="text" name="tg_username"
+                   placeholder="@nickname" autocomplete="username" autocapitalize="off"
+                   spellcheck="false" maxlength="64" required>
+            <button type="submit" class="tg-btn btn-blue">Прислать ключ и инструкцию</button>
+        </form>
+        {% endif %}
         {% endif %}
 
         {% if not telegram_login_enabled %}

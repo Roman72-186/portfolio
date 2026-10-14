@@ -53,15 +53,19 @@ def main() -> None:
         sys.exit(1)
     print(f"\nВебхук зарегистрирован: {webhook_url}")
 
-    # /vpn в меню бота (план 2026-10-13-vpn-amnezia). setMyCommands заменяет
-    # список целиком — поэтому дописываем к тому, что уже заведено в BotFather.
+    # /vpn в меню бота была 14.10.2026 несколько часов; ключ VPN запрашивают на
+    # экране входа (владелец: «запрос делать не в боте, а при входе»), бот его
+    # только присылает. Снимаем команду, остальное меню из BotFather не трогаем.
     api = f"https://api.telegram.org/bot{token}"
     current = httpx.post(f"{api}/getMyCommands", timeout=15.0).json().get("result") or []
-    if not any(c.get("command") == "vpn" for c in current):
-        commands = current + [{"command": "vpn", "description": "Ключ VPN, если сайт не открывается"}]
-        resp = httpx.post(f"{api}/setMyCommands", json={"commands": commands}, timeout=15.0)
+    if any(c.get("command") == "vpn" for c in current):
+        commands = [c for c in current if c.get("command") != "vpn"]
+        if commands:
+            resp = httpx.post(f"{api}/setMyCommands", json={"commands": commands}, timeout=15.0)
+        else:
+            resp = httpx.post(f"{api}/deleteMyCommands", timeout=15.0)
         resp.raise_for_status()
-        print("Команда /vpn добавлена в меню бота")
+        print("Команда /vpn убрана из меню бота")
 
 
 if __name__ == "__main__":

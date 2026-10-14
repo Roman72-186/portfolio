@@ -1,5 +1,4 @@
 import asyncio
-import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -97,10 +96,13 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _render_login(request: Request, error: str | None = None):
+def _render_login(request: Request, error: str | None = None, *, vpn_sent: bool = False):
     context = {
         "request": request,
         "telegram_login_enabled": _telegram_login_enabled(),
+        # Запрос ключа VPN под кнопкой входа (план 2026-10-13-vpn-amnezia).
+        "vpn_request_enabled": vpn_keys_service.enabled(),
+        "vpn_sent": vpn_sent,
     }
     if error:
         context["error"] = error
@@ -241,6 +243,7 @@ async def entry_point(
     request: Request,
     db: Annotated[DBSession, Depends(get_db)],
     error: str | None = None,
+    vpn: str | None = None,
 ):
     session_id = request.cookies.get("session_id")
     if session_id:
@@ -263,7 +266,27 @@ async def entry_point(
 
     if error == "session_expired":
         error = "Сессия истекла, войди снова"
-    return _render_login(request, error)
+    return _render_login(request, error, vpn_sent=vpn == "sent")
+
+
+@router.post("/auth/vpn-request")
+@limiter.limit("5/minute;20/hour")
+async def vpn_key_request(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    tg_username: Annotated[str, Form()] = "",
+):
+    """Ключ VPN с экрана входа (владелец 14.10.2026): кто уже учится, но не
+    может войти, вводит свой ник — бот присылает ему в Telegram ключ и
+    инструкцию. Ответ одинаковый для любого ника и не ждёт отправки (фоновая
+    задача), поэтому по форме не узнать, учится ли у нас человек. Правила —
+    `vpn_keys.send_key_by_username`. CSRF-ключа нет: сессии ещё нет, а худшее,
+    что даёт подделка, — ключ в Telegram хозяину ника; поток сообщений держат
+    лимит по адресу и пауза на ученика."""
+    nick = tg_username.strip()[:64]
+    if nick and vpn_keys_service.enabled():
+        background_tasks.add_task(vpn_keys_service.send_key_by_username, nick)
+    return RedirectResponse("/?vpn=sent", status_code=303)
 
 
 def telegram_oauth_redirect(
@@ -1006,60 +1029,10 @@ async def _handle_telegram_new_start(
     await _confirm_telegram_connection(chat_id)
 
 
-_VPN_SUPPORT_BUTTON = {"inline_keyboard": [[{"text": "Написать в поддержку", "url": _SUPPORT_URL}]]}
-
-
-def _vpn_key_message(key: str) -> str:
-    return (
-        "Твой ключ VPN – нажми на него, и он скопируется:\n\n"
-        f"<code>{html.escape(key)}</code>\n\n"
-        "Куда вставить:\n"
-        "• Android и компьютер – приложение AmneziaVPN из Google Play или с amnezia.org\n"
-        "• iPhone – DefaultVPN из App Store\n\n"
-        "В приложении нажми «+», потом «Вставить» и «Подключиться».\n\n"
-        "Ключ личный. Если им начнёт пользоваться кто-то ещё, его отключат."
-    )
-
-
-async def _handle_vpn_request(db: DBSession, *, chat_id: int) -> None:
-    """/vpn — ключ своего VPN (план 2026-10-13-vpn-amnezia). Только тому, чей
-    Telegram уже привязан к кабинету: новичку без привязки поддержка выдаёт
-    ссылку «привязать Telegram» (`superadmin_user_issue_telegram_link`),
-    после неё бот его знает. Чужим людям бесплатный VPN бот не раздаёт."""
-    user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
-    if user is None:
-        await telegram_service.send_message(
-            chat_id,
-            "Этот Telegram пока не привязан к кабинету, поэтому ключ выдать не могу. "
-            "Напиши в поддержку – пришлём ссылку для привязки, и после неё ключ будет здесь.",
-            reply_markup=_VPN_SUPPORT_BUTTON,
-        )
-        return
-    if not vpn_keys_service.is_eligible(user):
-        await telegram_service.send_message(chat_id, "Твой доступ отключён. Обратись к администратору.")
-        return
-    try:
-        key = await vpn_keys_service.get_or_issue(db, user)
-    except vpn_keys_service.VpnKeysUnavailable as exc:
-        logger.warning("vpn: ключ для user_id=%s не выдан: %s", user.id, exc)
-        await telegram_service.send_message(
-            chat_id,
-            "Сейчас не получается выдать ключ. Попробуй через несколько минут, "
-            "а если не выйдет – напиши в поддержку.",
-            reply_markup=_VPN_SUPPORT_BUTTON,
-        )
-        return
-    await telegram_service.send_message(chat_id, _vpn_key_message(key))
-
-
 async def _handle_telegram_message(db: DBSession, message: _TgMessage) -> None:
     text = (message.text or "").strip()
     command, _sep, payload = text.partition(" ")
-    command = command.split("@")[0]
-    if command == "/vpn":
-        await _handle_vpn_request(db, chat_id=message.chat.id)
-        return
-    if command != "/start":
+    if command.split("@")[0] != "/start":
         return
 
     chat_id = message.chat.id

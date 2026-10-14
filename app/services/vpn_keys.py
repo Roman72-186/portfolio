@@ -1,13 +1,17 @@
 """Свой VPN для учеников: выдача и отзыв ключей AmneziaWG.
 
-План — `plans/2026-10-13-vpn-amnezia.md`. Ключ ученик получает у бота по
-`/vpn` (`app/api/auth.py::_handle_vpn_request`), сами пиры создаёт служба
-`deploy/vpn_keys/` на сервере в Нидерландах — платформа знает только её адрес
-и токен, SSH-доступа к VPN-серверу у неё нет.
+План — `plans/2026-10-13-vpn-amnezia.md`. Ключ запрашивают на экране входа
+(владелец 14.10.2026: «запрос делать не в боте, а при входе»): кто не может
+войти, вводит свой ник под кнопкой «Войти через Telegram», и бот присылает ему
+в Telegram ключ с инструкцией (`POST /auth/vpn-request` → `send_key_by_username`).
+Ключ получает только знакомый ученик — с привязанным Telegram; новичку ключ
+выдаёт поддержка. Сами пиры создаёт служба `deploy/vpn_keys/` на сервере в
+Нидерландах — платформа знает только её адрес и токен, SSH-доступа нет.
 
 Здесь — единственное место правил:
 - кому положен ключ — `is_eligible`;
 - выдать или вернуть уже выданный — `get_or_issue`;
+- найти ученика по нику и прислать ключ — `send_key_by_username`;
 - отозвать — `revoke`;
 - сверка раз в 15 минут — `reconcile` (`exam_scheduler._run_vpn_reconcile`).
   Отзыв при архиве, блокировке и удалении держится на ней, а не на хуках в
@@ -17,6 +21,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import logging
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -152,6 +157,109 @@ async def revoke(db: DBSession, key: VpnKey) -> None:
     key.revoked_at = datetime.now(timezone.utc)
     db.commit()
     logger.info("vpn: ключ отозван user_id=%s peer=%s…", key.user_id, key.peer_id[:8])
+
+
+# ── запрос с экрана входа ───────────────────────────────────────────────────
+
+# Прямые ссылки на приложения (сверены 14.10.2026). AmneziaVPN спрятана в
+# российском App Store — на iPhone ставится DefaultVPN тех же разработчиков.
+# amnezia.org в России открывается не у всех, поэтому у компьютера запасная
+# ссылка на выпуски в GitHub.
+ANDROID_URL = "https://play.google.com/store/apps/details?id=org.amnezia.vpn"
+IOS_URL = "https://apps.apple.com/ru/app/defaultvpn/id6744725017"
+DESKTOP_URL = "https://amnezia.org/ru/downloads"
+DESKTOP_MIRROR_URL = "https://github.com/amnezia-vpn/amnezia-client/releases/latest"
+
+# Одна отправка ключа на ученика за это время: чужой ник в форме не должен
+# превращаться в поток сообщений хозяину ника.
+SEND_COOLDOWN_SECONDS = 600
+
+
+def key_message(key: str) -> str:
+    """Сообщение бота с ключом и инструкцией (HTML-разметка Telegram)."""
+    return (
+        "Ключ VPN для входа на сайт школы – нажми на него, и он скопируется:\n\n"
+        f"<code>{html.escape(key)}</code>\n\n"
+        "<b>1. Установи приложение</b>\n"
+        f"• Android – AmneziaVPN из <a href=\"{ANDROID_URL}\">Google Play</a>\n"
+        f"• iPhone и iPad – DefaultVPN из <a href=\"{IOS_URL}\">App Store</a> (нужна iOS 16 или новее)\n"
+        f"• Компьютер – AmneziaVPN с <a href=\"{DESKTOP_URL}\">amnezia.org</a>; "
+        f"если сайт не открывается – <a href=\"{DESKTOP_MIRROR_URL}\">с GitHub</a>\n\n"
+        "<b>2. Добавь ключ</b>\n"
+        "В приложении нажми «+», потом «Вставить» и «Подключиться».\n\n"
+        f"<b>3. Войди на сайт</b>\n"
+        f"Открой {settings.domain} и нажми «Войти через Telegram». После входа VPN "
+        "можно выключить, пока сайт открывается без него.\n\n"
+        "Ключ личный. Если им начнёт пользоваться кто-то ещё, его отключат."
+    )
+
+
+UNAVAILABLE_MESSAGE = (
+    "Сейчас не получается выдать ключ VPN. Попробуй запросить его на сайте "
+    "через несколько минут, а если не выйдет – напиши в поддержку."
+)
+
+
+def find_linked_user_by_username(db: DBSession, raw_username: str) -> User | None:
+    """Ученик или сотрудник с этим ником и привязанным Telegram.
+
+    Ник хранится зашифрованным (`EncryptedString`) — условием SQL его не
+    сравнить, кандидатов расшифровываем в Python, как
+    `contacts.find_student_by_tg_username`. Кандидаты — только с привязанным
+    Telegram: ключ уходит в чат, без чата его некуда прислать."""
+    from app.services.contacts import normalize_tg_username
+
+    username = normalize_tg_username(raw_username).lower()
+    if not username:
+        return None
+    candidates = (
+        db.query(User)
+        .filter(User.telegram_chat_id.isnot(None), User.deleted_at.is_(None))
+        .order_by(User.id.desc())
+        .limit(5000)
+        .all()
+    )
+    for candidate in candidates:
+        if normalize_tg_username(candidate.tg_username or "").lower() == username:
+            return candidate
+    return None
+
+
+async def send_key_by_username(raw_username: str) -> None:
+    """Запрос с экрана входа: прислать ключ в Telegram хозяину ника.
+
+    Зовётся фоновой задачей после ответа странице: ответ одинаковый и
+    одинаково быстрый для любого ника, поэтому по форме не узнать, учится ли у
+    нас человек. Незнакомый ник, нет права, пауза ещё не прошла — ничего не
+    шлём, только строка в журнале. Сессию базы открывает сама: сессия запроса к
+    этому моменту уже закрыта."""
+    from app.cache import claim_vpn_key_send
+    from app.db.database import SessionLocal
+    from app.services import telegram as telegram_service
+
+    db = SessionLocal()
+    try:
+        user = find_linked_user_by_username(db, raw_username)
+        if user is None or not is_eligible(user):
+            logger.info("vpn: запрос с экрана входа — ник не найден или нет права")
+            return
+        if not claim_vpn_key_send(user.id, SEND_COOLDOWN_SECONDS):
+            logger.info("vpn: user_id=%s — ключ уже отправлялся недавно", user.id)
+            return
+        chat_id = user.telegram_chat_id
+        try:
+            key = await get_or_issue(db, user)
+        except VpnKeysUnavailable as exc:
+            logger.warning("vpn: ключ для user_id=%s не выдан: %s", user.id, exc)
+            await telegram_service.send_message(chat_id, UNAVAILABLE_MESSAGE)
+            return
+        sent = await telegram_service.send_message(chat_id, key_message(key))
+        logger.info("vpn: ключ user_id=%s отправлен в Telegram: %s", user.id, sent)
+    except Exception:
+        logger.exception("vpn: ошибка при отправке ключа по запросу с экрана входа")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _parse_dt(value: str | None) -> datetime | None:
