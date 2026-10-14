@@ -121,6 +121,12 @@ function questionTypeOptionsHTML() {
     }).join('');
 }
 
+// Каникулярный цикл тарифов не знает (созвон 13.10.2026): у его учеников
+// тарифа нет, и блок с отмеченным тарифом они бы не увидели. Экран отдаёт
+// пустой список, и тарифные пункты «Доступности блока» не рисуются вовсе;
+// тарифы блока, взятого из годового задания, при сохранении снимаются.
+var HAS_TARIFFS = {{ ((tariffs or [])|length > 0)|tojson }};
+
 function tariffChecksHTML() {
     return ({{ tariffs|tojson }}).map(function (tariff) {
         return '<label class="prg-field prg-field--row">'
@@ -202,12 +208,12 @@ function blockAudienceHTML() {
         + hintHTML('Кто из учеников увидит блок. Ничего не отмечено – видят все. '
             + 'Ученики, выбранные по имени, видят блок всегда.', 'Что значит «Кому доступно»')
         + '  </legend>'
-        + settingItemHTML(
+        + (HAS_TARIFFS ? settingItemHTML(
             'Тарифы',
             'Блок увидят только ученики отмеченных тарифов. Ничего не отмечено – тариф не важен.',
             'все тарифы',
             '<div class="prg-blk-tariffs" data-sum-list="только">' + tariffChecksHTML() + '</div>'
-        )
+        ) : '')
         + settingItemHTML(
             'Уровень точки А',
             'Уровень по среднему баллу точки А: 1 – ' + (POINT_A_LEVEL_2_MIN - 1) + ' и ниже, 2 – '
@@ -762,7 +768,7 @@ function blockSettingsHTML(type) {
     // (partials/program_settings_panel.html); сводку в заголовке пересчитывает
     // `refreshSettingsPanel`, метки `data-sum*` — в шапке его партиала.
     // Каждый пункт внутри — своя свёрнутая строка (`settingItemHTML`).
-    var emptySummary = 'По умолчанию: по очереди, без срока, всем тарифам';
+    var emptySummary = 'По умолчанию: по очереди, без срока' + (HAS_TARIFFS ? ', всем тарифам' : '');
     // Текст и ссылку отметить нечем — обязательными они не бывают (владелец
     // 01.10.2026), сервер флаг не учитывает (`is_block_required_for_user`).
     // Галочку не показываем: иначе она обещала бы то, чего нет.
@@ -816,10 +822,10 @@ function blockSettingsHTML(type) {
             submitHint,
             'без срока',
             '<input type="datetime-local" data-b-submit-until data-sum="срок" aria-label="Дата и время срока сдачи">'
-            + '<div class="prg-blk-deadlines" data-sum-rows="свой срок у">'
+            + (HAS_TARIFFS ? '<div class="prg-blk-deadlines" data-sum-rows="свой срок у">'
             + '<p class="prg-hint">Свой срок по тарифу: пусто – работает срок выше, а если и его нет – срок задания.</p>'
             + tariffDeadlinesHTML()
-            + '</div>'
+            + '</div>' : '')
         )
         + settingItemHTML(
             'Закроется',
@@ -843,14 +849,14 @@ function blockSettingsHTML(type) {
             + '</select>'
         )
         + blockAudienceHTML()
-        + (lockable ? '' + settingItemHTML(
+        + (lockable ? '' + (HAS_TARIFFS ? settingItemHTML(
             'Кого обязать выполнить',
             'Для каких тарифов блок обязателен. Ничего не отмечено – обязателен для всех, кому виден.',
             'всех, кому виден',
             '<div class="prg-blk-required-tariffs" data-sum-list="обязательно для">'
             + requiredTariffChecksHTML()
             + '</div>'
-        ) : '')
+        ) : '') : '')
         // Владелец 15.09.2026: галочку «не ждать очереди» из формы убрали —
         // преподавателю она не нужна. Поле осталось скрытым, чтобы у блоков,
         // где флаг уже включён, он не слетал при следующем сохранении:

@@ -9,13 +9,15 @@
 Срок действует на каждый блок задания, который не задал свой. Блок главнее —
 включая случай «у этого блока без срока» (см. `task_blocks.submit_deadline_for`).
 
-Ждёт в контексте `tariffs` — действующую линейку тарифов.
+Ждёт в контексте `tariffs` — действующую линейку тарифов. Пустой список
+(каникулярный цикл, созвон 13.10.2026) — сроков по тарифам нет вовсе.
 #}
 <label class="prg-field">Срок сдачи задания
     <input type="datetime-local" data-x-submit-until data-sum="срок"
            aria-label="Дата и время срока сдачи задания">
     <span class="prg-hint">Пусто – без срока. Действует на все блоки задания, кроме тех, где задан свой срок.</span>
 </label>
+{% if tariffs %}
 <div class="prg-blk-deadlines" data-x-deadlines data-sum-rows="свой срок у">
     <p class="prg-hint">Свой срок по тарифу: пусто – работает общий срок задания.</p>
     {% for tariff in tariffs %}
@@ -31,3 +33,4 @@
     </div>
     {% endfor %}
 </div>
+{% endif %}

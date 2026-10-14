@@ -66,6 +66,14 @@ class LearningTopic(Base):
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True
     )
+    # Программа периода (созвон 13.10.2026): «annual» — годовой курс,
+    # «holiday» — каникулярный набор. Смысл — только у периода: этап и цикл
+    # получают программу по цепочке `parent_id` (`video_topics.topic_program`),
+    # своё значение у них не читается — перенос этапа в другой период не
+    # оставит циклы в старой программе. Значения — `constants.PROGRAMS`.
+    program: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="annual", server_default="annual"
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Ссылка на созвон занятия недели (Zoom/Google Meet и т.п.), заполняется вручную.
     meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

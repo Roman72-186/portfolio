@@ -13,7 +13,7 @@ import json
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -21,7 +21,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session as DBSession, aliased
 
-from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT, tariff_choices
+from app.constants import (
+    MOCK_SUBJECTS,
+    PROGRAM_ANNUAL,
+    PROGRAM_HOLIDAY,
+    PROGRAM_LABELS,
+    PROGRAMS,
+    TARIFFS,
+    TARIFFS_CURRENT,
+    tariff_choices,
+)
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
@@ -35,6 +44,7 @@ from app.models.learning_topic import (
     LearningTopic,
 )
 from app.models.learning_video import LearningVideo
+from app.models.tag import Tag
 from app.models.task_block import (
     BLOCK_COMPARE,
     BLOCK_QUESTION,
@@ -185,11 +195,14 @@ from app.services.video_topics import (
     get_topic_tariffs,
     list_topics as list_week_topics,
     publish_topic,
+    set_topic_tags,
     set_topic_tariff_windows,
     set_topic_tariffs,
+    topic_program,
     unpublish_topic,
     update_topic,
 )
+from app.services.tags import get_all_tags
 from app.tmpl import format_rich_text, templates
 
 router = APIRouter(prefix="/cabinet/staff/program")
@@ -755,6 +768,14 @@ class CyclePayload(BaseModel):
     tariff_access: list[CycleTariffWindowPayload] | None = Field(
         default=None, max_length=len(TARIFFS)
     )
+    # Программа экрана, с которого сохраняют (созвон 13.10.2026). Сама
+    # программа цикла — по его этапу (`topic_program`); поле нужно, чтобы
+    # цикл с каникулярного экрана не ушёл без этапа в годовой курс.
+    program: Literal["annual", "holiday"] | None = None
+    # Теги групп у каникулярного цикла — вместо тарифов: «каждой группе свой
+    # цикл, доступ по тегам». Пусто — цикл видят все каникулярные ученики.
+    # Не прислано вовсе — адресацию не трогать, как `tariff_access`.
+    tag_ids: list[int] | None = Field(default=None, max_length=50)
 
     @field_validator("title")
     @classmethod
@@ -781,6 +802,11 @@ class PeriodPayload(BaseModel):
     starts_on: str = Field(min_length=1, max_length=32)
     ends_on: str = Field(min_length=1, max_length=32)
     is_published: bool = True
+    # Программа нового периода (созвон 13.10.2026) — та, что выбрана
+    # переключателем над списком. Читается только при создании периода:
+    # перенос готового периода в другую программу разом сменил бы ученикам
+    # все его циклы. Ошибся программой — удалить пустой период и завести заново.
+    program: Literal["annual", "holiday"] | None = None
 
     @field_validator("title")
     @classmethod
@@ -877,6 +903,41 @@ def _apply_cycle_tariff_access(
     set_topic_tariff_windows(db, topic, windows)
 
 
+def _cycle_program(
+    db: DBSession, payload: CyclePayload, stage: LearningTopic | None
+) -> str:
+    """Программа цикла — по его этапу. С каникулярного экрана цикл без
+    каникулярного этапа не сохраняется: иначе он молча ушёл бы годовому курсу."""
+    program = topic_program(db, stage) if stage is not None else PROGRAM_ANNUAL
+    if payload.program == PROGRAM_HOLIDAY and program != PROGRAM_HOLIDAY:
+        raise HTTPException(status_code=422, detail="Выберите этап каникулярной программы")
+    return program
+
+
+def _apply_cycle_audience(
+    db: DBSession, topic: LearningTopic, payload: CyclePayload, windows, program: str
+) -> None:
+    """Кому виден цикл (созвон 13.10.2026). Годовой — всем, сузить можно
+    только тарифом (`tariff_access`, 06.10.2026). Каникулярный — по тегам
+    групп: «каждой группе свой цикл, доступ по тегам, без тарифов»; тег не
+    выбран — всем каникулярным. Перенос цикла в другую программу снимает
+    адресацию прежней, иначе она держала бы его невидимым."""
+    if program == PROGRAM_HOLIDAY:
+        if topic.tariff_restricted:
+            set_topic_tariff_windows(db, topic, None)
+        if payload.tag_ids is not None:
+            tag_ids = validate_tags(db, payload.tag_ids)
+            set_topic_tags(db, topic, tag_ids)
+        else:
+            tag_ids = get_tag_ids(db, topic.id)
+        topic.assign_to_all = not tag_ids
+        return
+    if get_tag_ids(db, topic.id):
+        set_topic_tags(db, topic, [])
+    topic.assign_to_all = True
+    _apply_cycle_tariff_access(db, topic, payload, windows)
+
+
 def _cycle_tariff_rows(db: DBSession, topic: LearningTopic) -> list[dict] | None:
     """Доступ по тарифам для формы и карточки цикла; `None` — открыт всем."""
     if not topic.tariff_restricted:
@@ -949,6 +1010,68 @@ def _children_count(db: DBSession, parent_id: int, kind: str) -> int:
     )
 
 
+# ── Две программы: годовой курс и каникулярный набор (созвон 13.10.2026) ──
+#
+# Над списками периодов, этапов и циклов — переключатель «Годовой курс /
+# Каникулярный». Каждый список показывает только свою программу; программа
+# этапа и цикла — по цепочке до периода (`video_topics.topic_program`).
+# Выбор помнит кука: школа наполняет каникулярную программу днями, и каждый
+# переход между вкладками не должен возвращать её в годовой курс.
+
+PROGRAM_COOKIE = "prg_program"
+_PROGRAM_COOKIE_MAX_AGE = 180 * 24 * 3600
+
+
+def _screen_program(
+    request: Request, program: str | None, *, db: DBSession,
+    context: LearningTopic | None = None,
+) -> str:
+    """Программа экрана: внутри периода или этапа — их собственная, иначе из
+    адреса, иначе запомненная, иначе годовой курс."""
+    if context is not None:
+        return topic_program(db, context)
+    if program in PROGRAMS:
+        return program
+    remembered = request.cookies.get(PROGRAM_COOKIE)
+    return remembered if remembered in PROGRAMS else PROGRAM_ANNUAL
+
+
+def _program_switch(program: str, path: str) -> dict:
+    """Переключатель над списком: ссылка на тот же уровень в другой программе.
+    Фильтр периода или этапа ссылка сбрасывает — он из прежней программы."""
+    return {
+        "current": program,
+        "options": [
+            {"value": value, "label": PROGRAM_LABELS[value], "href": f"{path}?program={value}"}
+            for value in PROGRAMS
+        ],
+    }
+
+
+def _remember_program(response, program: str):
+    response.set_cookie(
+        key=PROGRAM_COOKIE,
+        value=program,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=_PROGRAM_COOKIE_MAX_AGE,
+        path="/cabinet/staff/program",
+    )
+    return response
+
+
+def _cycle_tags(db: DBSession, topic: LearningTopic) -> list[dict]:
+    """Теги групп цикла для карточки и формы; у цикла «для всех» — пусто."""
+    if topic.assign_to_all:
+        return []
+    tag_ids = get_tag_ids(db, topic.id)
+    if not tag_ids:
+        return []
+    names = dict(db.query(Tag.id, Tag.name).filter(Tag.id.in_(tag_ids)).all())
+    return [{"id": tag_id, "name": names[tag_id]} for tag_id in tag_ids if tag_id in names]
+
+
 @router.get("/cycles", response_class=HTMLResponse)
 def program_cycles(
     request: Request,
@@ -956,28 +1079,30 @@ def program_cycles(
     db: Annotated[DBSession, Depends(get_db)],
     stage: int | None = None,
     period: int | None = None,
+    program: str | None = None,
 ):
-    stage_topics = list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
-    stage_titles = {stage_topic.id: cycle_label(db, stage_topic) for stage_topic in stage_topics}
+    all_stages = list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
     # `?stage=<id>` — сюда ведёт «Циклы этапа» со вкладки «Этапы» (аудит
     # 29.09.2026: кнопка открывала все циклы подряд, и название её обманывало).
     # Чужой или удалённый этап фильтром не считается — по старой ссылке
     # человек увидит весь список, а не пустую страницу.
-    stage_filter = (
-        {"id": stage, "label": stage_titles[stage]} if stage in stage_titles else None
-    )
+    stage_topic = next((t for t in all_stages if t.id == stage), None)
     # `?period=<id>` — вкладка «Циклы» внутри периода (`_program_path`): циклы
     # всех его этапов. Этап главнее периода — он уже сам внутри периода.
     period_topic = (
         get_topic(db, period, kinds=(TOPIC_KIND_PERIOD,))
-        if period is not None and stage_filter is None else None
+        if period is not None and stage_topic is None else None
+    )
+    program = _screen_program(request, program, db=db, context=stage_topic or period_topic)
+    stage_topics = [t for t in all_stages if topic_program(db, t) == program]
+    stage_titles = {t.id: cycle_label(db, t) for t in stage_topics}
+    stage_filter = (
+        {"id": stage_topic.id, "label": stage_titles[stage_topic.id]}
+        if stage_topic is not None else None
     )
     period_stage_ids = (
         {t.id for t in stage_topics if t.parent_id == period_topic.id}
         if period_topic is not None else None
-    )
-    stage_topic = (
-        next(t for t in stage_topics if t.id == stage_filter["id"]) if stage_filter else None
     )
     cycles = [
         {
@@ -996,10 +1121,12 @@ def program_cycles(
             "stage_id": topic.parent_id,
             "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
             "tariff_access": _cycle_tariff_rows(db, topic),
+            "tags": _cycle_tags(db, topic),
         }
         for topic in list_week_topics(db)
         if (stage_filter is None or topic.parent_id == stage_filter["id"])
         and (period_stage_ids is None or topic.parent_id in period_stage_ids)
+        and topic_program(db, topic) == program
     ]
     stages = [
         {"id": t.id, "label": stage_titles[t.id]}
@@ -1013,9 +1140,17 @@ def program_cycles(
     cycle_tariffs = tariff_choices(*(
         row["tariff"] for cycle in cycles for row in (cycle["tariff_access"] or [])
     ))
-    return templates.TemplateResponse(request, "cabinet_program_cycles.html",
+    holiday = program == PROGRAM_HOLIDAY
+    response = templates.TemplateResponse(request, "cabinet_program_cycles.html",
         {"request": request, "user": user, "cycles": cycles, "stages": stages,
          "cycle_tariffs": cycle_tariffs,
+         "program": program,
+         "program_switch": _program_switch(program, "/cabinet/staff/program/cycles"),
+         # Теги групп — только каникулярной программе: у годовой доступ по
+         # тарифам, и тег у её цикла никто бы не увидел в форме.
+         "cycle_tag_choices": (
+             [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)] if holiday else []
+         ),
          "stage_filter": stage_filter,
          "period_filter": (
              {"id": period_topic.id, "label": cycle_label(db, period_topic)}
@@ -1025,6 +1160,7 @@ def program_cycles(
              _program_path(db, period=period_topic, stage=stage_topic) if in_context else None
          )},
     )
+    return _remember_program(response, program)
 
 
 def _frame_row(db: DBSession, topic: LearningTopic) -> dict:
@@ -1080,18 +1216,25 @@ def program_periods(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    program: str | None = None,
 ):
     """Периоды программы (владелец 06.10.2026): Период → Этап → Цикл →
     задания. Тот же экран, что у этапов (`cabinet_program_stages.html`,
-    `level='period'`): «настройки как у этапов». Заданий на периоде нет."""
+    `level='period'`): «настройки как у этапов». Заданий на периоде нет.
+    Только периоды программы, выбранной переключателем (созвон 13.10.2026)."""
+    program = _screen_program(request, program, db=db)
     periods = [
         {**_frame_row(db, period),
          "stages_count": _children_count(db, period.id, TOPIC_KIND_STAGE)}
         for period in list_week_topics(db, kinds=(TOPIC_KIND_PERIOD,))
+        if topic_program(db, period) == program
     ]
-    return templates.TemplateResponse(request, "cabinet_program_stages.html",
-        {"request": request, "user": user, "level": "period", "stages": periods},
+    response = templates.TemplateResponse(request, "cabinet_program_stages.html",
+        {"request": request, "user": user, "level": "period", "stages": periods,
+         "program": program,
+         "program_switch": _program_switch(program, "/cabinet/staff/program/periods")},
     )
+    return _remember_program(response, program)
 
 
 @router.post("/periods", response_class=JSONResponse)
@@ -1113,6 +1256,7 @@ def create_program_period(
         user_id=user["user_id"],
         kind=TOPIC_KIND_PERIOD,
     )
+    period.program = payload.program or PROGRAM_ANNUAL
     if payload.is_published:
         publish_topic(period, user_id=user["user_id"])
     db.commit()
@@ -1153,12 +1297,17 @@ def program_stages(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     period: int | None = None,
+    program: str | None = None,
 ):
-    period_topics = list_week_topics(db, kinds=(TOPIC_KIND_PERIOD,))
-    period_titles = {topic.id: cycle_label(db, topic) for topic in period_topics}
+    all_periods = list_week_topics(db, kinds=(TOPIC_KIND_PERIOD,))
     # `?period=<id>` — сюда ведёт «Этапы периода» со вкладки «Периоды», по
     # образцу `?stage=` у циклов. Чужой или удалённый период фильтром не
     # считается — человек увидит весь список, а не пустую страницу.
+    period_topic = next((t for t in all_periods if t.id == period), None)
+    program = _screen_program(request, program, db=db, context=period_topic)
+    # Этап без периода (до 06.10.2026) — годовой, `topic_program`.
+    period_topics = [t for t in all_periods if topic_program(db, t) == program]
+    period_titles = {topic.id: cycle_label(db, topic) for topic in period_topics}
     period_filter = (
         {"id": period, "label": period_titles[period]} if period in period_titles else None
     )
@@ -1174,19 +1323,22 @@ def program_stages(
             "period_label": period_titles.get(stage.parent_id) if stage.parent_id else None,
         }
         for stage in list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
-        if period_filter is None or stage.parent_id == period_filter["id"]
+        if (period_filter is None or stage.parent_id == period_filter["id"])
+        and topic_program(db, stage) == program
     ]
     periods = [
         {"id": topic.id, "label": period_titles[topic.id]} for topic in period_topics
     ]
-    return templates.TemplateResponse(request, "cabinet_program_stages.html",
+    response = templates.TemplateResponse(request, "cabinet_program_stages.html",
         {"request": request, "user": user, "level": "stage", "stages": stages,
          "periods": periods, "period_filter": period_filter,
+         "program": program,
+         "program_switch": _program_switch(program, "/cabinet/staff/program/stages"),
          "prg_path": (
-             _program_path(db, period=get_topic(db, period_filter["id"], kinds=(TOPIC_KIND_PERIOD,)))
-             if period_filter else None
+             _program_path(db, period=period_topic) if period_filter else None
          )},
     )
+    return _remember_program(response, program)
 
 
 @router.post("/stages", response_class=JSONResponse)
@@ -1338,20 +1490,22 @@ def create_program_cycle(
     opens_at, ends_at = _cycle_dates(payload)
     tariff_windows = _cycle_tariff_windows(payload)
     stage = _resolve_stage(db, payload.stage_id)
+    program = _cycle_program(db, payload, stage)
     topic = create_topic(
         db,
         title=payload.title,
         description=payload.description,
         opens_at=opens_at,
         ends_at=ends_at,
-        # Цикл виден всем ученикам; сузить его можно только по тарифу
+        # Годовой цикл виден всем ученикам; сузить его можно только по тарифу
         # (`tariff_access`, 06.10.2026), остальная адресация — по блокам.
+        # Каникулярный — по тегам групп, `_apply_cycle_audience`.
         assign_to_all=True,
         user_id=user["user_id"],
         parent_id=stage.id if stage is not None else None,
     )
     topic.locks_next = payload.locks_next
-    _apply_cycle_tariff_access(db, topic, payload, tariff_windows)
+    _apply_cycle_audience(db, topic, payload, tariff_windows, program)
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     db.commit()
@@ -1437,18 +1591,20 @@ def update_program_cycle(
     opens_at, ends_at = _cycle_dates(payload)
     tariff_windows = _cycle_tariff_windows(payload)
     stage = _resolve_stage(db, payload.stage_id)
+    program = _cycle_program(db, payload, stage)
     update_topic(
         topic,
         title=payload.title,
         description=payload.description,
         opens_at=opens_at,
         ends_at=ends_at,
+        # Окончательно решает `_apply_cycle_audience` ниже.
         assign_to_all=True,
         parent_id=stage.id if stage is not None else None,
         set_parent=True,
     )
     topic.locks_next = payload.locks_next
-    _apply_cycle_tariff_access(db, topic, payload, tariff_windows)
+    _apply_cycle_audience(db, topic, payload, tariff_windows, program)
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     else:
@@ -2013,6 +2169,10 @@ def program_cycle_items(
     ] if stage is not None else []
     stage_label = cycle_label(db, stage) if stage is not None else None
     edit_payloads = _edit_payloads(db, items, {t.id: {} for t in items})
+    # Каникулярный цикл тарифов не знает (созвон 13.10.2026): у его учеников
+    # тарифа нет, тарифные пункты «Доступности блока» и фильтр просмотра не
+    # рисуются (`HAS_TARIFFS` в `program_blocks_editor_js.html`).
+    holiday = topic_program(db, topic) == PROGRAM_HOLIDAY
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
@@ -2047,7 +2207,7 @@ def program_cycle_items(
             # сняты (владелец 16.09.2026).
             "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
-            "tariffs": TARIFFS_CURRENT,
+            "tariffs": [] if holiday else TARIFFS_CURRENT,
             "block_students": _cycle_block_students(db, user, edit_payloads),
             # Подпись «Уровень 1 – 65 и ниже» в «Кому доступно» — от
             # серверного порога, а не от числа в JS.

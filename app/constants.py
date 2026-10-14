@@ -8,6 +8,18 @@ MONTHS = [
 ]
 MONTH_TO_NUM = {m: i + 1 for i, m in enumerate(MONTHS)}
 
+# ── Programs ─────────────────────────────────────────────────────────────────
+
+# Две программы школы (созвон 13.10.2026): годовой курс и каникулярный набор —
+# внешние ученики на неделю. Признак стоит у периода (`LearningTopic.program`)
+# и у ученика (`User.program`); годовой не видит каникулярного и наоборот.
+# Правило — `video_topics.accessible_topic_ids`. Всё, что заведено до
+# 14.10.2026, — годовое.
+PROGRAM_ANNUAL = "annual"
+PROGRAM_HOLIDAY = "holiday"
+PROGRAMS = (PROGRAM_ANNUAL, PROGRAM_HOLIDAY)
+PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный"}
+
 # ── Tariffs ──────────────────────────────────────────────────────────────────
 
 # Линейка к предобучению (владелец 07.09.2026): «На предобучении будет

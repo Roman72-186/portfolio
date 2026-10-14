@@ -27,6 +27,7 @@
 {% set noun = 'период' if is_period else 'этап' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
+    {% include "partials/program_switch.html" %}
     {% include "partials/program_path.html" %}
 
     <div class="prg-head">
@@ -56,7 +57,10 @@
        приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
        не должен прятаться под раскрытой формой. Пока записей нет, форма открыта. #}
     {% if prg_edit %}
+    {# `data-program` — программа нового периода: та, что выбрана
+       переключателем (созвон 13.10.2026). Правка периода программу не меняет. #}
     <form class="prg-form" data-stage-form{% if stages %} hidden{% endif %}
+          data-program="{{ program }}"
           data-endpoint="/cabinet/staff/program/{{ 'periods' if is_period else 'stages' }}"
           data-new-title="Новый {{ noun }}"
           data-save-error="Не удалось сохранить {{ noun }}.">
@@ -286,6 +290,7 @@
             is_published: fields.published.checked
         };
         if (fields.period) body.period_id = fields.period.value ? Number(fields.period.value) : null;
+        if (!fields.period && !id) body.program = form.getAttribute('data-program');
         window.csrfFetch(form.getAttribute('data-endpoint') + (id ? '/' + id : ''), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

@@ -1,0 +1,16 @@
+{#
+Переключатель программ над списками периодов, этапов и циклов (созвон
+13.10.2026): годовой курс и каникулярный набор настраиваются отдельно, каждый
+список показывает только свою программу. Данные — `_program_switch` в
+`app/api/cabinet_program.py`; выбор запоминает кука `prg_program`. Готовый
+сегментированный контрол `.seg` из `base.css`, своих стилей нет.
+#}
+{% if program_switch %}
+<nav class="seg" aria-label="Программа">
+    {% for option in program_switch.options %}
+    <a class="seg-btn{% if option.value == program_switch.current %} active{% endif %}"
+       href="{{ option.href }}"
+       {% if option.value == program_switch.current %}aria-current="page"{% endif %}>{{ option.label }}</a>
+    {% endfor %}
+</nav>
+{% endif %}

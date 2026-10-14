@@ -124,7 +124,7 @@
         </label>
         {# Обязательность, открытие и срок свёрнуты в одну панель (владелец
            28.09.2026) — та же, что в форме задания на экране дня. #}
-        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем тарифам') %}
+        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока' ~ (', всем тарифам' if tariffs else '')) %}
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-item-required data-sum-off="не обязательно" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
@@ -199,7 +199,9 @@
         {% if items %}
         <div class="prg-actions prg-cycle-preview-bar">
             <button type="button" class="btn-outline" data-cycle-preview-open aria-expanded="false" aria-controls="cyclePreview">Весь цикл глазами ученика</button>
-            <label class="prg-field">Тариф
+            {# Каникулярному циклу тарифов не отдают — фильтр скрыт, но остаётся
+               в разметке: скрипт просмотра читает его значение. #}
+            <label class="prg-field"{% if not tariffs %} hidden{% endif %}>Тариф
                 <select data-cycle-preview-tariff>
                     <option value="">Все тарифы</option>
                     {% for tariff in tariffs %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}

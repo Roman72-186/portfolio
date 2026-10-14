@@ -9,11 +9,12 @@ Source of truth по тому, какие темы открыты ученику
 
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, true
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select, true
+from sqlalchemy.orm import Session, aliased
 
-from app.constants import REPORT_EXCLUDED_USER_IDS
+from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
 from app.models.learning_topic import (
+    TOPIC_KIND_PERIOD,
     TOPIC_KIND_WEEK,
     LearningTopic,
     LearningTopicAssignee,
@@ -83,7 +84,9 @@ def accessible_topic_ids(
 
     Тема открыта, если опубликована, наступил её `opens_at`, адресована
     ученику (флагом «всем», пересечением тегов или поимённо), не скрыта по
-    тарифу и не закончилась до его прихода (`ended_before_arrival_filter`). Это ученический контракт функции: тарифный фильтр здесь
+    тарифу, не закончилась до его прихода (`ended_before_arrival_filter`) и
+    стоит в его программе — годовой или каникулярной (`program_topic_filter`,
+    созвон 13.10.2026). Это ученический контракт функции: тарифный фильтр здесь
     сознательно не выключается никаким аргументом — куратор/staff читают
     элементы дня напрямую (`program.py::items_for_day`/`item_details`), в
     обход этой функции, и видят их независимо от тарифа (владелец 26.08.2026).
@@ -109,11 +112,11 @@ def accessible_topic_ids(
     # можно напрямую. Пустой/None тариф просто не совпадёт ни с одной строкой
     # LearningTopicTariff — тарифно-ограниченные темы остаются скрытыми.
     row = (
-        db.query(User.tariff, User.program_access_from)
+        db.query(User.tariff, User.program_access_from, User.program)
         .filter(User.id == user_id)
         .first()
     )
-    tariff, program_access_from = row if row is not None else (None, None)
+    tariff, program_access_from, program = row if row is not None else (None, None, None)
     tariff = (tariff or "").strip().upper()
     now = now_msk()
     # Окно тарифа (владелец 06.10.2026): до «с» цикла у тарифа нет. «По» здесь
@@ -145,6 +148,7 @@ def accessible_topic_ids(
                 LearningTopic.id.in_(tariff_ok_topic_ids),
             ),
             ended_before_arrival_filter(program_access_from),
+            program_topic_filter(program),
         )
         .all()
     )
@@ -198,6 +202,59 @@ def ended_before_arrival_filter(program_access_from: datetime | None):
     )
 
 
+def holiday_topic_clause():
+    """Условие SQL «тема в каникулярной программе».
+
+    Созвон 13.10.2026: годовой курс и каникулярный набор — две программы, и
+    ученик видит только свою. Признак стоит у периода (`LearningTopic.program`),
+    этап и цикл получают его по цепочке `parent_id`: период — сам, этап — его
+    родитель, цикл и задания этапа — родитель родителя. Тема без цепочки до
+    каникулярного периода (легаси-цикл без этапа, каталог видео, служебные
+    темы календаря) — годовая.
+
+    `parent_id IS NOT NULL` стоит явно: `NULL IN (...)` даёт NULL, и
+    отрицание условия (`~`, годовой ученик) молча выкинуло бы все темы без
+    родителя.
+    """
+    period = aliased(LearningTopic)
+    stage = aliased(LearningTopic)
+    holiday_periods = select(period.id).where(
+        period.kind == TOPIC_KIND_PERIOD, period.program == PROGRAM_HOLIDAY
+    )
+    holiday_stages = select(stage.id).where(
+        stage.parent_id.is_not(None), stage.parent_id.in_(holiday_periods)
+    )
+    return or_(
+        LearningTopic.id.in_(holiday_periods),
+        and_(
+            LearningTopic.parent_id.is_not(None),
+            or_(
+                LearningTopic.parent_id.in_(holiday_periods),
+                LearningTopic.parent_id.in_(holiday_stages),
+            ),
+        ),
+    )
+
+
+def program_topic_filter(program: str | None):
+    """Темы программы ученика: каникулярному — только каникулярные, всем
+    остальным — всё, кроме них."""
+    holiday = holiday_topic_clause()
+    return holiday if program == PROGRAM_HOLIDAY else ~holiday
+
+
+def topic_program(db: Session, topic: LearningTopic | None) -> str:
+    """Программа темы по цепочке до периода — то же правило, что
+    `holiday_topic_clause`, для одной темы в Python."""
+    for _ in range(3):
+        if topic is None:
+            return PROGRAM_ANNUAL
+        if topic.kind == TOPIC_KIND_PERIOD:
+            return PROGRAM_HOLIDAY if topic.program == PROGRAM_HOLIDAY else PROGRAM_ANNUAL
+        topic = db.get(LearningTopic, topic.parent_id) if topic.parent_id else None
+    return PROGRAM_ANNUAL
+
+
 def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
     """Активные ученики, которым открыта конкретная тема — зеркало
     `accessible_topic_ids` (по ученику), но по теме: те же условия
@@ -228,6 +285,9 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
             Role.rank == STUDENT_ROLE_RANK,
             User.is_active.is_(True),
             User.deleted_at.is_(None),
+            # Зеркало `program_topic_filter`: каникулярный ученик годовую тему
+            # не видит, годовой — каникулярную.
+            User.program == topic_program(db, topic),
         )
     )
     if topic.ends_at is not None:
@@ -498,8 +558,13 @@ def count_topic_audience(
     assignee_ids: list[int],
     tariff_restricted: bool = False,
     tariffs: list[str] | None = None,
+    program: str = PROGRAM_ANNUAL,
 ) -> int:
     """Сколько активных учеников реально получат тему.
+
+    `program` — программа темы (`topic_program`): ученики другой программы
+    её не видят и в охват не входят. По умолчанию годовая — календарь
+    программы и каталог видео живут только в ней.
 
     Считается по той же адресации, что и в accessible_topic_ids, и служит
     проверкой на глаз: адресовал теме «Р» и увидел трёх человек вместо сорока —
@@ -519,6 +584,7 @@ def count_topic_audience(
             User.deleted_at.is_(None),
             User.is_group_member.is_(True),
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),  # счётчик — учёт, служебных не считаем
+            User.program == program,
         )
     )
     if tariff_restricted:

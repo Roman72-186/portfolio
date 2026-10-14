@@ -18,6 +18,7 @@ from app.constants import TARIFFS
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
 from app.models.student_reminder import KIND_CYCLE_DEBT, StudentReminder
+from app.models.tag import UserTag
 from app.models.task_block import TaskBlock, TaskBlockState
 from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
@@ -25,7 +26,13 @@ from app.services.program import day_bounds, msk_date
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.tz import now_msk
-from app.services.video_topics import get_topic_tariff_windows, saw_topic_period
+from app.services.video_topics import (
+    get_assignee_ids,
+    get_tag_ids,
+    get_topic_tariff_windows,
+    saw_topic_period,
+    topic_program,
+)
 
 
 def active_students(db: Session, now: datetime | None = None) -> list[User]:
@@ -185,9 +192,22 @@ def _audience(
     """Ученики, которым цикл был виден. Пришедший после его конца цикла не
     видит (владелец 29.09.2026) — и в «не сдали» его считать нельзя. Так же
     не считается тариф, которому цикл закрыт или чьё окно ещё не открылось
-    (06.10.2026) — то же правило, что `accessible_topic_ids`."""
+    (06.10.2026) — то же правило, что `accessible_topic_ids`. И ученик
+    другой программы (годовой курс / каникулярный набор, созвон 13.10.2026),
+    и, у цикла не «для всех», ученик без его тега или поимённого назначения
+    (каникулярные группы)."""
     windows = _tariff_windows(db, topic)
     opened_by = now_msk()
+    program = topic_program(db, topic)
+    addressed: set[int] | None = None
+    if not topic.assign_to_all:
+        tag_ids = get_tag_ids(db, topic.id)
+        addressed = set(get_assignee_ids(db, topic.id))
+        if tag_ids:
+            addressed.update(
+                row[0] for row in
+                db.query(UserTag.user_id).filter(UserTag.tag_id.in_(tag_ids))
+            )
 
     def tariff_saw(student: User) -> bool:
         if windows is None:
@@ -201,6 +221,8 @@ def _audience(
     return [
         student for student in active_students(db, now)
         if saw_topic_period(student.program_access_from, topic) and tariff_saw(student)
+        and student.program == program
+        and (addressed is None or student.id in addressed)
     ]
 
 

@@ -168,6 +168,12 @@ class User(Base):
     program_access_from: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Программа ученика (созвон 13.10.2026): «annual» — годовой курс, «holiday» —
+    # каникулярный набор. Видит только циклы своей программы — правило в
+    # `video_topics.accessible_topic_ids`, значения — `constants.PROGRAMS`.
+    program: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="annual", server_default="annual"
+    )
     # Ежемесячная оплата (`app/services/payments.py`, 07.10.2026). Окно оплаты
     # — дни месяца «с» и «по» (крайний ≤ 28, чтобы окно было в любом месяце);
     # пусто — ученик вне автоматической оплаты, так живут все до импорта

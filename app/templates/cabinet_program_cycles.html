@@ -18,8 +18,12 @@
 {# «Смотреть» в АОП — без кнопок записи (шаг 2 плана тонких доступов),
    скрипт выходит сам, если формы нет. #}
 {% set prg_edit = can(user, "program") %}
+{# Каникулярная программа (созвон 13.10.2026): цикл обязательно внутри этапа
+   своей программы, доступ — по тегам групп вместо тарифов. #}
+{% set holiday = program == 'holiday' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
+    {% include "partials/program_switch.html" %}
     {% include "partials/program_path.html" %}
 
     <div class="prg-head">
@@ -43,7 +47,7 @@
        «Нового дайджеста». Пока циклов нет, форма открыта — первый цикл за
        лишним нажатием не прячем. #}
     {% if prg_edit %}
-    <form class="prg-form" data-cycle-form{% if cycles %} hidden{% endif %}>
+    <form class="prg-form" data-program="{{ program }}" data-cycle-form{% if cycles %} hidden{% endif %}>
         <h2 data-cycle-form-title>Новый цикл</h2>
         <input type="hidden" data-c-id value="">
         <label class="prg-field">
@@ -66,16 +70,40 @@
             </label>
         </div>
         <label class="prg-field">
-            <span>Этап (необязательно)</span>
+            {# Каникулярному циклу этап обязателен: программа цикла — по его
+               этапу, без этапа он ушёл бы годовому курсу (`_cycle_program`). #}
+            <span>{{ 'Этап' if holiday else 'Этап (необязательно)' }}</span>
             {# Внутри этапа новый цикл по умолчанию заводится в него же. #}
-            <select data-c-stage aria-label="Этап"
+            <select data-c-stage aria-label="Этап"{% if holiday %} required{% endif %}
                     data-c-stage-default="{{ stage_filter.id if stage_filter else '' }}">
-                <option value="">Без этапа</option>
+                <option value="">{{ 'Выберите этап' if holiday else 'Без этапа' }}</option>
                 {% for stage in stages %}
                 <option value="{{ stage.id }}"{% if stage_filter and stage.id == stage_filter.id %} selected{% endif %}>{{ stage.label }}</option>
                 {% endfor %}
             </select>
         </label>
+        {% if holiday and not stages %}
+        <p class="prg-hint">Каникулярных этапов пока нет. Заведите период и этап на вкладках «Периоды» и «Этапы», потом цикл.</p>
+        {% endif %}
+        {% if holiday %}
+        {# Группы каникулярного набора — теги курса (созвон 13.10.2026:
+           «каждой группе свой цикл, доступ по тегам, без тарифов»). #}
+        <div class="prg-field">
+            <span>Группы</span>
+            <div class="prg-blk-deadlines" data-c-tags>
+                <p class="prg-hint">Цикл увидят ученики с отмеченным тегом группы. Ничего не отмечено – цикл видят все ученики каникулярного набора.</p>
+                {% for tag in cycle_tag_choices %}
+                <label class="prg-field--row">
+                    <input type="checkbox" data-c-tag="{{ tag.id }}"
+                           aria-label="Цикл доступен группе {{ tag.name }}">
+                    <span>{{ tag.name }}</span>
+                </label>
+                {% else %}
+                <p class="prg-hint">Тегов пока нет. Заведите тег группы на экране <a href="/cabinet/superadmin/tags">«Теги»</a>.</p>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
         {# Доступ по тарифам (владелец 06.10.2026: «с какой даты по какое
            доступен ему данный цикл»). Все галочки и пустые даты — цикл открыт
            всем тарифам в свои даты, так сохраняется без ограничения. «С» —
@@ -110,6 +138,7 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>
@@ -140,6 +169,7 @@
                 {% if not cycle.locks_next %}<span class="prg-badge">Дальше пускает без сдачи</span>{% endif %}
                 {% if cycle.stage_label %}<span class="prg-badge">{{ cycle.stage_label }}</span>{% endif %}
                 {% if cycle.tariff_access is not none %}<span class="prg-badge">Доступ по тарифам</span>{% endif %}
+                {% for tag in cycle.tags %}<span class="prg-badge">{{ tag.name }}</span>{% endfor %}
                 <h3>{{ cycle.label }}</h3>
                 {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
@@ -219,6 +249,9 @@
         locksNext: form.querySelector('[data-c-locks-next]')
     };
     var tariffRows = Array.prototype.slice.call(form.querySelectorAll('[data-c-tariff]'));
+    // Каникулярная программа: тегов групп вместо тарифов (созвон 13.10.2026).
+    var holiday = form.getAttribute('data-program') === 'holiday';
+    var tagBoxes = Array.prototype.slice.call(form.querySelectorAll('[data-c-tag]'));
     var message = form.querySelector('[data-cycle-message]');
     var formTitle = form.querySelector('[data-cycle-form-title]');
     var resetBtn = form.querySelector('[data-cycle-reset]');
@@ -256,6 +289,21 @@
         });
     }
 
+    // `tags` — теги цикла [{id, name}], пусто — цикл для всех каникулярных.
+    function fillTags(tags) {
+        var chosen = {};
+        (tags || []).forEach(function (tag) { chosen[tag.id] = true; });
+        tagBoxes.forEach(function (box) {
+            box.checked = !!chosen[box.getAttribute('data-c-tag')];
+        });
+    }
+
+    function collectTags() {
+        return tagBoxes.filter(function (box) { return box.checked; }).map(function (box) {
+            return Number(box.getAttribute('data-c-tag'));
+        });
+    }
+
     function reset() {
         fields.id.value = '';
         fields.title.value = '';
@@ -267,6 +315,7 @@
         fields.published.checked = true;
         fields.locksNext.checked = true;
         fillTariffs(null);
+        fillTags([]);
         formTitle.textContent = 'Новый цикл';
         message.textContent = '';
     }
@@ -297,6 +346,7 @@
             fields.published.checked = !!data.is_published;
             fields.locksNext.checked = data.locks_next !== false;
             fillTariffs(data.tariff_access === undefined ? null : data.tariff_access);
+            fillTags(data.tags);
             // Заголовок формы повторяет текст кнопки: человек нажал «Название и
             // даты» и должен увидеть его же там, куда его перебросило (отзыв с
             // теста 15.09.2026 — «я не поняла, куда мне жать»).
@@ -365,24 +415,33 @@
             message.textContent = 'Заполните обе даты периода.';
             return;
         }
+        if (holiday && !fields.stage.value) {
+            message.textContent = 'Выберите этап каникулярной программы.';
+            fields.stage.focus();
+            return;
+        }
         var tariffAccess = collectTariffs();
         if (tariffAccess && !tariffAccess.length) {
             message.textContent = 'Отметьте хотя бы один тариф – иначе цикл никто не увидит.';
             return;
         }
+        var body = {
+            title: fields.title.value.trim(),
+            description: fields.description.value.trim() || null,
+            starts_on: fields.start.value,
+            ends_on: fields.end.value,
+            stage_id: fields.stage.value ? Number(fields.stage.value) : null,
+            is_published: fields.published.checked,
+            locks_next: fields.locksNext.checked,
+            program: form.getAttribute('data-program')
+        };
+        // У каникулярного цикла тарифов нет, у годового — тегов.
+        if (holiday) body.tag_ids = collectTags();
+        else body.tariff_access = tariffAccess;
         window.csrfFetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                title: fields.title.value.trim(),
-                description: fields.description.value.trim() || null,
-                starts_on: fields.start.value,
-                ends_on: fields.end.value,
-                stage_id: fields.stage.value ? Number(fields.stage.value) : null,
-                is_published: fields.published.checked,
-                locks_next: fields.locksNext.checked,
-                tariff_access: tariffAccess
-            })
+            body: JSON.stringify(body)
         }).then(function (resp) {
             if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
             return resp.json();

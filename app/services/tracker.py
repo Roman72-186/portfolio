@@ -16,7 +16,7 @@ from typing import Literal
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
-from app.constants import MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS, TARIFFS
+from app.constants import MOCK_SUBJECTS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, TARIFFS
 from app.models.exam_cycle import ExamCycle
 from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
@@ -69,6 +69,7 @@ from app.services.video_topics import (
     set_topic_assignees,
     set_topic_tags,
     topic_audience_user_ids,
+    topic_program,
     upcoming_topic_ids,
 )
 
@@ -318,7 +319,8 @@ def count_task_audience(
         )
     )
     if assign_to_all:
-        return students.count()
+        # Зеркало `accessible_task_ids`: «всем» — только годовому курсу.
+        return students.filter(User.program != PROGRAM_HOLIDAY).count()
 
     reached: set[int] = set()
     if tag_ids:
@@ -357,16 +359,22 @@ def accessible_task_ids(db: Session, user_id: int) -> set[int]:
         .filter(TrackerTaskAssignee.user_id == user_id)
         .scalar_subquery()
     )
+    # «Всем» вне программы — разовые задачи годового курса: каникулярному
+    # ученику они не адресованы (созвон 13.10.2026, `program_topic_filter`).
+    # Теги и поимённое назначение — явная адресация, они работают как прежде.
+    program = db.query(User.program).filter(User.id == user_id).scalar()
+    addressed = [
+        TrackerTask.id.in_(tagged_task_ids),
+        TrackerTask.id.in_(assigned_task_ids),
+    ]
+    if program != PROGRAM_HOLIDAY:
+        addressed.append(TrackerTask.assign_to_all.is_(True))
     rows = (
         db.query(TrackerTask.id)
         .filter(
             TrackerTask.deleted_at.is_(None),
             TrackerTask.is_published.is_(True),
-            or_(
-                TrackerTask.assign_to_all.is_(True),
-                TrackerTask.id.in_(tagged_task_ids),
-                TrackerTask.id.in_(assigned_task_ids),
-            ),
+            or_(*addressed),
         )
         .all()
     )
@@ -1145,7 +1153,10 @@ def task_audience_user_ids(db: Session, task_id: int) -> set[int]:
         )
     )
     if task.assign_to_all:
-        return {row[0] for row in students.all()}
+        # Зеркало `accessible_task_ids`: «всем» — только годовому курсу.
+        return {
+            row[0] for row in students.filter(User.program != PROGRAM_HOLIDAY).all()
+        }
     tag_ids = [
         row[0] for row in
         db.query(TrackerTaskTag.tag_id).filter(TrackerTaskTag.task_id == task_id).all()
@@ -1259,6 +1270,7 @@ def week_audience(db: Session, topic: LearningTopic) -> int:
         assign_to_all=topic.assign_to_all,
         tag_ids=topic_tag_ids(db, topic.id),
         assignee_ids=topic_assignee_ids(db, topic.id),
+        program=topic_program(db, topic),
     )
 
 
