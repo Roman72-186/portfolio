@@ -39,6 +39,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services import payments
 from app.services.contacts import normalize_tg_username
+from app.services.student_search import student_matches
 from app.services.tz import MSK_TZ, msk_date_text
 
 # Состояние ученика за месяц; порядок — порядок строк на экране.
@@ -54,6 +55,13 @@ STATE_LABELS = {
     STATE_PAID: "Оплачено",
 }
 NO_PAYMENT_TEXT = "Отмечено без платежа"
+
+# Фильтр таблицы (владелец 14.10.2026: «фильтр оплатили / не оплатили»).
+# «Оплатили» — месяц закрыт, в том числе сроком без платежа; «не оплатили» —
+# все остальные: окно впереди, идёт или закрылось без оплаты.
+FILTER_PAID = "paid"
+FILTER_UNPAID = "unpaid"
+FILTER_LABELS = {"": "Все", FILTER_PAID: "Оплатили", FILTER_UNPAID: "Не оплатили"}
 
 
 @dataclass
@@ -232,6 +240,22 @@ def month_board(db: DBSession, period: date, now: datetime,
     )
 
 
+def filter_rows(rows: list[BoardRow], *, status: str = "", q: str = "") -> list[BoardRow]:
+    """Строки таблицы под фильтр и поиск. Итоги месяца считаются по всем
+    строкам — фильтр сужает только список. Поиск — общее правило
+    (`services/student_search.py`): имя, фамилия, ник, номер."""
+    result = []
+    for row in rows:
+        if status == FILTER_PAID and row.state != STATE_PAID:
+            continue
+        if status == FILTER_UNPAID and row.state == STATE_PAID:
+            continue
+        if not student_matches(row.student, q):
+            continue
+        result.append(row)
+    return result
+
+
 def _tariff_totals(rows: list[BoardRow]) -> list[TariffTotal]:
     totals: dict[str, TariffTotal] = {}
     for row in rows:
@@ -283,6 +307,43 @@ def months_summary(db: DBSession, now: datetime) -> list[MonthTotal]:
         period = payments.add_months(period, 1)
     result.reverse()
     return result
+
+
+def stats_card(db: DBSession, now: datetime) -> dict:
+    """Карточка «Оплаты» в «Статистике активности» (владелец 14.10.2026:
+    «перенести оплату в статистику»): итоги текущего месяца и сводка по
+    месяцам — те же `months_summary`, что на экране «Оплаты». Поимённый
+    список, фильтр и кнопки остаются на экране, карточка ведёт туда."""
+    current = parse_month("", now)
+    summary = months_summary(db, now)
+
+    def money(count: int, amount_kop: int) -> str:
+        return f"{count} · {payments.rub_text(amount_kop)}" if amount_kop else str(count)
+
+    months = [
+        {
+            "value": m.period.strftime("%Y-%m"),
+            "title": payments.period_label(m.period).capitalize(),
+            "paid": money(m.paid_count, m.paid_kop),
+            "no_payment": m.no_payment_count,
+            "debt": money(m.debt_count, m.debt_kop),
+            "waiting": m.waiting_count,
+            "is_current": m.period == current,
+        }
+        for m in summary
+    ]
+    month = next((m for m in summary if m.period == current), None)
+    return {
+        "month_value": current.strftime("%Y-%m"),
+        "month_title": payments.period_label(current),
+        "paid_count": month.paid_count if month else 0,
+        "paid_text": payments.rub_text(month.paid_kop) if month and month.paid_kop else "",
+        "debt_count": month.debt_count if month else 0,
+        "debt_text": payments.rub_text(month.debt_kop) if month and month.debt_kop else "",
+        "waiting_count": month.waiting_count if month else 0,
+        "no_payment_count": month.no_payment_count if month else 0,
+        "months": months,
+    }
 
 
 # ── Excel ────────────────────────────────────────────────────────────────────

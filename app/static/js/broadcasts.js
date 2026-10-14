@@ -283,8 +283,10 @@
         }
         var chosen = {};
         chosenIds().forEach(function (id) { chosen[id] = true; });
+        var queryId = studentIdFromQuery(needle);
         var found = studentsData.filter(function (s) {
             if (chosen[s.id]) return false;
+            if (queryId !== null) return Number(s.id) === queryId;
             return s.name.toLowerCase().indexOf(needle) >= 0
                 || (s.username || '').toLowerCase().indexOf(needle) >= 0;
         }).slice(0, RESULTS_MAX);

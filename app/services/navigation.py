@@ -435,7 +435,8 @@ GRANTED_ONLY_STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 
 # «Оплаты» в меню модератора, которому оплата открыта поимённо
 # (`payments.is_payments_staff`, Александрия 14.10.2026). У ГП и суперадмина
-# экран — вкладкой на «Пользователях».
+# экран открывается из карточки «Оплаты» в «Статистике активности» (до
+# 14.10.2026 — вкладкой на «Пользователях»).
 PAYMENTS_NAV_ITEM = StaffNavItem(
     key="payments",
     href="/cabinet/superadmin/payments",

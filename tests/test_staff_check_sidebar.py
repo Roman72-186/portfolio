@@ -15,7 +15,7 @@ def test_mock_check_renders_shared_sidebar(admin_client):
     assert 'Проверка пробников' in html
     assert 'id="student-search"' in html
     assert 'oninput="applyFilters()"' in html
-    assert 'placeholder="Поиск ученика…"' in html
+    assert 'placeholder="Имя или номер ученика…"' in html
     assert '<div class="sidebar-list" id="student-list">' in html
 
 
@@ -28,5 +28,5 @@ def test_retake_check_renders_shared_sidebar(admin_client):
     assert 'Проверка отработок' in html
     assert 'id="student-search"' in html
     assert 'oninput="applyFilters()"' in html
-    assert 'placeholder="Поиск по имени или @username"' in html
+    assert 'placeholder="Имя, @username или номер"' in html
     assert '<div class="sidebar-list" id="student-list">' in html

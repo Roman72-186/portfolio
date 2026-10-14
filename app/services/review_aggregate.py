@@ -24,6 +24,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.services.student_search import student_matches
+
 DOMAIN_TASK_BLOCK = "task_block"
 DOMAIN_WORK = "work"
 DOMAIN_HOMEWORK = "homework"
@@ -546,16 +548,6 @@ NEWCOMER_TARIFF = "__newcomer__"
 NO_CURATOR = "none"
 
 
-def normalize_student_search(value: object) -> str:
-    """Python-двойник `normalizeStudentSearch` из `cabinet_students.html`:
-    NFKC, регистр, ё→е, схлопнутые пробелы. Правила общие, чтобы один и тот же
-    запрос находил одних и тех же учеников на обоих экранах."""
-    import unicodedata
-
-    text = unicodedata.normalize("NFKC", str(value or "")).lower().replace("ё", "е")
-    return " ".join(text.split())
-
-
 def filter_review_rows(
     rows: list[dict],
     *,
@@ -571,10 +563,9 @@ def filter_review_rows(
     выбирает из уже доступных, поэтому подставленный в адрес чужой id выборку
     не расширит. Поиск — каждое слово запроса должно найтись в имени (или
     в @username при `search_contacts`, как и на «Учениках»: контакты там видит
-    только ГП и выше).
+    только ГП и выше), номер ищет ученика с этим номером
+    (`services/student_search.py`).
     """
-    tokens = [t.lstrip("@") for t in normalize_student_search(q).split(" ") if t.lstrip("@")]
-
     result = []
     for row in rows:
         student = row["student"]
@@ -592,15 +583,8 @@ def filter_review_rows(
                 continue
         elif curator.isdigit() and student.curator_id != int(curator):
             continue
-        if tokens:
-            parts = [student.last_name, student.first_name, student.name]
-            if search_contacts:
-                # vk_id — внутренний номер, людям не показывается (VK удалён
-                # 29.09.2026), искать по нему некому.
-                parts.append((student.tg_username or "").lstrip("@"))
-            haystack = normalize_student_search(" ".join(str(p) for p in parts if p))
-            if not all(token in haystack for token in tokens):
-                continue
+        if not student_matches(student, q, search_contacts=search_contacts):
+            continue
         result.append(row)
     return result
 

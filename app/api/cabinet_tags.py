@@ -10,6 +10,7 @@ from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_LEGACY
 from app.dependencies import require_admin_role, require_csrf
 from app.models.role import Role
 from app.models.user import User
+from app.services.student_search import student_matches
 from app.services.tags import (
     add_tag_to_user,
     ensure_profile_tags,
@@ -81,21 +82,10 @@ def superadmin_tags_page(
             query = query.filter(User.profile_completed == True)  # noqa: E712
 
         # @username — это Telegram-логин; tg_username зашифрован (EncryptedString),
-        # поэтому ищем по нему в Python, а не через SQL ilike. Имя/фамилию матчим тоже
-        # в памяти для единообразия.
-        q_clean = q.strip().lstrip("@")
+        # поэтому ищем в Python, а не через SQL ilike. Правило поиска — общее
+        # (`services/student_search.py`): имя, фамилия, ник, номер.
         all_students = query.order_by(User.last_name, User.first_name).all()
-        if q_clean:
-            ql = q_clean.lower()
-            students = [
-                s for s in all_students
-                if (s.first_name and ql in s.first_name.lower())
-                or (s.last_name and ql in s.last_name.lower())
-                or (s.name and ql in s.name.lower())
-                or (s.tg_username and ql in s.tg_username.lower())
-            ]
-        else:
-            students = all_students
+        students = [s for s in all_students if student_matches(s, q)]
 
     ensure_profile_tags(db, students)
     tags_by_user = get_tags_for_users(db, [s.id for s in students])

@@ -49,9 +49,10 @@ from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-from app.services import payments
+from app.services import payment_board, payments
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
+from app.services.student_search import student_id_query
 from app.services.tags import get_all_tags
 from app.services.rbac import MODERATOR_ROLE_NAME
 from app.services import section_access
@@ -1357,6 +1358,13 @@ def superadmin_activity(
         "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
         "student_activity": get_student_activity_overview(db, include_assignments=True),
+        # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
+        # Считает payment_board.py — тот же расчёт, что у экрана «Оплаты»;
+        # карточку видят только те, кому открыта оплата.
+        "payment_stats": (
+            payment_board.stats_card(db, datetime.now(timezone.utc))
+            if payments.is_payments_viewer(user) else None
+        ),
     })
 
 
@@ -1771,7 +1779,11 @@ def _render_superadmin_users(
         query = query.join(UserTag, UserTag.user_id == User.id).filter(UserTag.tag_id == tag_id_int)
 
     q_clean = q.strip().lstrip("@").lower()
-    if q_clean:
+    q_id = student_id_query(q)
+    if q_id is not None:
+        # Номер — точное совпадение (`services/student_search.py`).
+        all_filtered = query.filter(User.id == q_id).all()
+    elif q_clean:
         like = f"%{q_clean}%"
         db_matched = query.filter(
             User.name.ilike(like) |

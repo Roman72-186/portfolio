@@ -277,7 +277,7 @@ function buildTicketHTML(n) {
         + '<div id="assign-students-wrap-' + n + '" class="assign-mode-wrap">'
         + buildRecipientFilter(n)
         + '<div class="students-selector">'
-        + '<input type="text" class="students-search" placeholder="Поиск по фамилии, имени или username…" oninput="filterStudents(this,' + n + ')">'
+        + '<input type="text" class="students-search" placeholder="Поиск по фамилии, имени, username или номеру…" oninput="filterStudents(this,' + n + ')">'
         + '<div class="students-list" id="students-list-' + n + '"></div>'
         + '<div class="students-selected-count" id="students-count-' + n + '">0 выбрано</div>'
         + '</div>'
@@ -303,6 +303,7 @@ function initStudentSearch(n) {
     ALL_STUDENTS.forEach(function(s) {
         var row = document.createElement('div');
         row.className = 'student-option';
+        row.setAttribute('data-id', s.id);
         var uname = s.username ? '@' + s.username : '';
         // В поиск входит и ФИО, и username — фильтр по подстроке (первые буквы тоже матчатся)
         row.setAttribute('data-search', (s.name + ' ' + uname).toLowerCase());
@@ -317,8 +318,12 @@ function initStudentSearch(n) {
 function filterStudents(input, n) {
     // Ведущий @ в запросе игнорируем, чтобы «@ivan» и «ivan» искали одинаково
     var q = input.value.toLowerCase().replace(/^@+/, '');
+    var queryId = studentIdFromQuery(q);
     document.querySelectorAll('#students-list-' + n + ' .student-option').forEach(function(row) {
-        row.style.display = row.getAttribute('data-search').includes(q) ? '' : 'none';
+        var match = queryId !== null
+            ? row.getAttribute('data-id') === String(queryId)
+            : row.getAttribute('data-search').includes(q);
+        row.style.display = match ? '' : 'none';
     });
 }
 

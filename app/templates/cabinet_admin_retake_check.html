@@ -305,7 +305,7 @@
 <script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
 <div class="split-wrap">
     {% from "partials/staff_check_sidebar.html" import check_sidebar %}
-    {% call check_sidebar("Проверка отработок", "Поиск по имени или @username", total_unchecked, total_students, tariffs) %}
+    {% call check_sidebar("Проверка отработок", "Имя, @username или номер", total_unchecked, total_students, tariffs) %}
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" data-tg="{{ s.tg_username or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
@@ -366,12 +366,13 @@ function selectTariff(btn, tariff) {
 function applyFilters() {
     var q = (document.getElementById('student-search').value || '').toLowerCase().trim();
     var qNoAt = q.replace(/^@+/, '');
+    var queryId = studentIdFromQuery(q);
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
-        var matchesName = name.textContent.toLowerCase().includes(q);
         var tg = (row.getAttribute('data-tg') || '').toLowerCase().replace(/^@+/, '');
-        var matchesTg = !q || tg.includes(qNoAt) || ('@' + tg).includes(q);
+        var matchesName = queryId !== null ? row.id === 'srow-' + queryId : name.textContent.toLowerCase().includes(q);
+        var matchesTg = queryId === null && (!q || tg.includes(qNoAt) || ('@' + tg).includes(q));
         var rowTariff = row.getAttribute('data-tariff') || '';
         var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
         row.style.display = ((matchesName || matchesTg) && matchesTariff) ? '' : 'none';

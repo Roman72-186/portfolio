@@ -11,8 +11,13 @@
 Смотреть и скачивать Excel — `payments_viewer` (суперадмин и ГП). Кнопки —
 у `payments_staff` с действием `people:students`; сервер проверяет то же.
 Статистика оплат — `plans/2026-10-13-payment-stats.md`.
+С 14.10.2026 экран открывается из «Статистики активности» (карточка «Оплаты»),
+а не вкладкой «Пользователей»; фильтр «Оплатили / Не оплатили» и поиск по
+имени, нику и номеру сужают только таблицу — итоги месяца считаются по всем.
 #}
 {% set can_mark = payments_staff(user) %}
+{% set filter_qs = ('&status=' ~ (filters.status|urlencode) if filters.status else '') ~ ('&q=' ~ (filters.q|urlencode) if filters.q else '') %}
+{% set is_filtered = filters.status or filters.q %}
 <div class="prg-page">
     <div class="prg-head">
         <div>
@@ -21,16 +26,16 @@
                и отмеченным переводам. Месяц, закрытый сроком в карточке или загрузкой
                списка, идёт отдельно – как «{{ no_payment_text|lower }}».</p>
         </div>
-        <a class="btn-outline" href="/cabinet/superadmin/users">К пользователям</a>
+        <a class="btn-outline" href="/cabinet/superadmin/activity">К статистике</a>
     </div>
 
     <div class="prg-monthbar">
-        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ prev_month }}" aria-label="Предыдущий месяц">←</a>
+        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ prev_month }}{{ filter_qs }}" aria-label="Предыдущий месяц">←</a>
         <h2>{{ month_title }}</h2>
-        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ next_month }}" aria-label="Следующий месяц">→</a>
+        <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ next_month }}{{ filter_qs }}" aria-label="Следующий месяц">→</a>
     </div>
     <div class="prg-actions">
-        {% if not is_current %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}">Текущий месяц</a>{% endif %}
+        {% if not is_current %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}{{ filter_qs }}">Текущий месяц</a>{% endif %}
         <a class="btn-outline" href="/cabinet/superadmin/payments/export?month={{ month_value }}">Скачать Excel</a>
     </div>
 
@@ -45,9 +50,33 @@
         </div>
     </section>
 
+    {# Фильтр и поиск (владелец 14.10.2026) — GET-форма как на «Проверке по
+       ученику». Номер ищет ученика точно: «256», «#256». #}
+    <form class="prg-form" method="get" action="/cabinet/superadmin/payments" role="search" aria-label="Поиск ученика в оплатах">
+        <input type="hidden" name="month" value="{{ month_value }}">
+        <div class="prg-grid2">
+            <label class="prg-field">Поиск
+                <input type="search" name="q" value="{{ filters.q }}"
+                       placeholder="Имя, @username или номер" autocomplete="off">
+            </label>
+            <label class="prg-field">Оплата
+                <select name="status">
+                    {% for value, text in filter_labels.items() %}
+                    <option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ text }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="prg-actions">
+            <button type="submit" class="btn-blue">Показать</button>
+            {% if is_filtered %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ month_value }}">Сбросить</a>{% endif %}
+        </div>
+    </form>
+
     <section class="prg-items">
         <h2>Ученики</h2>
-        {% if board.rows %}
+        {% if is_filtered and board.rows %}<p class="prg-hint">Показано {{ rows|length }} из {{ board.rows|length }}</p>{% endif %}
+        {% if rows %}
         <div class="table-scroll">
             <table class="prg-table">
                 <thead>
@@ -62,13 +91,13 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for row in board.rows %}
+                    {% for row in rows %}
                     {% set label = state_labels[row.state] %}
                     <tr>
                         <td>
                             <a href="/cabinet/students?student={{ row.student.id }}">{{ display_name(row.student) }}</a>
                             {% set contacts = contacts_text(row.student) %}
-                            {% if contacts %}<div class="prg-hint">{{ contacts }}</div>{% endif %}
+                            <div class="prg-hint">#{{ row.student.id }}{% if contacts %} · {{ contacts }}{% endif %}</div>
                         </td>
                         <td>{{ tariff_text(row.tariff) }}</td>
                         <td>{{ row.window_text }}</td>
@@ -113,6 +142,8 @@
                 </tbody>
             </table>
         </div>
+        {% elif board.rows %}
+        <p class="prg-hint">По этому фильтру никого нет.</p>
         {% else %}
         <p class="prg-hint">Ни у одного ученика пока нет окна оплаты. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
         {% endif %}

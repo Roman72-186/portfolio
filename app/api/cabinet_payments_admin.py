@@ -1,9 +1,11 @@
 """Экран «Оплаты»: кто оплатил за месяц, ручная отметка, отмена, возврат.
 
 Расчёт — `services/payment_board.py`, деньги — `services/payments.py`
-(`mark_paid_manually` → `record_paid`, `revert_paid`). Экран живёт в разделе
-«Люди» (`section_access`, дерево `/cabinet/superadmin/payments`), записи —
-действие `people:students`. Экран и его Excel (статистика оплат,
+(`mark_paid_manually` → `record_paid`, `revert_paid`). Вход на экран — из
+карточки «Оплаты» в «Статистике активности» (владелец 14.10.2026, до этого —
+вкладка «Пользователей»); в `section_access` адреса по-прежнему числятся за
+«Людьми», но пускает на них своё правило оплаты (`dependencies.get_current_user`,
+`payments_ok`). Экран и его Excel (статистика оплат,
 `plans/2026-10-13-payment-stats.md`), отметка, отмена и возврат — ГП и
 суперадмин (`payments.is_payments_staff`, владелец 14.10.2026). Куратору и
 модератору ни экрана, ни кнопок (план, «Ручная отметка оплаты»).
@@ -49,16 +51,24 @@ def payments_board_page(
     user: Annotated[dict, Depends(require_payments_viewer)],
     db: Annotated[DBSession, Depends(get_db)],
     month: str = Query(""),
+    status: str = Query(""),
+    q: str = Query(""),
 ):
     now = datetime.now(timezone.utc)
     period = payment_board.parse_month(month, now)
     board = payment_board.month_board(db, period, now)
+    status = status if status in payment_board.FILTER_LABELS else ""
+    q = q.strip()
+    rows = payment_board.filter_rows(board.rows, status=status, q=q)
     summary = payment_board.months_summary(db, now)
     current = payment_board.parse_month("", now)
     return templates.TemplateResponse(request, "superadmin_payments.html", {
         "request": request,
         "user": user,
         "board": board,
+        "rows": rows,
+        "filters": {"status": status, "q": q},
+        "filter_labels": payment_board.FILTER_LABELS,
         "summary": summary,
         "month_title": payments.period_label(period).capitalize(),
         "month_value": period.strftime("%Y-%m"),

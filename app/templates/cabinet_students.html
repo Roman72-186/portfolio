@@ -24,7 +24,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
     <div class="sidebar">
         <div class="sidebar-header">
             <h1 class="sidebar-title">{{ sidebar_title }}</h1>
-            <input type="text" class="sidebar-search" placeholder="{{ 'Имя или ник в Telegram…' if is_admin_panel else 'Имя ученика…' }}"
+            <input type="text" class="sidebar-search" placeholder="{{ 'Имя, ник в Telegram или номер…' if is_admin_panel else 'Имя или номер ученика…' }}"
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
@@ -274,5 +274,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=29"></script>
+<script src="/static/js/cabinet_students.js?v=30"></script>
 {% endblock %}

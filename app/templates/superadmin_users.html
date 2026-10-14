@@ -29,7 +29,6 @@
         {% if can(user, "people:create") %}<a class="su-tab" href="/cabinet/superadmin/create-staff">Создать сотрудника</a>{% endif %}
         <a class="su-tab" href="/cabinet/superadmin/assign-curator">Привязка к куратору</a>
         <a class="su-tab" href="/cabinet/superadmin/tags">Назначить теги</a>
-        {% if payments_viewer(user) %}<a class="su-tab" href="/cabinet/superadmin/payments">Оплаты</a>{% endif %}
         {% if payments_staff(user) and can(user, "people:students") %}<a class="su-tab" href="/cabinet/superadmin/payment-import">Оплата списком</a>{% endif %}
     </nav>
 
@@ -37,7 +36,7 @@
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>
             Поиск
-            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..." class="su-input--search">
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username или номер..." class="su-input--search">
         </label>
         <label>
             Роль

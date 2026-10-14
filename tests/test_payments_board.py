@@ -450,8 +450,12 @@ def test_head_teacher_has_everything_about_payments(db, client, session_factory,
 
     users_page = client.get("/cabinet/superadmin/users")
     assert users_page.status_code == 200
-    assert "/cabinet/superadmin/payments" in users_page.text
     assert "/cabinet/superadmin/payment-import" in users_page.text
+    # Вход на экран оплат — из «Статистики активности» (владелец 14.10.2026).
+    stats_page = client.get("/cabinet/superadmin/activity")
+    assert stats_page.status_code == 200
+    assert "data-payment-card" in stats_page.text
+    assert "/cabinet/superadmin/payments?month=" in stats_page.text
 
     page = client.get("/cabinet/superadmin/payments?month=2026-10")
     assert page.status_code == 200 and "Иванова Анна" in page.text
@@ -525,9 +529,96 @@ def test_named_moderator_has_everything_about_payments(db, client, session_facto
     assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
 
 
-def test_superadmin_sees_payment_tabs(db, client, session_factory, people):
+def test_payments_live_in_statistics_not_in_users(db, client, session_factory, people):
+    """Владелец 14.10.2026: «перенести оплату в статистику». На «Пользователях»
+    осталась только «Оплата списком», экран оплат открывается из карточки
+    «Оплаты» в «Статистике активности», и экран ведёт назад туда же."""
     client.cookies.set("session_id", session_factory(people["chief"]).id)
 
-    page = client.get("/cabinet/superadmin/users")
+    users_page = client.get("/cabinet/superadmin/users").text
+    assert 'href="/cabinet/superadmin/payments"' not in users_page
+    assert "/cabinet/superadmin/payment-import" in users_page
 
-    assert "/cabinet/superadmin/payments" in page.text and "/cabinet/superadmin/payment-import" in page.text
+    stats_page = client.get("/cabinet/superadmin/activity").text
+    assert "data-payment-card" in stats_page
+    assert "status=paid" in stats_page and "status=unpaid" in stats_page
+
+    board_page = client.get("/cabinet/superadmin/payments").text
+    assert 'href="/cabinet/superadmin/activity"' in board_page
+
+
+def test_statistics_hides_payment_card_from_moderator(db, client, session_factory, user_factory):
+    """Статистику модератор видит, оплату — нет (кроме поимённого доступа)."""
+    moderator = user_factory(vk_id=990_080, name="Маркетолог", role_name="модератор")
+    client.cookies.set("session_id", session_factory(moderator).id)
+
+    page = client.get("/cabinet/superadmin/activity")
+
+    assert page.status_code == 200
+    assert "data-payment-card" not in page.text
+
+
+def test_stats_card_counts_current_month(db, prices, make_payer, people):
+    paid = make_payer("Аникина Ая")
+    _prodamus_paid(db, paid)
+    make_payer("Борисова Бэла", window=(1, 5))
+    make_payer("Волкова Вера", window=(20, 25))
+
+    card = pb.stats_card(db, _msk(2026, 10, 14, 12, 0))
+
+    assert (card["month_value"], card["paid_count"], card["paid_text"]) == ("2026-10", 1, "13 255 ₽")
+    assert (card["debt_count"], card["debt_text"], card["waiting_count"]) == (1, "13 255 ₽", 1)
+    assert card["months"][0]["value"] == "2026-10" and card["months"][0]["is_current"]
+
+
+# ── Фильтр и поиск (владелец 14.10.2026) ────────────────────────────────────
+
+def test_filter_rows_paid_unpaid_and_search(db, prices, make_payer, people):
+    paid = make_payer("Аникина Ая", tg_username="@aya")
+    _prodamus_paid(db, paid)
+    marked = make_payer("Глебова Гуля")
+    ps.apply_payment_settings(db, people["chief"].id, marked, window_start=10, window_end=15,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=OCT)
+    late = make_payer("Борисова Бэла", window=(1, 5))
+    waiting = make_payer("Волкова Вера", window=(20, 25))
+    db.commit()
+    rows = pb.month_board(db, OCT, _msk(2026, 10, 14, 12, 0)).rows
+
+    def ids(**kw):
+        return {r.student.id for r in pb.filter_rows(rows, **kw)}
+
+    # «Оплатили» — и деньгами, и сроком без платежа; «не оплатили» — остальные.
+    assert ids(status=pb.FILTER_PAID) == {paid.id, marked.id}
+    assert ids(status=pb.FILTER_UNPAID) == {late.id, waiting.id}
+    assert ids() == {paid.id, marked.id, late.id, waiting.id}
+    assert ids(q="борисова") == {late.id}
+    assert ids(q="@aya") == {paid.id}
+    assert ids(q=str(waiting.id)) == {waiting.id}
+    assert ids(q=f"#{waiting.id}") == {waiting.id}
+    assert ids(q=str(waiting.id), status=pb.FILTER_PAID) == set()
+
+
+def test_page_filters_and_finds_by_id(db, client, session_factory, prices, make_payer, people):
+    anna = make_payer("Иванова Анна")
+    _prodamus_paid(db, anna)
+    make_payer("Петрова Мария")
+    client.cookies.set("session_id", session_factory(people["chief"]).id)
+
+    paid_only = client.get("/cabinet/superadmin/payments?month=2026-10&status=paid").text
+    assert "Иванова Анна" in paid_only and "Петрова Мария" not in paid_only
+    assert "Показано 1 из 2" in paid_only
+
+    unpaid = client.get("/cabinet/superadmin/payments?month=2026-10&status=unpaid").text
+    assert "Петрова Мария" in unpaid and "Иванова Анна" not in unpaid
+
+    by_id = client.get(f"/cabinet/superadmin/payments?month=2026-10&q=%23{anna.id}").text
+    assert "Иванова Анна" in by_id and "Петрова Мария" not in by_id
+    assert f"#{anna.id}" in by_id
+
+    nobody = client.get("/cabinet/superadmin/payments?month=2026-10&q=999999").text
+    assert "По этому фильтру никого нет." in nobody
+    # Итоги месяца — по всем, фильтр их не сужает.
+    assert "Оплатили: 1" in nobody
+
+    junk = client.get("/cabinet/superadmin/payments?month=2026-10&status=junk")
+    assert junk.status_code == 200 and "Петрова Мария" in junk.text

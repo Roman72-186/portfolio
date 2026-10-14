@@ -35,7 +35,7 @@
     <!-- Поиск по ученику (имя или Telegram) — фильтрует все секции -->
     <div class="ss-search" id="ss-search">
         <span class="ss-search-icon">🔍</span>
-        <input type="text" id="ss-search-input" aria-label="Поиск по имени или Telegram" placeholder="Поиск по имени или Telegram — по всем вкладкам…" autocomplete="off">
+        <input type="text" id="ss-search-input" aria-label="Поиск по имени, Telegram или номеру" placeholder="Поиск по имени, Telegram или номеру — по всем вкладкам…" autocomplete="off">
         <button type="button" class="ss-search-clear" id="ss-search-clear" title="Очистить" aria-label="Очистить поиск">×</button>
     </div>
     <div class="ss-noresults" id="ss-noresults">По запросу ничего не найдено</div>
@@ -62,7 +62,7 @@
                     </thead>
                     <tbody>
                     {% for s in students %}
-                    <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
+                    <tr data-id="{{ s.student_id }}" data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
                         <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
                         <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
@@ -102,7 +102,7 @@
                     </thead>
                     <tbody>
                     {% for s in ns_students %}
-                    <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
+                    <tr data-id="{{ s.student_id }}" data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
                         <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
                         <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
@@ -163,7 +163,7 @@
                     </thead>
                     <tbody>
                     {% for r in ticket_stats.receipts %}
-                    <tr data-search="{{ r.student_name | lower }}">
+                    <tr data-id="{{ r.student_id }}" data-search="{{ r.student_name | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" class="ss-link">{{ r.student_name }}</a></td>
                         <td data-label="Билет">{{ r.ticket_title }}</td>
                         <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
@@ -218,7 +218,7 @@
                     </thead>
                     <tbody>
                     {% for r in feedback_table.rows %}
-                    <tr data-search="{{ r.student_name | lower }}">
+                    <tr data-id="{{ r.student_id }}" data-search="{{ r.student_name | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" class="ss-link">{{ r.student_name }}</a></td>
                         <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
                         <td data-label="Билет">{{ r.ticket_title or '—' }}</td>
@@ -287,6 +287,7 @@
     function applyFilter() {
         var q = input.value.trim().toLowerCase().replace(/^@+/, '');
         var active = q.length > 0;
+        var queryId = studentIdFromQuery(q);
         box.classList.toggle('has-query', active);
 
         var anyMatch = false;
@@ -296,7 +297,9 @@
 
             // Строки с учениками
             acc.querySelectorAll('tr[data-search]').forEach(function (tr) {
-                var match = !active || tr.getAttribute('data-search').indexOf(q) !== -1;
+                var match = !active || (queryId !== null
+                    ? tr.getAttribute('data-id') === String(queryId)
+                    : tr.getAttribute('data-search').indexOf(q) !== -1);
                 tr.style.display = match ? '' : 'none';
                 if (match && active) accHasMatch = true;
             });

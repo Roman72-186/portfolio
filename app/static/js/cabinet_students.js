@@ -1044,6 +1044,7 @@ function filterSidebar() {
     var queryTokens = q.split(' ').map(function(token) {
         return token.replace(/^@/, '');
     }).filter(Boolean);
+    var queryId = studentIdFromQuery(q);
 
     var anyShown = false;
     document.querySelectorAll('.student-row').forEach(function(row) {
@@ -1051,9 +1052,11 @@ function filterSidebar() {
             row.querySelector('.student-row-name').textContent,
             row.dataset.tgUsername || ''
         ].join(' '));
-        var matchQ = queryTokens.every(function(token) {
-            return searchable.includes(token);
-        });
+        var matchQ = queryId !== null
+            ? row.id === 'srow-' + queryId
+            : queryTokens.every(function(token) {
+                return searchable.includes(token);
+            });
         var matchT = !_activeTariff || row.dataset.tariff === _activeTariff;
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;

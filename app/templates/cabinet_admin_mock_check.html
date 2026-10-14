@@ -453,7 +453,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
 </script>
 <div class="split-wrap">
     {% from "partials/staff_check_sidebar.html" import check_sidebar %}
-    {% call check_sidebar("Проверка пробников", "Поиск ученика…", total_unchecked, total_students, tariffs) %}
+    {% call check_sidebar("Проверка пробников", "Имя или номер ученика…", total_unchecked, total_students, tariffs) %}
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
@@ -1074,10 +1074,11 @@ function selectTariff(btn, tariff) {
 
 function applyFilters() {
     var q = (document.getElementById('student-search').value || '').toLowerCase();
+    var queryId = studentIdFromQuery(q);
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
-        var matchesName = name.textContent.toLowerCase().includes(q);
+        var matchesName = queryId !== null ? row.id === 'srow-' + queryId : name.textContent.toLowerCase().includes(q);
         var rowTariff = row.getAttribute('data-tariff') || '';
         var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
         row.style.display = (matchesName && matchesTariff) ? '' : 'none';
