@@ -155,3 +155,27 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "archive" not in [item.key for item in rank_3_items]
     assert "archive" in [item.key for item in rank_4_items]
     assert "archive" in [item.key for item in rank_5_items]
+
+
+def test_3dlab_is_named_3dlab_everywhere():
+    """Владелец 14.10.2026: пункт лаборатории всегда называется «3Dlab».
+
+    Сверяются все подписи пункта — в меню ученика (даже скрытом от учеников),
+    куратора, персонала и название раздела на странице «Доступы». Подсказка
+    при наведении у персонала остаётся «3D Лаборатория».
+    """
+    from app.services.navigation import (
+        CURATOR_NAV_ITEMS,
+        STAFF_NAV_ITEMS,
+        STUDENT_NAV_ITEMS,
+    )
+    from app.services.section_access import SECTIONS_BY_KEY
+
+    curator = next(i for i in CURATOR_NAV_ITEMS if i.key == "3dlab")
+    student = next(i for i in STUDENT_NAV_ITEMS if i.key == "3dlab")
+    staff = next(i for i in STAFF_NAV_ITEMS if i.key == "3dlab")
+
+    assert curator.label == "3Dlab"
+    assert (student.desktop_label, student.mobile_label, student.aria_label) == ("3Dlab",) * 3
+    assert (staff.sidebar_label, staff.pill_label, staff.aria_label) == ("3Dlab",) * 3
+    assert SECTIONS_BY_KEY["lab3d"].label == "3Dlab"
