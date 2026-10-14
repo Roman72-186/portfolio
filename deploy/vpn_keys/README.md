@@ -30,7 +30,7 @@
    VPN_KEYS_STATE=/var/lib/vpn-keys/peers.json
    VPN_KEYS_LOCK=/run/vpn-keys/lock
    # если отличаются от умолчаний:
-   # VPN_KEYS_CONF=/opt/amnezia/awg/wg0.conf
+   # VPN_KEYS_CONF=/opt/amnezia/awg/awg0.conf  (AmneziaWG 3.1; у старых — wg0.conf)
    # VPN_KEYS_CLIENTS=/opt/amnezia/awg/clientsTable
    # VPN_KEYS_CONTAINER=amnezia-awg2   (по умолчанию — из эталона)
    # VPN_KEYS_TOOL=awg                 (в старых контейнерах — wg)

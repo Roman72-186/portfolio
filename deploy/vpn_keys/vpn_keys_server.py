@@ -206,7 +206,7 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         env = os.environ
-        conf_path = env.get("VPN_KEYS_CONF", "/opt/amnezia/awg/wg0.conf")
+        conf_path = env.get("VPN_KEYS_CONF", "/opt/amnezia/awg/awg0.conf")  # AmneziaWG 3.1
         return cls(
             token=env["VPN_KEYS_TOKEN"],
             template_path=env.get("VPN_KEYS_TEMPLATE", "/etc/vpn-keys/template.vpn"),
@@ -320,8 +320,10 @@ class PeerStore:
             clients.append({
                 "clientId": public,
                 "userData": {
+                    # Поля и формат — как пишет само приложение AmneziaVPN
+                    # (сверено с сервером 14.10.2026, AmneziaWG 3.1).
+                    "allowed_ips": f"{address}/32",
                     "clientName": label,
-                    # Формат даты — как пишет само приложение AmneziaVPN.
                     "creationDate": now.astimezone().strftime("%a %b %d %H:%M:%S %Y"),
                 },
             })

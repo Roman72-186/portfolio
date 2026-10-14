@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy" / "vpn_key
 import vpn_keys_server as vks  # noqa: E402
 
 TOKEN = "test-vpn-token"
-CONF_PATH = "/opt/amnezia/awg/wg0.conf"
+CONF_PATH = "/opt/amnezia/awg/awg0.conf"
 CLIENTS_PATH = "/opt/amnezia/awg/clientsTable"
 
 SERVER_CONF = """[Interface]
@@ -166,6 +166,7 @@ def test_create_adds_peer_client_row_and_syncs(store):
     clients = json.loads(docker.files[CLIENTS_PATH])
     assert {"OWNERPUB=", "PUB1="} == {c["clientId"] for c in clients}
     assert clients[-1]["userData"]["clientName"] == "Арина Губанова @arriri"
+    assert clients[-1]["userData"]["allowed_ips"] == "10.8.1.2/32"
     assert docker.synced == 1
     second = store.create("Второй")
     assert "AllowedIPs = 10.8.1.3/32" in docker.files[CONF_PATH]
