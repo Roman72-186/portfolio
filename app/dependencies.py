@@ -235,13 +235,22 @@ def get_current_user(
     # «Смотреть» — чтение, «Менять» — работа. Проверка здесь, а не в роутах,
     # по той же причине, что и срок доступа ниже: сюда приходит каждый
     # запрос кабинета.
+    # Адреса оплаты решает своё правило (`payments.is_payments_staff`): оплата
+    # открыта и модератору поимённо (Александрия, 14.10.2026), а ни белого
+    # списка, ни действия `people:students` у него нет.
+    from app.services.payments import is_payments_path, is_payments_staff
+    payments_ok = is_payments_path(request.url.path) and is_payments_staff(
+        {"role_name": role_name, "user_id": user.id}
+    )
+
     if role_name == MODERATOR_ROLE_NAME and not (
         is_moderator_request_allowed(request.method, request.url.path) or access.raised
+        or payments_ok
     ):
         _log_access_refusal(user.id, role_name, request, "вне белого списка модератора")
         raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
-    if access.refusal:
+    if access.refusal and not payments_ok:
         _log_access_refusal(
             user.id, role_name, request,
             f"раздел {access.refused_section}: {access.refusal}",

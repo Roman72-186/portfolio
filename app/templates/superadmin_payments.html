@@ -12,7 +12,7 @@
 у `payments_staff` с действием `people:students`; сервер проверяет то же.
 Статистика оплат — `plans/2026-10-13-payment-stats.md`.
 #}
-{% set can_mark = payments_staff(user) and can(user, "people:students") %}
+{% set can_mark = payments_staff(user) %}
 <div class="prg-page">
     <div class="prg-head">
         <div>

@@ -1219,7 +1219,7 @@ function buildManage(s) {
         false, 'Пусто – доступ без ограничения');
     html += '</div></div>';
 
-    html += buildManagePayment(m.payment, dis, m.can_edit);
+    html += buildManagePayment(m.payment, m.payment_can_edit ? '' : ' disabled', m.payment_can_edit);
 
     // Учебные метки
     html += '<div class="manage-group"><div class="section-title">Учёба</div><div class="profile-grid">';

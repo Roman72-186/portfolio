@@ -287,6 +287,9 @@ def _manage_block(db: DBSession, user: dict, student: User) -> dict | None:
         # тестирует оплату — только `payments.is_payments_staff`; без поля
         # карточка группу «Оплата» не рисует.
         "payment": payments.manage_view(db, student) if payments.is_payments_staff(user) else None,
+        # Сохранять группу «Оплата» — по правилу оплаты, не `people:students`:
+        # поимённому модератору (Александрия) она открыта целиком.
+        "payment_can_edit": payments.is_payments_staff(user) and editable,
     }
 
 

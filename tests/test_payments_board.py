@@ -494,6 +494,37 @@ def test_moderator_and_curator_see_no_payments(db, client, session_factory, pric
     assert db.query(Payment).count() == 0
 
 
+def test_named_moderator_has_everything_about_payments(db, client, session_factory, prices, make_payer, user_factory, monkeypatch):
+    """Владелец 14.10.2026: «открой доступ только Александрии» — модератору
+    поимённо (`PAYMENTS_EXTRA_USER_IDS`) всё, как у ГП; другим модераторам — нет."""
+    named = user_factory(vk_id=990_070, name="Александрия", role_name="модератор")
+    other = user_factory(vk_id=990_071, name="Маркетолог", role_name="модератор")
+    monkeypatch.setattr(ps, "PAYMENTS_EXTRA_USER_IDS", frozenset({named.id}))
+    student = make_payer("Иванова Анна")
+    json_headers = {"Accept": "application/json"}
+
+    client.cookies.set("session_id", session_factory(named).id)
+    assert client.get("/cabinet/superadmin/payments?month=2026-10").status_code == 200
+    assert client.get("/cabinet/superadmin/payments/export?month=2026-10").status_code == 200
+    assert client.get("/cabinet/superadmin/payment-import").status_code == 200
+    manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
+    assert manage["payment"] is not None and manage["payment_can_edit"] is True
+    assert 'href="/cabinet/superadmin/payments"' in client.get("/cabinet/students").text
+    saved = client.post(f"/cabinet/superadmin/users/{student.id}/payment", headers=json_headers, data={
+        "pay_window_start": "25", "pay_window_end": "30", "pay_cohort": "", "pay_price": "13255", "paid_month": "",
+    })
+    assert saved.status_code == 200, saved.text
+    marked = client.post("/cabinet/superadmin/payments/mark", headers=json_headers, data={
+        "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
+    })
+    assert marked.status_code == 200, marked.text
+
+    client.cookies.set("session_id", session_factory(other).id)
+    assert 'href="/cabinet/superadmin/payments"' not in client.get("/cabinet/students").text
+    assert client.get("/cabinet/superadmin/payments?month=2026-10", headers=json_headers).status_code == 403
+    assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
+
+
 def test_superadmin_sees_payment_tabs(db, client, session_factory, people):
     client.cookies.set("session_id", session_factory(people["chief"]).id)
 

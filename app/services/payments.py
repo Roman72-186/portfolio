@@ -30,6 +30,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -38,7 +39,9 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
-from app.constants import PAYMENT_NOTIFY_RECIPIENT_IDS, TARIFF_DISPLAY, TARIFFS_CURRENT
+from app.constants import (
+    PAYMENT_NOTIFY_RECIPIENT_IDS, PAYMENTS_EXTRA_USER_IDS, TARIFF_DISPLAY, TARIFFS_CURRENT,
+)
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.payment import (
@@ -67,13 +70,32 @@ logger = logging.getLogger(__name__)
 # Excel. Владелец 14.10.2026: «только ГП открыть всё по оплатам, что есть у
 # СА» (до этого 08.10 — только СА, 13.10 — ГП только смотрит). По роли, не по
 # рангу: у модератора уровень ГП (`rbac.effective_role_rank`), а оплата ему
-# не открыта. Одно место — его читают шаблоны, карточка и все роуты.
+# не открыта. Плюс поимённо — `constants.PAYMENTS_EXTRA_USER_IDS` (Александрия,
+# 14.10.2026). Одно место — его читают шаблоны, карточка и все роуты.
 PAYMENTS_ROLE_NAMES = frozenset({"админ", "суперадмин"})
 
 
 def is_payments_staff(user: dict | None) -> bool:
-    """Открыто ли сотруднику всё про оплату (`PAYMENTS_ROLE_NAMES`)."""
-    return bool(user) and user.get("role_name") in PAYMENTS_ROLE_NAMES
+    """Открыто ли сотруднику всё про оплату: ГП и суперадмин по роли, ещё —
+    поимённо (`PAYMENTS_EXTRA_USER_IDS`)."""
+    if not user:
+        return False
+    return user.get("role_name") in PAYMENTS_ROLE_NAMES or user.get("user_id") in PAYMENTS_EXTRA_USER_IDS
+
+
+# Адреса оплаты: экран «Оплаты» (с Excel, отметкой, отменой, возвратом),
+# «Оплата списком» и сохранение группы «Оплата» в карточке. На них решает
+# `is_payments_staff`, а не белый список модератора и не действие
+# `people:students` раздела «Люди» (`dependencies.get_current_user`): иначе
+# поимённый доступ (Александрия, модератор) упирался бы в них.
+_PAYMENTS_PATH = re.compile(
+    r"^/cabinet/superadmin/(payments|payment-import)(/.*)?$"
+    r"|^/cabinet/superadmin/users/\d+/payment$"
+)
+
+
+def is_payments_path(path: str) -> bool:
+    return bool(_PAYMENTS_PATH.match(path))
 
 
 def is_payments_viewer(user: dict | None) -> bool:

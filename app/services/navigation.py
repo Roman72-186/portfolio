@@ -433,11 +433,26 @@ GRANTED_ONLY_STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 )
 
 
+# «Оплаты» в меню модератора, которому оплата открыта поимённо
+# (`payments.is_payments_staff`, Александрия 14.10.2026). У ГП и суперадмина
+# экран — вкладкой на «Пользователях».
+PAYMENTS_NAV_ITEM = StaffNavItem(
+    key="payments",
+    href="/cabinet/superadmin/payments",
+    sidebar_label="Оплаты",
+    pill_label="Оплаты",
+    aria_label="Оплаты",
+    tooltip="Кто оплатил месяц, отметка оплаты и выгрузка",
+    icon="cases",
+)
+
+
 def staff_nav_items(
     role_rank: int,
     role_name: str | None = None,
     closed_sections: frozenset[str] | None = None,
     granted_sections: frozenset[str] | None = None,
+    payments: bool = False,
 ) -> tuple[StaffNavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
     if role_name == "модератор":
@@ -450,7 +465,8 @@ def staff_nav_items(
             key for key in granted_nav_keys(granted_sections)
             if key in by_key and key not in keys
         ]
-        return tuple(by_key[key] for key in keys)
+        items = tuple(by_key[key] for key in keys)
+        return items + (PAYMENTS_NAV_ITEM,) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные
     # разделы ГП положены по роли, так что это касается только сверх-ролевых.
