@@ -82,7 +82,7 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     # 3D-лаборатория (владелец 25.09.2026: «всем кураторам открыть доступ»).
     # Сервер куратора пускал и раньше (`can_open_3dlab`), но в его отдельном
     # меню пункта не было — зайти можно было только по прямой ссылке.
-    NavItem(key="3dlab", href="/3dlab", label="3D Лаб", icon="🧊"),
+    NavItem(key="3dlab", href="/3dlab", label="3Dlab", icon="🧊"),
     # Уведомления куратору (добавлено 12.09.2026) — любые Notification с
     # user_id=куратор. Напоминания о дне рождения ученика с 29.09.2026 уходят
     # не куратору, а ГП (exam_scheduler._run_birthday_check). У admin+
@@ -97,9 +97,9 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         key="3dlab",
         desktop_href="/3dlab",
         mobile_href="/3dlab",
-        desktop_label="3D Лаб",
-        mobile_label="3D Лаб",
-        aria_label="3D Лаб",
+        desktop_label="3Dlab",
+        mobile_label="3Dlab",
+        aria_label="3Dlab",
         icon="3dlab",
     ),
     StudentNavItem(
@@ -284,9 +284,9 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     StaffNavItem(
         key="3dlab",
         href="/3dlab",
-        sidebar_label="3D Лаб",
-        pill_label="3D Лаб",
-        aria_label="3D Лаб",
+        sidebar_label="3Dlab",
+        pill_label="3Dlab",
+        aria_label="3Dlab",
         tooltip="3D Лаборатория",
         icon="3dlab",
     ),

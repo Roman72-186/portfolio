@@ -183,7 +183,7 @@ SECTIONS: tuple[Section, ...] = (
         (ROLE_HEAD,), ("exams",),
     ),
     Section(
-        "lab3d", "3D Лаб", "3D-лаборатория",
+        "lab3d", "3Dlab", "3D-лаборатория",
         (ROLE_CURATOR, ROLE_HEAD), ("3dlab",), min_rank=2,
     ),
     Section(

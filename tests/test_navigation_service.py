@@ -10,7 +10,7 @@ def test_curator_nav_items_keep_current_contract():
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
         # Добавлен 25.09.2026: владелец открыл кураторам 3D-лабораторию.
-        ("3dlab", "/3dlab", "3D Лаб"),
+        ("3dlab", "/3dlab", "3Dlab"),
         # Добавлен 12.09.2026 вместе с первым экраном уведомлений для
         # персонала: туда падают напоминания о дне рождения ученика.
         ("notifications", "/cabinet/staff/notifications", "Уведомления"),
@@ -97,7 +97,7 @@ def test_staff_nav_items_keep_admin_contract():
             "Актуальное образовательное пространство",
             "Периоды, этапы и циклы учебных программ",
         ),
-        ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
+        ("3dlab", "/3dlab", "3Dlab", "3Dlab", "3Dlab", "3D Лаборатория"),
         (
             "reports",
             "/cabinet/curator/reports",
