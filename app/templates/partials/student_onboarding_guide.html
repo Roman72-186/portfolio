@@ -16,7 +16,7 @@
                 <h3 id="obg-welcome-title">Анкета готова. Можно начинать</h3>
                 <p>Иди по заданиям сверху вниз. Следующее задание откроется, когда ты выполнишь предыдущее или наступит нужная дата.</p>
                 {% if onboarding_access_until_text %}
-                <p class="obg-deadline">Доступ к пробному обучению открыт до <strong>{{ onboarding_access_until_text }}</strong> по Москве.</p>
+                <p class="obg-deadline">Доступ {% if not user.limited_cabinet|default(false) %}к пробному обучению {% endif %}открыт до <strong>{{ onboarding_access_until_text }}</strong> по Москве.</p>
                 {% endif %}
             </section>
 
@@ -24,9 +24,13 @@
                 <h3 id="obg-nav-title">Куда ведут кнопки</h3>
                 <div class="obg-nav-list">
                     <div class="obg-nav-row"><strong>Актуальное образовательное пространство</strong><span>Задания и материалы, которые нужно пройти сейчас.</span></div>
+                    {% if not user.limited_cabinet|default(false) %}
                     <div class="obg-nav-row"><strong>Личный трекер</strong><span>Весь план: текущие задачи, сроки и расписание. Откроется после загрузки портфолио «До».</span></div>
+                    {% endif %}
                     <div class="obg-nav-row"><strong>Портфолио</strong><span>Твои работы до и в процессе обучения. Начни с загрузки работ «До».</span></div>
+                    {% if not user.limited_cabinet|default(false) %}
                     <div class="obg-nav-row"><strong>Обратная связь</strong><span>Комментарии и переписка по сданным работам.</span></div>
+                    {% endif %}
                     <div class="obg-nav-row"><strong>Личная информация</strong><span>Контакты, настройки уведомлений, документы и эта инструкция.</span></div>
                 </div>
                 <p class="obg-note">На телефоне эти разделы находятся в кнопке меню внизу экрана.</p>
@@ -44,7 +48,7 @@
 
             <section class="obg-help" aria-labelledby="obg-help-title">
                 <h3 id="obg-help-title">Если что-то не получается</h3>
-                <p>Проверь «Обратную связь» и уведомления. Если нужна помощь со входом или работой платформы, напиши в поддержку.</p>
+                <p>Проверь {% if not user.limited_cabinet|default(false) %}«Обратную связь» и {% endif %}уведомления. Если нужна помощь со входом или работой платформы, напиши в поддержку.</p>
                 {% if support_url %}<a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="obg-support-link">Написать в поддержку</a>{% endif %}
             </section>
         </div>

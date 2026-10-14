@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import REPORT_EXCLUDED_USER_IDS
+from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
 from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.constants import EXAM_SUBJECT_HINTS, STUDY_MODES, STUDY_MODE_LABELS, tariff_choices
 from app.config import settings
@@ -48,6 +48,7 @@ from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.tariff_view import RETURN_COOKIE as TARIFF_VIEW_RETURN_COOKIE
 from app.services.notify import notify
 from app.services.access_state import access_open_clause
+from app.services.login_ips import distinct_ips_by_user, recent_logins_json
 from app.services.activity_stats import student_statistics
 from app.services.video_credit import credit_video_block, student_video_blocks
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
@@ -125,6 +126,7 @@ def _get_accessible_students(
     show_hidden: bool = False,
     archived: bool = False,
     has_access_deadline: bool = False,
+    holiday: bool = False,
 ) -> list:
     """Возвращает список студентов доступных текущему пользователю.
 
@@ -150,8 +152,18 @@ def _get_accessible_students(
     (`access_state`): пробник после конца срока остаётся активным и без
     тарифа, в рабочих списках его быть не должно (владелец 09.10.2026). Найти
     его, чтобы дать тариф, — фильтром «Со сроком доступа», он их показывает.
+
+    Каникулярный набор (`User.program == 'holiday'`, созвон 13.10.2026) —
+    отдельный список: в действующем его нет, `holiday=True` показывает только
+    его, целиком — с незаполненной анкетой и после конца недели группы, как
+    фильтр «Со сроком доступа».
     """
-    hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
+    hide_pre_cohort = (
+        not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline and not holiday
+    )
+    program_clause = (
+        User.program == PROGRAM_HOLIDAY if holiday else User.program != PROGRAM_HOLIDAY
+    )
 
     if archived:
         if not _can_read_archive(user):
@@ -184,6 +196,7 @@ def _get_accessible_students(
                 User.is_active == True,  # noqa: E712
                 User.id.notin_(REPORT_EXCLUDED_USER_IDS),
                 access_open_clause(datetime.now(timezone.utc)),
+                program_clause,
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -198,6 +211,7 @@ def _get_accessible_students(
         User.role_id == student_role.id,
         User.is_active == True,  # noqa: E712
         User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        program_clause,
     )
     if user.get("viewer_tariff"):
         q = q.filter(User.tariff == user["viewer_tariff"])
@@ -205,7 +219,7 @@ def _get_accessible_students(
         q = q.filter(User.profile_completed == True)  # noqa: E712
     if has_access_deadline:
         q = q.filter(User.access_until.isnot(None))
-    else:
+    elif not holiday:
         q = q.filter(access_open_clause(datetime.now(timezone.utc)))
 
     return q.order_by(User.last_name, User.first_name).all()
@@ -455,7 +469,7 @@ def _sidebar_rows(
         for r in scored_subj_rows:
             scored_subjects_by_user[r.user_id].append(r.subject)
 
-    return [
+    rows = [
         _enrich(
             s,
             counts_by_user,
@@ -468,6 +482,15 @@ def _sidebar_rows(
         )
         for s in students
     ]
+    # Каникулярному — сколько разных адресов входа за неделю: школа смотрит,
+    # не делят ли доступ (созвон 13.10.2026). Годовым строка не нужна.
+    holiday_ids = [s.id for s in students if s.program == PROGRAM_HOLIDAY]
+    if holiday_ids and is_admin_panel:
+        ips = distinct_ips_by_user(db, holiday_ids)
+        for row in rows:
+            if row["id"] in holiday_ids:
+                row["login_ips"] = ips.get(row["id"], 0)
+    return rows
 
 
 # ── Main page ─────────────────────────────────────────────────────────────────
@@ -501,6 +524,7 @@ def students_panel(
     tab: str = Query("portfolio"),
     show_hidden: str = Query(""),
     has_access_deadline: str = Query(""),
+    program: str = Query(""),
 ):
     return _render_students_panel(
         request, user, db,
@@ -508,6 +532,7 @@ def students_panel(
         tab=tab,
         show_hidden=show_hidden,
         has_access_deadline=has_access_deadline,
+        program=program,
     )
 
 
@@ -521,10 +546,12 @@ def _render_students_panel(
     show_hidden: str = "",
     archived: str = "",
     has_access_deadline: str = "",
+    program: str = "",
 ):
     is_admin_panel = user["role_rank"] >= 4
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
     has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
+    holiday_b = is_admin_panel and program == PROGRAM_HOLIDAY
     # Архив прошлых потоков — только на чтение, кому открыт (`_can_read_archive`).
     archived_b = _can_read_archive(user) and _parse_bool(archived)
 
@@ -533,9 +560,12 @@ def _render_students_panel(
         show_hidden=show_hidden_b,
         archived=archived_b,
         has_access_deadline=has_access_deadline_b,
+        holiday=holiday_b and not archived_b,
     )
 
     active_hard_filters: list[dict] = []
+    if holiday_b and not archived_b:
+        active_hard_filters.append({"key": "program", "label": "Каникулярный набор"})
     if show_hidden_b:
         active_hard_filters.append({"key": "show_hidden", "label": "Включая не заполнивших анкету"})
     if has_access_deadline_b:
@@ -1111,6 +1141,8 @@ def get_statistics(
         ),
         # Ролики ученика для ручного зачёта — ГП и выше (10.10.2026).
         "video_credit": student_video_blocks(db, student) if senior else None,
+        # Последние входы с адресом — ГП и выше (каникулярный набор, 14.10.2026).
+        "recent_logins": recent_logins_json(db, student.id) if senior else None,
     })
 
 

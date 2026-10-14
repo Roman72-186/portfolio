@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS, TARIFFS_CURRENT
+from app.constants import MOCK_SUBJECTS, SCHOOL_GRADES, TARIFFS_CURRENT
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -134,6 +134,27 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
             add_tag_to_user(db, student.id, tag.id)
 
     db.commit()
+
+
+def grade_tag_name(grade: int) -> str:
+    return f"{grade} класс"
+
+
+def ensure_grade_tag(db: DBSession, student: User) -> None:
+    """Тег «10 класс» / «11 класс» по `User.school_grade` (созвон 13.10.2026:
+    «10 / 11 класс в виде тега») — по нему каникулярный набор делят чипами и
+    адресуют рассылки. Тег класса у ученика один: смена класса снимает
+    прежний. Колонка — источник правды, тег её отражение."""
+    for grade in SCHOOL_GRADES:
+        name = grade_tag_name(grade)
+        if grade == student.school_grade:
+            tag = get_or_create_tag(db, name)
+            tag.is_hidden = False
+            add_tag_to_user(db, student.id, tag.id)
+            continue
+        other = db.query(Tag).filter(Tag.name == name).first()
+        if other is not None:
+            remove_tag_from_user(db, student.id, other.id)
 
 
 def parse_usernames(raw: str) -> list[str]:

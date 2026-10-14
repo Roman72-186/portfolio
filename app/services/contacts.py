@@ -67,17 +67,22 @@ def normalize_tg_username(raw: str) -> str:
     return (raw or "").strip().lstrip("@")
 
 
+def validate_phone(phone: str) -> list[str]:
+    """Телефон самого ученика — общий кусок годовой анкеты, контактов и
+    короткой анкеты каникулярного набора. Значение уже нормализовано."""
+    if not phone:
+        return ["Введи номер телефона"]
+    if not PHONE_RE.match(phone):
+        return ["Укажи код страны и номер, например +7 999 123-45-67"]
+    return []
+
+
 def validate_contacts(phone: str, parent_phone: str, tg_username: str) -> list[str]:
     """Список ошибок для показа ученику. Пустой список — можно сохранять.
 
     Значения ожидаются уже нормализованными.
     """
-    errors: list[str] = []
-
-    if not phone:
-        errors.append("Введи номер телефона")
-    elif not PHONE_RE.match(phone):
-        errors.append("Укажи код страны и номер, например +7 999 123-45-67")
+    errors = validate_phone(phone)
 
     if not parent_phone:
         errors.append("Введи номер телефона родителя")

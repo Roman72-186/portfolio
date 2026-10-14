@@ -444,8 +444,12 @@ def _accessible_students(db: DBSession, user: dict) -> list:
     Без тех, у кого кабинет закрыт по сроку (`access_state`): пробник после
     конца пробного срока остаётся активным и без тарифа, и в точке А и
     проверке его быть не должно (владелец 09.10.2026). Карточку по прямой
-    ссылке это не закрывает."""
-    from app.constants import REPORT_EXCLUDED_USER_IDS
+    ссылке это не закрывает.
+
+    Без каникулярного набора (`User.program`, созвон 13.10.2026): отдельный
+    список, его работы видны в его карточке через «Учеников» с фильтром
+    «Каникулярный набор»."""
+    from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
     from app.models.role import Role
     from app.models.user import User
     from app.services.access_state import access_open_clause
@@ -460,6 +464,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
                 User.is_active == True,  # noqa: E712
                 User.id.notin_(REPORT_EXCLUDED_USER_IDS),
                 access_open,
+                User.program != PROGRAM_HOLIDAY,
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -474,6 +479,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
             User.is_active == True,  # noqa: E712
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
             access_open,
+            User.program != PROGRAM_HOLIDAY,
         )
         .order_by(User.last_name, User.first_name)
         .all()

@@ -19,6 +19,8 @@ PROGRAM_ANNUAL = "annual"
 PROGRAM_HOLIDAY = "holiday"
 PROGRAMS = (PROGRAM_ANNUAL, PROGRAM_HOLIDAY)
 PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный"}
+# Класс школы в анкете каникулярного набора (`User.school_grade`, 14.10.2026).
+SCHOOL_GRADES = (10, 11)
 
 # ── Tariffs ──────────────────────────────────────────────────────────────────
 

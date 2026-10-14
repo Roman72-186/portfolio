@@ -365,14 +365,24 @@ def curator_nav_items(
     return tuple(items)
 
 
-def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...]:
+# Урезанный кабинет каникулярного набора (созвон 13.10.2026): сервер держит
+# тот же набор белым списком `dependencies.LIMITED_CABINET_ALLOWED_*`.
+LIMITED_CABINET_NAV_KEYS = ("learning", "portfolio", "personal")
+
+
+def student_nav_items(
+    access_expired: bool = False, limited: bool = False,
+) -> tuple[StudentNavItem, ...]:
     """У ученика с истёкшим сроком доступа (`User.access_until`) в меню
     остаётся только «Личная информация» — остальные разделы ему всё равно
     отдадут 403 из `get_current_user`, и меню из живых на вид ссылок,
     отбрасывающих обратно, читалось бы как поломка платформы, а не как
-    закрытый доступ."""
+    закрытый доступ. У каникулярного набора (`limited`) по той же причине —
+    только АОП, портфолио и «Личная информация»."""
     if access_expired:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key == "personal")
+    if limited:
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in LIMITED_CABINET_NAV_KEYS)
     if not LAB3D_OPEN_FOR_STUDENTS:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key != "3dlab")
     return STUDENT_NAV_ITEMS

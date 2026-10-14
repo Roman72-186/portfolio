@@ -102,6 +102,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                 <div class="hard-filter-options">
                     {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">И те, кто не заполнил анкету</a>{% endif %}
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_access_deadline=1">Со сроком доступа</a>
+                    <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}program=holiday">Каникулярный набор</a>
                 </div>
             </details>
         </div>
@@ -274,5 +275,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=31"></script>
+<script src="/static/js/cabinet_students.js?v=32"></script>
 {% endblock %}

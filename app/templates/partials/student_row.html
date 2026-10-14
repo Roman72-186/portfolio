@@ -25,6 +25,8 @@
             {% if s.lessons_count %}{% set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _lcls }}">{{ s.lessons_count }}</span>{% endif %}
             {% if s.has_case %}<span class="student-info-pill">КЕЙС</span>{% endif %}
             {% if s.study_mode == 'offline' %}<span class="student-info-pill">ОЧНО</span>{% elif s.study_mode == 'online' %}<span class="student-info-pill">ОНЛАЙН</span>{% endif %}
+            {# Каникулярный набор: разные адреса входа за неделю (`login_ips`). #}
+            {% if s.login_ips is defined %}<span class="student-info-pill" title="Разных адресов входа за неделю">IP: {{ s.login_ips }}</span>{% endif %}
         </div>
     </div>
     {# Очередь «кого проверять» (владелец 05.10.2026): непроверенное по

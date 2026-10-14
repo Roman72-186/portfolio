@@ -38,8 +38,9 @@ from app.services.video_topics import (
 def active_students(db: Session, now: datetime | None = None) -> list[User]:
     """Ученики, которых имеет смысл считать — общее правило статистики
     (`report_scope`): без заблокированных, удалённых, с истёкшей подпиской
-    и служебных."""
-    return reportable_students_q(db, now).all()
+    и служебных. Каникулярный набор — тоже: программу цикла отсекает
+    `_audience`, и у каникулярного цикла иначе не было бы аудитории."""
+    return reportable_students_q(db, now, include_holiday=True).all()
 
 
 def _cycle_tasks(db: Session, topic_id: int, first: date, last: date) -> list[TrackerTask]:

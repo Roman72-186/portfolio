@@ -1757,6 +1757,16 @@ function creditVideo(button) {
     .catch(function() { button.disabled = false; alert(NET_ERROR); });
 }
 
+// Последние входы с адресом и устройством — ГП и суперадмин (каникулярный
+// набор, 14.10.2026: не делят ли доступ). Сервер — `services/login_ips.py`.
+function buildRecentLogins(rows) {
+    var html = '<div class="profile-field-label">Последние входы</div>';
+    if (!rows.length) return html + '<div class="no-works">Адресов входа пока нет: они пишутся с 14.10.2026.</div>';
+    return html + '<ul class="activity-feed">' + rows.map(function(r) {
+        return statsRow(r.at, statsBadge(r.device) + statsBadge(r.ip || '—'));
+    }).join('') + '</ul>';
+}
+
 function buildStatistics(data) {
     var a = data.activity || {};
     var v = a.video || {};
@@ -1791,6 +1801,7 @@ function buildStatistics(data) {
         + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
         + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
         + '</div>';
+    if (data.recent_logins) html += buildRecentLogins(data.recent_logins);
 
     html += '<div class="section-title">Последние события</div>';
     var feed = a.feed || [];

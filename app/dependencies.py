@@ -9,6 +9,7 @@ from fastapi import Request, Response, Depends, HTTPException, Header, Form
 from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.config import settings
+from app.constants import PROGRAM_HOLIDAY
 from app.csrf import validate_csrf_token
 from app.db.database import get_db
 from app.models.session import Session
@@ -73,6 +74,41 @@ ACCESS_EXPIRED_ALLOWED_PREFIXES = (
 
 def is_path_allowed_when_access_expired(path: str) -> bool:
     return path.startswith(ACCESS_EXPIRED_ALLOWED_PREFIXES)
+
+
+# Урезанный кабинет каникулярного набора (`User.program == 'holiday'`, созвон
+# 13.10.2026): лента АОП, портфолио и «Личная информация», 3D-лаборатория —
+# позже. Тем же приёмом, что истёкший срок: список закрытый, новый раздел
+# закрывается сам. Точные адреса отдельно от префиксов: `/cabinet/tracker`
+# (личный трекер) и `/cabinet/videos` (каталог) закрыты, а их подадреса — нет:
+# по ним лента грузит задание, сдаёт блоки, отмечает и играет видео.
+LIMITED_CABINET_DETAIL = "Раздел закрыт в каникулярном наборе"
+LIMITED_CABINET_ALLOWED_EXACT = (
+    "/cabinet",
+    "/cabinet/learning",
+    "/cabinet/portfolio",
+    "/cabinet/profile",
+    "/cabinet/notifications",
+    "/upload",
+    "/csrf",
+)
+LIMITED_CABINET_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES + (
+    "/cabinet/tracker/",
+    "/cabinet/videos/",
+    "/cabinet/video/",
+    "/cabinet/notifications/",
+    "/cabinet/push/",
+    "/cabinet/avatar",
+    "/cabinet/rotate-photo",
+    "/cabinet/task-block-submissions/",
+    "/upload/api",
+    "/upload/finish-before",
+    "/upload/works/",
+)
+
+
+def is_path_allowed_in_limited_cabinet(path: str) -> bool:
+    return path in LIMITED_CABINET_ALLOWED_EXACT or path.startswith(LIMITED_CABINET_ALLOWED_PREFIXES)
 
 
 # Маркер отказа по расхождению Telegram-ника (`User.tg_username_mismatch`,
@@ -285,6 +321,12 @@ def get_current_user(
     if access_expired and not is_path_allowed_when_access_expired(request.url.path):
         raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
 
+    # Каникулярный набор — урезанный кабинет, тем же приёмом. Только ученик:
+    # сотруднику признак программы ничего не закрывает.
+    limited_cabinet = role_rank == 1 and user.program == PROGRAM_HOLIDAY
+    if limited_cabinet and not is_path_allowed_in_limited_cabinet(request.url.path):
+        raise HTTPException(status_code=403, detail=LIMITED_CABINET_DETAIL)
+
     # Расхождение Telegram-ника — тем же приёмом, что и истёкший доступ выше.
     # Держим только на завершённой анкете (`profile_completed`): пока ученик
     # ещё не дошёл до конца первого входа, флаг ставить некому — сверка
@@ -359,6 +401,9 @@ def get_current_user(
         "enrolled_at": user.enrolled_at,
         "access_until": user.access_until,
         "access_expired": access_expired,
+        "program": user.program,
+        # Урезанное меню (`navigation.student_nav_items`) и вводная инструкция.
+        "limited_cabinet": limited_cabinet,
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,

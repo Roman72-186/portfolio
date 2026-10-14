@@ -22,6 +22,8 @@ from app.constants import (
     TARIFF_DISPLAY,
     MONTH_TO_NUM,
     MOCK_SUBJECTS,
+    PROGRAM_HOLIDAY,
+    SCHOOL_GRADES,
     TIMEZONES,
 )
 from app.db.database import get_db
@@ -46,7 +48,8 @@ from app.services.mock_exam_access import (
     is_subject_allowed_for_student,
     mock_exam_deadline_for_started_at,
 )
-from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
+from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts, validate_phone
+from app.services.tags import ensure_grade_tag
 from app.services.tz import MSK_TZ, msk_text, now_msk, today_msk
 from app.services.user_management import log_tariff_change
 from app.services.portfolio import student_portfolio_after_groups
@@ -277,11 +280,19 @@ def _is_intake_student(user) -> bool:
     return (user.get("access_until") if isinstance(user, dict) else None) is not None
 
 
+def _is_holiday_student(user) -> bool:
+    """Каникулярный набор (`User.program`) заполняет короткую анкету."""
+    return isinstance(user, dict) and user.get("program") == PROGRAM_HOLIDAY
+
+
 def _profile_template_ctx(request, user, errors=None, form=None):
+    holiday = _is_holiday_student(user)
     return {
         "request": request,
         "user": user,
-        "show_tariff_step": not _is_intake_student(user),
+        "show_tariff_step": not _is_intake_student(user) and not holiday,
+        "holiday_form": holiday,
+        "school_grades": SCHOOL_GRADES,
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
         "university_years": _university_year_options(user),
@@ -317,7 +328,10 @@ def profile_post(
     first_name: Annotated[str, Form()],
     last_name: Annotated[str, Form()],
     phone: Annotated[str, Form()],
-    parent_phone: Annotated[str, Form()],
+    # Короткая анкета каникулярного набора телефона родителя не спрашивает —
+    # без значения по умолчанию она падала бы с 422 до валидации. Годовую
+    # пустое поле не пропускает: его проверяет `validate_contacts`.
+    parent_phone: Annotated[str, Form()] = "",
     # Тариф — не обязательное поле формы: новичку по ссылке пробного набора
     # шаг тарифа не рисуется вовсе, и без значения по умолчанию его анкета
     # падала бы с 422 ещё до валидации.
@@ -335,6 +349,7 @@ def profile_post(
     university_year: Annotated[str, Form()] = "",
     about: Annotated[str, Form()] = "",
     past_tariffs: Annotated[list[str], Form()] = [],
+    school_grade: Annotated[str, Form()] = "",
 ):
     # Анкета первого входа заполняется один раз. Дальше ученик правит только
     # контакты (/cabinet/personal/contacts), а ФИО, тариф и даты — куратор
@@ -343,6 +358,13 @@ def profile_post(
     # данные в обход правила.
     if user["profile_completed"]:
         return RedirectResponse("/cabinet/personal/contacts", status_code=302)
+
+    if _is_holiday_student(user):
+        return _save_holiday_profile(
+            request, user, db,
+            first_name=first_name, last_name=last_name, phone=phone, city=city,
+            profile_timezone=profile_timezone, school_grade=school_grade,
+        )
 
     errors = []
     first_name = first_name.strip()
@@ -472,8 +494,7 @@ def profile_post(
     # `created_at` тут не годится: аккаунт бывает заведён куратором заранее,
     # задолго до первого входа ученика.
     now = datetime.now(timezone.utc)
-    enrollment_moment = now_msk()
-    enrolled_at = datetime(enrollment_moment.year, enrollment_moment.month, 1, tzinfo=timezone.utc)
+    enrollment_year, enrolled_at = _enrollment_now()
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     if not intake_student:
@@ -494,7 +515,7 @@ def profile_post(
     if not intake_student:
         db_user.tariff = tariff
     db_user.tg_username = tg_username or None
-    db_user.enrollment_year = enrollment_moment.year
+    db_user.enrollment_year = enrollment_year
     db_user.enrolled_at = enrolled_at
     db_user.university_year = parsed_university_year
     if not intake_student:
@@ -507,6 +528,80 @@ def profile_post(
 
     # После первой анкеты показываем единственную вводную инструкцию поверх
     # учебной ленты. Повторно её можно открыть из «Личной информации».
+    return RedirectResponse("/cabinet/learning?welcome=1", status_code=302)
+
+
+def _enrollment_now() -> tuple[int, datetime]:
+    """Год и месяц присоединения — момент заполнения анкеты, правила выше у
+    `profile_post`: по Москве, первое число месяца, оба поля из одного момента."""
+    moment = now_msk()
+    return moment.year, datetime(moment.year, moment.month, 1, tzinfo=timezone.utc)
+
+
+def _save_holiday_profile(
+    request: Request, user: dict, db: DBSession, *,
+    first_name: str, last_name: str, phone: str, city: str,
+    profile_timezone: str, school_grade: str,
+):
+    """Короткая анкета каникулярного набора (созвон 13.10.2026, план — часть
+    3.3, допущение до ответа школы): имя, фамилия, телефон, город, часовой
+    пояс и класс. Остального годовой анкеты здесь нет вовсе — ни тарифа, ни
+    родителя, ни СДЭК, ни года поступления. Ник Telegram не спрашиваем и не
+    затираем: его записал вход через Telegram. Класс ставит тег
+    (`tags.ensure_grade_tag`)."""
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    city = city.strip()
+    profile_timezone = profile_timezone.strip()
+    phone = normalize_phone(phone)
+    grade = int(school_grade) if school_grade.strip().isdigit() else None
+
+    errors = []
+    if not first_name:
+        errors.append("Введи имя")
+    elif len(first_name) > 50:
+        errors.append("Имя слишком длинное (максимум 50 символов)")
+    if not last_name:
+        errors.append("Введи фамилию")
+    elif len(last_name) > 50:
+        errors.append("Фамилия слишком длинная (максимум 50 символов)")
+    if not city:
+        errors.append("Укажи город")
+    elif len(city) > 100:
+        errors.append("Название города слишком длинное")
+    if profile_timezone not in {tz for tz, _ in TIMEZONES}:
+        errors.append("Укажи часовой пояс")
+    errors.extend(validate_phone(phone))
+    if grade not in SCHOOL_GRADES:
+        errors.append("Выбери класс")
+
+    if errors:
+        form = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "city": city,
+            "timezone": profile_timezone,
+            "phone": phone,
+            "school_grade": grade,
+        }
+        return templates.TemplateResponse(request, "profile.html",
+            _profile_template_ctx(request, user, errors=errors, form=form))
+
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    db_user.first_name = first_name
+    db_user.last_name = last_name
+    db_user.name = f"{first_name} {last_name}"
+    db_user.city = city
+    db_user.timezone = profile_timezone
+    db_user.phone = phone
+    db_user.school_grade = grade
+    db_user.enrollment_year, db_user.enrolled_at = _enrollment_now()
+    db_user.profile_completed = True
+    if db_user.profile_completed_at is None:
+        db_user.profile_completed_at = datetime.now(timezone.utc)
+    ensure_grade_tag(db, db_user)
+    db.commit()
+    invalidate_session(user["session_id"])
     return RedirectResponse("/cabinet/learning?welcome=1", status_code=302)
 
 
