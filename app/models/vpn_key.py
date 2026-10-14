@@ -12,11 +12,13 @@ class VpnKey(Base):
 
     Ключ выпускает служба `deploy/vpn_keys/` на сервере Amnezia; `peer_id` —
     публичный ключ пира там, по нему ключ и отзывается. Сам `vpn://` хранится
-    зашифрованным: повторный `/vpn` присылает тот же ключ, не заводя новый пир.
+    зашифрованным: повторный запрос присылает тот же ключ, не заводя новый пир.
 
-    Живой ключ — `revoked_at IS NULL`, у ученика он один (частичный уникальный
-    индекс). Отзыв ставит `revoked_at` только после того, как служба удалила
-    пир; сорвавшийся отзыв добивает сверка (`vpn_keys.reconcile`).
+    Ключ — на одно устройство (AmneziaWG с одним ключом на двух устройствах
+    рвётся у обоих), у ученика до двух: `device` — 1 или 2 (владелец
+    14.10.2026). Живой ключ — `revoked_at IS NULL`, уникален по паре
+    (ученик, устройство) — частичный уникальный индекс. Отзыв ставит
+    `revoked_at` только после того, как служба удалила пир; сорвавшийся отзыв добивает сверка (`vpn_keys.reconcile`).
     `ondelete=CASCADE`: при полном удалении ученика строка уходит вместе с ним,
     а осиротевший пир на сервере снимает та же сверка.
     """
@@ -27,6 +29,7 @@ class VpnKey(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    device: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     peer_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     key: Mapped[str] = mapped_column(EncryptedString(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -36,7 +39,7 @@ class VpnKey(Base):
 
     __table_args__ = (
         Index(
-            "uq_vpn_keys_live_user", "user_id", unique=True,
+            "uq_vpn_keys_live_user_device", "user_id", "device", unique=True,
             postgresql_where=text("revoked_at IS NULL"),
             sqlite_where=text("revoked_at IS NULL"),
         ),

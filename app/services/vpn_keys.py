@@ -12,6 +12,7 @@
 - кому положен ключ — `is_eligible`;
 - выдать или вернуть уже выданный — `get_or_issue`;
 - найти ученика по нику и прислать ключ — `send_key_by_username`;
+- ключ для второго устройства по кнопке в боте — `send_second_device_key`;
 - отозвать — `revoke`;
 - сверка раз в 15 минут — `reconcile` (`exam_scheduler._run_vpn_reconcile`).
   Отзыв при архиве, блокировке и удалении держится на ней, а не на хуках в
@@ -62,16 +63,34 @@ def is_eligible(user: User) -> bool:
     return bool(user.role_id or user.is_admin)
 
 
-def live_key(db: DBSession, user_id: int) -> VpnKey | None:
-    return db.query(VpnKey).filter(VpnKey.user_id == user_id, VpnKey.revoked_at.is_(None)).first()
+# Ключ — на одно устройство: AmneziaWG с одним ключом на двух устройствах
+# рвётся у обоих. Владелец 14.10.2026: «ограничить выдачу ключа до 2» — у
+# ученика до двух ключей, например телефон и компьютер.
+MAX_DEVICES = 2
 
 
-def label_for(user: User) -> str:
+def live_key(db: DBSession, user_id: int, device: int = 1) -> VpnKey | None:
+    return db.query(VpnKey).filter(
+        VpnKey.user_id == user_id, VpnKey.device == device, VpnKey.revoked_at.is_(None),
+    ).first()
+
+
+def live_keys(db: DBSession, user_id: int) -> list[VpnKey]:
+    return (
+        db.query(VpnKey)
+        .filter(VpnKey.user_id == user_id, VpnKey.revoked_at.is_(None))
+        .order_by(VpnKey.device)
+        .all()
+    )
+
+
+def label_for(user: User, device: int = 1) -> str:
     """Подпись пира — её владелец видит в списке пользователей AmneziaVPN."""
     parts = [(user.name or "").strip() or "Ученик"]
     if user.tg_username:
         parts.append("@" + user.tg_username.lstrip("@"))
     parts.append(f"#{user.id}")
+    parts.append(f"устр. {device}")
     return " ".join(parts)
 
 
@@ -123,15 +142,19 @@ async def _server_list() -> list[dict]:
 
 # ── выдача и отзыв ──────────────────────────────────────────────────────────
 
-async def get_or_issue(db: DBSession, user: User) -> str:
-    """Ключ ученика: уже выданный или новый. Право проверяет вызывающий
-    (`is_eligible`), чтобы ответить ученику своими словами."""
-    existing = live_key(db, user.id)
+async def get_or_issue(db: DBSession, user: User, device: int = 1) -> str:
+    """Ключ ученика для устройства `device` (1 или 2): уже выданный или новый.
+    Больше `MAX_DEVICES` ключей не бывает — номер устройства и есть предел.
+    Право проверяет вызывающий (`is_eligible`), чтобы ответить ученику своими
+    словами."""
+    if device not in range(1, MAX_DEVICES + 1):
+        raise ValueError(f"устройство {device}: у ученика до {MAX_DEVICES} ключей")
+    existing = live_key(db, user.id, device)
     if existing:
         return existing.key
 
-    peer_id, key = await _server_create(label_for(user))
-    db.add(VpnKey(user_id=user.id, peer_id=peer_id, key=key))
+    peer_id, key = await _server_create(label_for(user, device))
+    db.add(VpnKey(user_id=user.id, device=device, peer_id=peer_id, key=key))
     try:
         db.commit()
     except IntegrityError:
@@ -142,11 +165,11 @@ async def get_or_issue(db: DBSession, user: User) -> str:
             await _server_delete(peer_id)
         except VpnKeysUnavailable:
             logger.warning("vpn: лишний пир %s… не снят, снимет сверка", peer_id[:8])
-        existing = live_key(db, user.id)
+        existing = live_key(db, user.id, device)
         if existing:
             return existing.key
         raise
-    logger.info("vpn: ключ выдан user_id=%s peer=%s…", user.id, peer_id[:8])
+    logger.info("vpn: ключ выдан user_id=%s устройство=%s peer=%s…", user.id, device, peer_id[:8])
     return key
 
 
@@ -175,23 +198,47 @@ DESKTOP_MIRROR_URL = "https://github.com/amnezia-vpn/amnezia-client/releases/lat
 SEND_COOLDOWN_SECONDS = 600
 
 
-def key_message(key: str) -> str:
+# Кнопка «Ключ для второго устройства» под первым ключом. Обрабатывает
+# `app/api/auth.py::telegram_webhook` → `send_second_device_key`.
+SECOND_DEVICE_CALLBACK = "vpn:device2"
+
+
+def key_message(key: str, device: int = 1) -> str:
     """Сообщение бота с ключом и инструкцией (HTML-разметка Telegram)."""
+    if device == 1:
+        device_note = (
+            "☝️ <b>Один ключ – одно устройство.</b> Если вставить его на второе, "
+            "VPN начнёт рваться на обоих. Нужен VPN ещё и на компьютере или "
+            "планшете – возьми второй ключ кнопкой ниже. Всего ключей два."
+        )
+    else:
+        device_note = (
+            "☝️ <b>Это второй и последний ключ.</b> Вставь его на другое "
+            "устройство, не на то, где уже стоит первый. Третий ключ – только "
+            "через поддержку."
+        )
     return (
-        "Ключ VPN для входа на сайт школы – нажми на него, и он скопируется:\n\n"
+        f"🔐 <b>Ключ VPN · устройство {device} из {MAX_DEVICES}</b>\n\n"
+        "Нажми на ключ – он скопируется целиком:\n"
         f"<code>{html.escape(key)}</code>\n\n"
-        "<b>1. Установи приложение</b>\n"
-        f"• Android – AmneziaVPN из <a href=\"{ANDROID_URL}\">Google Play</a>\n"
-        f"• iPhone и iPad – DefaultVPN из <a href=\"{IOS_URL}\">App Store</a> (нужна iOS 16 или новее)\n"
-        f"• Компьютер – AmneziaVPN с <a href=\"{DESKTOP_URL}\">amnezia.org</a>; "
-        f"если сайт не открывается – <a href=\"{DESKTOP_MIRROR_URL}\">с GitHub</a>\n\n"
-        "<b>2. Добавь ключ</b>\n"
-        "В приложении нажми «+», потом «Вставить» и «Подключиться».\n\n"
-        f"<b>3. Войди на сайт</b>\n"
-        f"Открой {settings.domain} и нажми «Войти через Telegram». После входа VPN "
-        "можно выключить, пока сайт открывается без него.\n\n"
-        "Ключ личный. Если им начнёт пользоваться кто-то ещё, его отключат."
+        "📲 <b>Шаг 1. Установи приложение</b>\n"
+        f"🤖 Android – <a href=\"{ANDROID_URL}\">AmneziaVPN в Google Play</a>\n"
+        f"🍏 iPhone и iPad – <a href=\"{IOS_URL}\">DefaultVPN в App Store</a>, нужна iOS 16 или новее\n"
+        f"💻 Компьютер – <a href=\"{DESKTOP_URL}\">AmneziaVPN с amnezia.org</a>, "
+        f"а если сайт не открывается – <a href=\"{DESKTOP_MIRROR_URL}\">с GitHub</a>\n\n"
+        "🔑 <b>Шаг 2. Добавь ключ</b>\n"
+        "Открой приложение → «+» → «Вставить» → «Подключиться».\n\n"
+        "✅ <b>Шаг 3. Войди на сайт</b>\n"
+        f"Открой {settings.domain} и нажми «Войти через Telegram». Когда сайт "
+        "начнёт открываться без VPN, его можно выключить.\n\n"
+        f"<blockquote>{device_note}</blockquote>"
     )
+
+
+def _second_device_button() -> dict:
+    return {"inline_keyboard": [[
+        {"text": "📱 Ключ для второго устройства", "callback_data": SECOND_DEVICE_CALLBACK},
+    ]]}
 
 
 UNAVAILABLE_MESSAGE = (
@@ -248,16 +295,56 @@ async def send_key_by_username(raw_username: str) -> None:
             return
         chat_id = user.telegram_chat_id
         try:
-            key = await get_or_issue(db, user)
+            key = await get_or_issue(db, user, 1)
         except VpnKeysUnavailable as exc:
             logger.warning("vpn: ключ для user_id=%s не выдан: %s", user.id, exc)
             await telegram_service.send_message(chat_id, UNAVAILABLE_MESSAGE)
             return
-        sent = await telegram_service.send_message(chat_id, key_message(key))
-        logger.info("vpn: ключ user_id=%s отправлен в Telegram: %s", user.id, sent)
+        # Новых ключей с сайта — только первый; второй выдаётся кнопкой в боте.
+        # Уже выданный второй присылаем заново, кнопку тогда не показываем.
+        second = live_key(db, user.id, 2)
+        sent = await telegram_service.send_message(
+            chat_id, key_message(key, 1),
+            reply_markup=None if second else _second_device_button(),
+        )
+        if second:
+            await telegram_service.send_message(chat_id, key_message(second.key, 2))
+        logger.info("vpn: ключи user_id=%s отправлены в Telegram: %s", user.id, sent)
     except Exception:
         logger.exception("vpn: ошибка при отправке ключа по запросу с экрана входа")
         db.rollback()
+    finally:
+        db.close()
+
+
+async def send_second_device_key(chat_id: int) -> str:
+    """Кнопка «Ключ для второго устройства» под первым ключом.
+
+    Возвращает короткий ответ для всплывашки кнопки. Второй ключ выдаётся один
+    раз; повторное нажатие присылает тот же. Право проверяется заново: между
+    первым ключом и нажатием ученика могли заархивировать."""
+    from app.db.database import SessionLocal
+    from app.services import telegram as telegram_service
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        if user is None or not is_eligible(user):
+            return "Ключ выдать не получится – напиши в поддержку"
+        if live_key(db, user.id, 1) is None:
+            return "Сначала запроси ключ на сайте, под кнопкой входа"
+        try:
+            key = await get_or_issue(db, user, 2)
+        except VpnKeysUnavailable as exc:
+            logger.warning("vpn: второй ключ для user_id=%s не выдан: %s", user.id, exc)
+            await telegram_service.send_message(chat_id, UNAVAILABLE_MESSAGE)
+            return "Не получилось, попробуй позже"
+        await telegram_service.send_message(chat_id, key_message(key, 2))
+        return "Ключ для второго устройства – в сообщении ниже"
+    except Exception:
+        logger.exception("vpn: ошибка при выдаче второго ключа")
+        db.rollback()
+        return "Не получилось, попробуй позже"
     finally:
         db.close()
 

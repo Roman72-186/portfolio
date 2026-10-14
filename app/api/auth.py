@@ -1060,9 +1060,24 @@ async def telegram_webhook(
     if update.message is not None and update.message.text:
         await _handle_telegram_message(db, update.message)
     if update.callback_query is not None:
-        await _handle_broadcast_callback(update.callback_query, background_tasks)
+        if update.callback_query.data == vpn_keys_service.SECOND_DEVICE_CALLBACK:
+            await _handle_vpn_second_device(update.callback_query)
+        else:
+            await _handle_broadcast_callback(update.callback_query, background_tasks)
 
     return {"ok": True}
+
+
+async def _handle_vpn_second_device(callback: _TgCallback) -> None:
+    """«Ключ для второго устройства» под ключом VPN (владелец 14.10.2026: у
+    ученика до двух ключей). Только в личном чате самого ученика: ключ уходит
+    тому, кто нажал. Правила — `vpn_keys.send_second_device_key`."""
+    chat_id = callback.message.chat.id if callback.message else None
+    if chat_id is None or chat_id != callback.from_user.id:
+        await broadcast_delivery.answer_callback(callback.id, "")
+        return
+    text = await vpn_keys_service.send_second_device_key(chat_id)
+    await broadcast_delivery.answer_callback(callback.id, text)
 
 
 async def _handle_broadcast_callback(callback: _TgCallback, background_tasks: BackgroundTasks) -> None:

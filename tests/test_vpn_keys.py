@@ -103,7 +103,8 @@ def test_eligibility(db, student):
 
 
 def test_label_has_name_nick_and_id(student):
-    assert vpn_keys.label_for(student) == f"Арина Губанова @arriri #{student.id}"
+    assert vpn_keys.label_for(student) == f"Арина Губанова @arriri #{student.id} устр. 1"
+    assert vpn_keys.label_for(student, 2).endswith("устр. 2")
 
 
 # ── выдача ──────────────────────────────────────────────────────────────────
@@ -191,6 +192,8 @@ def test_send_by_username_reuses_key(db, student, service, sent):
     _send("arriri")
     assert service.created == 1
     assert ["<code>vpn://key-1</code>" in m["text"] for m in sent] == [True, True]
+    assert all(m["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "vpn:device2" for m in sent)
+    assert "Один ключ – одно устройство" in sent[0]["text"]
 
 
 def test_send_by_username_respects_cooldown(db, student, service, sent, monkeypatch):
@@ -277,3 +280,77 @@ def test_bot_no_longer_answers_vpn_command(client, db, student, service, sent):
     )
     assert resp.status_code == 200
     assert sent == [] and service.created == 0
+
+
+# ── второе устройство ───────────────────────────────────────────────────────
+
+@pytest.fixture()
+def answers(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_answer(callback_id, text):
+        calls.append(text)
+
+    monkeypatch.setattr(auth_module.broadcast_delivery, "answer_callback", fake_answer)
+    return calls
+
+
+def _press_second(client, *, from_id=CHAT_ID, chat_id=CHAT_ID):
+    return client.post(
+        "/auth/telegram/webhook",
+        json={"update_id": 2, "callback_query": {
+            "id": "cb1", "from": {"id": from_id}, "data": "vpn:device2",
+            "message": {"message_id": 10, "chat": {"id": chat_id}},
+        }},
+        headers={"X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET},
+    )
+
+
+def test_second_device_key_by_button(client, db, student, service, sent, answers):
+    _send("arriri")
+    assert _press_second(client).status_code == 200
+    assert service.created == 2
+    assert "<code>vpn://key-2</code>" in sent[-1]["text"]
+    assert "устройство 2 из 2" in sent[-1]["text"] and "последний" in sent[-1]["text"]
+    assert "ниже" in answers[-1]
+    keys = vpn_keys.live_keys(db, student.id)
+    assert [k.device for k in keys] == [1, 2]
+    # Повторное нажатие — тот же второй ключ, третьего нет.
+    _press_second(client)
+    assert service.created == 2 and "<code>vpn://key-2</code>" in sent[-1]["text"]
+
+
+def test_site_request_resends_both_keys_without_button(client, db, student, service, sent, answers):
+    _send("arriri")
+    _press_second(client)
+    sent.clear()
+    _send("arriri")
+    assert service.created == 2
+    assert ["vpn://key-1" in sent[0]["text"], "vpn://key-2" in sent[1]["text"]] == [True, True]
+    assert sent[0]["reply_markup"] is None
+
+
+def test_no_third_key(db, student, service):
+    with pytest.raises(ValueError):
+        asyncio.run(vpn_keys.get_or_issue(db, student, 3))
+
+
+def test_second_device_needs_first_key(client, db, student, service, sent, answers):
+    _press_second(client)
+    assert service.created == 0 and sent == []
+    assert "Сначала" in answers[-1]
+
+
+def test_second_device_button_from_foreign_chat_ignored(client, db, student, service, sent, answers):
+    _send("arriri")
+    _press_second(client, from_id=CHAT_ID + 1)
+    assert service.created == 1
+
+
+def test_second_device_refused_after_archive(client, db, student, service, sent, answers):
+    _send("arriri")
+    student.archived_at = datetime.now(timezone.utc)
+    student.is_active = False
+    db.commit()
+    _press_second(client)
+    assert service.created == 1 and "поддержку" in answers[-1]
