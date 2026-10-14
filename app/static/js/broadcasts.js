@@ -8,6 +8,8 @@
 // 2. «Ученики поимённо» — поиск по списку со страницы и метки `.chip`, та же
 //    разметка, что в «Доступности блока» конструктора. Код поиска там встроен
 //    в шаблон конструктора и привязан к его строкам блоков, поэтому свой.
+//    Вставленный список ников разбирается по одному с кнопкой «Добавить
+//    найденных» (владелец 14.10.2026).
 // 3. Живой счётчик «Получат N из M» — `GET /cabinet/staff/broadcasts/audience`.
 // 4. Отправка форм со свежим ключом CSRF (`static/js/csrf.js`, правило в
 //    AGENTS.md) и подтверждением, где оно нужно.
@@ -274,7 +276,66 @@
         }).join('');
     }
 
+    // Вставили список ников (владелец 14.10.2026: 14 ников через пробел давали
+    // «Никого не нашли» — вся строка искалась как один ученик). Список — это
+    // два и больше слова с «@» или слова через запятую, точку с запятой или
+    // перенос строки; «Иванов Иван» остаётся обычным поиском по имени.
+    // Однострочное поле при вставке столбика склеивает строки в «@a@b» —
+    // поэтому «@» тоже граница: в нике Telegram его не бывает.
+    function listTokens(value) {
+        var raw = (value || '').replace(/@+/g, ' @').trim();
+        var tokens = raw.split(/[\s,;]+/).filter(Boolean);
+        if (tokens.length < 2) return null;
+        var withAt = tokens.filter(function (t) { return t.charAt(0) === '@'; }).length;
+        return withAt >= 2 || /[,;\n]/.test(raw) ? tokens : null;
+    }
+
+    // Каждое слово списка — точный ник (без «@», ссылка t.me тоже годится)
+    // или номер ученика. По части ника не ищем: из списка легко добавить
+    // чужого человека с похожим ником.
+    function matchToken(token) {
+        var nick = token.toLowerCase().replace(/^https?:\/\/(www\.)?t\.me\//, '').replace(/^@+/, '');
+        var queryId = studentIdFromQuery(nick);
+        for (var i = 0; i < studentsData.length; i++) {
+            var s = studentsData[i];
+            if (queryId !== null ? Number(s.id) === queryId
+                : (s.username || '').toLowerCase() === nick) return s;
+        }
+        return null;
+    }
+
+    function renderListResults(tokens) {
+        var chosen = {};
+        chosenIds().forEach(function (id) { chosen[id] = true; });
+        var toAdd = [];
+        var already = 0;
+        var missing = [];
+        tokens.forEach(function (token) {
+            var s = matchToken(token);
+            if (!s) missing.push(token);
+            else if (chosen[s.id]) already += 1;
+            else if (toAdd.indexOf(Number(s.id)) < 0) toAdd.push(Number(s.id));
+        });
+        var html = '<p class="prg-hint">В списке ' + tokens.length + '. Нашли: ' + toAdd.length
+            + (already ? ', уже выбраны: ' + already : '') + '.</p>';
+        if (toAdd.length) {
+            html += '<button type="button" class="btn-outline" data-bc-student-pick-all="' + toAdd.join(',') + '">'
+                + 'Добавить найденных: ' + toAdd.length + '</button>';
+        }
+        if (missing.length) {
+            html += '<p class="prg-hint">Не нашли: ' + escapeHTML(missing.join(' '))
+                + '. Ник в анкете может отличаться, или доступ у ученика закрыт — найдите их по фамилии.</p>';
+        }
+        results.innerHTML = html;
+        results.hidden = false;
+    }
+
     function renderResults() {
+        var tokens = listTokens(search.value);
+        if (tokens) {
+            renderListResults(tokens);
+            return;
+        }
         var needle = (search.value || '').trim().toLowerCase().replace(/^@/, '');
         if (!needle) {
             results.hidden = true;
@@ -316,7 +377,19 @@
     box.addEventListener('click', function (event) {
         var pick = event.target.closest('[data-bc-student-pick]');
         var remove = event.target.closest('[data-bc-student-remove]');
-        if (pick) {
+        var pickAll = event.target.closest('[data-bc-student-pick-all]');
+        if (pickAll) {
+            var all = chosenIds();
+            pickAll.getAttribute('data-bc-student-pick-all').split(',').map(Number).forEach(function (id) {
+                if (all.indexOf(id) < 0) all.push(id);
+            });
+            // В поле остаются только ненайденные — видно, кого искать руками.
+            var tokens = listTokens(search.value) || [];
+            search.value = tokens.filter(function (t) { return !matchToken(t); }).join(' ');
+            setIds(all);
+            renderResults();
+            search.focus();
+        } else if (pick) {
             var id = Number(pick.getAttribute('data-bc-student-pick'));
             var ids = chosenIds();
             if (ids.indexOf(id) < 0) ids.push(id);

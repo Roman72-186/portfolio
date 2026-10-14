@@ -178,7 +178,8 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                 </div>
                 <div class="prg-setting-item">
                     <p class="prg-settings-title">Ученики поимённо</p>
-                    <p class="prg-hint">Получат при любом тарифе и уровне. Можно выбрать одного человека.</p>
+                    <p class="prg-hint">Получат при любом тарифе и уровне. Можно выбрать одного человека
+                        или вставить список ников: @ivanov @petrova.</p>
                     <div class="prg-blk-students" data-bc-students>
                         <input type="search" data-bc-student-search autocomplete="off"
                                placeholder="Имя, фамилия, @ник или номер" aria-label="Найти ученика по имени, фамилии, нику или номеру">
@@ -295,5 +296,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=10"></script>
-<script src="/static/js/broadcasts.js?v=6"></script>
+<script src="/static/js/broadcasts.js?v=7"></script>
 {% endblock %}
