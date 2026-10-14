@@ -7,6 +7,12 @@
 app/services/intake_link.py и app/api/auth.py). Пока дата не задана, ссылку
 нельзя включить — владелец 11.09.2026, чтобы не закрыть доступ незаданным
 числом.
+
+С 14.10.2026 (созвон 13.10, каникулярный набор) ссылок несколько: у каждой
+группы каникулярного набора своя, `/join/<slug>`. `program` —
+какую программу получит новичок (`/proba` — годовая), `tag_id` — тег группы:
+по нему каникулярный цикл открывается ученику. Правила — в
+app/services/intake_link.py.
 """
 from datetime import datetime, timezone
 
@@ -24,6 +30,12 @@ class IntakeLink(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    program: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="annual", server_default="annual"
+    )
+    tag_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("tags.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -98,7 +98,7 @@
                     {% if intake_link and intake_link.is_active %}Открыт{% else %}Закрыт{% endif %}
                 </span>
                 <div class="period-actions">
-                    <button type="button" class="btn-sm" onclick="copyIntakeUrl(this)">Скопировать</button>
+                    <button type="button" class="btn-sm" data-url="{{ intake_public_url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
                     <form method="post" action="/cabinet/intake/toggle" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         {% if intake_link and intake_link.is_active %}
@@ -121,6 +121,79 @@
                 </div>
             </form>
         </div>
+    </div>
+
+    <div class="feature-section" data-group-links>
+        <div class="feature-header">
+            <span class="feature-label">Ссылки групп каникулярного набора</span>
+            <button type="button" class="btn-add" onclick="toggleForm('group-new')">+ Ссылка</button>
+        </div>
+
+        <div class="create-form" id="form-group-new">
+            <form method="post" action="/cabinet/intake/links">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="period-form-grid">
+                    <div>
+                        <label class="form-label" for="group-new-title">Группа – она же тег курса *</label>
+                        <input id="group-new-title" class="form-input" type="text" name="title" required
+                               maxlength="50" list="group-tag-choices" placeholder="Например: Каникулы 1 группа">
+                        <datalist id="group-tag-choices">
+                            {% for name in tag_choices %}<option value="{{ name }}">{% endfor %}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label class="form-label" for="group-new-deadline">Доступ до (МСК)</label>
+                        <input id="group-new-deadline" class="form-input" type="datetime-local" name="deadline">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-sm" onclick="toggleForm('group-new')">Отмена</button>
+                    <button type="submit" class="btn-blue btn-save">Создать ссылку</button>
+                </div>
+            </form>
+        </div>
+
+        {% for link in group_links %}
+        <div class="period-card {% if link.is_active %}active{% else %}inactive{% endif %}">
+            <div>
+                <div class="period-dates">{{ link.url }}</div>
+                <div class="period-title">
+                    Тег «{{ link.tag_name or link.title }}» ·
+                    {% if link.deadline_text %}доступ до {{ link.deadline_text }} (МСК){% else %}дата не задана – ссылку нельзя включить{% endif %}
+                </div>
+            </div>
+            <div class="period-card-right">
+                <span class="period-status {% if link.is_active %}status-active{% else %}status-inactive{% endif %}">
+                    {% if link.is_active %}Открыт{% else %}Закрыт{% endif %}
+                </span>
+                <div class="period-actions">
+                    <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
+                    <button type="button" class="btn-sm" onclick="toggleForm('group-{{ link.id }}')">Дата</button>
+                    <form method="post" action="/cabinet/intake/{{ link.slug }}/toggle" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        {% if link.is_active %}
+                        <button type="submit" class="btn-danger">Выключить</button>
+                        {% else %}
+                        <button type="submit" class="btn-sm">Включить</button>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="create-form" id="form-group-{{ link.id }}">
+            <form method="post" action="/cabinet/intake/{{ link.slug }}/deadline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label class="form-label" for="group-deadline-{{ link.id }}">Доступ до (МСК)</label>
+                <input id="group-deadline-{{ link.id }}" class="form-input" type="datetime-local" name="deadline"
+                       value="{{ link.deadline_input }}">
+                <div class="form-actions">
+                    <button type="submit" class="btn-blue btn-save">Сохранить дату</button>
+                </div>
+            </form>
+        </div>
+        {% else %}
+        <div class="empty-periods">Ссылок групп пока нет</div>
+        {% endfor %}
     </div>
 
     {% for feature in features %}
@@ -225,9 +298,8 @@ function toggleForm(feature) {
 }
 
 function copyIntakeUrl(btn) {
-    var el = document.getElementById('intake-url-text');
-    if (!el) return;
-    var text = el.textContent.trim();
+    var text = btn.getAttribute('data-url') || '';
+    if (!text) return;
     navigator.clipboard.writeText(text).then(function() {
         var prev = btn.textContent;
         btn.textContent = 'Скопировано';

@@ -53,7 +53,7 @@ from app.services import payment_board, payments
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.student_search import student_id_query
-from app.services.tags import get_all_tags
+from app.services.tags import get_all_tags, get_or_create_tag
 from app.services.rbac import MODERATOR_ROLE_NAME
 from app.services import section_access
 from app.services import view_host
@@ -1101,6 +1101,14 @@ def periods_list(
     )
     today = today_msk()
     intake_link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
+    base_url = str(request.base_url).rstrip("/")
+    group_links = intake_link_service.holiday_links(db)
+    tag_names = {
+        tag.id: tag.name
+        for tag in db.query(Tag).filter(
+            Tag.id.in_([link.tag_id for link in group_links if link.tag_id is not None])
+        )
+    }
     return templates.TemplateResponse(request, "periods_management.html", {
         "request": request,
         "user": user,
@@ -1111,18 +1119,79 @@ def periods_list(
         "intake_link": intake_link,
         "intake_deadline_input": msk_input_value(intake_link.access_until if intake_link else None),
         "intake_deadline_text": msk_text(intake_link.access_until if intake_link else None),
-        "intake_public_url": str(request.base_url).rstrip("/") + f"/{INTAKE_TRIAL_SLUG}",
+        "intake_public_url": f"{base_url}/{INTAKE_TRIAL_SLUG}",
+        # Ссылки групп каникулярного набора (созвон 13.10.2026): у каждой
+        # группы своя, тег группы открывает ей каникулярный цикл.
+        "group_links": [
+            {
+                "slug": link.slug,
+                "id": link.id,
+                "title": link.title,
+                "tag_name": tag_names.get(link.tag_id),
+                "is_active": link.is_active,
+                "url": f"{base_url}/join/{link.slug}",
+                "deadline_input": msk_input_value(link.access_until),
+                "deadline_text": msk_text(link.access_until),
+            }
+            for link in group_links
+        ],
+        "tag_choices": [tag.name for tag in get_all_tags(db)],
     })
 
 
+def _intake_link_for_edit(db: DBSession, slug: str, user_id: int) -> IntakeLink:
+    """Ссылку `/proba` экран заводит сам при первом сохранении, ссылку группы —
+    только кнопкой «+ Ссылка»: чужой адрес в запросе — 404, а не новая строка."""
+    if slug == INTAKE_TRIAL_SLUG:
+        return _get_or_create_intake_link(db, user_id)
+    link = intake_link_service.get_link(db, slug)
+    if link is None:
+        raise HTTPException(status_code=404)
+    return link
+
+
+@router.post("/intake/links")
+def intake_group_link_create(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    title: Annotated[str, Form()] = "",
+    deadline: Annotated[str, Form()] = "",
+):
+    """«+ Ссылка» группы каникулярного набора. Название группы — оно же тег:
+    по нему цикл открывается ученикам, и школе не нужно заводить тег
+    отдельно. Ссылка создаётся выключенной (`create_holiday_link`)."""
+    name = title.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Укажите название группы")
+    if len(name) > 50:
+        raise HTTPException(status_code=400, detail="Название группы — не длиннее 50 знаков")
+    access_until = None
+    if deadline.strip():
+        access_until = parse_msk_local(deadline.strip())
+        if access_until is None:
+            raise HTTPException(status_code=400, detail="Неверный формат даты")
+    tag = get_or_create_tag(db, name)
+    # Название выбрали явно — тег должен быть виден в форме цикла и чипах.
+    tag.is_hidden = False
+    intake_link_service.create_holiday_link(
+        db, title=name, tag_id=tag.id, access_until=access_until,
+        created_by_id=user["user_id"],
+    )
+    db.commit()
+    return RedirectResponse("/cabinet/periods", status_code=303)
+
+
 @router.post("/intake/deadline")
+@router.post("/intake/{slug}/deadline")
 def intake_deadline_set(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     deadline: Annotated[str, Form()] = "",
+    slug: str = INTAKE_TRIAL_SLUG,
 ):
-    link = _get_or_create_intake_link(db, user["user_id"])
+    link = _intake_link_for_edit(db, slug, user["user_id"])
     raw = deadline.strip()
     if not raw:
         # Пусто — снять дату и выключить ссылку: включённая ссылка без даты
@@ -1143,12 +1212,14 @@ def intake_deadline_set(
 
 
 @router.post("/intake/toggle")
+@router.post("/intake/{slug}/toggle")
 def intake_toggle(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    slug: str = INTAKE_TRIAL_SLUG,
 ):
-    link = _get_or_create_intake_link(db, user["user_id"])
+    link = _intake_link_for_edit(db, slug, user["user_id"])
     if not link.is_active and link.access_until is None:
         raise HTTPException(status_code=400, detail="Сначала укажите, до какого числа открыт доступ")
     link.is_active = not link.is_active

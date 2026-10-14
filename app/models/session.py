@@ -22,6 +22,12 @@ class Session(Base):
     impersonated_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True
     )
+    # Откуда вошли (14.10.2026, каникулярный набор): школа хочет видеть, не
+    # делят ли доступ на несколько человек. Пишет `auth._create_session_response`,
+    # адрес — `request.client.host`, за Traefik это настоящий адрес
+    # (`--forwarded-allow-ips` в docker-compose.prod-ru.yml).
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     @property
     def slides(self) -> bool:
