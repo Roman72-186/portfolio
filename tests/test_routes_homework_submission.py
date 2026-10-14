@@ -631,9 +631,9 @@ def test_homework_message_queues_outside_delivery(auth_client, db, user_factory,
     assert add_task.call_args.args[1] == notif.id
 
 
-def test_curator_cannot_return_homework_to_revision(auth_client, db, user_factory, session_factory):
-    """Возврат на доработку — только ГП и выше, даже своего ученика
-    (`rbac.REVISION_MIN_RANK`, владелец 04.10.2026)."""
+def test_curator_returns_own_student_homework(auth_client, db, user_factory, session_factory):
+    """Куратор возвращает домашку своего ученика (`rbac.WORK_REVISION_MIN_RANK`,
+    владелец 14.10.2026; с 04.10 по 14.10 возврат был только у ГП)."""
     client, user = auth_client
     task, _ = _homework_task(db, user.id)
     with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
@@ -644,11 +644,15 @@ def test_curator_cannot_return_homework_to_revision(auth_client, db, user_factor
     db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
 
-    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+    with patch("app.api.homework_submission.notify"):
+        resp = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/revision",
+            data={"comment": "Доделай лист"},
+        )
 
-    assert resp.status_code == 403
+    assert resp.status_code == 200
     db.refresh(submission)
-    assert submission.status == "submitted"
+    assert submission.status == "needs_revision"
 
 
 @pytest.mark.parametrize("role_name", ["админ", "суперадмин"])

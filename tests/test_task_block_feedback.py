@@ -539,14 +539,41 @@ def test_staff_can_return_wrong_block_work_to_revision(
     ).status_code == 409
 
 
-def test_curator_cannot_return_block_work(
+def test_curator_returns_own_student_block_work(
     db, user_factory, session_factory, client,
 ):
-    """Возврат на доработку — только ГП и выше, даже своего ученика
-    (`rbac.REVISION_MIN_RANK`, владелец 04.10.2026)."""
+    """Куратор возвращает работу своего ученика с комментарием
+    (`rbac.WORK_REVISION_MIN_RANK`, владелец 14.10.2026; с 04.10 по 14.10
+    возврат был только у ГП)."""
     curator = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=970_027, name="Ученик")
     student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, curator)
+
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            data={"comment": "Доделай тени, срок – воскресенье"},
+        )
+
+    assert response.status_code == 200
+    db.refresh(submission)
+    assert submission.needs_revision is True
+    notification = db.query(Notification).filter_by(
+        user_id=student.id, task_block_submission_id=submission.id
+    ).one()
+    assert "Доделай тени" in notification.text
+
+
+def test_curator_cannot_return_other_curators_student(
+    db, user_factory, session_factory, client,
+):
+    curator = user_factory(vk_id=970_028, name="Куратор", role_name="куратор")
+    other = user_factory(vk_id=970_029, name="Другой куратор", role_name="куратор")
+    student = user_factory(vk_id=970_030, name="Ученик")
+    student.curator_id = other.id
     db.commit()
     submission = _submission(db, student)
     _login(client, session_factory, curator)

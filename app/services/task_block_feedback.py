@@ -300,6 +300,39 @@ def notify_counterpart(
     return notification
 
 
+def resubmission_notification(
+    db: DBSession, *, submission: TaskBlockSubmission,
+) -> Notification | None:
+    """Ученик заменил работу, возвращённую на доработку, — сказать проверяющему
+    (владелец 14.10.2026). Иначе куратор, написавший «доделай», узнал бы о новой
+    версии только по списку «На проверку». Получатель — автор диалога ОС, а без
+    диалога — куратор ученика. Зовёт `upload_task_block_work` только для
+    сдачи, которая была на доработке, после того как работа снова сдана."""
+    student = db.get(User, submission.user_id)
+    recipient_id = db.query(TaskBlockFeedback.curator_id).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).scalar() or (student.curator_id if student is not None else None)
+    if recipient_id is None or recipient_id == submission.user_id:
+        return None
+    block = db.get(TaskBlock, submission.block_id)
+    task = db.get(TrackerTask, block.task_id) if block is not None else None
+    who = (
+        f"{student.last_name or ''} {student.first_name or student.name}".strip()
+        if student is not None else "Ученик"
+    )
+    where = f" по заданию «{task.title}»" if task is not None else ""
+    notification = Notification(
+        user_id=recipient_id,
+        title="Ученик загрузил исправленную работу",
+        text=f"{who}{where} – работа заменена после доработки, нужна проверка.",
+        task_block_submission_id=submission.id,
+    )
+    db.add(notification)
+    db.flush()
+    invalidate_unread(recipient_id)
+    return notification
+
+
 def serialize_messages(
     messages: list[TaskBlockFeedbackMessage], names: dict[int, str] | None = None,
 ) -> list[dict]:
@@ -389,6 +422,6 @@ def list_student_feedback_cards(
 
 __all__ = [
     "ReplyState", "get_or_create_feedback", "list_student_feedback_cards",
-    "notify_counterpart", "role_from_rank", "send_message", "serialize_messages",
-    "student_can_reply",
+    "notify_counterpart", "resubmission_notification", "role_from_rank", "send_message",
+    "serialize_messages", "student_can_reply",
 ]

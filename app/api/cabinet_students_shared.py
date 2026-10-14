@@ -43,7 +43,7 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
-from app.services.rbac import can_score as role_can_score, can_send_to_revision
+from app.services.rbac import can_score as role_can_score, can_send_work_to_revision
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.tariff_view import RETURN_COOKIE as TARIFF_VIEW_RETURN_COOKIE
 from app.services.notify import notify
@@ -857,7 +857,7 @@ def get_student_tasks(
     сверху, отметки «просмотрено», ссылка на оценку и возврат на доработку.
 
     Кнопки спрашивают то же, что сервер: отметки — раздел «Проверка по ученику»
-    (`students_review`, его адреса), возврат — `rbac.REVISION_MIN_RANK`, балл —
+    (`students_review`, его адреса), возврат — `rbac.WORK_REVISION_MIN_RANK`, балл —
     `rbac.SCORE_MIN_RANK`. Архивный ученик открывается только на чтение."""
     student = _check_access(student_id, user, db, read_archive=True)
     # Модератору раздел не положен (`section_access.SECTIONS`), поэтому и
@@ -878,7 +878,7 @@ def get_student_tasks(
         "items": [_task_item_json(i) for i in items],
         "can_review": can_review,
         "can_score": can_review and role_can_score(user["role_rank"]),
-        "can_send_revision": can_review and can_send_to_revision(user["role_rank"]),
+        "can_send_revision": can_review and can_send_work_to_revision(user["role_rank"]),
     })
 
 

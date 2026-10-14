@@ -20,6 +20,7 @@ from app.services.rbac import (
     MODERATOR_ROLE_NAME,
     REVISION_MIN_RANK,
     SCORE_MIN_RANK,
+    WORK_REVISION_MIN_RANK,
     effective_role_rank,
     is_moderator_request_allowed,
 )
@@ -399,8 +400,10 @@ require_admin_role = require_role(4)
 require_superadmin = require_role(5)
 # Балл за работу ученика и закрытие цикла — правило в `rbac.SCORE_MIN_RANK`.
 require_scorer     = require_role(SCORE_MIN_RANK)
-# Вернуть работу на доработку — правило в `rbac.REVISION_MIN_RANK`.
+# Вернуть пробник на доработку — правило в `rbac.REVISION_MIN_RANK`.
 require_revision_sender = require_role(REVISION_MIN_RANK)
+# Вернуть работу в задании или домашку — `rbac.WORK_REVISION_MIN_RANK`.
+require_work_revision_sender = require_role(WORK_REVISION_MIN_RANK)
 
 
 def require_action(key: str) -> Callable:

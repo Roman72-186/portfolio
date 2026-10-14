@@ -17,9 +17,9 @@ from app.dependencies import (
     require_csrf,
     require_csrf_header,
     require_curator,
-    require_revision_sender,
     require_scorer,
     require_student,
+    require_work_revision_sender,
 )
 from app.models.feedback_rating import DIALOG_TASK_BLOCK
 from app.models.notification import Notification
@@ -265,7 +265,7 @@ def score_submission(
 def send_submission_to_revision(
     submission_id: int,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_revision_sender)],
+    user: Annotated[dict, Depends(require_work_revision_sender)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     comment: str = Form(default=""),

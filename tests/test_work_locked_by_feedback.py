@@ -201,6 +201,77 @@ def test_returned_work_reopens_after_review(auth_client, db):
     assert _urls(db, submission) == [NEW_URL]
 
 
+def test_curator_reply_then_return_makes_last_photo_final(
+    auth_client, db, user_factory, session_factory,
+):
+    """Владелец 14.10.2026: ученик сдал недоделанное, куратор написал «доделай»
+    (замена закрылась) и сам вернул работу на доработку. Ученик заменяет фото,
+    последнее становится финальным — и в задании, и в портфолио «После», а
+    автору ОС приходит уведомление о новой версии."""
+    from app.models.notification import Notification
+    from app.services.portfolio import SOURCE_SUBMISSION, after_gallery_groups
+
+    client, user = auth_client
+    task, block = _autoclosed(client, db, user)
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    curator = user_factory(vk_id=777_032, name="Куратор", role_name="куратор")
+    user.curator_id = curator.id
+    feedback = TaskBlockFeedback(submission_id=submission.id, curator_id=curator.id)
+    db.add(feedback)
+    db.flush()
+    db.add(TaskBlockFeedbackMessage(
+        feedback_id=feedback.id, sender_id=curator.id, sender_role="curator",
+        text="Молодец, но доделай", created_at=submission.submitted_at + timedelta(minutes=1),
+    ))
+    db.commit()
+    assert _upload(client, block.id, replace=True, url=NEW_URL).status_code == 409
+
+    student_cookie = client.cookies.get("session_id")
+    client.cookies.set("session_id", session_factory(curator).id)
+    with patch("app.api.task_block_feedback.notify"):
+        returned = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            data={"comment": "Доделай до вечера воскресенья"},
+        )
+    assert returned.status_code == 200, returned.text
+    client.cookies.set("session_id", student_cookie)
+
+    with patch("app.api.cabinet_tracker.notify") as notify_mock:
+        resp = _upload(client, block.id, replace=True, url=NEW_URL)
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(submission)
+    assert submission.needs_revision is False
+    assert _urls(db, submission) == [NEW_URL]
+    gallery = [
+        item.s3_url for group in after_gallery_groups(db, user.id)
+        for item in group["works"] if getattr(item, "source", None) == SOURCE_SUBMISSION
+    ]
+    assert gallery == [NEW_URL]
+    notice = db.query(Notification).filter_by(
+        user_id=curator.id, task_block_submission_id=submission.id,
+    ).one()
+    assert notice.title == "Ученик загрузил исправленную работу"
+    notify_mock.assert_called_once_with(notice.id)
+
+
+def test_ordinary_replace_does_not_notify_curator(auth_client, db, user_factory):
+    """Замена до проверки, без возврата, проверяющего не дёргает."""
+    from app.models.notification import Notification
+
+    client, user = auth_client
+    curator = user_factory(vk_id=777_033, name="Куратор", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    _task_obj, block = _autoclosed(client, db, user)
+
+    with patch("app.api.cabinet_tracker.notify") as notify_mock:
+        assert _upload(client, block.id, replace=True, url=NEW_URL).status_code == 200
+
+    assert db.query(Notification).filter_by(user_id=curator.id).count() == 0
+    notify_mock.assert_not_called()
+
+
 def test_empty_block_of_a_done_task_takes_a_first_upload(auth_client, db):
     """Пустой необязательный блок после «Завершить задание» первую сдачу принимает."""
     client, user = auth_client

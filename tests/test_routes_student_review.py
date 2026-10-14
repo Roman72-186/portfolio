@@ -146,7 +146,7 @@ def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, c
 
 
 def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client):
-    """Куратор отмечает «просмотрено», но не возвращает и не ставит балл."""
+    """Куратор отмечает «просмотрено» и возвращает на доработку, балл не ставит."""
     curator = user_factory(vk_id=860_107, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=860_108, name="Ученик")
     student.curator_id = curator.id
@@ -158,7 +158,8 @@ def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client
     data = client.get(f"/cabinet/students/{student.id}/tasks").json()
 
     assert data["can_review"] is True
-    assert data["can_send_revision"] is False
+    # Возврат работ в заданиях — куратору тоже (владелец 14.10.2026), балл — нет.
+    assert data["can_send_revision"] is True
     assert data["can_score"] is False
     item = data["items"][0]
     assert item["question"] == "Как прошло?"

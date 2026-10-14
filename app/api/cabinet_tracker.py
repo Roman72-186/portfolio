@@ -27,7 +27,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
@@ -86,6 +88,8 @@ from app.services.submission_edit import (
     block_work_reason, deadline_reason, late_first_submission,
 )
 from app.services import s3 as s3_service
+from app.services.notify import notify
+from app.services.task_block_feedback import resubmission_notification
 from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
     answered_block_ids as task_block_answered_ids,
@@ -1492,6 +1496,7 @@ MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024
 @router.post("/tracker/blocks/{block_id}/upload", response_class=JSONResponse)
 async def upload_task_block_work(
     block_id: int,
+    background_tasks: BackgroundTasks,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
@@ -1581,10 +1586,13 @@ async def upload_task_block_work(
     # замена сотрёт строки старых фото.
     was_submitted = submission.submitted_at is not None
     before = submission_photo_snapshot(db, submission.id) if was_submitted else []
+    # Флаг снимет `mark_task_block_submitted` ниже — запоминаем до него.
+    was_on_revision = bool(submission.needs_revision)
     if replacing:
         delete_task_block_submission_images(db, submission.id)
 
     created = 0
+    resubmitted = None
     for filename, data in files:
         s3_path = s3_service.s3_path_task_block_submission(
             user["vk_id"], submission.id, filename, user.get("tariff") or "",
@@ -1604,6 +1612,10 @@ async def upload_task_block_work(
     # закрывает блок и не попадает к проверяющему (владелец 02.10.2026).
     if created and is_submission_complete(block, existing + created):
         mark_task_block_submitted(db, submission=submission, comment=comment)
+        # Работу возвращали на доработку, и ученик её заменил — проверяющий
+        # должен узнать о новой версии (владелец 14.10.2026).
+        if was_on_revision:
+            resubmitted = resubmission_notification(db, submission=submission)
         # Закрываем блок фактом сдачи: работа приехала, лента едет дальше.
         # Проверка куратора на это не влияет — иначе ученик стоял бы в ленте,
         # пока куратор не дойдёт до его работы (то же правило, что у домашки
@@ -1622,6 +1634,8 @@ async def upload_task_block_work(
             removed=before if replacing else (),
         )
     db.commit()
+    if resubmitted is not None:
+        background_tasks.add_task(notify, resubmitted.id)
     return JSONResponse({"ok": True, "created": created})
 
 
