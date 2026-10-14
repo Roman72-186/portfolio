@@ -827,8 +827,9 @@ class _TgCallbackMessage(BaseModel):
 
 
 class _TgCallback(BaseModel):
-    """Нажатие инлайн-кнопки — сейчас только «Отправить» под проверкой
-    рассылки (`services/broadcast_delivery.py`). Приходит, только если вебхук
+    """Нажатие инлайн-кнопки: «Ключ для второго устройства» под ключом VPN и
+    «Отправить» под старыми проверками рассылки (с 14.10.2026 только отвечает,
+    что отправка на сайте). Приходит, только если вебхук
     зарегистрирован с `callback_query` (`scripts/set_telegram_webhook.py`)."""
     id: str
     from_user: _TgFrom = Field(alias="from")
@@ -1063,7 +1064,7 @@ async def telegram_webhook(
         if update.callback_query.data == vpn_keys_service.SECOND_DEVICE_CALLBACK:
             await _handle_vpn_second_device(update.callback_query)
         else:
-            await _handle_broadcast_callback(update.callback_query, background_tasks)
+            await _handle_broadcast_callback(update.callback_query)
 
     return {"ok": True}
 
@@ -1080,31 +1081,15 @@ async def _handle_vpn_second_device(callback: _TgCallback) -> None:
     await broadcast_delivery.answer_callback(callback.id, text)
 
 
-async def _handle_broadcast_callback(callback: _TgCallback, background_tasks: BackgroundTasks) -> None:
-    """«Отправить N ученикам» под проверкой рассылки.
-
-    Пускает только нажатие в том личном чате, куда ушла проверка, с токеном
-    этой проверки и пока версия не менялась — решает
-    `broadcast_delivery.approve_from_telegram`. Ответ на кнопку обязателен:
-    без него у человека крутятся часики.
+async def _handle_broadcast_callback(callback: _TgCallback) -> None:
+    """«Отправить N ученикам» под старой проверкой рассылки. С 14.10.2026
+    рассылку отправляют только на сайте (владелец: «подтверждение только на
+    стороне платформы»), кнопка осталась лишь в проверках, присланных раньше:
+    нажатие ничего не отправляет. Ответ обязателен — без него у человека
+    крутятся часики.
     """
-    parsed = broadcast_delivery.parse_callback(callback.data)
-    if parsed is None:
-        await broadcast_delivery.answer_callback(callback.id, "")
-        return
-    broadcast_id, token = parsed
-    chat_id = callback.message.chat.id if callback.message else None
-    if chat_id is None or chat_id != callback.from_user.id:
-        await broadcast_delivery.answer_callback(callback.id, "Откройте рассылку на сайте")
-        return
-    accepted, run_now, text = broadcast_delivery.approve_from_telegram(broadcast_id, token, chat_id)
-    await broadcast_delivery.answer_callback(callback.id, text)
-    if not accepted:
-        return
-    await broadcast_delivery.close_preview_buttons(chat_id, callback.message.message_id, text)
-    # С назначенным временем — только запланирована, уйдёт планировщиком.
-    if run_now:
-        background_tasks.add_task(broadcast_delivery.run_broadcast, broadcast_id)
+    old = broadcast_delivery.is_old_preview_button(callback.data)
+    await broadcast_delivery.answer_callback(callback.id, broadcast_delivery.OLD_BUTTON_ANSWER if old else "")
 
 
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────

@@ -255,15 +255,15 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
         <h2>Отправка</h2>
         {% if preview_current and summary.reachable and broadcast.schedule_mode %}
         <p>Проверка ушла вам в Telegram {{ broadcast.preview_sent_at|msk_text }}. Уйдёт
-            {{ schedule_text }}. Если всё верно, запланируйте здесь или кнопкой под проверкой
-            в Telegram. До назначенного времени отправку можно отменить.</p>
+            {{ schedule_text }}. Если всё верно, запланируйте. До назначенного времени
+            отправку можно отменить.</p>
         <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/send" data-bc-fresh-csrf>
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit" class="btn-blue">Запланировать: {{ summary.reachable }} уч.</button>
         </form>
         {% elif preview_current and summary.reachable %}
         <p>Проверка ушла вам в Telegram {{ broadcast.preview_sent_at|msk_text }}. Если всё верно,
-            отправьте здесь или кнопкой под проверкой в Telegram.</p>
+            отправьте.</p>
         <form method="post" action="/cabinet/staff/broadcasts/{{ broadcast.id }}/send" data-bc-fresh-csrf
               data-bc-confirm="Отправить сообщение: {{ summary.reachable }} уч.? Отменить отправку будет нельзя.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

@@ -64,7 +64,11 @@ FLUSH_EVERY = 20
 # Сколько раз ждать по 429 «слишком часто» и сколько максимум спать за раз.
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_MAX_SLEEP = 30
+# Кнопка «Отправить» под проверкой была до 14.10.2026 — у старых проверок в
+# чатах она осталась. Нажатие ничего не отправляет, только отвечает, где
+# теперь отправка (владелец: «подтверждение только на стороне платформы»).
 CALLBACK_PREFIX = "bc"
+OLD_BUTTON_ANSWER = "Рассылка теперь отправляется только на сайте"
 
 
 @dataclass
@@ -193,26 +197,6 @@ def edit_url(broadcast_id: int) -> str:
     return f"https://{settings.domain}/cabinet/staff/broadcasts/{broadcast_id}"
 
 
-def _short_when(broadcast: Broadcast) -> str:
-    """Время на кнопке под проверкой: «10.10 в 10:00 по Москве», пусто — сразу."""
-    if not broadcast.schedule_mode or broadcast.scheduled_at is None:
-        return ""
-    moment = bc.schedule_input_value(broadcast)  # 2026-10-10T10:00 по Москве
-    day = f"{moment[8:10]}.{moment[5:7]}"
-    return f"{day} в {moment[11:16]} {bc.SCHEDULE_LABELS[broadcast.schedule_mode]}"
-
-
-def _ru_students(count: int) -> str:
-    tail = count % 100
-    if 11 <= tail <= 14:
-        word = "ученикам"
-    elif count % 10 == 1:
-        word = "ученику"
-    else:
-        word = "ученикам"
-    return f"{count} {word}"
-
-
 # ── Проверка у преподавателя ────────────────────────────────────────────────
 
 
@@ -221,10 +205,7 @@ class _PreviewJob:
     content: _Content
     chat_id: int
     fingerprint: str
-    token: str
     note: str
-    reachable: int
-    when: str
 
 
 def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _PreviewJob | str:
@@ -262,6 +243,7 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
         if summary.notifications_off:
             lines.append(f"Выключили уведомления: {summary.notifications_off}.")
         lines.append(f"Когда: {bc.schedule_text(broadcast)}.")
+        lines.append(f"Отправить или поправить — на сайте: {edit_url(broadcast_id)}")
         problem = bc.schedule_problem(broadcast, users)
         if problem:
             return problem
@@ -269,10 +251,7 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
             content=_copy_content(broadcast),
             chat_id=target[1],
             fingerprint=bc.fingerprint(broadcast, audience),
-            token=bc.new_preview_token(),
             note="\n".join(lines),
-            reachable=summary.reachable,
-            when=_short_when(broadcast),
         )
     finally:
         db.close()
@@ -280,7 +259,9 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
 
 async def send_preview(broadcast_id: int, sender_id: int, target_id: int | None = None) -> str | None:
     """Прислать преподавателю сообщение ровно в том виде, в каком его получат
-    ученики, и под ним — кому уйдёт и кнопки «Отправить» / «Исправить».
+    ученики, и под ним — кому уйдёт и ссылку на экран рассылки. Кнопки
+    «Отправить» в Telegram нет: отправляют и правят только на сайте
+    (владелец 14.10.2026).
 
     Возвращает текст ошибки для экрана или None, если проверка ушла.
     """
@@ -295,16 +276,11 @@ async def send_preview(broadcast_id: int, sender_id: int, target_id: int | None 
     if not delivered.ok:
         return f"Telegram не принял сообщение: {delivered.error}"
 
-    buttons = [[{"text": "Исправить", "url": edit_url(broadcast_id)}]]
-    if job.reachable:
-        buttons.insert(0, [{
-            "text": f"Отправить {_ru_students(job.reachable)}" + (f" {job.when}" if job.when else ""),
-            "callback_data": f"{CALLBACK_PREFIX}:{broadcast_id}:{job.token}",
-        }])
     note = await _call("sendMessage", {
         "chat_id": job.chat_id,
         "text": job.note,
-        "reply_markup": json.dumps({"inline_keyboard": buttons}, ensure_ascii=False),
+        # Без карточки сайта под ссылкой: подпись должна читаться целиком.
+        "link_preview_options": json.dumps({"is_disabled": True}),
     })
     if not note.ok:
         logger.warning("broadcast %s: подпись проверки не ушла: %s", broadcast_id, note.description)
@@ -320,7 +296,6 @@ async def send_preview(broadcast_id: int, sender_id: int, target_id: int | None 
             return "Сообщение поменялось, пока шла проверка — пришлите её заново"
         broadcast.preview_fingerprint = job.fingerprint
         broadcast.preview_chat_id = job.chat_id
-        broadcast.preview_token = job.token
         broadcast.preview_sent_at = datetime.now(timezone.utc)
         if delivered.file_id:
             broadcast.telegram_file_id = delivered.file_id
@@ -461,60 +436,15 @@ async def _run(broadcast_id: int) -> None:
     logger.info("broadcast %s: проход завершён, получателей в проходе %d", broadcast_id, len(targets))
 
 
-# ── Кнопка «Отправить» в Telegram ───────────────────────────────────────────
+# ── Кнопка «Отправить» под старыми проверками ───────────────────────────────
 
 
-def parse_callback(data: str | None) -> tuple[int, str] | None:
-    """`bc:<id>:<token>` → (id, token)."""
-    parts = (data or "").split(":")
-    if len(parts) != 3 or parts[0] != CALLBACK_PREFIX:
-        return None
-    try:
-        return int(parts[1]), parts[2]
-    except ValueError:
-        return None
-
-
-def approve_from_telegram(broadcast_id: int, token: str, chat_id: int) -> tuple[bool, bool, str]:
-    """Нажата «Отправить» под проверкой. Пускает, только если нажали в том
-    чате, куда ушла проверка, токен этой проверки и версия не менялась.
-
-    Возвращает (принято ли, запускать ли проход сейчас, текст ответа на
-    кнопку). Рассылка с назначенным временем не уходит, а планируется.
-    """
-    db = SessionLocal()
-    try:
-        broadcast = db.get(Broadcast, broadcast_id)
-        if (
-            broadcast is None
-            or not broadcast.preview_token
-            or broadcast.preview_token != token
-            or broadcast.preview_chat_id != chat_id
-        ):
-            return False, False, "Эта проверка устарела — откройте рассылку на сайте"
-        when = bc.schedule_text(broadcast)
-        try:
-            run_now, count = bc.approve(db, broadcast_id, actor_id=broadcast.created_by_id)
-        except bc.SendRefused as exc:
-            return False, False, str(exc)
-        if not run_now:
-            return True, False, f"Запланировано: {_ru_students(count)}, {when}"
-        return True, True, f"Отправляю: {_ru_students(count)}"
-    finally:
-        db.close()
+def is_old_preview_button(data: str | None) -> bool:
+    return (data or "").startswith(f"{CALLBACK_PREFIX}:")
 
 
 async def answer_callback(callback_id: str, text: str) -> None:
     await _call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text[:200]})
-
-
-async def close_preview_buttons(chat_id: int, message_id: int, text: str) -> None:
-    """Под проверкой — итог вместо кнопок, чтобы второй раз не нажали."""
-    await _call("editMessageReplyMarkup", {
-        "chat_id": chat_id, "message_id": message_id,
-        "reply_markup": json.dumps({"inline_keyboard": []}),
-    })
-    await _call("sendMessage", {"chat_id": chat_id, "text": text})
 
 
 # ── Отложенные: планировщик ─────────────────────────────────────────────────

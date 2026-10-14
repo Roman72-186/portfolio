@@ -40,7 +40,6 @@ from __future__ import annotations
 import hashlib
 import html
 import re
-import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
@@ -594,14 +593,9 @@ def preview_target(
     return None
 
 
-def new_preview_token() -> str:
-    return secrets.token_urlsafe(16)
-
-
 def invalidate_preview(broadcast: Broadcast) -> None:
     """Правка черновика — прежняя проверка больше не считается."""
     broadcast.preview_fingerprint = None
-    broadcast.preview_token = None
     broadcast.telegram_file_id = None if broadcast.media_kind else broadcast.telegram_file_id
 
 

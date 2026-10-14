@@ -89,6 +89,8 @@ class Broadcast(Base):
     # которую видели: любая правка меняет отпечаток.
     preview_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preview_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Токен кнопки «Отправить» в Telegram — кнопки нет с 14.10.2026, отправка
+    # только на сайте. Колонка осталась, код её не пишет и не читает.
     preview_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preview_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

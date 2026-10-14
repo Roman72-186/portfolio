@@ -252,7 +252,10 @@ def test_full_flow_preview_then_send(gp_client, db, student, fake_tg):
     to_admin = fake_tg.to(ADMIN_CHAT)
     assert to_admin[0][0] == "sendMessage"
     assert to_admin[0][1]["text"] == "<b>Привет</b>" and to_admin[0][1]["parse_mode"] == "HTML"
-    assert "Отправить 1 ученику" in to_admin[1][1]["reply_markup"]
+    # Отправка только на сайте (владелец 14.10.2026): под проверкой кнопок нет,
+    # в подписи — ссылка на экран рассылки.
+    assert "reply_markup" not in to_admin[1][1]
+    assert f"/cabinet/staff/broadcasts/{bid}" in to_admin[1][1]["text"]
     db.expire_all()
     assert bc.preview_is_current(db, db.get(Broadcast, bid))
 
@@ -421,23 +424,6 @@ def test_resume_only_after_stalled_pass(db, student, user_factory, fake_tg):
     assert [m for m, _, _ in fake_tg.to(101)] == ["sendMessage"]
 
 
-def test_telegram_button_approval_checks_chat_and_token(gp_client, db, student, fake_tg):
-    client, _ = gp_client
-    student(chat=101)
-    bid = _create(client)
-    _save(client, bid, action="preview")
-    db.expire_all()
-    token = db.get(Broadcast, bid).preview_token
-
-    assert delivery.approve_from_telegram(bid, token, 999)[0] is False
-    assert delivery.approve_from_telegram(bid, "чужой", ADMIN_CHAT)[0] is False
-    ok, run_now, text = delivery.approve_from_telegram(bid, token, ADMIN_CHAT)
-    assert ok and run_now and "1 ученику" in text
-    assert delivery.approve_from_telegram(bid, token, ADMIN_CHAT)[0] is False  # второй раз — нет
-    db.expire_all()
-    assert db.get(Broadcast, bid).status == STATUS_SENDING
-
-
 def test_preview_falls_back_to_service_account(db, user_factory, monkeypatch):
     gp = user_factory(vk_id=880_003, role_name="админ")
     fallback = user_factory(vk_id=880_004)
@@ -559,7 +545,7 @@ def test_draft_status_default(db, user_factory):
     assert broadcast.status == STATUS_DRAFT and broadcast.text == ""
 
 
-# ── Кнопка «Отправить» в Telegram (вебхук) ──────────────────────────────────
+# ── Кнопка «Отправить» под старыми проверками (вебхук) ──────────────────────
 
 WEBHOOK_SECRET = "broadcast-test-secret"
 
@@ -580,27 +566,22 @@ def _press(client, data: str, *, chat=ADMIN_CHAT, from_id=ADMIN_CHAT):
     )
 
 
-def test_webhook_button_sends_broadcast(gp_client, db, student, fake_tg, monkeypatch):
+def test_old_preview_button_sends_nothing(gp_client, db, student, fake_tg, monkeypatch):
+    """Проверки до 14.10.2026 несут кнопку «Отправить»: нажатие только
+    отвечает, что отправка на сайте, рассылка остаётся черновиком."""
     from app.config import settings as app_settings
     monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
     client, _ = gp_client
     student(chat=101)
     bid = _create(client)
     _save(client, bid, action="preview")
-    db.expire_all()
-    token = db.get(Broadcast, bid).preview_token
 
-    assert _press(client, f"bc:{bid}:{token}", chat=999, from_id=999).status_code == 200
+    assert _press(client, f"bc:{bid}:старый-токен").status_code == 200
     db.expire_all()
-    assert db.get(Broadcast, bid).status == STATUS_DRAFT  # чужой чат — нет
-
-    assert _press(client, f"bc:{bid}:{token}").status_code == 200
-    db.expire_all()
-    assert db.get(Broadcast, bid).status == STATUS_SENT
-    assert [m for m, _, _ in fake_tg.to(101)] == ["sendMessage"]
+    assert db.get(Broadcast, bid).status == STATUS_DRAFT
+    assert fake_tg.to(101) == []
     answers = [d for m, d, _ in fake_tg.calls if m == "answerCallbackQuery"]
-    assert "1 ученику" in answers[-1]["text"]
-    assert any(m == "editMessageReplyMarkup" for m, _, _ in fake_tg.calls)
+    assert answers[-1]["text"] == delivery.OLD_BUTTON_ANSWER
 
 
 def test_webhook_ignores_unknown_buttons(client, fake_tg, monkeypatch):
@@ -686,7 +667,6 @@ def test_schedule_msk_waits_for_time_then_sends(gp_client, db, student, fake_tg)
     _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=when)
     note = fake_tg.to(ADMIN_CHAT)[1][1]
     assert "Когда:" in note["text"] and "по Москве" in note["text"]
-    assert f"{when[8:10]}.{when[5:7]} в {when[11:16]} по Москве" in note["reply_markup"]
 
     resp = client.post(f"/cabinet/staff/broadcasts/{bid}/send", follow_redirects=False)
     assert resp.headers["location"].endswith("ok=scheduled")
@@ -792,25 +772,6 @@ def test_cancel_schedule_returns_draft(gp_client, db, student, fake_tg):
     _save(client, bid, schedule_mode="msk", scheduled_at=_msk_input(timedelta(hours=3)))
     db.expire_all()
     assert not bc.preview_is_current(db, db.get(Broadcast, bid))
-
-
-def test_telegram_button_schedules_instead_of_sending(gp_client, db, student, fake_tg, monkeypatch):
-    from app.config import settings as app_settings
-    from app.models.broadcast import STATUS_SCHEDULED
-
-    monkeypatch.setattr(app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
-    client, _ = gp_client
-    student(chat=101)
-    bid = _create(client)
-    _save(client, bid, action="preview", schedule_mode="msk", scheduled_at=_msk_input(timedelta(hours=2)))
-    db.expire_all()
-    token = db.get(Broadcast, bid).preview_token
-    assert _press(client, f"bc:{bid}:{token}").status_code == 200
-    db.expire_all()
-    assert db.get(Broadcast, bid).status == STATUS_SCHEDULED
-    assert fake_tg.to(101) == []
-    answers = [d for m, d, _ in fake_tg.calls if m == "answerCallbackQuery"]
-    assert answers[-1]["text"].startswith("Запланировано: 1 ученику")
 
 
 def test_save_error_keeps_everything_else(gp_client, db, student, fake_tg):
