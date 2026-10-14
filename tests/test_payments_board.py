@@ -439,12 +439,11 @@ def test_mark_refused_for_archived(db, client, session_factory, prices, make_pay
     assert resp.status_code == 409
 
 
-# ── ГП: статистика оплат только на чтение (владелец 13.10.2026) ─────────────
+# ── ГП: всё про оплату, как у суперадмина (владелец 14.10.2026) ────────────
 
-def test_head_teacher_sees_stats_but_changes_nothing(db, client, session_factory, prices, make_payer, user_factory):
-    """`payments.VIEW_MIN_RANK = 4`: ГП видит экран «Оплаты» и Excel.
-    `STAFF_MIN_RANK = 5`: ни кнопок, ни «Оплаты списком», ни группы в
-    карточке, ни одного адреса, который меняет оплату."""
+def test_head_teacher_has_everything_about_payments(db, client, session_factory, prices, make_payer, user_factory):
+    """Владелец 14.10.2026: «только ГП открыть всё по оплатам, что есть у СА» —
+    экран, Excel, «Оплата списком», группа в карточке, отметка."""
     head = user_factory(vk_id=990_050, name="ГП", is_admin=True, role_name="админ")
     student = make_payer("Иванова Анна")
     client.cookies.set("session_id", session_factory(head).id)
@@ -452,18 +451,36 @@ def test_head_teacher_sees_stats_but_changes_nothing(db, client, session_factory
     users_page = client.get("/cabinet/superadmin/users")
     assert users_page.status_code == 200
     assert "/cabinet/superadmin/payments" in users_page.text
-    assert "/cabinet/superadmin/payment-import" not in users_page.text
+    assert "/cabinet/superadmin/payment-import" in users_page.text
 
     page = client.get("/cabinet/superadmin/payments?month=2026-10")
     assert page.status_code == 200 and "Иванова Анна" in page.text
-    assert "Отметить оплату" not in page.text and 'data-role="mark-form"' not in page.text
     export = client.get("/cabinet/superadmin/payments/export?month=2026-10")
     assert export.status_code == 200 and export.content[:2] == b"PK"
+    assert client.get("/cabinet/superadmin/payment-import").status_code == 200
 
     manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
-    assert manage["payment"] is None
+    assert manage["payment"] is not None
 
     json_headers = {"Accept": "application/json"}
+    resp = client.post("/cabinet/superadmin/payments/mark", headers=json_headers, data={
+        "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
+    })
+    assert resp.status_code == 200, resp.text
+    assert db.query(Payment).filter(Payment.user_id == student.id).count() == 1
+
+
+@pytest.mark.parametrize("role_name", ["модератор", "куратор"])
+def test_moderator_and_curator_see_no_payments(db, client, session_factory, prices, make_payer, user_factory, role_name):
+    """Оплата — по роли: у модератора уровень ГП (`rbac.effective_role_rank`),
+    но ни экрана, ни карточки, ни одного адреса оплаты ему не открыто."""
+    staff = user_factory(vk_id=990_060, name="Сотрудник", role_name=role_name)
+    student = make_payer("Иванова Анна")
+    client.cookies.set("session_id", session_factory(staff).id)
+    json_headers = {"Accept": "application/json"}
+
+    assert client.get("/cabinet/superadmin/payments?month=2026-10", headers=json_headers).status_code == 403
+    assert client.get("/cabinet/superadmin/payments/export?month=2026-10", headers=json_headers).status_code == 403
     assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
     assert client.post("/cabinet/superadmin/payments/mark", headers=json_headers, data={
         "user_id": student.id, "month": "2026-10", "amount": "1", "paid_on": "2026-10-12",
@@ -471,8 +488,9 @@ def test_head_teacher_sees_stats_but_changes_nothing(db, client, session_factory
     assert client.post(f"/cabinet/superadmin/users/{student.id}/payment", headers=json_headers, data={
         "pay_window_start": "10", "pay_window_end": "15", "pay_cohort": "", "pay_price": "", "paid_month": "",
     }).status_code == 403
-    db.refresh(student)
-    assert student.paid_until is None
+    profile = client.get(f"/cabinet/students/{student.id}/profile")
+    if profile.status_code == 200:
+        assert profile.json()["student"]["manage"].get("payment") is None
     assert db.query(Payment).count() == 0
 
 

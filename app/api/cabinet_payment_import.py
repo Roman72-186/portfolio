@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
-from app.dependencies import require_csrf, require_role
+from app.dependencies import require_csrf, require_payments_staff
 from app.services import payment_import as pi
 from app.services import payments
 from app.services.user_management import _invalidate_user_sessions
@@ -21,8 +21,7 @@ from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
 
-# Кому открыто — `payments.STAFF_MIN_RANK` (пока только суперадмин).
-require_payments_staff = require_role(payments.STAFF_MIN_RANK)
+# Кому открыто — ГП и суперадмин (`dependencies.require_payments_staff`).
 
 
 async def _read_rows(file: UploadFile) -> list[pi.SheetRow]:

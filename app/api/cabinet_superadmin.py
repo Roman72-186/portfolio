@@ -2610,7 +2610,7 @@ def superadmin_user_set_payment(
     `people:students` и
     `payments.is_payments_staff`."""
     if not payments.is_payments_staff(user):
-        raise HTTPException(status_code=403, detail="Оплата пока открыта только суперадмину")
+        raise HTTPException(status_code=403, detail="Оплата открыта ГП и суперадмину")
     target = _require_student_target(db, user, target_id)
     try:
         price_raw = pay_price.strip()

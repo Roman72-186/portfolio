@@ -4,10 +4,9 @@
 (`mark_paid_manually` → `record_paid`, `revert_paid`). Экран живёт в разделе
 «Люди» (`section_access`, дерево `/cabinet/superadmin/payments`), записи —
 действие `people:students`. Экран и его Excel (статистика оплат,
-`plans/2026-10-13-payment-stats.md`) — `payments.VIEW_MIN_RANK`, суперадмин и
-ГП; отметка, отмена и возврат — `payments.STAFF_MIN_RANK`, пока только
-суперадмин. Куратору и модератору ни экрана, ни кнопок (план, «Ручная
-отметка оплаты»).
+`plans/2026-10-13-payment-stats.md`), отметка, отмена и возврат — ГП и
+суперадмин (`payments.is_payments_staff`, владелец 14.10.2026). Куратору и
+модератору ни экрана, ни кнопок (план, «Ручная отметка оплаты»).
 """
 from datetime import date, datetime, timezone
 from typing import Annotated
@@ -18,7 +17,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.db.database import get_db
-from app.dependencies import require_csrf, require_role
+from app.dependencies import require_csrf, require_payments_staff
 from app.models.payment import STATUS_PAID, Payment
 from app.models.role import Role
 from app.models.user import User
@@ -30,10 +29,9 @@ from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
 
-# Смотреть — `payments.VIEW_MIN_RANK` (суперадмин и ГП), менять —
-# `payments.STAFF_MIN_RANK` (пока только суперадмин).
-require_payments_viewer = require_role(payments.VIEW_MIN_RANK)
-require_payments_staff = require_role(payments.STAFF_MIN_RANK)
+# Смотреть и менять — ГП и суперадмин (`payments.is_payments_staff`,
+# владелец 14.10.2026).
+require_payments_viewer = require_payments_staff
 
 _BADGE_CLASSES = {
     payment_board.STATE_OVERDUE: "prg-badge--error",

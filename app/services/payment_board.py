@@ -304,7 +304,7 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
 
     Почта и Telegram здесь есть по решению владельца 13.10.2026, хотя
     выгрузка «Регистрации по тарифам» их нарочно не несёт: файл видят
-    только суперадмин и ГП (`payments.VIEW_MIN_RANK`)."""
+    только суперадмин и ГП (`payments.is_payments_staff`)."""
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter

@@ -377,6 +377,15 @@ def require_role(minimum_rank: int) -> Callable:
 require_student    = require_role(1)
 require_curator    = require_role(2)
 require_moderator  = require_role(3)
+def require_payments_staff(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+    """Всё про оплату — ГП и суперадмин, по роли (`payments.is_payments_staff`):
+    модератор с уровнем ГП сюда не проходит."""
+    from app.services.payments import is_payments_staff
+    if not is_payments_staff(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return user
+
+
 require_admin_role = require_role(4)
 require_superadmin = require_role(5)
 # Балл за работу ученика и закрытие цикла — правило в `rbac.SCORE_MIN_RANK`.
