@@ -418,6 +418,30 @@ def _rule_item_payload(option, option_images: dict) -> dict:
     }
 
 
+def _cycle_block_students(db: DBSession, user: dict, edit_payloads: dict) -> list[dict]:
+    """Ученики для экрана цикла.
+
+    Тот, кто правит программу, получает всех — для «Кому доступно»
+    в «Доступности блока» (владелец 06.10.2026), с никами для поиска.
+    У «Смотреть» формы блока нет, но «Весь цикл глазами ученика» выбирает
+    ученика среди отмеченных поимённо в блоках цикла (13.10.2026: куратору
+    открыт просмотр АОП). Им — только эти ученики, имя и тариф, без ника.
+    """
+    choices = block_student_choices(db)
+    if can(user, "program"):
+        return choices
+    named = {
+        int(student_id)
+        for payload in edit_payloads.values()
+        for block in payload.get("blocks") or []
+        for student_id in block.get("student_ids") or []
+    }
+    return [
+        {"id": row["id"], "name": row["name"], "username": "", "tariff": row["tariff"]}
+        for row in choices if row["id"] in named
+    ]
+
+
 def _edit_payloads(
     db: DBSession, items: list[TrackerTask], details: dict
 ) -> dict[int, dict]:
@@ -1964,6 +1988,7 @@ def program_cycle_items(
         for c in stage_sibling_cycles(db, stage.id)
     ] if stage is not None else []
     stage_label = cycle_label(db, stage) if stage is not None else None
+    edit_payloads = _edit_payloads(db, items, {t.id: {} for t in items})
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
@@ -1978,7 +2003,7 @@ def program_cycle_items(
                 _program_path(db, stage=topic) if is_stage else _program_path(db, cycle=topic)
             ),
             "items": items,
-            "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
+            "edit_payloads": edit_payloads,
             "kind_labels": ITEM_KIND_LABELS,
             "archi_questions": ARCHI_QUESTIONS,
             "archi_title": ARCHI_TITLE,
@@ -1999,12 +2024,7 @@ def program_cycle_items(
             "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
             "tariffs": TARIFFS_CURRENT,
-            # Ученики для «Кому доступно» в «Доступности блока» (владелец
-            # 06.10.2026). С никами — поэтому только тому, кто правит
-            # программу; у «Смотреть» формы блока нет.
-            "block_students": (
-                block_student_choices(db) if can(user, "program") else []
-            ),
+            "block_students": _cycle_block_students(db, user, edit_payloads),
             # Подпись «Уровень 1 – 65 и ниже» в «Кому доступно» — от
             # серверного порога, а не от числа в JS.
             "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,

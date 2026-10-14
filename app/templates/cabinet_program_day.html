@@ -21,6 +21,8 @@ FORM: Operate.
 {% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
+{# Плеер в «Глазами ученика» (владелец 13.10.2026) — то же ядро, что в ленте. #}
+{% include "partials/inline/_video_player.html" %}
 <script src="/static/js/photo-prep.js?v=1"></script>
 <script src="/static/js/task-blocks-render.js?v=52"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
@@ -1007,11 +1009,6 @@ FORM: Operate.
     // Рисуем из того, что сейчас в форме, ничего не сохраняя: иначе увидеть
     // результат можно было бы только сохранив и зайдя под учеником.
 
-    var VIDEO_TITLES = ({{ catalog_videos|tojson }}).reduce(function (acc, v) {
-        acc[v.id] = v.title;
-        return acc;
-    }, {});
-
     // ── «Глазами ученика» ──────────────────────────────────────────────────
     //
     // Рисует общий рендерер ученика (`/static/js/task-blocks-render.js`), тот
@@ -1023,11 +1020,11 @@ FORM: Operate.
     // (найдено 09.09.2026). Ровно тот случай, за которым следит
     // `test_reuse_ratchet.py`: вторая копия отстала от первой.
     //
-    // Отличия от ленты ровно два, и оба неизбежны:
-    // 1. блоки ещё не сохранены, поэтому у них нет адресов отправки — рендерер
-    //    это переносит, он читает их только внутри обработчика нажатия;
-    // 2. ролик показывается строкой с названием: плеер требует подписанный
-    //    embed-адрес существующего блока, а его до сохранения нет.
+    // Отличие от ленты одно: блоки ещё не сохранены, поэтому у них нет
+    // адресов отправки — рендерер это переносит, он читает их только внутри
+    // обработчика нажатия. Ролик играет настоящим плеером (13.10.2026):
+    // подписанный адрес выдаётся по ролику каталога, а не по блоку, и есть
+    // у несохранённой формы — разбор в `cabinet_program_cycle_items.html`.
     function previewBlockShape(block, index) {
         // Рендерер ученика ждёт id — у несохранённого блока его нет. Даём
         // отрицательный: он уникален внутри предпросмотра и ни с чем в базе
@@ -1043,15 +1040,10 @@ FORM: Operate.
             // сам текст). `markdownToHtml` — JS-зеркало той же разметки,
             // экспортировано в `rich-text-field.js` ровно для этого.
             body_html: window.RichTextField.markdownToHtml(block.body || ''),
-            // Плеер в предпросмотре не грузим (см. пункт 2 выше): рендерер
-            // ставит на место ролика строку с его названием. Так видео-
-            // инструкция у кнопки «Загрузить портфолио» стоит там же, где у
-            // ученика, а не отдельной веткой предпросмотра (сторож в
-            // `test_program_day_script.py`).
-            video_note: block.video_id
-                ? 'Видеоинструкция: ' + (VIDEO_TITLES[block.video_id] || 'ролик')
-                  + ' — плеер откроется у ученика.'
-                : '',
+            // Тот же адрес, что лента отдаёт ученику: видео-блок и
+            // видеоинструкция «Загрузить портфолио» (`cabinet_tracker.py`).
+            video_embed_endpoint: block.video_id
+                ? '/cabinet/videos/' + block.video_id + '/embed' : null,
             options: (block.options || []).map(function (option, position) {
                 return Object.assign({}, option, {
                     id: option.id || -(position + 1),
@@ -1067,22 +1059,22 @@ FORM: Operate.
         });
     }
 
+    // Видео-блок без выбранного ролика: рендерер ученика написал бы «Ролик
+    // недоступен», а преподавателю нужна подсказка, что ролик не выбран.
     function previewVideoNote(block) {
         var wrap = el('div', 'lrn-blk lrn-blk-video');
         if (block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
-        wrap.appendChild(el(
-            'p', 'prg-hint',
-            'Видео: ' + (VIDEO_TITLES[block.video_id] || 'ролик не выбран')
-            + ' — плеер откроется у ученика.'
-        ));
+        wrap.appendChild(el('p', 'prg-hint', 'Видео: ролик не выбран.'));
         return wrap;
     }
 
     // Предпросмотр смотрят, а не проходят: поля и кнопки выключаем, ссылки
     // оставляем видимыми, но неактивными. Иначе нажатие «Отправить работу»
-    // ушло бы на сервер от лица преподавателя.
+    // ушло бы на сервер от лица преподавателя. Кнопки плеера живые — ролик
+    // для того и показан; кружок «выполнено» вне плеера и выключен.
     function freezePreview(box) {
         box.querySelectorAll('input, textarea, select, button').forEach(function (field) {
+            if (field.closest('.lrn-inline-video')) return;
             field.disabled = true;
         });
         box.querySelectorAll('a').forEach(function (link) {
@@ -1118,7 +1110,7 @@ FORM: Operate.
         blocks.forEach(function (block, index) {
             var wrap = el('div', 'prg-preview-blk');
             wrap.setAttribute('data-block-type', block.block_type);
-            var node = block.block_type === 'video'
+            var node = block.block_type === 'video' && !block.video_id
                 ? previewVideoNote(block)
                 : renderer.render(previewBlockShape(block, index), index);
             if (node === null) {

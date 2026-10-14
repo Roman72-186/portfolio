@@ -8,6 +8,7 @@
 удалили вызов без объявления, или Jinja-цикл сломал JS-литерал.
 """
 
+import json
 import pathlib
 import re
 import shutil
@@ -32,6 +33,9 @@ KNOWN_GLOBALS = {
     "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
     "clearInterval", "requestAnimationFrame", "alert", "confirm", "prompt",
     "console", "queueMicrotask", "structuredClone", "AbortController",
+    # Поиск ученика по номеру — `window.studentIdFromQuery` из
+    # `/static/js/student-search.js`, подключён в `base.html` (14.10.2026).
+    "studentIdFromQuery",
 }
 
 
@@ -390,3 +394,88 @@ def test_whole_cycle_preview_filters_by_level_and_student_like_the_feed(
     lines = run.stdout.strip().splitlines()
     assert json.loads(lines[0]) == expected
     assert json.loads(lines[1]) is True  # обзор: ничего не выбрано — видно всё
+
+
+# ── «Глазами ученика» с плеером и для куратора (созвон 13.10.2026) ────────────
+
+def test_preview_plays_the_real_video_player(client, db, user_factory, session_factory):
+    """Владелец 13.10.2026: «когда я захожу смотреть глазами ученика, у меня
+    нету плеера». Вместо строки «плеер откроется у ученика» просмотр отдаёт
+    рендереру тот же адрес ролика, что лента ученика, а кнопки плеера не
+    выключает. Подписанный адрес выдаётся по ролику каталога, поэтому
+    сервера просмотр по-прежнему не трогает сам (`previewCycle` без fetch)."""
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}").text
+
+    assert "/static/js/video-player.js" in page
+    assert "плеер откроется у ученика" not in page
+    shape = page[page.index("function previewBlockShape("):]
+    shape = shape[:shape.index("function previewVideoNote(")]
+    assert "'/cabinet/videos/' + block.video_id + '/embed'" in shape
+    freeze = page[page.index("function freezePreview("):]
+    freeze = freeze[:freeze.index("box.querySelectorAll('a')")]
+    assert "closest('.lrn-inline-video')" in freeze
+
+
+def test_day_preview_plays_the_real_video_player():
+    """Экран дня держит ту же копию предпросмотра — и ту же починку."""
+    source = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "app" / "templates" / "cabinet_program_day.html"
+    ).read_text(encoding="utf-8")
+    assert '{% include "partials/inline/_video_player.html" %}' in source
+    assert "плеер откроется у ученика" not in source
+    assert "'/cabinet/videos/' + block.video_id + '/embed'" in source
+    assert "closest('.lrn-inline-video')" in source
+
+
+def test_curator_with_view_sees_cycle_and_named_students_without_nick(
+    client, db, user_factory, session_factory
+):
+    """Куратору открыт АОП на «Смотреть» (созвон 13.10.2026): экран цикла и
+    «Весь цикл глазами ученика» есть, правки нет. В выборе ученика —
+    только отмеченные поимённо в блоках цикла, имя без ника; остальных
+    учеников школы куратору этот экран не отдаёт."""
+    from app.models.section_access import SectionAccessRule
+
+    named = user_factory(vk_id=700_610, name="Названная")
+    named.last_name, named.first_name, named.tg_username = "Иванова", "Маша", "masha_nick"
+    other = user_factory(vk_id=700_611, name="Другая")
+    other.last_name, other.first_name = "Петрова", "Оля"
+    db.commit()
+
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Введение", "is_required": True, "blocks": [
+            {"block_type": "text", "title": "Теория", "body": "Текст",
+             "student_ids": [named.id]},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+
+    curator = user_factory(vk_id=700_612, name="Куратор", role_name="куратор")
+    db.add(SectionAccessRule(section_key="program", user_id=curator.id, level="view"))
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}", follow_redirects=False)
+    assert page.status_code == 200
+    assert "Весь цикл глазами ученика" in page.text
+    raw = re.search(r"var BLOCK_STUDENTS = (.*?);\n", page.text).group(1)
+    students = json.loads(raw)
+    assert [(row["id"], row["name"], row["username"]) for row in students] == [
+        (named.id, "Иванова Маша", ""),
+    ]
+    assert "masha_nick" not in page.text
+
+    write = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Ещё", "is_required": True, "blocks": []},
+        headers={"X-CSRF-Token": "x", "Accept": "application/json"},
+    )
+    assert write.status_code == 403

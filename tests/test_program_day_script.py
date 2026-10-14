@@ -35,6 +35,9 @@ KNOWN_GLOBALS = {
     "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
     "clearInterval", "requestAnimationFrame", "alert", "confirm", "prompt",
     "console", "queueMicrotask", "structuredClone", "AbortController",
+    # Поиск ученика по номеру — `window.studentIdFromQuery` из
+    # `/static/js/student-search.js`, подключён в `base.html` (14.10.2026).
+    "studentIdFromQuery",
 }
 
 
