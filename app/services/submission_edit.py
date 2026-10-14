@@ -157,10 +157,18 @@ def block_work_reason(
     # непроверенных работ).
     if submission.reviewed_at is not None or submission.score is not None:
         return "Преподаватель уже проверил работу. Изменить её нельзя."
+    # Работа, вошедшая в общую ОС (13.10.2026), запирается ответом в диалоге
+    # главной: иначе ученик поменял бы фото уже после ответа преподавателя.
+    from app.services.linked_feedback import main_submission_for
+
+    dialog_ids = [submission.id]
+    main = main_submission_for(db, submission)
+    if main is not None:
+        dialog_ids.append(main.id)
     replied_query = (
         db.query(TaskBlockFeedbackMessage.id)
         .join(TaskBlockFeedback, TaskBlockFeedback.id == TaskBlockFeedbackMessage.feedback_id)
-        .filter(TaskBlockFeedback.submission_id == submission.id,
+        .filter(TaskBlockFeedback.submission_id.in_(dialog_ids),
                 TaskBlockFeedbackMessage.sender_role != "student")
     )
     if submission.submitted_at is not None:

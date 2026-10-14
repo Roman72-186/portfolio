@@ -8,6 +8,7 @@
 from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
@@ -48,6 +49,7 @@ from app.models.task_block import (
     TaskBlockAnswerOption,
     TaskBlockCompareStep,
     TaskBlockDialogTariff,
+    TaskBlockFeedbackLink,
     TaskBlockImage,
     TaskBlockLevel,
     TaskBlockOption,
@@ -1402,6 +1404,13 @@ def _drop_block(db: DBSession, block: TaskBlock) -> None:
     db.query(TaskBlockState).filter(
         TaskBlockState.block_id == block.id
     ).delete(synchronize_session=False)
+    # Связки общей ОС в обе стороны: блок мог быть и главным, и связанным.
+    db.query(TaskBlockFeedbackLink).filter(
+        or_(
+            TaskBlockFeedbackLink.block_id == block.id,
+            TaskBlockFeedbackLink.linked_block_id == block.id,
+        )
+    ).delete(synchronize_session=False)
     db.delete(block)
 
 
@@ -1606,6 +1615,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         _sync_students(db, row, item.get("student_ids"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
         _sync_dialog_settings(db, row, item)
+        # Общая ОС с прошлыми заданиями (созвон 13.10.2026) — после
+        # `flush`: у нового блока уже есть id.
+        from app.services.linked_feedback import sync_links
+
+        sync_links(db, row, item.get("linked_block_ids"))
         sync_submit_deadlines(db, row, item.get("submit_deadlines"))
     removed = [row for block_id, row in existing.items() if block_id not in matched_ids]
     _refuse_dropping_submitted(db, removed)
@@ -3188,8 +3202,17 @@ def submission_review_queue(
         .limit(limit)
         .all()
     )
-    image_map: dict[int, list[TaskBlockSubmissionImage]] = {}
+    # Общая ОС на несколько заданий (созвон 13.10.2026): работа, вошедшая в
+    # общую ОС, отдельной строкой не идёт (владелец 14.10.2026: «только общей
+    # строкой») — её фото и дату несёт строка главной работы.
+    from app.services.linked_feedback import absorbed_for_mains, absorbed_submission_ids
+
+    absorbed = absorbed_submission_ids(db, [submission for submission, _, _, _ in rows])
+    rows = [row for row in rows if row[0].id not in absorbed]
+    group_of = absorbed_for_mains(db, [submission for submission, _, _, _ in rows])
     ids = [submission.id for submission, _, _, _ in rows]
+    ids += [linked.id for group in group_of.values() for linked in group]
+    image_map: dict[int, list[TaskBlockSubmissionImage]] = {}
     if ids:
         for image in (
             db.query(TaskBlockSubmissionImage)
@@ -3224,6 +3247,8 @@ def submission_review_queue(
     items = []
     for submission, block, task, student in rows:
         state = state_map.get((block.id, student.id))
+        linked = group_of.get(submission.id, [])
+        group_dates = [submission.submitted_at] + [w.submitted_at for w in linked]
         items.append({
             "submission_id": submission.id,
             "block_id": block.id,
@@ -3234,7 +3259,17 @@ def submission_review_queue(
             "subject": block.subject or task.subject,
             "comment": submission.comment,
             "review_comment": submission.review_comment,
-            "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
+            # Фото общей ОС — сначала прошлые работы по дате сдачи, главная
+            # последней, как их видит куратор на экране сдачи.
+            "images": [
+                i.image_s3_url
+                for work in sorted(linked, key=lambda w: w.submitted_at) + [submission]
+                for i in image_map.get(work.id, [])
+            ],
+            "linked_count": len(linked),
+            "group_period": (
+                (min(group_dates), max(group_dates)) if linked else None
+            ),
             "overrun": timed_overrun(block, state),
             # Сдано после срока (владелец 30.09.2026): с 06.10.2026 после
             # срока принимают первую сдачу любого блока, отметка общая.

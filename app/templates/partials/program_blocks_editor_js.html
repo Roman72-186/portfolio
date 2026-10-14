@@ -344,6 +344,129 @@ function blockDialogSettingsHTML(type) {
         + '</details>';
 }
 
+// «Общая ОС с прошлыми заданиями» (созвон 13.10.2026): ученики сдают работы
+// неделями без ответа, а куратор отвечает один раз на все. На блоке сдачи
+// задания, после которого будет ответ, выбираются блоки сдачи прошлых
+// заданий; куратор увидит работы по ним рядом с этой и напишет один ответ.
+// Список ищет сервер (тот же поиск, что «Взять содержимое», только задания
+// со сдачей); правила связки — `linked_feedback.sync_links`, отказ приходит
+// текстом при сохранении.
+function blockLinkedFeedbackHTML(type) {
+    if (DIALOG_BLOCK_TYPES.indexOf(type) < 0) return '';
+    var emptySummary = 'Нет – куратор отвечает на эту работу отдельно';
+    return ''
+        + '<details class="prg-settings" data-settings-panel data-linked-feedback data-settings-empty="' + emptySummary + '">'
+        + '  <summary><span class="prg-settings-head">'
+        + '    <span class="prg-settings-title">Общая ОС с прошлыми заданиями</span>'
+        + '    <span class="prg-settings-summary" data-settings-summary>' + emptySummary + '</span>'
+        + '  </span></summary>'
+        + '  <div class="prg-settings-body">'
+        + '  <div class="prg-blk-students prg-blk-setting" data-b-linked data-sum-count="связано заданий:">'
+        + '    <p class="prg-hint">Куратор откроет работу по этому заданию и увидит рядом работы ученика по выбранным прошлым – с датой сдачи и циклом. Ответ он пишет один на все, ученик видит его по каждой работе.</p>'
+        + '    <input type="search" data-b-linked-search autocomplete="off"'
+        + '      placeholder="Название задания, цикла или ID" aria-label="Найти прошлое задание со сдачей работы">'
+        + '    <div class="prg-blk-student-results" data-b-linked-results hidden></div>'
+        + '    <div class="prg-blk-student-chips" data-b-linked-chips></div>'
+        + '  </div>'
+        + '  </div>'
+        + '</details>';
+}
+
+function linkedChipHTML(choice) {
+    return '<span class="chip" data-b-linked-chip data-id="' + Number(choice.id) + '">'
+        + escapeHTML(choice.label)
+        + '<button type="button" class="chip-x" data-b-linked-remove'
+        + ' aria-label="Убрать ' + escapeHTML(choice.label) + '">×</button>'
+        + '</span>';
+}
+
+function addLinkedChip(box, choice) {
+    var chips = box.querySelector('[data-b-linked-chips]');
+    if (!chips || chips.querySelector('[data-b-linked-chip][data-id="' + Number(choice.id) + '"]')) return;
+    chips.insertAdjacentHTML('beforeend', linkedChipHTML(choice));
+}
+
+// Номер последнего запроса: устаревший ответ не затирает свежий список.
+var linkedSearchRequest = 0;
+var linkedSearchTimer = null;
+
+function searchLinkedBlocks(box) {
+    var query = (box.querySelector('[data-b-linked-search]').value || '').trim();
+    var results = box.querySelector('[data-b-linked-results]');
+    clearTimeout(linkedSearchTimer);
+    if (!query) {
+        results.hidden = true;
+        results.innerHTML = '';
+        return;
+    }
+    linkedSearchTimer = setTimeout(function () {
+        var requestNo = ++linkedSearchRequest;
+        results.innerHTML = '<p class="prg-hint">Ищем…</p>';
+        results.hidden = false;
+        // Свой id блока — серверу: его собственные связи не отсекаются, а
+        // чужие и «собирающие» блоки в выдачу не попадают.
+        var ownRow = box.closest('[data-block-id]');
+        var url = '/cabinet/staff/program/blocks-source?submission_only=1&q=' + encodeURIComponent(query)
+            + (ownRow ? '&main_block_id=' + encodeURIComponent(ownRow.getAttribute('data-block-id')) : '');
+        fetch(url, {
+            credentials: 'same-origin', headers: {'Accept': 'application/json'}
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+            if (requestNo !== linkedSearchRequest) return;
+            var chosen = {};
+            box.querySelectorAll('[data-b-linked-chip]').forEach(function (chip) {
+                chosen[chip.getAttribute('data-id')] = true;
+            });
+            // Блоки самого открытого задания не предлагаем: связать задание
+            // с собой нельзя, сервер всё равно откажет.
+            var form = box.closest('form') || document;
+            form.querySelectorAll('[data-block-id]').forEach(function (row) {
+                chosen[row.getAttribute('data-block-id')] = true;
+            });
+            var options = [];
+            ((data && data.items) || []).forEach(function (item) {
+                (item.blocks || []).forEach(function (block) {
+                    if (!chosen[String(block.id)]) options.push(block);
+                });
+            });
+            results.innerHTML = options.length
+                ? options.map(function (block) {
+                    return '<button type="button" class="prg-blk-student-option" data-b-linked-pick="' + Number(block.id) + '"'
+                        + ' data-label="' + escapeHTML(block.label) + '">' + escapeHTML(block.label) + '</button>';
+                }).join('')
+                : '<p class="prg-hint">Заданий со сдачей работы не нашли.</p>';
+        }).catch(function () {
+            if (requestNo !== linkedSearchRequest) return;
+            results.innerHTML = '<p class="prg-hint">Не удалось получить список. Попробуйте ещё раз.</p>';
+        });
+    }, 300);
+}
+
+document.addEventListener('input', function (event) {
+    var search = event.target.closest && event.target.closest('[data-b-linked-search]');
+    if (search) searchLinkedBlocks(search.closest('[data-b-linked]'));
+});
+
+document.addEventListener('click', function (event) {
+    var pick = event.target.closest && event.target.closest('[data-b-linked-pick]');
+    var remove = event.target.closest && event.target.closest('[data-b-linked-remove]');
+    if (!pick && !remove) return;
+    var box = (pick || remove).closest('[data-b-linked]');
+    if (pick) {
+        addLinkedChip(box, {
+            id: Number(pick.getAttribute('data-b-linked-pick')),
+            label: pick.getAttribute('data-label'),
+        });
+        var search = box.querySelector('[data-b-linked-search]');
+        search.value = '';
+        searchLinkedBlocks(box);
+        search.focus();
+    } else {
+        remove.closest('[data-b-linked-chip]').remove();
+    }
+    // Сводку панели пересчитывает общий обработчик `change` (program_settings_panel_js.html).
+    box.dispatchEvent(new Event('change', {bubbles: true}));
+});
+
 // Срок приёма работ по тарифам (владелец 27.09.2026: «для одного тарифа один
 // дедлайн, для другого тарифа другой дедлайн»). Строка на каждый действующий
 // тариф, а не кнопка «добавить строку»: тарифов три, и фиксированный список
@@ -757,6 +880,7 @@ function blockRowHTML(type) {
         + blockBodyHTML(type)
         + blockSettingsHTML(type)
         + blockDialogSettingsHTML(type)
+        + blockLinkedFeedbackHTML(type)
         + '</div>';
 }
 
@@ -1346,6 +1470,10 @@ function fillBlockRow(row, block) {
     });
     var dialogLimit = row.querySelector('[data-b-dialog-limit]');
     if (dialogLimit) dialogLimit.value = block.dialog_reply_limit || '';
+    var linkedBox = row.querySelector('[data-b-linked]');
+    if (linkedBox) {
+        (block.linked_blocks || []).forEach(function (choice) { addLinkedChip(linkedBox, choice); });
+    }
     var submitUntil = row.querySelector('[data-b-submit-until]');
     if (submitUntil) submitUntil.value = block.submit_until || '';
     // Строка тарифа со временем — свой срок; строка без времени — галочка
@@ -1570,6 +1698,10 @@ function collectFormBlocks(form) {
         var dialogLimitField = row.querySelector('[data-b-dialog-limit]');
         item.dialog_reply_limit = (dialogLimitField && dialogLimitField.value)
             ? Number(dialogLimitField.value) : null;
+        item.linked_block_ids = [];
+        row.querySelectorAll('[data-b-linked-chip]').forEach(function (chip) {
+            item.linked_block_ids.push(Number(chip.getAttribute('data-id')));
+        });
         var submitUntilField = row.querySelector('[data-b-submit-until]');
         item.submit_until = (submitUntilField && submitUntilField.value)
             ? submitUntilField.value : null;

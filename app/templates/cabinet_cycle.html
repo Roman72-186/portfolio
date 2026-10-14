@@ -30,6 +30,7 @@
             <a href="{{ w.href }}" class="{% if w.unread_count %}has-unread{% elif w.closed_at %}is-closed{% endif %}">
                 <div class="fb-item-info">
                     <div class="fb-sub">{{ w.task_title }}{% if w.block_title %} · {{ w.block_title }}{% endif %}</div>
+                    {% if w.group_label %}<div class="fb-meta">{{ w.group_label }}</div>{% endif %}
                     <div class="fb-meta">{% if w.closed_at %}Завершена {{ w.closed_at }}{% else %}Ответ преподавателя {{ w.last_at }}{% endif %}</div>
                 </div>
                 <div class="fb-cycle-actions">

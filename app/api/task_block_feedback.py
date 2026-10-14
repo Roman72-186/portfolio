@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
@@ -41,6 +41,11 @@ from app.services.feedback_rating import (
     read_rating_form,
     rating_panel,
     send_rating_to_care_topic,
+)
+from app.services.linked_feedback import (
+    absorbed_main_block,
+    main_submission_for,
+    work_group,
 )
 from app.services.feedback_edit import (
     EditError,
@@ -166,6 +171,12 @@ def _render(
         ),
         "student": student,
         "submission": submission,
+        # Общая ОС на несколько заданий (13.10.2026): прошлые работы ученика,
+        # на которые этот ответ тоже. None — работа одна.
+        "group": work_group(db, submission),
+        # Работа сама входит в общую ОС, а главная ещё не сдана: ответа по
+        # ней отдельно не будет (`linked_feedback`).
+        "awaits_group": absorbed_main_block(db, submission) is not None,
         "submission_images": list_submission_images(db, submission.id),
         # Сколько и когда ученик менял сданную работу и что было до правки
         # (владелец 07.10.2026) — для проверяющего, ученику не показываем.
@@ -202,6 +213,12 @@ def staff_feedback_page(
 ):
     submission = _submission_or_404(db, submission_id)
     student = _staff_guard(db, user, submission)
+    main = main_submission_for(db, submission)
+    if main is not None:
+        # Работа вошла в общую ОС — ответ пишется там (созвон 13.10.2026).
+        return RedirectResponse(
+            f"/cabinet/staff/task-block-submissions/{main.id}/feedback", status_code=302,
+        )
     return _render(
         request, db, submission=submission, user=user,
         viewer_role=role_from_rank(user.get("role_rank", 1)), student=student,
@@ -217,6 +234,12 @@ def student_feedback_page(
 ):
     submission = _submission_or_404(db, submission_id)
     _student_guard(user, submission)
+    main = main_submission_for(db, submission)
+    if main is not None:
+        # Ответ по этой работе — общий, в диалоге главной (13.10.2026).
+        return RedirectResponse(
+            f"/cabinet/task-block-submissions/{main.id}/feedback", status_code=302,
+        )
     return _render(
         request, db, submission=submission, user=user, viewer_role="student", student=None,
     )
@@ -371,6 +394,13 @@ async def staff_message(
 ):
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    if absorbed_main_block(db, submission) is not None:
+        # Иначе у работы завёлся бы свой диалог рядом с общим — два ответа
+        # на одну работу (открытая до связки вкладка, старая ссылка).
+        return JSONResponse(
+            {"ok": False, "error": "Эта работа входит в общую обратную связь – ответ пишется там."},
+            status_code=409,
+        )
     feedback, _ = get_or_create_feedback(
         db, submission_id=submission.id, initiator_id=user["user_id"],
     )

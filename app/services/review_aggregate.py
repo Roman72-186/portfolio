@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session as DBSession
 
 from app.services.student_search import student_matches
+from app.services.tz import msk_date_text
 
 DOMAIN_TASK_BLOCK = "task_block"
 DOMAIN_WORK = "work"
@@ -340,6 +341,11 @@ def _block_work_items(
             title = f"{title} (время превышено)"
         if row["late"]:
             title = f"{title} (сдано после срока)"
+        if row["group_period"]:
+            # Общая ОС (13.10.2026): одна строка на все связанные работы.
+            first, last = (msk_date_text(value) for value in row["group_period"])
+            span = f"с {first} по {last}" if first != last else f"за {first}"
+            title = f"{title} · общая ОС: работы {span} ({row['linked_count'] + 1})"
         items.append(ReviewItem(
             domain=DOMAIN_BLOCK_WORK,
             item_id=row["submission_id"],

@@ -16,8 +16,51 @@
         </div>
     </div>
 
+    {# Общая ОС на несколько заданий (созвон 13.10.2026): прошлые работы,
+       на которые этот ответ тоже, — с датой сдачи и циклом. Ответ, отметка
+       «проверено» и «Завершить ОС» — общие, ниже; балл — у каждой работы. #}
+    {% if group %}
+    <section class="card">
+        <h2 class="section-label">Общая обратная связь</h2>
+        <p class="card-desc">{{ group.period_label }}. Ответ в диалоге ниже – один на все эти работы{% if viewer_role != 'student' %}, ученик увидит его по каждой{% endif %}.</p>
+        {% for work in group.linked %}
+        <div class="prg-form">
+            <p><strong>{{ work.task_title }}</strong>{% if work.block_title %} · {{ work.block_title }}{% endif %}</p>
+            <p class="card-desc">{% if work.frame %}{{ work.frame }} · {% endif %}сдано {{ work.submitted_label }}</p>
+            {% if work.submission.comment %}<p>{{ work.submission.comment }}</p>{% endif %}
+            {% if work.images %}
+            <div class="photo-grid" data-gallery="submission-{{ work.submission.id }}">
+                {% for url in work.images %}
+                <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото работы">
+                    <img src="{{ url }}" alt="Работа ученика" loading="lazy">
+                </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if viewer_role != 'student' and can_score and not work.submission.needs_revision %}
+            <form class="prg-form" data-score-form data-submission-id="{{ work.submission.id }}">
+                <label class="prg-field" for="submission-score-{{ work.submission.id }}">Оценка от 0 до 100
+                    <input id="submission-score-{{ work.submission.id }}" class="field-input" name="score" type="number" min="0" max="100" step="1" required value="{{ work.submission.score|int if work.submission.score is not none else '' }}">
+                </label>
+                <div class="prg-actions">
+                    <button type="submit" class="btn-blue">Сохранить оценку</button>
+                    <p class="prg-message" aria-live="polite"></p>
+                </div>
+            </form>
+            {% elif work.submission.score is not none %}
+            <p><strong>{{ work.submission.score|int }} / 100</strong></p>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <p class="card-desc">Последняя работа – ниже.</p>
+    </section>
+    {% endif %}
+
     <section class="card">
         <h2 class="section-label">Работа ученика</h2>
+        {% if awaits_group %}
+        <p class="card-desc">Эта работа войдёт в общую обратную связь вместе со следующими заданиями – преподаватель ответит на них сразу, когда будет сдано последнее.</p>
+        {% endif %}
         {% if submission.comment %}<p>{{ submission.comment }}</p>{% endif %}
         {% if submission_images %}
         <div class="photo-grid" data-gallery="submission-{{ submission.id }}">
@@ -227,8 +270,10 @@
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
-    var scoreForm = document.querySelector('[data-score-form]');
-    if (scoreForm) scoreForm.addEventListener('submit', function (event) {
+    // Форм оценки несколько, когда на экране общая ОС (13.10.2026): балл
+    // ставится каждой работе отдельно.
+    document.querySelectorAll('[data-score-form]').forEach(function (scoreForm) {
+    scoreForm.addEventListener('submit', function (event) {
         event.preventDefault();
         var button = scoreForm.querySelector('button[type=submit]');
         var message = scoreForm.querySelector('.prg-message');
@@ -246,6 +291,7 @@
             message.classList.add('is-error');
             message.textContent = error.message;
         }).finally(function () { button.disabled = false; });
+    });
     });
 
     var reviewButton = document.querySelector('[data-review-toggle]');

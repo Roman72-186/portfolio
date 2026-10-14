@@ -852,6 +852,33 @@ class TaskBlockDialogTariff(Base):
     tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
 
 
+class TaskBlockFeedbackLink(Base):
+    """Общая обратная связь на несколько заданий (созвон 13.10.2026).
+
+    Ученики неделями сдают работы без ответа, а куратор отвечает один раз на
+    все сразу. Связку ставит преподаватель на блоке сдачи того задания, после
+    которого будет ответ («главный» блок, `block_id`): выбирает блоки сдачи
+    прошлых заданий (`linked_block_id`). Сдают ученики как раньше; куратор,
+    открыв сдачу главного блока, видит рядом сданные работы по связанным и
+    пишет один ответ — он один на всех, ученик видит его по каждой работе.
+
+    Хранится связь блоков, а не сдач: связали задним числом — прошлые сдачи
+    подхватываются сами. Связанный блок принадлежит одному главному
+    (уникальный `linked_block_id`), цепочек нет — главный сам не бывает
+    связанным. Правила и выборки — `services/linked_feedback.py`.
+    """
+
+    __tablename__ = "task_block_feedback_links"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    linked_block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True,
+        unique=True, index=True,
+    )
+
+
 class TaskBlockTariffDeadline(Base):
     """Свой срок приёма работ у отдельного тарифа (владелец 27.09.2026: «для
     одного тарифа один дедлайн, для другого тарифа другой дедлайн»).

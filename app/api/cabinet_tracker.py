@@ -712,9 +712,17 @@ def _submission_payload(
         list_task_block_submission_images(db, submission.id) if submission else []
     )
     from app.models.task_block_feedback import TaskBlockFeedback
+    from app.services.linked_feedback import main_submission_for
+
+    # Работа в общей ОС (13.10.2026): ответ лежит в диалоге главной, ссылка
+    # этой работы уводит туда (`student_feedback_page`).
+    group_main = main_submission_for(db, submission) if submission else None
+    dialog_ids = [submission.id] if submission else []
+    if group_main is not None:
+        dialog_ids.append(group_main.id)
     has_feedback = bool(
-        submission and db.query(TaskBlockFeedback.id).filter(
-            TaskBlockFeedback.submission_id == submission.id
+        dialog_ids and db.query(TaskBlockFeedback.id).filter(
+            TaskBlockFeedback.submission_id.in_(dialog_ids)
         ).first()
     )
     submit_until = submit_deadline_for(

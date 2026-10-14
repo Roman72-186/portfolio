@@ -279,6 +279,19 @@ async def send_message(
     return message
 
 
+def group_works_label(
+    submission: TaskBlockSubmission, linked: list[TaskBlockSubmission] | None,
+) -> str | None:
+    """«Общая обратная связь: работы с 04.10.2026 по 13.10.2026 (3)» — для
+    карточки ученика и уведомления. None — работа одна."""
+    if not linked:
+        return None
+    dates = [submission.submitted_at] + [w.submitted_at for w in linked]
+    first, last = msk_date_text(min(dates)), msk_date_text(max(dates))
+    span = f"с {first} по {last}" if first != last else f"за {first}"
+    return f"Общая обратная связь: работы {span} ({len(linked) + 1})"
+
+
 def notify_counterpart(
     db: DBSession, *, submission: TaskBlockSubmission, recipient_id: int,
     sender_role: str,
@@ -288,10 +301,19 @@ def notify_counterpart(
         if sender_role == ROLE_STUDENT
         else "Преподаватель оставил обратную связь по работе"
     )
+    text = f"По сданной работе #{submission.id} есть новое сообщение."
+    if sender_role != ROLE_STUDENT:
+        # Общая ОС (13.10.2026): ученик должен понять, что ответ на все работы.
+        from app.services.linked_feedback import absorbed_for_mains
+
+        label = group_works_label(submission, absorbed_for_mains(db, [submission]).get(submission.id))
+        if label:
+            title = "Преподаватель оставил обратную связь по работам"
+            text = f"{label}. Есть новое сообщение."
     notification = Notification(
         user_id=recipient_id,
         title=title,
-        text=f"По сданной работе #{submission.id} есть новое сообщение.",
+        text=text,
         task_block_submission_id=submission.id,
     )
     db.add(notification)
@@ -406,11 +428,17 @@ def list_student_feedback_cards(
         .group_by(Notification.task_block_submission_id)
         .all()
     )
+    # Общая ОС на несколько заданий (13.10.2026): одна карточка на все
+    # работы, в подписи — их период и число.
+    from app.services.linked_feedback import absorbed_for_mains
+
+    groups = absorbed_for_mains(db, [submission for _f, submission, _b, _t, _at in rows])
     for feedback, submission, block, task, last_at in rows:
         card = {
             "href": f"/cabinet/task-block-submissions/{submission.id}/feedback",
             "task_title": task.title,
             "block_title": block.title,
+            "group_label": group_works_label(submission, groups.get(submission.id)),
             "last_at": msk_date_text(last_at),
             "closed_at": msk_date_text(feedback.feedback_closed_at) or None,
             "unread_count": unread.get(submission.id, 0),

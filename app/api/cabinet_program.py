@@ -62,6 +62,14 @@ from app.models.task_block import (
     RULE_ITEM_PHOTO,
 )
 from app.services.feedback import read_audio_upload, read_video_upload
+from app.services.linked_feedback import (
+    MAX_LINKED_BLOCKS,
+    LinkError,
+    block_choice_label,
+    linked_block_choices,
+    linked_block_ids,
+    main_block_ids,
+)
 from app.services.task_blocks import (
     block_student_choices,
     get_blocks as get_task_blocks,
@@ -262,13 +270,16 @@ PROGRAM_ITEM_FORM_KINDS = [
 
 def sync_task_blocks(db: DBSession, *, task_id: int, items: list[dict]):
     """`task_blocks.sync_blocks` для роутов конструктора: отказ удалить блок
-    со сданными работами — 409 с текстом для преподавателя, а не 500.
+    со сданными работами — 409 с текстом для преподавателя, а не 500;
+    связка общей ОС, которую нельзя сохранить, — 422 с причиной.
     Все сохранения блоков в этом файле идут через эту обёртку — поэтому и
     опрос разворачивается здесь, а не в каждом роуте."""
     try:
         return _sync_blocks(db, task_id=task_id, items=_expand_polls(items))
     except BlockHasSubmissionsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LinkError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _expand_polls(items: list[dict]) -> list[dict]:
@@ -536,6 +547,10 @@ def _edit_payloads(
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
         block_dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
         block_submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
+        block_links = linked_block_ids(db, [b.id for b in blocks])
+        link_labels = linked_block_choices(
+            db, [bid for ids in block_links.values() for bid in ids]
+        )
         item_blocks: list[dict] = []
         diagnostic_emitted = False
         for b in blocks:
@@ -621,6 +636,11 @@ def _edit_payloads(
                 # сохранение молча закрыло бы ученикам открытый ответ.
                 "dialog_tariffs": sorted(block_dialog_tariffs.get(b.id, set())),
                 "dialog_reply_limit": b.dialog_reply_limit,
+                # Общая ОС (13.10.2026): без меток повторное сохранение молча
+                # разорвало бы связку.
+                "linked_blocks": [
+                    link_labels[bid] for bid in block_links.get(b.id, []) if bid in link_labels
+                ],
                 **_submit_deadline_fields(b, block_submit_deadlines.get(b.id)),
                 # Варианты нужны форме правки у трёх типов: вопрос (текст +
                 # верный ответ), шкала навыков (текст + описание + подписи
@@ -1743,6 +1763,10 @@ class BlockItem(BaseModel):
     dialog_reply_limit: int | None = Field(
         default=None, ge=DIALOG_REPLY_LIMIT_DEFAULT, le=DIALOG_REPLY_LIMIT_MAX,
     )
+    # «Общая ОС с прошлыми заданиями» (созвон 13.10.2026): блоки сдачи
+    # прошлых заданий, работы по которым куратор получит вместе с этим.
+    # Тип и связность проверяет `linked_feedback.sync_links`.
+    linked_block_ids: list[int] = Field(default_factory=list, max_length=MAX_LINKED_BLOCKS)
     # Для блока портфолио: сколько часов доступна загрузка каждому ученику с
     # момента, когда блок впервые стал ему доступен. Поддерживает 24, 48, 72
     # и любое другое целое значение в разумных пределах.
@@ -2450,6 +2474,8 @@ def blocks_source_list(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     q: str = "",
+    submission_only: bool = False,
+    main_block_id: int | None = None,
 ):
     """Задания, из которых можно взять содержимое (владелец 31.08.2026).
 
@@ -2480,8 +2506,18 @@ def blocks_source_list(
     стоит меткой на карточке конструктора. Точное совпадение идёт первым,
     задания с этими цифрами в названии — за ним. Задание удалённого цикла по
     ID тоже не находится: правило «удалили — не нужны» сильнее номера.
+
+    `submission_only` — тот же поиск для «Общей ОС с прошлыми заданиями»
+    (созвон 13.10.2026): только задания с блоком сдачи работы, и у каждого —
+    его блоки сдачи (`blocks`: id и подпись), связывают именно их. Блоки,
+    которые `sync_links` не примет, не предлагаются: собирающие свою общую
+    ОС и уже входящие в общую ОС другого задания (`main_block_id` — блок,
+    для которого ищут; его собственные связи не отсекаются).
     """
-    has_blocks = db.query(TaskBlock.id).filter(TaskBlock.task_id == TrackerTask.id).exists()
+    block_filter = [TaskBlock.task_id == TrackerTask.id]
+    if submission_only:
+        block_filter.append(TaskBlock.block_type.in_(DIALOG_BLOCK_TYPES))
+    has_blocks = db.query(TaskBlock.id).filter(*block_filter).exists()
     frame = aliased(LearningTopic)
     stage = aliased(LearningTopic)
     rows = (
@@ -2531,7 +2567,7 @@ def blocks_source_list(
         topic.id: cycle_label(db, topic)
         for topic in db.query(LearningTopic).filter(LearningTopic.id.in_(frame_ids))
     } if frame_ids else {}
-    return JSONResponse({"items": [
+    items = [
         {
             "id": r.id,
             "title": r.title,
@@ -2540,7 +2576,35 @@ def blocks_source_list(
             "frame": frames.get(r.topic_id) if r.due_at is None else None,
         }
         for r in rows
-    ]})
+    ]
+    if submission_only and rows:
+        tasks = {t.id: t for t in db.query(TrackerTask).filter(TrackerTask.id.in_([r.id for r in rows]))}
+        candidates = (
+            db.query(TaskBlock)
+            .filter(
+                TaskBlock.task_id.in_(list(tasks)),
+                TaskBlock.block_type.in_(DIALOG_BLOCK_TYPES),
+            )
+            .order_by(TaskBlock.sort_order, TaskBlock.id)
+            .all()
+        )
+        ids = [block.id for block in candidates]
+        mains = set(linked_block_ids(db, ids))
+        taken = {
+            linked for linked, main in main_block_ids(db, ids).items() if main != main_block_id
+        }
+        grouped: dict[int, list[dict]] = {}
+        for block in candidates:
+            if block.id in mains or block.id in taken or block.id == main_block_id:
+                continue
+            frame = frames.get(tasks[block.task_id].topic_id)
+            grouped.setdefault(block.task_id, []).append({
+                "id": block.id,
+                "label": block_choice_label(block, tasks[block.task_id], frame),
+            })
+        for item in items:
+            item["blocks"] = grouped.get(item["id"], [])
+    return JSONResponse({"items": items})
 
 
 def _fold_diagnostic_for_copy(
