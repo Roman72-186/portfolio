@@ -381,8 +381,9 @@ function buildStudyNow(s) {
 // С 05.10.2026 здесь проверяют (владелец: «собрать всё, что касается ученика,
 // в одно место»): экран «Проверка по ученику» снят. Сдачи за всё время,
 // непроверенные сверху — порядок даёт сервер (`student_review_items`). Кнопки
-// рисуются по флагам ответа `can_review` / `can_score` / `can_send_revision`,
-// сервер на своих адресах спрашивает то же самое.
+// рисуются по флагам ответа `can_review` / `can_score`, сервер на своих адресах
+// спрашивает то же самое. «Вернуть на доработку» здесь нет — только в диалоге
+// по работе (владелец 14.10.2026, `task_block_feedback_detail.html`).
 var _tasksFilter = 'pending';  // 'pending' — только непроверенное, 'all' — всё
 
 function openReview(tabName) {
@@ -502,10 +503,6 @@ function buildTaskActions(it, data) {
         html += '<button type="button" class="btn-outline" onclick="toggleTaskReviewed(this)">'
             + (it.is_reviewed ? 'Вернуть в очередь' : 'Просмотрено') + '</button>';
     }
-    if (data.can_send_revision && !it.needs_revision
-            && (it.domain === 'block_work' || it.domain === 'homework')) {
-        html += '<button type="button" class="btn-outline" onclick="returnTaskToRevision(this)">Вернуть на доработку</button>';
-    }
     return html ? '<div class="profile-status-badges">' + html + '</div>' : '';
 }
 
@@ -541,25 +538,6 @@ function toggleTaskReviewed(btn) {
         btn.disabled = false;
         alert(err.serverMessage || 'Не удалось сохранить отметку. Попробуйте ещё раз.');
     });
-}
-
-function returnTaskToRevision(btn) {
-    var row = btn.closest('[data-task-item]');
-    var comment = prompt('Что нужно исправить? Сообщение получит ученик.', 'Загрузи правильное фото работы.');
-    if (comment === null) return;
-    var url = row.dataset.domain === 'block_work'
-        ? '/cabinet/staff/task-block-submissions/' + row.dataset.id + '/revision'
-        : '/cabinet/staff/homework/submissions/' + row.dataset.id + '/revision';
-    var body = new FormData();
-    body.append('comment', comment);
-    btn.disabled = true;
-    window.csrfFetch(url, {method: 'POST', body: body})
-        .then(readJsonOrThrow)
-        .then(function() { afterTaskReview(row, false, 'Работа возвращена на доработку'); })
-        .catch(function(err) {
-            btn.disabled = false;
-            alert(err.serverMessage || 'Не удалось вернуть работу. Попробуйте ещё раз.');
-        });
 }
 
 // Счётчик непроверенного в строке списка — очередь «кого проверять».

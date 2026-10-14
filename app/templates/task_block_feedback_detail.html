@@ -87,8 +87,27 @@
                     data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">
                 {{ 'Вернуть в очередь' if submission.reviewed_at else 'Пометить проверенной' }}
             </button>
+            {% if can_send_revision %}
+            <button type="button" class="btn-outline" data-return-toggle>Вернуть на доработку</button>
+            {% endif %}
             <p class="prg-message" data-review-status aria-live="polite"></p>
         </div>
+        {# Возврат на доработку (владелец 14.10.2026): ученику уведомление с
+           комментарием и «Заменить фото» в задании, новое фото — финальное. #}
+        {% if can_send_revision %}
+        <form class="prg-form" data-return-form hidden
+              action="/cabinet/staff/task-block-submissions/{{ submission.id }}/revision">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" for="return-comment">Что доделать – ученик получит это в уведомлении</label>
+            <textarea id="return-comment" class="field-input" name="comment" rows="3" maxlength="2000"
+                      placeholder="Например: доделай тени и пришли до вечера воскресенья"></textarea>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-return-cancel>Отмена</button>
+                <button type="submit" class="btn-blue">Вернуть работу</button>
+            </div>
+            <p class="prg-message" aria-live="polite"></p>
+        </form>
+        {% endif %}
         {% endif %}
         {% if submission.needs_revision %}
         <span class="chip">На доработке</span>
@@ -253,6 +272,40 @@
     function showError(target, text) {
         target.classList.add('is-error');
         target.textContent = text;
+    }
+
+    var returnToggle = document.querySelector('[data-return-toggle]');
+    var returnForm = document.querySelector('[data-return-form]');
+    if (returnToggle && returnForm) {
+        returnToggle.addEventListener('click', function () {
+            returnForm.hidden = false;
+            returnToggle.hidden = true;
+            returnForm.elements.comment.focus();
+        });
+        returnForm.querySelector('[data-return-cancel]').addEventListener('click', function () {
+            returnForm.hidden = true;
+            returnToggle.hidden = false;
+        });
+        returnForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var button = returnForm.querySelector('button[type=submit]');
+            var status = returnForm.querySelector('.prg-message');
+            button.disabled = true;
+            fetch(returnForm.action, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: new FormData(returnForm)
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(data.error || data.detail || 'Не получилось вернуть работу.');
+                    }
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                showError(status, error.message);
+            });
+        });
     }
 
     document.querySelectorAll('[data-edit-toggle]').forEach(function (toggle) {

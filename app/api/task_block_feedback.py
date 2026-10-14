@@ -54,7 +54,8 @@ from app.services.feedback_edit import (
     task_block_return_refusal,
 )
 from app.services.notify import notify
-from app.services.rbac import can_score
+from app.services.rbac import can_score, can_send_work_to_revision
+from app.services.section_access import can
 from app.services.student_access import get_student_for_staff_access
 from app.services.task_block_feedback import (
     get_or_create_feedback,
@@ -156,6 +157,13 @@ def _render(
         "viewer_role": viewer_role,
         # Балл ставит только ГП и выше; куратор видит его только для чтения.
         "can_score": viewer_role != "student" and can_score(user.get("role_rank", 1)),
+        # «Вернуть на доработку» — только здесь, в диалоге (владелец 14.10.2026),
+        # куратор и выше (`rbac.WORK_REVISION_MIN_RANK`). Раздел проверки —
+        # как у кнопок проверки: модератору его не положено, и кнопка ответила бы 403.
+        "can_send_revision": (
+            viewer_role != "student" and can(user, "students_review")
+            and can_send_work_to_revision(user.get("role_rank", 1))
+        ),
         "student": student,
         "submission": submission,
         "submission_images": list_submission_images(db, submission.id),

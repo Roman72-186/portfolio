@@ -146,7 +146,8 @@ def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, c
 
 
 def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client):
-    """Куратор отмечает «просмотрено» и возвращает на доработку, балл не ставит."""
+    """Куратор отмечает «просмотрено», балл не ставит. «Вернуть на доработку» во
+    вкладке нет — только на экране сдачи (владелец 14.10.2026)."""
     curator = user_factory(vk_id=860_107, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=860_108, name="Ученик")
     student.curator_id = curator.id
@@ -158,8 +159,7 @@ def test_tasks_tab_buttons_for_curator(db, user_factory, session_factory, client
     data = client.get(f"/cabinet/students/{student.id}/tasks").json()
 
     assert data["can_review"] is True
-    # Возврат работ в заданиях — куратору тоже (владелец 14.10.2026), балл — нет.
-    assert data["can_send_revision"] is True
+    assert "can_send_revision" not in data
     assert data["can_score"] is False
     item = data["items"][0]
     assert item["question"] == "Как прошло?"
@@ -176,13 +176,12 @@ def test_tasks_tab_buttons_for_chief(db, user_factory, session_factory, client):
     data = client.get(f"/cabinet/students/{student.id}/tasks").json()
 
     assert data["can_review"] is True
-    assert data["can_send_revision"] is True
     assert data["can_score"] is True
 
 
 def test_moderator_tasks_tab_has_no_buttons(db, user_factory, session_factory, client):
-    """Модератор — наблюдатель: рангу 4 возврат формально положен, но раздела
-    проверки у него нет, и кнопок тоже нет — сервер ответил бы 403."""
+    """Модератор — наблюдатель: рангу 4 кнопки проверки формально положены, но
+    раздела проверки у него нет, и кнопок тоже нет — сервер ответил бы 403."""
     moderator = user_factory(vk_id=860_118, name="Модератор", role_name="модератор")
     student = user_factory(vk_id=860_119, name="Ученик")
     client.cookies.set("session_id", session_factory(moderator).id)
@@ -190,7 +189,7 @@ def test_moderator_tasks_tab_has_no_buttons(db, user_factory, session_factory, c
     data = client.get(f"/cabinet/students/{student.id}/tasks").json()
 
     assert data["can_review"] is False
-    assert data["can_send_revision"] is False
+    assert data["can_score"] is False
 
 
 def test_mock_is_not_counted_in_card_or_list(db, user_factory, session_factory, client):
