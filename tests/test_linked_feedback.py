@@ -304,6 +304,58 @@ def test_constructor_route_refuses_bad_link_with_reason(db, user_factory, sessio
     assert db.query(TaskBlockFeedbackLink).count() == 0
 
 
+def test_edit_form_sent_back_whole_keeps_links(db, user_factory, session_factory, client):
+    """Форма правки (`_edit_payloads`), отправленная обратно целиком,
+    принимается и связку сохраняет: подписи `linked_blocks` сервер берёт и
+    не читает, связь — из `linked_block_ids` (до 14.10.2026 вечером было 422)."""
+    from app.api.cabinet_program import _edit_payloads
+    from app.services.tz import today_msk
+
+    head = user_factory(vk_id=995_250, name="Главный", is_admin=True, role_name="админ")
+    _first_task, first = _task_with_block(db, "Неделя 1 – перспектива")
+    _second_task, second = _task_with_block(db, "Неделя 2 – светотень")
+    db.commit()
+    _login(client, session_factory, head)
+    today = today_msk()
+    cycle = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Цикл", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    ).json()["cycle_id"]
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle}/items/material",
+        json={"title": "Неделя 3", "is_required": True, "blocks": [
+            {"block_type": BLOCK_UPLOAD, "title": "Сдать",
+             "linked_block_ids": [first.id, second.id]},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    payload = _edit_payloads(db, [db.get(TrackerTask, task_id)], {})[task_id]
+    block = payload["blocks"][0]
+    assert sorted(block["linked_block_ids"]) == sorted([first.id, second.id])
+    assert {choice["id"] for choice in block["linked_blocks"]} == {first.id, second.id}
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={
+            "title": payload["title"], "description": None, "subject": None,
+            "is_required": True, "starts_on": None, "blocks": payload["blocks"],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+    main = db.query(TaskBlock).filter_by(task_id=task_id).one()
+    assert {
+        link.linked_block_id
+        for link in db.query(TaskBlockFeedbackLink).filter_by(block_id=main.id)
+    } == {first.id, second.id}
+
+
 def test_source_search_hides_blocks_the_link_would_refuse(db, group, user_factory, session_factory, client):
     """Поиск не предлагает того, что `sync_links` отвергнет: главный блок
     чужой общей ОС и блоки, уже связанные с другим заданием. Свои связи

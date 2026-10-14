@@ -649,8 +649,14 @@ def _edit_payloads(
                 # сохранение молча закрыло бы ученикам открытый ответ.
                 "dialog_tariffs": sorted(block_dialog_tariffs.get(b.id, set())),
                 "dialog_reply_limit": b.dialog_reply_limit,
-                # Общая ОС (13.10.2026): без меток повторное сохранение молча
-                # разорвало бы связку.
+                # Общая ОС (13.10.2026): без связок повторное сохранение молча
+                # разорвало бы их. `linked_block_ids` — под тем же именем, что
+                # принимает `BlockItem`, чтобы форма правки, отправленная
+                # обратно целиком, связку сохраняла; `linked_blocks` —
+                # подписи для чипов формы.
+                "linked_block_ids": [
+                    bid for bid in block_links.get(b.id, []) if bid in link_labels
+                ],
                 "linked_blocks": [
                     link_labels[bid] for bid in block_links.get(b.id, []) if bid in link_labels
                 ],
@@ -1816,6 +1822,17 @@ class PollQuestionItem(BaseModel):
         return self
 
 
+class LinkedBlockLabel(BaseModel):
+    """Подпись связанного блока для чипа «Общей ОС» в форме правки
+    (`linked_feedback.linked_block_choices`). Только для показа: форма
+    правки отдаёт её рядом с `linked_block_ids` и должна приниматься
+    обратно целиком."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int = Field(ge=1)
+    label: str = Field(default="", max_length=1000)
+
+
 class BlockItem(BaseModel):
     """Один блок содержимого элемента (владелец 31.08.2026, универсальный
     конструктор — см. `app/models/task_block.py`).
@@ -1923,6 +1940,13 @@ class BlockItem(BaseModel):
     # прошлых заданий, работы по которым куратор получит вместе с этим.
     # Тип и связность проверяет `linked_feedback.sync_links`.
     linked_block_ids: list[int] = Field(default_factory=list, max_length=MAX_LINKED_BLOCKS)
+    # Подписи тех же блоков из формы правки (`_edit_payloads`). Сервер их не
+    # читает и дальше не передаёт (`exclude`): связь пишется только из
+    # `linked_block_ids`. Без поля форма правки, отправленная обратно целиком,
+    # получала 422 (`extra="forbid"`, 14.10.2026).
+    linked_blocks: list[LinkedBlockLabel] = Field(
+        default_factory=list, max_length=MAX_LINKED_BLOCKS, exclude=True,
+    )
     # Для блока портфолио: сколько часов доступна загрузка каждому ученику с
     # момента, когда блок впервые стал ему доступен. Поддерживает 24, 48, 72
     # и любое другое целое значение в разумных пределах.
