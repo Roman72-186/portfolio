@@ -116,6 +116,90 @@ def test_grade_tag_follows_the_class(db, user_factory):
 
 
 # ---------------------------------------------------------------------------
+# «Контакты» в «Личной информации» (15.10.2026: требовали все годовые поля)
+# ---------------------------------------------------------------------------
+
+def test_holiday_contacts_form_has_the_short_fields(client, db, user_factory, session_factory):
+    student = _holiday(db, user_factory)
+    student.school_grade = 10
+    db.commit()
+
+    page = _login_as(client, session_factory, student).get("/cabinet/personal/contacts")
+
+    assert page.status_code == 200
+    for field in ("first_name", "last_name", "city", "timezone", "phone", "school_grade"):
+        assert f'name="{field}"' in page.text, field
+    for field in ("parent_phone", "parent_name", "sdek_address", "email", "birth_date",
+                  "university_year", "tg_username"):
+        assert f'name="{field}"' not in page.text, field
+    assert '<option value="10" selected>10 класс</option>' in page.text
+
+
+def test_holiday_contacts_save_without_annual_fields(client, db, user_factory, session_factory):
+    student = _holiday(db, user_factory)
+    student.school_grade = 10
+    student.tg_username = "kanikuly_anya"
+    enrolled = (student.enrollment_year, student.enrolled_at)
+    db.commit()
+    ensure_grade_tag(db, student)
+    db.commit()
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/personal/contacts", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "city": "Самара",
+        "timezone": "1", "phone": "8 999 765 43 21", "school_grade": "11",
+    }, follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/personal?saved=1"
+    db.refresh(student)
+    assert (student.first_name, student.last_name, student.city, student.timezone) == (
+        "Аня", "Котова", "Самара", "1",
+    )
+    assert student.phone == "+79997654321"
+    assert student.school_grade == 11
+    assert student.tg_username == "kanikuly_anya"
+    assert (student.enrollment_year, student.enrolled_at) == enrolled
+    assert _grade_tags(db, student) == ["11 класс"]
+
+
+def test_holiday_contacts_keep_the_short_rules(client, db, user_factory, session_factory):
+    student = _holiday(db, user_factory)
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/personal/contacts", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "city": "Самара",
+        "timezone": "1", "phone": "+79997654321",
+    })
+
+    assert resp.status_code == 200
+    assert "Выбери класс" in resp.text
+    assert "телефона родителя" not in resp.text
+    db.refresh(student)
+    assert student.city != "Самара"
+
+
+def test_nightly_nick_check_skips_holiday(db, user_factory, monkeypatch):
+    """Ник каникулярного ни к чему не привязан, а поля ника в его «Контактах»
+    нет: отметка расхождения закрыла бы кабинет без выхода."""
+    from unittest.mock import AsyncMock
+
+    from app.services.exam_scheduler import _run_tg_username_check
+
+    student = _holiday(db, user_factory)
+    student.telegram_chat_id = 900_301
+    student.tg_username = "anya"
+    db.commit()
+    monkeypatch.setattr(
+        "app.services.exam_scheduler.telegram_service.get_chat_username",
+        AsyncMock(return_value=(True, "anya_new")),
+    )
+
+    _run_tg_username_check()
+
+    db.refresh(student)
+    assert student.tg_username_mismatch is False
+
+
+# ---------------------------------------------------------------------------
 # Урезанный кабинет
 # ---------------------------------------------------------------------------
 

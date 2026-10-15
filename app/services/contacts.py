@@ -15,6 +15,7 @@ import re
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.constants import SCHOOL_GRADES, TIMEZONES
 from app.models.role import Role
 from app.models.user import User
 
@@ -75,6 +76,42 @@ def validate_phone(phone: str) -> list[str]:
     if not PHONE_RE.match(phone):
         return ["Укажи код страны и номер, например +7 999 123-45-67"]
     return []
+
+
+def parse_school_grade(raw: str) -> int | None:
+    value = (raw or "").strip()
+    return int(value) if value.isdigit() else None
+
+
+def validate_holiday_profile(
+    *, first_name: str, last_name: str, city: str, profile_timezone: str,
+    phone: str, grade: int | None,
+) -> list[str]:
+    """Короткий набор полей каникулярного набора (созвон 13.10.2026): имя,
+    фамилия, город, часовой пояс, телефон, класс. Один канон для двух
+    редакторов — короткой анкеты (`cabinet_student._save_holiday_profile`) и
+    «Контактов» в «Личной информации»: 15.10.2026 «Контакты» требовали
+    у каникулярного все годовые поля (родитель, СДЭК, вуз, ник), и сохранить их
+    было нельзя. Значения уже очищены от пробелов, телефон нормализован."""
+    errors = []
+    if not first_name:
+        errors.append("Введи имя")
+    elif len(first_name) > 50:
+        errors.append("Имя слишком длинное (максимум 50 символов)")
+    if not last_name:
+        errors.append("Введи фамилию")
+    elif len(last_name) > 50:
+        errors.append("Фамилия слишком длинная (максимум 50 символов)")
+    if not city:
+        errors.append("Укажи город")
+    elif len(city) > 100:
+        errors.append("Название города слишком длинное")
+    if profile_timezone not in {tz for tz, _ in TIMEZONES}:
+        errors.append("Укажи часовой пояс")
+    errors.extend(validate_phone(phone))
+    if grade not in SCHOOL_GRADES:
+        errors.append("Выбери класс")
+    return errors
 
 
 def validate_contacts(phone: str, parent_phone: str, tg_username: str) -> list[str]:

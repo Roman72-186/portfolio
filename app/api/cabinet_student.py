@@ -48,7 +48,13 @@ from app.services.mock_exam_access import (
     is_subject_allowed_for_student,
     mock_exam_deadline_for_started_at,
 )
-from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts, validate_phone
+from app.services.contacts import (
+    normalize_phone,
+    normalize_tg_username,
+    parse_school_grade,
+    validate_contacts,
+    validate_holiday_profile,
+)
 from app.services.tags import ensure_grade_tag
 from app.services.tz import MSK_TZ, msk_text, now_msk, today_msk
 from app.services.user_management import log_tariff_change
@@ -554,27 +560,12 @@ def _save_holiday_profile(
     city = city.strip()
     profile_timezone = profile_timezone.strip()
     phone = normalize_phone(phone)
-    grade = int(school_grade) if school_grade.strip().isdigit() else None
+    grade = parse_school_grade(school_grade)
 
-    errors = []
-    if not first_name:
-        errors.append("Введи имя")
-    elif len(first_name) > 50:
-        errors.append("Имя слишком длинное (максимум 50 символов)")
-    if not last_name:
-        errors.append("Введи фамилию")
-    elif len(last_name) > 50:
-        errors.append("Фамилия слишком длинная (максимум 50 символов)")
-    if not city:
-        errors.append("Укажи город")
-    elif len(city) > 100:
-        errors.append("Название города слишком длинное")
-    if profile_timezone not in {tz for tz, _ in TIMEZONES}:
-        errors.append("Укажи часовой пояс")
-    errors.extend(validate_phone(phone))
-    if grade not in SCHOOL_GRADES:
-        errors.append("Выбери класс")
-
+    errors = validate_holiday_profile(
+        first_name=first_name, last_name=last_name, city=city,
+        profile_timezone=profile_timezone, phone=phone, grade=grade,
+    )
     if errors:
         form = {
             "first_name": first_name,

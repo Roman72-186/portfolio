@@ -43,7 +43,9 @@ from app.api.cabinet_student import (
 )
 from app.cache import invalidate_session
 from app.config import settings
-from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL, TIMEZONES
+from app.constants import (
+    MONTHS, PAYMENT_URL, PROGRAM_HOLIDAY, SCHOOL_GRADES, SUPPORT_URL, TARIFF_DISPLAY, TIMEZONES,
+)
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
@@ -59,8 +61,11 @@ from app.services.contacts import (
     find_student_by_tg_username,
     normalize_phone,
     normalize_tg_username,
+    parse_school_grade,
     validate_contacts,
+    validate_holiday_profile,
 )
+from app.services.tags import ensure_grade_tag
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
@@ -180,8 +185,16 @@ def cabinet_personal_pay(
     return JSONResponse({"url": payment.link_url})
 
 
+def _is_holiday(user: dict) -> bool:
+    return user.get("program") == PROGRAM_HOLIDAY
+
+
 def _contacts_ctx(request, user, errors=None, form=None):
-    """Контекст единой формы самостоятельной правки личных данных."""
+    """Контекст единой формы самостоятельной правки личных данных.
+
+    Каникулярному набору (`holiday_form`) — те же шесть полей, что в его
+    короткой анкете: имя, фамилия, город, часовой пояс, телефон, класс
+    (`contacts.validate_holiday_profile`)."""
     enrolled_at = user.get("enrolled_at")
     enrollment_month = MONTHS[enrolled_at.month - 1].capitalize() if enrolled_at else None
 
@@ -206,7 +219,10 @@ def _contacts_ctx(request, user, errors=None, form=None):
             "email": user.get("email") or "",
             "sdek_address": user.get("sdek_address") or "",
             "university_year": user.get("university_year") or "",
+            "school_grade": user.get("school_grade"),
         },
+        "holiday_form": _is_holiday(user),
+        "school_grades": SCHOOL_GRADES,
         "birth_date_min": f"{_MIN_BIRTH_YEAR}-01-01",
         "birth_date_max": today_msk().isoformat(),
         "university_years": _university_year_options(user),
@@ -245,9 +261,17 @@ def cabinet_personal_contacts_save(
     email: Annotated[str, Form()] = "",
     sdek_address: Annotated[str, Form()] = "",
     university_year: Annotated[str, Form()] = "",
+    school_grade: Annotated[str, Form()] = "",
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
+
+    if _is_holiday(user):
+        return _save_holiday_contacts(
+            request, user, db,
+            first_name=first_name, last_name=last_name, city=city,
+            profile_timezone=contacts_timezone, phone=phone, school_grade=school_grade,
+        )
 
     first_name = first_name.strip()
     last_name = last_name.strip()
@@ -408,4 +432,48 @@ def cabinet_personal_contacts_save(
     # Иначе Redis продолжит отдавать старые контакты на всех экранах ученика.
     invalidate_session(user["session_id"])
 
+    return RedirectResponse("/cabinet/personal?saved=1", status_code=302)
+
+
+def _save_holiday_contacts(
+    request: Request, user: dict, db: DBSession, *,
+    first_name: str, last_name: str, city: str, profile_timezone: str,
+    phone: str, school_grade: str,
+):
+    """«Контакты» каникулярного набора: поля его короткой анкеты, без
+    родителя, СДЭК, вуза, почты и ника. Ник не сверяется с Telegram: у
+    каникулярного он ни к чему не привязан (`exam_scheduler` его не проверяет),
+    а записывает его вход через Telegram. Начало обучения не трогаем — его
+    поставила анкета."""
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    city = city.strip()
+    profile_timezone = profile_timezone.strip()
+    phone = normalize_phone(phone)
+    grade = parse_school_grade(school_grade)
+
+    errors = validate_holiday_profile(
+        first_name=first_name, last_name=last_name, city=city,
+        profile_timezone=profile_timezone, phone=phone, grade=grade,
+    )
+    if errors:
+        form = {
+            "first_name": first_name, "last_name": last_name, "city": city,
+            "timezone": profile_timezone, "phone": phone, "school_grade": grade,
+        }
+        return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
+            _contacts_ctx(request, user, errors=errors, form=form),
+        )
+
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    db_user.first_name = first_name
+    db_user.last_name = last_name
+    db_user.name = f"{first_name} {last_name}"
+    db_user.city = city
+    db_user.timezone = profile_timezone
+    db_user.phone = phone
+    db_user.school_grade = grade
+    ensure_grade_tag(db, db_user)
+    db.commit()
+    invalidate_session(user["session_id"])
     return RedirectResponse("/cabinet/personal?saved=1", status_code=302)

@@ -402,6 +402,8 @@ def get_current_user(
         "access_until": user.access_until,
         "access_expired": access_expired,
         "program": user.program,
+        # Класс каникулярного (10/11) — для «Контактов», где он правится.
+        "school_grade": user.school_grade,
         # Урезанное меню (`navigation.student_nav_items`) и вводная инструкция.
         "limited_cabinet": limited_cabinet,
         "created_at": user.created_at,

@@ -36,6 +36,10 @@
         переставленными: контакты шли в другом порядке, имя родителя
         жило в отдельной секции, а год поступления стоял в «О тебе», тогда как
         в анкете он в «Учёбе». Меняешь порядок в одном файле — меняй и во втором.
+
+        Каникулярный набор (`holiday_form`, 15.10.2026) правит здесь только поля
+        своей короткой анкеты: имя, фамилия, город, пояс, телефон, класс —
+        сервер принимает только их (`cabinet_personal._save_holiday_contacts`).
         #}
         <div class="prs-section-title">О тебе</div>
         <div class="prs-group">
@@ -49,12 +53,14 @@
                 <input class="prs-field-input" type="text" id="contacts-last-name" name="last_name" required
                        value="{{ form.last_name }}" maxlength="50" autocomplete="family-name">
             </div>
+            {% if not holiday_form %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-birth-date">Дата рождения <span class="prs-required">*</span></label>
                 <input class="prs-field-input" type="date" id="contacts-birth-date" name="birth_date" required
                        min="{{ birth_date_min }}" max="{{ birth_date_max }}" value="{{ form.birth_date }}"
                        autocomplete="bday">
             </div>
+            {% endif %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-city">Город <span class="prs-required">*</span></label>
                 <input class="prs-field-input" type="text" id="contacts-city" name="city" required
@@ -82,6 +88,7 @@
                        aria-describedby="contacts-phone-hint">
                 <p class="prs-field-note" id="contacts-phone-hint">Для номера другой страны укажи код, например +375.</p>
             </div>
+            {% if not holiday_form %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-parent-phone">Телефон родителя <span class="prs-required">*</span></label>
                 <input class="prs-field-input" type="tel" id="contacts-parent-phone" name="parent_phone" required
@@ -111,8 +118,23 @@
                 <input class="prs-field-input" type="text" id="contacts-sdek" name="sdek_address" required
                        value="{{ form.sdek_address }}" placeholder="Город, улица, номер дома, корпус и т. д." maxlength="300">
             </div>
+            {% endif %}
         </div>
 
+        {% if holiday_form %}
+        <div class="prs-section-title">Школа</div>
+        <div class="prs-group">
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-school-grade">В каком ты классе <span class="prs-required">*</span></label>
+                <select class="prs-field-input" id="contacts-school-grade" name="school_grade" required>
+                    <option value="" disabled {% if not form.school_grade %}selected{% endif %}>Выбери класс</option>
+                    {% for g in school_grades %}
+                    <option value="{{ g }}" {% if form.school_grade == g %}selected{% endif %}>{{ g }} класс</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        {% else %}
         <div class="prs-section-title">Обучение</div>
         <div class="prs-group">
             <div class="prs-field">
@@ -138,6 +160,7 @@
             </div>
         </div>
         <p class="prs-note">Тариф и дата начала обучения зависят от оплаты и учебной программы. Если здесь ошибка, напиши в поддержку.</p>
+        {% endif %}
 
         <div class="prs-form-actions">
             <button type="submit" class="prs-save-btn">Сохранить</button>
