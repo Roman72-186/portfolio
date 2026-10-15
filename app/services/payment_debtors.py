@@ -11,9 +11,11 @@
   отсечки — отметка `StudentReminder` у получателя.
 - **Команда `/neoplata` в меню бота** — список в любой момент: у кого окно
   закрылось без оплаты и у кого окно идёт, а оплаты ещё нет. Отвечает только
-  своим (`can_use_command`): получателям уведомлений об оплате и тем, кому
-  открыто всё про оплату (`payments.is_payments_staff`). В меню команда
-  стоит только в их чатах (`sync_bot_menu`), ученики её не видят.
+  своим (`can_use_command`): получателям уведомлений об оплате, тем, кому
+  открыто всё про оплату (`payments.is_payments_staff`), и поимённо
+  (`PAYMENT_DEBTORS_COMMAND_EXTRA_IDS`). В меню команда стоит только в их
+  чатах (`sync_bot_menu`, раз в час — привязал Telegram, через час кнопка
+  в меню), ученики её не видят.
 
 Кто в списке — тот же учёт, что на экране «Оплаты» (`payment_board`):
 ученики вне архива, без служебных, с окном оплаты. Должный месяц у каждого
@@ -33,7 +35,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
 from app.config import settings
-from app.constants import PAYMENT_NOTIFY_RECIPIENT_IDS
+from app.constants import PAYMENT_DEBTORS_COMMAND_EXTRA_IDS, PAYMENT_NOTIFY_RECIPIENT_IDS
 from app.models.notification import Notification
 from app.models.student_reminder import KIND_PAY_DEBT_REPORT, StudentReminder
 from app.models.user import User
@@ -223,7 +225,7 @@ def run_debt_report(db: DBSession, now: datetime | None = None) -> list[int]:
 def can_use_command(user: User | None) -> bool:
     if user is None or not user.is_active or user.deleted_at is not None:
         return False
-    if user.id in PAYMENT_NOTIFY_RECIPIENT_IDS:
+    if user.id in PAYMENT_NOTIFY_RECIPIENT_IDS or user.id in PAYMENT_DEBTORS_COMMAND_EXTRA_IDS:
         return True
     return payments.is_payments_staff({
         "user_id": user.id, "role_name": user.role.name if user.role else None,

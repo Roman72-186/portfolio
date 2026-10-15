@@ -638,8 +638,9 @@ def _run_payment_debt_report() -> None:
 
 def _run_payment_bot_menu() -> None:
     """Команда `/neoplata` в меню бота — в чатах тех, кому она отвечает.
-    Раз после старта: новый сотрудник с оплатой получит её с ближайшей
-    выкаткой, а пока команда отвечает ему и без меню."""
+    Раз в час: привязал Telegram — кнопка в меню не позже чем через час
+    (владелец 15.10.2026, Александрия). Повторная установка того же меню
+    ничего не меняет."""
     from app.services import payment_debtors
 
     db = SessionLocal()
@@ -804,10 +805,12 @@ def start_scheduler() -> None:
     )
     _scheduler.add_job(
         _run_payment_bot_menu,
-        trigger="date",
-        run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
+        trigger="interval",
+        hours=1,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60),
         id="payment_bot_menu",
         replace_existing=True,
+        max_instances=1,
         misfire_grace_time=600,
     )
     _scheduler.add_job(
@@ -835,7 +838,7 @@ def start_scheduler() -> None:
         "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
         "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC, "
-        "student_reminders=30min, payment_debt_report=30min, payment_bot_menu=once, "
+        "student_reminders=30min, payment_debt_report=30min, payment_bot_menu=1h, "
         "broadcast_schedule=1min, vpn_reconcile=15min)"
     )
 

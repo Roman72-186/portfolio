@@ -149,3 +149,14 @@ def test_menu_only_in_allowed_chats(db, school, care, user_factory):
     chief.telegram_chat_id = 777_010
     db.commit()
     assert pd.menu_chat_ids(db) == sorted([CARE_CHAT, 777_010])
+
+
+def test_named_account_gets_command_and_menu(db, school, care, user_factory, monkeypatch):
+    """Поимённо — владелец 15.10.2026: «мне нужно 199»; по роли он ученик."""
+    owner = user_factory(vk_id=200_199, name="Владелец")
+    owner.telegram_chat_id = 777_199
+    db.commit()
+    assert not pd.can_use_command(owner)
+    monkeypatch.setattr(pd, "PAYMENT_DEBTORS_COMMAND_EXTRA_IDS", frozenset({owner.id}))
+    assert pd.can_use_command(owner)
+    assert 777_199 in pd.menu_chat_ids(db)
