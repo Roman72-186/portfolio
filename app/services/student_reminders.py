@@ -38,6 +38,9 @@
    Москве — в этот день появляется кнопка «Оплатить» (`payments.can_pay_now`).
    Одно на месяц. Пока Продамус не настроен, не шлём: кнопки нет, звать
    некуда. Оплатившему месяц не придёт — должным станет следующий.
+   Второе — в последний день окна с того же часа (владелец 15.10.2026:
+   «прописать в коде напоминание»), тоже одно на месяц. Окно в один день —
+   только второе: два сообщения об оплате в один день не шлём.
 
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
@@ -54,12 +57,13 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
+from app.config import settings
 from app.models.homework_submission import HomeworkSubmission
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
@@ -72,6 +76,7 @@ from app.models.student_reminder import (
     KIND_DEADLINE_24H,
     KIND_NEW_TASK,
     KIND_NEW_VIDEO,
+    KIND_PAY_LAST_DAY,
     KIND_PAY_WINDOW,
     StudentReminder,
 )
@@ -149,7 +154,8 @@ CYCLE_DEBT_DAILY_HOUR = 10
 # ломается от переименования и не требует id в коде.
 CYCLE_DEBT_REMINDERS_SINCE = datetime(2026, 10, 6, tzinfo=MSK_TZ)
 
-# Окно оплаты открывается в полночь; напоминание — с этого часа МСК первого дня.
+# Окно оплаты открывается в полночь; напоминание — с этого часа МСК первого
+# дня, второе — с этого же часа последнего.
 PAY_WINDOW_HOUR = 10
 
 
@@ -520,8 +526,12 @@ def _collect_pay_window(
         cutoff = payments.window_cutoff(user, period)
         if not opens <= now < cutoff:
             continue
+        last_day = datetime.combine(
+            payments.window_last_day(user, period), time(PAY_WINDOW_HOUR), MSK_TZ,
+        )
         items[uid].append(_Item(
-            kind=KIND_PAY_WINDOW, ref=period.isoformat(), title=payments.period_label(period),
+            kind=KIND_PAY_LAST_DAY if now >= last_day else KIND_PAY_WINDOW,
+            ref=period.isoformat(), title=payments.period_label(period),
             moment=cutoff, amount_kop=payments.price_kop(db, user),
         ))
 
@@ -595,6 +605,17 @@ def _pay_window_message(item: _Item) -> tuple[str, str]:
     )
 
 
+def _pay_last_day_message(item: _Item) -> tuple[str, str]:
+    """«Уроки останутся открытыми» — только при включённой блокировке по
+    неоплате: без неё кабинет после отсечки не закрывается."""
+    amount = f"Сумма – {payments.rub_text(item.amount_kop)}. " if item.amount_kop else ""
+    keep = ", и уроки останутся открытыми" if settings.payments_block_enabled else ""
+    return (
+        "Сегодня последний день оплаты",
+        f"{amount}Оплати до конца дня{keep}: кнопка «Оплатить» в «Личной информации».",
+    )
+
+
 @dataclass
 class _Named:
     """`reminder_message` ждёт задания, ему нужно только название."""
@@ -617,6 +638,8 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
             out.append(_cycle_debt_message(item))
         elif item.kind == KIND_PAY_WINDOW:
             out.append(_pay_window_message(item))
+        elif item.kind == KIND_PAY_LAST_DAY:
+            out.append(_pay_last_day_message(item))
     return out
 
 

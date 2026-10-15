@@ -772,6 +772,60 @@ def test_pay_window_reminder_skips_paid_and_unconfigured(db, prices, payer, user
     assert _pay_reminders(db, payer.id) == []
 
 
+def _last_day_reminders(db, user_id):
+    return [n for n in db.query(Notification).filter(Notification.user_id == user_id)
+            if n.title == "Сегодня последний день оплаты"]
+
+
+def test_pay_last_day_reminder_once(db, prices, payer, prodamus, monkeypatch):
+    """Второе напоминание — в последний день окна с 10:00 МСК, одно на месяц
+    (владелец 15.10.2026)."""
+    from app.services.student_reminders import run_student_reminders
+
+    monkeypatch.setattr(settings, "payments_block_enabled", True)
+    run_student_reminders(db, _msk(2026, 10, 10, 10, 0))   # первое — в первый день
+    run_student_reminders(db, _msk(2026, 10, 15, 9, 30))   # последний день, но ещё рано
+    assert _last_day_reminders(db, payer.id) == []
+
+    run_student_reminders(db, _msk(2026, 10, 15, 10, 0))
+    run_student_reminders(db, _msk(2026, 10, 16, 1, 30))   # до отсечки 2:00 — тишина
+    notes = _last_day_reminders(db, payer.id)
+    assert [n.text for n in notes] == [
+        "Сумма – 13 255 ₽. Оплати до конца дня, и уроки останутся открытыми: "
+        "кнопка «Оплатить» в «Личной информации».",
+    ]
+    assert len(_pay_reminders(db, payer.id)) == 1
+
+
+def test_pay_last_day_reminder_without_block_and_after_payment(db, prices, payer, user_factory, prodamus):
+    """Без блокировки уроки не закрываются — об этом не пишем; оплатившему
+    месяц последний день не напоминают."""
+    from app.services.student_reminders import run_student_reminders
+
+    run_student_reminders(db, _msk(2026, 10, 15, 12, 0))
+    assert [n.text for n in _last_day_reminders(db, payer.id)] == [
+        "Сумма – 13 255 ₽. Оплати до конца дня: кнопка «Оплатить» в «Личной информации».",
+    ]
+
+    chief = user_factory(vk_id=970_102, name="Главный", is_admin=True, role_name="админ")
+    ps.apply_payment_settings(db, chief.id, payer, window_start=10, window_end=15,
+                              cohort=COHORT_FROM, price_kop=None, paid_through=date(2026, 11, 1))
+    db.commit()
+    run_student_reminders(db, _msk(2026, 11, 15, 12, 0))
+    assert len(_last_day_reminders(db, payer.id)) == 1
+
+
+def test_one_day_window_sends_only_last_day_reminder(db, prices, payer, prodamus):
+    """Окно в один день: первый день он же последний — одно сообщение, не два."""
+    from app.services.student_reminders import run_student_reminders
+
+    payer.pay_window_start, payer.pay_window_end = 15, 15
+    db.commit()
+    run_student_reminders(db, _msk(2026, 10, 15, 10, 0))
+    assert len(_last_day_reminders(db, payer.id)) == 1
+    assert _pay_reminders(db, payer.id) == []
+
+
 def test_staff_period_is_month_of_study(payer):
     """Период в уведомлении службе заботы — «с 15 по 15» по окну ученика,
     в феврале окно 25–30 кончается последним днём месяца."""
