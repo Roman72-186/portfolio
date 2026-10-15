@@ -622,6 +622,44 @@ def _run_student_reminders() -> None:
     if notification_ids:
         notify_many_sync(notification_ids)
 
+def _run_payment_debt_report() -> None:
+    """Утром дня отсечки — службе заботы, кто из закрывшегося окна не
+    оплатил (владелец 15.10.2026). Логика — `services/payment_debtors.py`."""
+    from app.services.payment_debtors import run_debt_report
+
+    db = SessionLocal()
+    try:
+        notification_ids = run_debt_report(db)
+    except Exception:
+        logger.exception("Ошибка в отчёте о неоплативших")
+        db.rollback()
+        return
+    finally:
+        db.close()
+    if notification_ids:
+        notify_many_sync(notification_ids)
+
+
+def _run_payment_bot_menu() -> None:
+    """Команда `/neoplata` в меню бота — в чатах тех, кому она отвечает.
+    Раз после старта: новый сотрудник с оплатой получит её с ближайшей
+    выкаткой, а пока команда отвечает ему и без меню."""
+    from app.services import payment_debtors
+
+    db = SessionLocal()
+    try:
+        chat_ids = payment_debtors.menu_chat_ids(db)
+    except Exception:
+        logger.exception("Ошибка при сборе чатов для меню бота")
+        return
+    finally:
+        db.close()
+    try:
+        asyncio.run(payment_debtors.sync_bot_menu(chat_ids))
+    except Exception:
+        logger.exception("Ошибка при установке меню бота")
+
+
 def _run_broadcast_schedule() -> None:
     """Отложенные рассылки ученикам (владелец 08.10.2026): журнал тем, чьё
     время пришло, и волны «по часам ученика». Логика —
@@ -760,6 +798,23 @@ def start_scheduler() -> None:
         max_instances=1,
     )
     _scheduler.add_job(
+        _run_payment_debt_report,
+        trigger="interval",
+        minutes=30,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=4),
+        id="payment_debt_report",
+        replace_existing=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        _run_payment_bot_menu,
+        trigger="date",
+        run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
+        id="payment_bot_menu",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+    _scheduler.add_job(
         _run_broadcast_schedule,
         trigger="interval",
         minutes=1,
@@ -784,7 +839,8 @@ def start_scheduler() -> None:
         "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
         "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC, "
-        "student_reminders=30min, broadcast_schedule=1min, vpn_reconcile=15min)"
+        "student_reminders=30min, payment_debt_report=30min, payment_bot_menu=once, "
+        "broadcast_schedule=1min, vpn_reconcile=15min)"
     )
 
 

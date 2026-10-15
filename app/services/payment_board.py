@@ -129,7 +129,9 @@ def parse_month(raw: str | None, now: datetime) -> date:
     return parsed or payments.month_start(now.astimezone(MSK_TZ).date())
 
 
-def _students(db: DBSession) -> list[User]:
+def accounted_students(db: DBSession) -> list[User]:
+    """Ученики учёта оплаты: вне архива, активные, без служебных. Тот же
+    список читает отчёт о неоплативших (`payment_debtors`)."""
     return (
         db.query(User)
         .join(Role, Role.id == User.role_id)
@@ -175,7 +177,7 @@ def month_board(db: DBSession, period: date, now: datetime,
     """Месяц на экране. `students` — список учёта, если он уже прочитан
     (сводка по месяцам читает его один раз)."""
     if students is None:
-        students = _students(db)
+        students = accounted_students(db)
     by_user: dict[int, list[Payment]] = {}
     for payment in (
         db.query(Payment)
@@ -290,7 +292,7 @@ def months_summary(db: DBSession, now: datetime) -> list[MonthTotal]:
     )
     start = min(first, current) if first else current
     end = max(last, current) if last else current
-    students = _students(db)
+    students = accounted_students(db)
     result: list[MonthTotal] = []
     period = start
     while period <= end:

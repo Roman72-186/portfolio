@@ -46,6 +46,7 @@ from app.services.navigation import can_open_3dlab
 from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import broadcast_delivery
+from app.services import payment_debtors
 from app.services import telegram as telegram_service
 from app.services import vpn_keys as vpn_keys_service
 from app.services.user_management import open_program_from_now, restore_deleted_user
@@ -1077,6 +1078,9 @@ async def _handle_telegram_new_start(
 async def _handle_telegram_message(db: DBSession, message: _TgMessage) -> None:
     text = (message.text or "").strip()
     command, _sep, payload = text.partition(" ")
+    if command.split("@")[0] == f"/{payment_debtors.BOT_COMMAND}":
+        await payment_debtors.handle_command(db, message.chat.id)
+        return
     if command.split("@")[0] != "/start":
         return
 

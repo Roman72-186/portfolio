@@ -815,6 +815,37 @@ def test_pay_last_day_reminder_without_block_and_after_payment(db, prices, payer
     assert len(_last_day_reminders(db, payer.id)) == 1
 
 
+def test_pay_day_before_reminder(db, prices, payer, prodamus):
+    """За день до последнего дня окна, с 10:00 МСК (владелец 15.10.2026)."""
+    from app.services.student_reminders import run_student_reminders
+
+    run_student_reminders(db, _msk(2026, 10, 10, 10, 0))
+    run_student_reminders(db, _msk(2026, 10, 14, 9, 30))
+    titles = lambda: [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
+    assert "Завтра последний день оплаты" not in titles()
+
+    run_student_reminders(db, _msk(2026, 10, 14, 10, 0))
+    run_student_reminders(db, _msk(2026, 10, 14, 20, 0))
+    notes = [n for n in db.query(Notification).filter(Notification.user_id == payer.id)
+             if n.title == "Завтра последний день оплаты"]
+    assert [n.text for n in notes] == [
+        "Сумма – 13 255 ₽. Оплати до 15.10 включительно: кнопка «Оплатить» в «Личной информации».",
+    ]
+    run_student_reminders(db, _msk(2026, 10, 15, 10, 0))
+    assert titles().count("Сегодня последний день оплаты") == 1
+
+
+def test_two_day_window_skips_first_day_message(db, prices, payer, prodamus):
+    """Окно в два дня: первый день он же «за день» — одно сообщение."""
+    from app.services.student_reminders import run_student_reminders
+
+    payer.pay_window_start, payer.pay_window_end = 14, 15
+    db.commit()
+    run_student_reminders(db, _msk(2026, 10, 14, 10, 0))
+    titles = [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
+    assert titles == ["Завтра последний день оплаты"]
+
+
 def test_one_day_window_sends_only_last_day_reminder(db, prices, payer, prodamus):
     """Окно в один день: первый день он же последний — одно сообщение, не два."""
     from app.services.student_reminders import run_student_reminders

@@ -38,9 +38,11 @@
    Москве — в этот день появляется кнопка «Оплатить» (`payments.can_pay_now`).
    Одно на месяц. Пока Продамус не настроен, не шлём: кнопки нет, звать
    некуда. Оплатившему месяц не придёт — должным станет следующий.
-   Второе — в последний день окна с того же часа (владелец 15.10.2026:
-   «прописать в коде напоминание»), тоже одно на месяц. Окно в один день —
-   только второе: два сообщения об оплате в один день не шлём.
+   Ещё два — за день до последнего дня окна и в последний день, с того же
+   часа (владелец 15.10.2026: «прописать в коде напоминание», «напомни за
+   день»), тоже по одному на месяц. В один день уходит одно сообщение об
+   оплате: у короткого окна первый день он же «за день» или последний —
+   шлём только более позднее.
 
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
@@ -76,6 +78,7 @@ from app.models.student_reminder import (
     KIND_DEADLINE_24H,
     KIND_NEW_TASK,
     KIND_NEW_VIDEO,
+    KIND_PAY_DAY_BEFORE,
     KIND_PAY_LAST_DAY,
     KIND_PAY_WINDOW,
     StudentReminder,
@@ -154,8 +157,8 @@ CYCLE_DEBT_DAILY_HOUR = 10
 # ломается от переименования и не требует id в коде.
 CYCLE_DEBT_REMINDERS_SINCE = datetime(2026, 10, 6, tzinfo=MSK_TZ)
 
-# Окно оплаты открывается в полночь; напоминание — с этого часа МСК первого
-# дня, второе — с этого же часа последнего.
+# Окно оплаты открывается в полночь; напоминания — с этого часа МСК первого
+# дня, дня перед последним и последнего.
 PAY_WINDOW_HOUR = 10
 
 
@@ -529,9 +532,14 @@ def _collect_pay_window(
         last_day = datetime.combine(
             payments.window_last_day(user, period), time(PAY_WINDOW_HOUR), MSK_TZ,
         )
+        if now >= last_day:
+            kind = KIND_PAY_LAST_DAY
+        elif now >= last_day - timedelta(days=1):
+            kind = KIND_PAY_DAY_BEFORE
+        else:
+            kind = KIND_PAY_WINDOW
         items[uid].append(_Item(
-            kind=KIND_PAY_LAST_DAY if now >= last_day else KIND_PAY_WINDOW,
-            ref=period.isoformat(), title=payments.period_label(period),
+            kind=kind, ref=period.isoformat(), title=payments.period_label(period),
             moment=cutoff, amount_kop=payments.price_kop(db, user),
         ))
 
@@ -605,6 +613,15 @@ def _pay_window_message(item: _Item) -> tuple[str, str]:
     )
 
 
+def _pay_day_before_message(item: _Item) -> tuple[str, str]:
+    amount = f"Сумма – {payments.rub_text(item.amount_kop)}. " if item.amount_kop else ""
+    last_day = (_utc(item.moment).astimezone(MSK_TZ) - timedelta(days=1)).strftime("%d.%m")
+    return (
+        "Завтра последний день оплаты",
+        f"{amount}Оплати до {last_day} включительно: кнопка «Оплатить» в «Личной информации».",
+    )
+
+
 def _pay_last_day_message(item: _Item) -> tuple[str, str]:
     """«Уроки останутся открытыми» — только при включённой блокировке по
     неоплате: без неё кабинет после отсечки не закрывается."""
@@ -638,6 +655,8 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
             out.append(_cycle_debt_message(item))
         elif item.kind == KIND_PAY_WINDOW:
             out.append(_pay_window_message(item))
+        elif item.kind == KIND_PAY_DAY_BEFORE:
+            out.append(_pay_day_before_message(item))
         elif item.kind == KIND_PAY_LAST_DAY:
             out.append(_pay_last_day_message(item))
     return out
