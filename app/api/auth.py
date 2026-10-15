@@ -214,15 +214,10 @@ def _upsert_user(
     return user
 
 
-def _create_session_response(db: DBSession, user: User, request: Request) -> RedirectResponse:
-    # Адрес и браузер входа — для школы, делят ли каникулярный доступ на
-    # несколько человек (14.10.2026). За Traefik `client.host` — настоящий
-    # адрес: uvicorn верит X-Forwarded-For только от него.
+def _create_session_response(db: DBSession, user: User) -> RedirectResponse:
     session = Session(
         user_id=user.id,
         expires_at=_now() + timedelta(hours=settings.session_ttl_hours),
-        ip=(request.client.host if request.client else None),
-        user_agent=(request.headers.get("user-agent") or "")[:300] or None,
     )
     db.add(session)
     # Все настоящие логины (VK, magic link, staff) проходят здесь; сессия
@@ -244,41 +239,6 @@ def _create_session_response(db: DBSession, user: User, request: Request) -> Red
     return response
 
 
-def _has_live_session(request: Request, db: DBSession) -> bool:
-    """Браузер уже вошёл: главная и ссылки набора тогда сразу ведут в кабинет."""
-    session_id = request.cookies.get("session_id")
-    if not session_id:
-        return False
-    session_row = db.query(Session, User).join(User, Session.user_id == User.id).filter(
-        Session.id == session_id,
-        Session.is_active == True,
-    ).first()
-    if not session_row:
-        return False
-    session, user = session_row
-    return bool(
-        _as_utc(session.expires_at) > _now()
-        and user.is_active
-        and (
-            user.is_admin
-            or user.is_group_member
-            or (user.role and user.role.rank >= 2)
-        )
-    )
-
-
-def _intake_closed_response(request: Request, note: str | None = None) -> HTMLResponse:
-    # Cache-Control: без него осевший в кэше редирект пережил бы выключение
-    # ссылки — владелец выключил набор, а браузер всё равно ведёт в Telegram.
-    response = templates.TemplateResponse(request, "intake_closed.html", {
-        "request": request,
-        "support_url": SUPPORT_URL,
-        "closed_note": note,
-    })
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
 @router.get("/", response_class=HTMLResponse)
 async def entry_point(
     request: Request,
@@ -286,8 +246,24 @@ async def entry_point(
     error: str | None = None,
     vpn: str | None = None,
 ):
-    if _has_live_session(request, db):
-        return RedirectResponse("/cabinet", status_code=302)
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        session_row = db.query(Session, User).join(User, Session.user_id == User.id).filter(
+            Session.id == session_id,
+            Session.is_active == True,
+        ).first()
+        if session_row:
+            session, user = session_row
+            if (
+                _as_utc(session.expires_at) > _now()
+                and user.is_active
+                and (
+                    user.is_admin
+                    or user.is_group_member
+                    or (user.role and user.role.rank >= 2)
+                )
+            ):
+                return RedirectResponse("/cabinet", status_code=302)
 
     if error == "session_expired":
         error = "Сессия истекла, войди снова"
@@ -413,51 +389,37 @@ async def intake_trial_entry(
     одно-сегментный path-параметр перехватил бы `/health`, `/404` и любой
     будущий корневой маршрут.
     """
-    if _has_live_session(request, db):
-        return RedirectResponse("/cabinet", status_code=302)
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        session_row = db.query(Session, User).join(User, Session.user_id == User.id).filter(
+            Session.id == session_id,
+            Session.is_active == True,
+        ).first()
+        if session_row:
+            session, user = session_row
+            if (
+                _as_utc(session.expires_at) > _now()
+                and user.is_active
+                and (
+                    user.is_admin
+                    or user.is_group_member
+                    or (user.role and user.role.rank >= 2)
+                )
+            ):
+                return RedirectResponse("/cabinet", status_code=302)
 
     link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
     if not intake_link_service.is_open(link) or not _telegram_login_enabled():
-        return _intake_closed_response(request)
+        response = templates.TemplateResponse(request, "intake_closed.html", {
+            "request": request,
+            "support_url": SUPPORT_URL,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
-    # Cache-Control — как у закрытого экрана (`_intake_closed_response`).
+    # Cache-Control: без него осевший в кэше редирект пережил бы выключение
+    # ссылки — владелец выключил набор, а браузер всё равно ведёт в Telegram.
     response = telegram_oauth_redirect(intake_slug=INTAKE_TRIAL_SLUG)
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-_HOLIDAY_CLOSED_NOTE = (
-    "Регистрация в эту группу сейчас закрыта. Если ты уже зарегистрирован – "
-    "войди обычным способом на главной странице."
-)
-
-
-@router.get("/join/{slug}")
-@limiter.limit("20/minute")
-async def holiday_group_entry(
-    request: Request,
-    slug: str,
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    """Ссылка группы каникулярного набора (созвон 13.10.2026): у каждой группы
-    своя, вход через Telegram без проверки закрытого канала — внешние ученики
-    в нём не состоят. Новичку ссылка ставит каникулярную программу, тег группы
-    и срок (`intake_link.apply_to_new_user`, зовёт callback).
-
-    Префикс `/join/`, а не `/{slug}`: см. `intake_trial_entry`. Адрес `/proba`
-    сюда не принимается — у него своя страница и годовая программа.
-    """
-    link = intake_link_service.get_link(db, slug)
-    if not intake_link_service.is_holiday(link):
-        raise HTTPException(status_code=404)
-
-    if _has_live_session(request, db):
-        return RedirectResponse("/cabinet", status_code=302)
-
-    if not intake_link_service.is_open(link) or not _telegram_login_enabled():
-        return _intake_closed_response(request, _HOLIDAY_CLOSED_NOTE)
-
-    response = telegram_oauth_redirect(intake_slug=link.slug)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -598,41 +560,29 @@ async def telegram_login_callback(
     if purpose == TG_PURPOSE_GUEST:
         return _guest_telegram_session(request, db, guest_token, chat_id, claims)
 
-    link = intake_link_service.get_link(db, intake_slug) if intake_slug else None
-    existing_user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
-    if (
-        existing_user is None
-        and intake_link_service.is_holiday(link)
-        and not intake_link_service.is_open(link)
-    ):
-        # Ссылку группы выключили, пока человек подтверждал вход. Без неё он
-        # посторонний: канал школы его не пустит, а отказ «ты не в канале»
-        # соврал бы о причине.
-        return _intake_closed_response(request, _HOLIDAY_CLOSED_NOTE)
+    is_member = await telegram_service.check_channel_membership(chat_id)
+    if is_member is None:
+        logger.warning("Telegram login callback: membership check inconclusive for chat_id=%s", chat_id)
+        return templates.TemplateResponse(request, "denied.html", {
+            "request": request,
+            "reason": "Не удалось проверить участие в закрытом канале. Попробуй войти ещё раз через минуту.",
+            "recheck_url": "/auth/telegram-login",
+            "recheck_note": "Попробуй войти ещё раз через минуту.",
+            "support_url": _SUPPORT_URL,
+        })
 
-    if not intake_link_service.channel_check_skipped(existing_user, link):
-        is_member = await telegram_service.check_channel_membership(chat_id)
-        if is_member is None:
-            logger.warning("Telegram login callback: membership check inconclusive for chat_id=%s", chat_id)
-            return templates.TemplateResponse(request, "denied.html", {
-                "request": request,
-                "reason": "Не удалось проверить участие в закрытом канале. Попробуй войти ещё раз через минуту.",
-                "recheck_url": "/auth/telegram-login",
-                "recheck_note": "Попробуй войти ещё раз через минуту.",
-                "support_url": _SUPPORT_URL,
-            })
-
-        if not is_member:
-            if existing_user:
-                existing_user.is_group_member = False
-                db.commit()
-            return templates.TemplateResponse(request, "denied.html", {
-                "request": request,
-                "reason": "Доступ запрещён. Ты не состоишь в закрытом канале.",
-                "recheck_url": "/auth/telegram-login",
-                "recheck_note": "Вступи в канал, затем нажми «Проверить снова» – это заново запустит вход.",
-                "support_url": _SUPPORT_URL,
-            })
+    if not is_member:
+        existing_user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        if existing_user:
+            existing_user.is_group_member = False
+            db.commit()
+        return templates.TemplateResponse(request, "denied.html", {
+            "request": request,
+            "reason": "Доступ запрещён. Ты не состоишь в закрытом канале.",
+            "recheck_url": "/auth/telegram-login",
+            "recheck_note": "Вступи в канал, затем нажми «Проверить снова» – это заново запустит вход.",
+            "support_url": _SUPPORT_URL,
+        })
 
     tg_from = _TgFrom(
         id=chat_id,
@@ -646,15 +596,27 @@ async def telegram_login_callback(
         db.commit()
         return templates.TemplateResponse(request, "blocked.html", {"request": request})
 
-    # Ссылка действует только на только что созданного пользователя — иначе
-    # действующий оплативший ученик, кликнувший по этой же ссылке, получил бы
-    # закрытие доступа, а годовой — каникулярную программу. Что именно
-    # ставится (срок, тариф, программа, тег группы) — `apply_to_new_user`.
-    if created:
-        intake_link_service.apply_to_new_user(db, user, link)
+    # Срок ставим только только что созданному пользователю — иначе
+    # действующий оплативший ученик, кликнувший по этой же ссылке, получит
+    # закрытие доступа 27-го. Снимок на момент входа: правка даты в админке
+    # потом уже вошедших не сдвигает.
+    if created and intake_slug:
+        deadline = intake_link_service.deadline_for_slug(db, intake_slug)
+        if deadline is not None:
+            user.access_until = deadline
+            # Новичок знакомится без тарифа и выбирает его потом, когда срок
+            # заканчивается (владелец 14.09.2026). Аккаунт при создании
+            # получает «УВЕРЕННЫЙ» по умолчанию, поэтому тариф здесь снимаем —
+            # иначе пробнику молча открылись бы материалы старшего тарифа.
+            # Колонка `users.tariff` NOT NULL, «без тарифа» в базе — пустая
+            # строка: её понимают и экраны (`{% if user.tariff %}`), и отчёты
+            # (`u.tariff or "—"`). Чистим только вместе с простановкой срока:
+            # без срока человека не видно фильтром «Со сроком доступа», и
+            # тариф ему снимать нельзя.
+            user.tariff = ""
 
     db.commit()
-    return _create_session_response(db, user, request)
+    return _create_session_response(db, user)
 
 
 @router.get("/auth/link", response_class=HTMLResponse)
@@ -697,7 +659,7 @@ async def one_time_link_login(
             drive_service.sync_drive_works,
             user.id, user.vk_id, user.tariff or "", user.tg_username or "",
         )
-    return _create_session_response(db, user, request)
+    return _create_session_response(db, user)
 
 
 @router.get("/auth/admin-access")
@@ -715,7 +677,7 @@ async def admin_permanent_access(
     if not user or not user.is_active:
         raise HTTPException(status_code=404)
 
-    return _create_session_response(db, user, request)
+    return _create_session_response(db, user)
 
 
 @router.post("/auth/internal/issue-link")
@@ -985,12 +947,6 @@ async def _finish_membership_check_and_confirm(db: DBSession, user: User, chat_i
     неопределённый ответ API не трактуется как отказ)."""
     if not user.is_active or user.deleted_at is not None:
         await telegram_service.send_message(chat_id, "Твой доступ отключён. Обратись к администратору.")
-        return
-
-    # Каникулярный набор в канале школы не состоит (созвон 13.10.2026): его
-    # не проверяем и доступ не снимаем — правило `intake_link`.
-    if intake_link_service.channel_check_skipped(user, None):
-        await _confirm_telegram_connection(chat_id)
         return
 
     is_member = await telegram_service.check_channel_membership(chat_id)
@@ -1280,7 +1236,7 @@ def staff_login_submit(
     if role_rank < 1:
         return _render_staff_login(request, "Для этого аккаунта не назначена роль.")
 
-    return _create_session_response(db, user, request)
+    return _create_session_response(db, user)
 
 
 # Обратная совместимость — старая ссылка перенаправляет на /login

@@ -16,7 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.constants import BIRTHDAY_EXTRA_RECIPIENT_IDS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import BIRTHDAY_EXTRA_RECIPIENT_IDS, REPORT_EXCLUDED_USER_IDS
 from app.cache import invalidate_unread
 from app.config import settings
 from app.db.database import SessionLocal
@@ -433,10 +433,6 @@ def _run_tg_username_check() -> None:
                 User.deleted_at.is_(None),
                 User.archived_at.is_(None),
                 User.telegram_chat_id.isnot(None),
-                # Каникулярный набор: ник ни к чему не привязан (Drive,
-                # пачка суперадмина — только годовые), а в «Контактах» его
-                # поля нет — отметка закрыла бы кабинет без выхода (15.10.2026).
-                User.program != PROGRAM_HOLIDAY,
             )
             .all()
         )
