@@ -48,7 +48,7 @@ def is_feature_available(db: DBSession, feature: str) -> tuple[bool, str | None]
     if period:
         result: tuple[bool, str | None] = (True, None)
     else:
-        result = (False, f"«{label}» сейчас недоступно. Администратор откроет доступ в нужное время.")
+        result = (False, f"«{label}» сейчас недоступно. Доступ откроется в нужное время.")
 
     with _cache_lock:
         _cache[key] = (result, time.monotonic())

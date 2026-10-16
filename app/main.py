@@ -35,9 +35,7 @@ from app.api import cabinet_point_a_audio
 from app.api import cabinet_broadcasts
 from app.api import cabinet_staff_notifications
 from app.api import cabinet_access_admin
-from app.dependencies import (
-    ACCESS_EXPIRED_DETAIL, LIMITED_CABINET_DETAIL, PORTFOLIO_GATE_DETAIL, TG_MISMATCH_DETAIL,
-)
+from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
 from app.services.section_access import SECTION_CLOSED_DETAIL, SECTION_VIEW_ONLY_DETAIL
 from app.services.cycle_feed import LINK_LOCKED_DETAIL
 from app.limiter import limiter
@@ -185,13 +183,9 @@ async def forbidden_handler(request: Request, exc):
     # без объяснения, почему остальные разделы недоступны.
     if detail == PORTFOLIO_GATE_DETAIL:
         return RedirectResponse("/cabinet/learning?locked=portfolio", status_code=302)
-    # Урезанный кабинет каникулярного набора: закрытый раздел — не тупик, лента
-    # АОП открыта всегда (`dependencies.LIMITED_CABINET_ALLOWED_EXACT`).
-    if detail == LIMITED_CABINET_DETAIL:
-        return RedirectResponse("/cabinet/learning", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
-        reason = "Твой аккаунт заблокирован. Обратись к администратору."
+        reason = "Твой аккаунт заблокирован. Напиши в службу заботы."
     elif "удалён" in detail.lower():
         reason = "Аккаунт был удалён."
     else:
