@@ -250,8 +250,10 @@ def test_left_students_are_not_debtors(db, prices, make_payer, people):
     assert (board.counts[pb.STATE_OVERDUE], board.debt_total_kop) == (2, 2 * 1325500)
     assert board.counts[pb.STATE_UPCOMING] == 0
     assert (board.paid_count, board.paid_total_kop) == (1, 1325500)
+    assert board.unpaid_count == 2
     card = pb.stats_card(db, now)
     assert (card["debt_count"], card["waiting_count"], card["paid_count"]) == (2, 0, 1)
+    assert card["unpaid_count"] == 2 and card["months"][0]["unpaid"] == 2
 
 
 def test_left_students_in_xlsx_without_debt(db, prices, make_payer):
@@ -290,6 +292,7 @@ def test_page_shows_left_students(db, client, session_factory, prices, make_paye
     html = client.get("/cabinet/superadmin/payments?month=2026-10").text
 
     assert "Ушли с курса: 1" in html
+    assert "Не оплатили: 0" in html
     assert "Гадина Галя</a> (доступ до 15.10.2026)" in html
     assert "Должники: 0" in html
 

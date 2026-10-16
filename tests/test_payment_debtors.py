@@ -74,6 +74,16 @@ def test_command_lists_closed_and_open_windows(db, school):
     assert "Петрова Анна – petrova@example.com" in closed
     assert "Кузнецова Анна – @kuz – 13 255 ₽, окно 25–30, до 30.10" in open_
     assert "Сидорова" not in text
+    # Итог месяца первой строкой после заголовка (владелец 16.10.2026).
+    assert "Октябрь: оплатили 1, не оплатили 3" in closed
+
+
+def test_command_total_counts_upcoming_and_skips_left(db, school):
+    unpaid_tg, unpaid_mail, paid, later = school
+    unpaid_mail.access_until = _msk(2026, 10, 15, 0, 5)
+    db.commit()
+    text = "\n".join(pd.command_messages(db, _msk(2026, 10, 16, 12, 0)))
+    assert "Октябрь: оплатили 1, не оплатили 2 (у 1 окно ещё не открылось)" in text
 
 
 def test_command_when_everyone_paid(db, school):

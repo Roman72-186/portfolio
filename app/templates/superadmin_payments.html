@@ -42,6 +42,7 @@
     <section class="prg-items">
         <div class="prg-meta">
             <span>Оплатили: {{ board.paid_count }}{% if board.paid_total_kop %} на {{ rub(board.paid_total_kop) }}{% endif %}</span>
+            <span>Не оплатили: {{ board.unpaid_count }}</span>
             {% if board.no_payment_count %}<span>{{ no_payment_text }}: {{ board.no_payment_count }}</span>{% endif %}
             <span>Должники: {{ board.counts.overdue }}{% if board.debt_total_kop %} на {{ rub(board.debt_total_kop) }}{% endif %}</span>
             <span>Окно идёт: {{ board.counts.open }}</span>
@@ -157,16 +158,17 @@
         <div class="table-scroll">
             <table class="prg-table">
                 <thead>
-                    <tr><th>Тариф</th><th>Оплатили</th><th>Без платежа</th><th>Должники</th><th>Ждём оплату</th></tr>
+                    <tr><th>Тариф</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr>
                 </thead>
                 <tbody>
                     {% for t in board.by_tariff %}
                     <tr>
                         <td>{{ tariff_text(t.tariff) }}</td>
                         <td>{{ t.paid_count }}{% if t.paid_kop %} · {{ rub(t.paid_kop) }}{% endif %}</td>
-                        <td>{{ t.no_payment_count }}</td>
+                        <td>{{ t.unpaid_count }}</td>
                         <td>{{ t.debt_count }}{% if t.debt_kop %} · {{ rub(t.debt_kop) }}{% endif %}</td>
                         <td>{{ t.waiting_count }}</td>
+                        <td>{{ t.no_payment_count }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -182,16 +184,17 @@
         <div class="table-scroll">
             <table class="prg-table">
                 <thead>
-                    <tr><th>Месяц</th><th>Оплатили</th><th>Без платежа</th><th>Должники</th><th>Ждём оплату</th></tr>
+                    <tr><th>Месяц</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr>
                 </thead>
                 <tbody>
                     {% for m in summary %}
                     <tr>
                         <td><a href="/cabinet/superadmin/payments?month={{ m.period.strftime('%Y-%m') }}">{{ period_label(m.period)|capitalize }}</a></td>
                         <td>{{ m.paid_count }}{% if m.paid_kop %} · {{ rub(m.paid_kop) }}{% endif %}</td>
-                        <td>{{ m.no_payment_count }}</td>
+                        <td>{{ m.unpaid_count }}</td>
                         <td>{{ m.debt_count }}{% if m.debt_kop %} · {{ rub(m.debt_kop) }}{% endif %}</td>
                         <td>{{ m.waiting_count }}</td>
+                        <td>{{ m.no_payment_count }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

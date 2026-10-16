@@ -213,7 +213,7 @@
        ведут туда. Карточку видят только те, кому открыта оплата. #}
     {% if payment_stats %}
     <details class="ss-acc" data-payment-card>
-        <summary><h2 class="ss-acc-title">Оплаты</h2><span class="ss-acc-badge">{{ payment_stats.month_title }}: оплатили {{ payment_stats.paid_count }}</span></summary>
+        <summary><h2 class="ss-acc-title">Оплаты</h2><span class="ss-acc-badge">{{ payment_stats.month_title }}: оплатили {{ payment_stats.paid_count }}, не оплатили {{ payment_stats.unpaid_count }}</span></summary>
         <div class="ss-acc-body">
             <div class="ss-filters">
                 <a class="btn-blue btn-save" href="/cabinet/superadmin/payments?month={{ payment_stats.month_value }}">Все ученики</a>
@@ -223,6 +223,7 @@
             </div>
             <div class="ss-stats-strip">
                 <div class="ss-stat"><div class="ss-stat-val">{{ payment_stats.paid_count }}</div><div class="ss-stat-lbl">Оплатили{% if payment_stats.paid_text %} · {{ payment_stats.paid_text }}{% endif %}</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ payment_stats.unpaid_count }}</div><div class="ss-stat-lbl">Не оплатили</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ payment_stats.debt_count }}</div><div class="ss-stat-lbl">Должники{% if payment_stats.debt_text %} · {{ payment_stats.debt_text }}{% endif %}</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ payment_stats.waiting_count }}</div><div class="ss-stat-lbl">Ждём оплату</div></div>
                 {% if payment_stats.no_payment_count %}<div class="ss-stat"><div class="ss-stat-val">{{ payment_stats.no_payment_count }}</div><div class="ss-stat-lbl">Отмечено без платежа</div></div>{% endif %}
@@ -230,15 +231,16 @@
             <div class="ss-sub">
                 <h3 class="ss-sub-head">По месяцам</h3>
                 <table class="ss-table">
-                    <thead><tr><th>Месяц</th><th>Оплатили</th><th>Без платежа</th><th>Должники</th><th>Ждём оплату</th></tr></thead>
+                    <thead><tr><th>Месяц</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr></thead>
                     <tbody>
                     {% for m in payment_stats.months %}
                     <tr>
                         <td data-label="Месяц"><a class="ss-link" href="/cabinet/superadmin/payments?month={{ m.value }}">{{ m.title }}</a></td>
                         <td data-label="Оплатили">{{ m.paid }}</td>
-                        <td data-label="Без платежа">{{ m.no_payment }}</td>
+                        <td data-label="Не оплатили">{{ m.unpaid }}</td>
                         <td data-label="Должники">{{ m.debt }}</td>
                         <td data-label="Ждём оплату">{{ m.waiting }}</td>
+                        <td data-label="Без платежа">{{ m.no_payment }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>

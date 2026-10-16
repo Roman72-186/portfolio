@@ -99,6 +99,12 @@ class TariffTotal:
     debt_kop: int = 0
     waiting_count: int = 0          # окно идёт или впереди
 
+    @property
+    def unpaid_count(self) -> int:
+        """Не оплатили: должники и ждём оплату (владелец 16.10.2026: «везде
+        показывать, кто оплатил и кто не оплатил, только убирать ушедших»)."""
+        return self.debt_count + self.waiting_count
+
 
 @dataclass
 class Board:
@@ -113,6 +119,12 @@ class Board:
     by_tariff: list[TariffTotal] = field(default_factory=list)
     left: list[User] = field(default_factory=list)   # ушли с курса, месяц не оплачен
 
+    @property
+    def unpaid_count(self) -> int:
+        """Не оплатили месяц: окно закрылось, идёт или впереди. Ушедших здесь
+        нет — они в `left`."""
+        return self.counts[STATE_OVERDUE] + self.counts[STATE_OPEN] + self.counts[STATE_UPCOMING]
+
 
 @dataclass
 class MonthTotal:
@@ -123,6 +135,10 @@ class MonthTotal:
     debt_count: int
     debt_kop: int
     waiting_count: int
+
+    @property
+    def unpaid_count(self) -> int:
+        return self.debt_count + self.waiting_count
 
 
 def parse_month(raw: str | None, now: datetime) -> date:
@@ -349,6 +365,7 @@ def stats_card(db: DBSession, now: datetime) -> dict:
             "title": payments.period_label(m.period).capitalize(),
             "paid": money(m.paid_count, m.paid_kop),
             "no_payment": m.no_payment_count,
+            "unpaid": m.unpaid_count,
             "debt": money(m.debt_count, m.debt_kop),
             "waiting": m.waiting_count,
             "is_current": m.period == current,
@@ -364,6 +381,7 @@ def stats_card(db: DBSession, now: datetime) -> dict:
         "debt_count": month.debt_count if month else 0,
         "debt_text": payments.rub_text(month.debt_kop) if month and month.debt_kop else "",
         "waiting_count": month.waiting_count if month else 0,
+        "unpaid_count": month.unpaid_count if month else 0,
         "no_payment_count": month.no_payment_count if month else 0,
         "months": months,
     }
@@ -442,16 +460,16 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
     ], first=True)
 
     sheet("По тарифам", (
-        ("Тариф", 24), ("Оплатили", 11), ("Оплачено, ₽", 14), ("Без платежа", 13),
-        ("Должники", 11), ("Долг, ₽", 12), ("Ждём оплату", 13),
+        ("Тариф", 24), ("Оплатили", 11), ("Оплачено, ₽", 14), ("Не оплатили", 13),
+        ("Должники", 11), ("Долг, ₽", 12), ("Ждём оплату", 13), ("Без платежа", 13),
     ), [
-        [tariff_text(t.tariff), t.paid_count, _rub(t.paid_kop), t.no_payment_count,
-         t.debt_count, _rub(t.debt_kop), t.waiting_count]
+        [tariff_text(t.tariff), t.paid_count, _rub(t.paid_kop), t.unpaid_count,
+         t.debt_count, _rub(t.debt_kop), t.waiting_count, t.no_payment_count]
         for t in board.by_tariff
     ] + [[
-        "Всего", board.paid_count, _rub(board.paid_total_kop), board.no_payment_count,
+        "Всего", board.paid_count, _rub(board.paid_total_kop), board.unpaid_count,
         board.counts[STATE_OVERDUE], _rub(board.debt_total_kop),
-        board.counts[STATE_OPEN] + board.counts[STATE_UPCOMING],
+        board.counts[STATE_OPEN] + board.counts[STATE_UPCOMING], board.no_payment_count,
     ]])
 
     sheet("Должники", (
@@ -464,11 +482,11 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
     ])
 
     sheet("По месяцам", (
-        ("Месяц", 16), ("Оплатили", 11), ("Оплачено, ₽", 14), ("Без платежа", 13),
-        ("Должники", 11), ("Долг, ₽", 12), ("Ждём оплату", 13),
+        ("Месяц", 16), ("Оплатили", 11), ("Оплачено, ₽", 14), ("Не оплатили", 13),
+        ("Должники", 11), ("Долг, ₽", 12), ("Ждём оплату", 13), ("Без платежа", 13),
     ), [
         [payments.period_label(m.period).capitalize(), m.paid_count, _rub(m.paid_kop),
-         m.no_payment_count, m.debt_count, _rub(m.debt_kop), m.waiting_count]
+         m.unpaid_count, m.debt_count, _rub(m.debt_kop), m.waiting_count, m.no_payment_count]
         for m in summary
     ])
 
