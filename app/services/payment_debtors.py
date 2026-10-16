@@ -19,9 +19,9 @@
 
 Кто в списке — тот же учёт, что на экране «Оплаты» (`payment_board`):
 ученики вне архива, без служебных, с окном оплаты; без ушедших — у кого
-наступил срок доступа (`_left`, владелец 16.10.2026). Должный месяц у каждого
-свой (`payments.due_period`), поэтому должник прошлого месяца не прячется
-за «окно впереди» нового. Контакт — ник Telegram (в Telegram по нему сразу
+наступил срок доступа (`payment_board.has_left`, владелец 16.10.2026).
+Должный месяц у каждого свой (`payments.due_period`), поэтому должник
+прошлого месяца не прячется за «окно впереди» нового. Контакт — ник Telegram (в Telegram по нему сразу
 открывается чат), без ника — почта.
 """
 from __future__ import annotations
@@ -43,8 +43,8 @@ from app.models.user import User
 from app.services import payments
 from app.services import telegram as telegram_service
 from app.services.contacts import normalize_tg_username
-from app.services.payment_board import accounted_students, display_name
-from app.services.tz import MSK_TZ, _as_utc
+from app.services.payment_board import accounted_students, display_name, has_left
+from app.services.tz import MSK_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -82,18 +82,10 @@ def _debtor(db: DBSession, student: User, now: datetime) -> Debtor | None:
     )
 
 
-def _left(student: User, now: datetime) -> bool:
-    """Ушёл: срок доступа (`access_until`) поставлен и наступил. Владелец
-    16.10.2026: «если срок стоит в блокировке, значит, они ушли, и их не нужно
-    в список добавлять» — уходящим закрывают доступ сроком, окно оплаты при
-    этом остаётся, и без этого правила они числились бы должниками."""
-    return student.access_until is not None and _as_utc(student.access_until) <= now
-
-
 def _payers(db: DBSession, now: datetime) -> list[User]:
     """Кого спрашивать об оплате: учёт оплаты, с окном, не ушедшие."""
     return [
-        s for s in accounted_students(db) if payments.has_window(s) and not _left(s, now)
+        s for s in accounted_students(db) if payments.has_window(s) and not has_left(s, now)
     ]
 
 

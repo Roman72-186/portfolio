@@ -17,7 +17,10 @@
 
 Кто на экране — те же, кто в учёте: ученики вне архива, не заблокированные,
 без служебных (`REPORT_EXCLUDED_USER_IDS`). Ученики без окна оплаты стоят
-отдельно: они вне автоматической оплаты, и долга у них не бывает.
+отдельно: они вне автоматической оплаты, и долга у них не бывает. Так же
+отдельно — ушедшие с курса (`has_left`): месяц не оплачен, а срок доступа
+наступил. В должниках и «ждём оплату» их нет; оплаченный месяц ушедшего
+остаётся в итогах, деньги пришли.
 """
 import io
 from dataclasses import dataclass, field
@@ -40,7 +43,7 @@ from app.models.user import User
 from app.services import payments
 from app.services.contacts import normalize_tg_username
 from app.services.student_search import student_matches
-from app.services.tz import MSK_TZ, msk_date_text
+from app.services.tz import MSK_TZ, _as_utc, msk_date_text
 
 # Состояние ученика за месяц; порядок — порядок строк на экране.
 STATE_OVERDUE = "overdue"    # окно закрылось, оплаты нет
@@ -55,6 +58,7 @@ STATE_LABELS = {
     STATE_PAID: "Оплачено",
 }
 NO_PAYMENT_TEXT = "Отмечено без платежа"
+LEFT_TEXT = "Ушёл с курса"
 
 # Фильтр таблицы (владелец 14.10.2026: «фильтр оплатили / не оплатили»).
 # «Оплатили» — месяц закрыт, в том числе сроком без платежа; «не оплатили» —
@@ -107,6 +111,7 @@ class Board:
     no_payment_count: int = 0
     debt_total_kop: int = 0
     by_tariff: list[TariffTotal] = field(default_factory=list)
+    left: list[User] = field(default_factory=list)   # ушли с курса, месяц не оплачен
 
 
 @dataclass
@@ -145,6 +150,16 @@ def accounted_students(db: DBSession) -> list[User]:
         .order_by(User.last_name, User.first_name, User.id)
         .all()
     )
+
+
+def has_left(student: User, now: datetime) -> bool:
+    """Ушёл с курса: срок доступа (`access_until`) поставлен и наступил.
+    Владелец 16.10.2026: «если срок стоит в блокировке, значит, они ушли, и их
+    не нужно в список добавлять» — уходящим закрывают доступ сроком, окно
+    оплаты при этом остаётся, и без этого правила они числились бы
+    должниками. Одно правило на экран «Оплаты», статистику, Excel и
+    список неоплативших в боте (`payment_debtors`)."""
+    return student.access_until is not None and _as_utc(student.access_until) <= now
 
 
 def display_name(student: User) -> str:
@@ -189,6 +204,7 @@ def month_board(db: DBSession, period: date, now: datetime,
 
     rows: list[BoardRow] = []
     no_window: list[User] = []
+    left: list[User] = []
     paid_total = 0
     for student in students:
         if not payments.has_window(student):
@@ -220,6 +236,10 @@ def month_board(db: DBSession, period: date, now: datetime,
                                  tariff=student.tariff or ""))
             continue
 
+        if has_left(student, now):
+            left.append(student)
+            continue
+
         opens = payments.window_opens_at(student, period)
         cutoff = payments.window_cutoff(student, period)
         if now < opens:
@@ -239,6 +259,7 @@ def month_board(db: DBSession, period: date, now: datetime,
         no_payment_count=sum(1 for r in rows if r.no_payment),
         debt_total_kop=sum(r.amount_kop or 0 for r in rows if r.state == STATE_OVERDUE),
         by_tariff=_tariff_totals(rows),
+        left=left,
     )
 
 
@@ -389,16 +410,16 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
         ws.freeze_panes = "B2"
         ws.auto_filter.ref = ws.dimensions
 
-    def student_cells(row: BoardRow) -> list:
-        tg = normalize_tg_username(row.student.tg_username or "")
-        return [display_name(row.student), row.student.email or "", f"@{tg}" if tg else ""]
+    def student_cells(student: User) -> list:
+        tg = normalize_tg_username(student.tg_username or "")
+        return [display_name(student), student.email or "", f"@{tg}" if tg else ""]
 
     sheet("Ученики", (
         ("Ученик", 30), ("Почта", 28), ("Telegram", 20), ("Тариф", 22), ("Статус", 20),
         ("Сумма, ₽", 12), ("Дата оплаты", 13), ("Способ", 24), ("Заказ Продамуса", 16),
         ("Окно", 8), ("Комментарий", 50), ("ID", 7),
     ), [
-        student_cells(row) + [
+        student_cells(row.student) + [
             tariff_text(row.tariff),
             NO_PAYMENT_TEXT if row.no_payment else STATE_LABELS[row.state],
             _rub(row.amount_kop),
@@ -410,6 +431,14 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
             row.student.id,
         ]
         for row in board.rows
+    ] + [
+        # Ушедшие — в конце листа, без суммы: в итогах их нет (`has_left`).
+        student_cells(s) + [
+            tariff_text(s.tariff), LEFT_TEXT, None, "", "", "",
+            f"{s.pay_window_start}–{s.pay_window_end}",
+            f"Доступ до {msk_date_text(s.access_until)}", s.id,
+        ]
+        for s in board.left
     ], first=True)
 
     sheet("По тарифам", (
@@ -429,7 +458,7 @@ def build_month_xlsx(board: Board, summary: list[MonthTotal]) -> bytes:
         ("Ученик", 30), ("Почта", 28), ("Telegram", 20), ("Тариф", 22), ("Долг, ₽", 12),
         ("Окно", 8), ("Комментарий", 40), ("ID", 7),
     ), [
-        student_cells(row) + [tariff_text(row.tariff), _rub(row.amount_kop), row.window_text,
+        student_cells(row.student) + [tariff_text(row.tariff), _rub(row.amount_kop), row.window_text,
                               _comment(row), row.student.id]
         for row in board.rows if row.state == STATE_OVERDUE
     ])

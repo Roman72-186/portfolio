@@ -47,6 +47,7 @@
             <span>Окно идёт: {{ board.counts.open }}</span>
             <span>Окно впереди: {{ board.counts.upcoming }}</span>
             <span>Без окна оплаты: {{ board.no_window|length }}</span>
+            {% if board.left %}<span>Ушли с курса: {{ board.left|length }}</span>{% endif %}
         </div>
     </section>
 
@@ -239,6 +240,18 @@
         <p class="prg-hint">Им оплату не ждём, и кабинет по неоплате не закроется. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
         <p class="prg-hint">
             {% for student in board.no_window %}<a href="/cabinet/students?student={{ student.id }}">{{ display_name(student) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+        </p>
+    </section>
+    {% endif %}
+
+    {# Ушли с курса (владелец 16.10.2026): месяц не оплачен, срок доступа
+       наступил. Не должники — `payment_board.has_left`. #}
+    {% if board.left %}
+    <section class="prg-items">
+        <h2>Ушли с курса</h2>
+        <p class="prg-hint">Срок доступа у них наступил: оплату не ждём, в должниках не считаем. Если ученик вернулся, уберите срок в карточке, и он снова появится в таблице.</p>
+        <p class="prg-hint">
+            {% for student in board.left %}<a href="/cabinet/students?student={{ student.id }}">{{ display_name(student) }}</a> (доступ до {{ msk_date_text(student.access_until) }}){% if not loop.last %}, {% endif %}{% endfor %}
         </p>
     </section>
     {% endif %}
