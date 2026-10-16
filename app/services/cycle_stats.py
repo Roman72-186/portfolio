@@ -23,6 +23,7 @@ from app.models.task_block import TaskBlock, TaskBlockState
 from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.services.program import day_bounds, msk_date
+from app.services.access_state import access_expired
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.tz import now_msk
@@ -254,10 +255,10 @@ def cycle_debtors(
     """Кто цикл не закрыл (владелец 30.09.2026): ученик, задачи, которых не
     хватает, и напоминали ли ему сегодня.
 
-    Отбор — те же ученики, что в статистике: истёкший доступ отсекает уже
-    `report_scope` — новенький после пробного периода заблокирован, писать
-    ему «закрой цикл» бессмысленно. Пустой цикл должников не имеет — как и
-    прошедших (см. `cycle_stats`).
+    Отбор — те же ученики, что в статистике (`report_scope`): ушедших нет.
+    Должник по оплате с закрытым кабинетом в учёте с 16.10.2026 остаётся и
+    здесь виден, но напоминание ему не уходит — `remind_cycle_debtors`.
+    Пустой цикл должников не имеет — как и прошедших (см. `cycle_stats`).
     """
     now = _utc(now) or datetime.now(timezone.utc)
     first, last = cycle_bounds(topic)
@@ -329,10 +330,14 @@ def remind_cycle_debtors(
     created: list[Notification] = []
     skipped = 0
     for debtor in cycle_debtors(db, topic, now):
+        student = debtor["user"]
+        # Кабинет закрыт (за неоплату) — «открой в Обучении» ему не открыть.
+        # Учёт (`report_scope`) с 16.10.2026 таких оставляет, замок — нет.
+        if access_expired(student, now):
+            continue
         if debtor["reminded_today"]:
             skipped += 1
             continue
-        student = debtor["user"]
         title, text = reminder_message(label, debtor["tasks"])
         notification = Notification(user_id=student.id, title=title[:200], text=text)
         db.add(notification)

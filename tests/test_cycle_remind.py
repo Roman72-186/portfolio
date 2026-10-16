@@ -205,6 +205,27 @@ def test_remind_creates_one_notification_per_debtor_once_a_day(db, regular_user,
     assert skipped_again == 2
 
 
+def test_unpaid_student_is_debtor_but_not_reminded(db, regular_user, user_factory, monkeypatch):
+    """Кабинет закрыт за неоплату: в учёте (владелец 16.10.2026 — убирать
+    только ушедших), в списке «не сдали» виден, но «открой в Обучении» ему не
+    уходит — открыть нечего."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "payments_block_enabled", True)
+    topic = _cycle(db, regular_user)
+    _task(db, regular_user)
+    unpaid = _student(user_factory, 771_030, "Не оплатил")
+    unpaid.paid_until = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+
+    assert unpaid.id in _ids(cycle_debtors(db, topic))
+    ids, skipped = remind_cycle_debtors(db, topic)
+
+    notes = db.query(Notification).filter(Notification.id.in_(ids)).all()
+    assert [n.user_id for n in notes] == [regular_user.id]
+    assert skipped == 0
+
+
 def test_remind_next_day_sends_again(db, regular_user):
     topic = _cycle(db, regular_user)
     _task(db, regular_user)
