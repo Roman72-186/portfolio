@@ -43,7 +43,15 @@ from app.models.user import User
 from app.services import payments
 from app.services import telegram as telegram_service
 from app.services.contacts import normalize_tg_username
-from app.services.payment_board import accounted_students, display_name, has_left
+from app.services.payment_board import (
+    STATE_PAID,
+    STATE_UPCOMING,
+    accounted_students,
+    display_name,
+    has_left,
+    month_board,
+    parse_month,
+)
 from app.services.tz import MSK_TZ
 
 logger = logging.getLogger(__name__)
@@ -125,9 +133,10 @@ def command_messages(db: DBSession, now: datetime) -> list[str]:
     """Ответ на `/neoplata` — одно или несколько сообщений (HTML)."""
     overdue, open_ = debtors(db, now)
     stamp = now.astimezone(MSK_TZ).strftime("%d.%m %H:%M")
+    total = month_total_line(db, now)
     if not overdue and not open_:
-        return [f"<b>Не оплатили</b> – на {stamp} МСК никого: все, у кого окно открыто или закрылось, оплатили."]
-    lines = [f"<b>Не оплатили</b> – на {stamp} МСК"]
+        return [f"<b>Не оплатили</b> – на {stamp} МСК никого: все, у кого окно открыто или закрылось, оплатили.\n{total}"]
+    lines = [f"<b>Не оплатили</b> – на {stamp} МСК", total]
     if overdue:
         lines += ["", f"<b>{_closed_heading(len(overdue))}</b>"]
         lines += [_line(i, r, escape=True) for i, r in enumerate(overdue, 1)]
@@ -137,6 +146,18 @@ def command_messages(db: DBSession, now: datetime) -> list[str]:
             f"{_line(i, r, escape=True)}, до {r.last_day}" for i, r in enumerate(open_, 1)
         ]
     return _split(lines)
+
+
+def month_total_line(db: DBSession, now: datetime) -> str:
+    """«Октябрь: оплатили 76, не оплатили 12 (у 8 окно ещё не открылось)» —
+    итог текущего месяца по экрану «Оплаты», без ушедших (владелец 16.10.2026:
+    «везде показывать, кто оплатил и кто не оплатил»). «Оплатили» — месяц
+    закрыт, в том числе сроком без платежа: здесь считаем людей, не деньги."""
+    board = month_board(db, parse_month("", now), now)
+    title = payments.period_label(board.period).split()[0].capitalize()
+    line = f"{title}: оплатили {board.counts[STATE_PAID]}, не оплатили {board.unpaid_count}"
+    upcoming = board.counts[STATE_UPCOMING]
+    return f"{line} (у {upcoming} окно ещё не открылось)" if upcoming else line
 
 
 def _split(lines: list[str]) -> list[str]:
