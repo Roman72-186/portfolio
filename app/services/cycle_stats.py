@@ -18,29 +18,22 @@ from app.constants import TARIFFS
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
 from app.models.student_reminder import KIND_CYCLE_DEBT, StudentReminder
-from app.models.tag import UserTag
 from app.models.task_block import TaskBlock, TaskBlockState
 from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.services.program import day_bounds, msk_date
+from app.services.access_state import access_expired
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.tz import now_msk
-from app.services.video_topics import (
-    get_assignee_ids,
-    get_tag_ids,
-    get_topic_tariff_windows,
-    saw_topic_period,
-    topic_program,
-)
+from app.services.video_topics import get_topic_tariff_windows, saw_topic_period
 
 
 def active_students(db: Session, now: datetime | None = None) -> list[User]:
     """Ученики, которых имеет смысл считать — общее правило статистики
     (`report_scope`): без заблокированных, удалённых, с истёкшей подпиской
-    и служебных. Каникулярный набор — тоже: программу цикла отсекает
-    `_audience`, и у каникулярного цикла иначе не было бы аудитории."""
-    return reportable_students_q(db, now, include_holiday=True).all()
+    и служебных."""
+    return reportable_students_q(db, now).all()
 
 
 def _cycle_tasks(db: Session, topic_id: int, first: date, last: date) -> list[TrackerTask]:
@@ -193,22 +186,9 @@ def _audience(
     """Ученики, которым цикл был виден. Пришедший после его конца цикла не
     видит (владелец 29.09.2026) — и в «не сдали» его считать нельзя. Так же
     не считается тариф, которому цикл закрыт или чьё окно ещё не открылось
-    (06.10.2026) — то же правило, что `accessible_topic_ids`. И ученик
-    другой программы (годовой курс / каникулярный набор, созвон 13.10.2026),
-    и, у цикла не «для всех», ученик без его тега или поимённого назначения
-    (каникулярные группы)."""
+    (06.10.2026) — то же правило, что `accessible_topic_ids`."""
     windows = _tariff_windows(db, topic)
     opened_by = now_msk()
-    program = topic_program(db, topic)
-    addressed: set[int] | None = None
-    if not topic.assign_to_all:
-        tag_ids = get_tag_ids(db, topic.id)
-        addressed = set(get_assignee_ids(db, topic.id))
-        if tag_ids:
-            addressed.update(
-                row[0] for row in
-                db.query(UserTag.user_id).filter(UserTag.tag_id.in_(tag_ids))
-            )
 
     def tariff_saw(student: User) -> bool:
         if windows is None:
@@ -222,8 +202,6 @@ def _audience(
     return [
         student for student in active_students(db, now)
         if saw_topic_period(student.program_access_from, topic) and tariff_saw(student)
-        and student.program == program
-        and (addressed is None or student.id in addressed)
     ]
 
 
@@ -254,10 +232,10 @@ def cycle_debtors(
     """Кто цикл не закрыл (владелец 30.09.2026): ученик, задачи, которых не
     хватает, и напоминали ли ему сегодня.
 
-    Отбор — те же ученики, что в статистике: истёкший доступ отсекает уже
-    `report_scope` — новенький после пробного периода заблокирован, писать
-    ему «закрой цикл» бессмысленно. Пустой цикл должников не имеет — как и
-    прошедших (см. `cycle_stats`).
+    Отбор — те же ученики, что в статистике (`report_scope`): ушедших нет.
+    Должник по оплате с закрытым кабинетом в учёте с 16.10.2026 остаётся и
+    здесь виден, но напоминание ему не уходит — `remind_cycle_debtors`.
+    Пустой цикл должников не имеет — как и прошедших (см. `cycle_stats`).
     """
     now = _utc(now) or datetime.now(timezone.utc)
     first, last = cycle_bounds(topic)
@@ -329,10 +307,14 @@ def remind_cycle_debtors(
     created: list[Notification] = []
     skipped = 0
     for debtor in cycle_debtors(db, topic, now):
+        student = debtor["user"]
+        # Кабинет закрыт (за неоплату) — «открой в Обучении» ему не открыть.
+        # Учёт (`report_scope`) с 16.10.2026 таких оставляет, замок — нет.
+        if access_expired(student, now):
+            continue
         if debtor["reminded_today"]:
             skipped += 1
             continue
-        student = debtor["user"]
         title, text = reminder_message(label, debtor["tasks"])
         notification = Notification(user_id=student.id, title=title[:200], text=text)
         db.add(notification)
