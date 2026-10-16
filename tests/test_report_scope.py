@@ -44,6 +44,21 @@ def test_only_active_unblocked_undeleted_students_with_live_subscription(db, use
     assert {u.id for u in reportable_students_q(db).all()} == people["in"]
 
 
+def test_unpaid_student_with_closed_cabinet_stays_in(db, user_factory, monkeypatch):
+    """Владелец 16.10.2026: «везде… только убирать ушедших». Кабинет закрыт
+    за неоплату — ученик в учёте; наступил срок доступа — ушёл, не в учёте."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "payments_block_enabled", True)
+    people = _students(user_factory, db)
+    now = datetime.now(timezone.utc)
+    debtor = user_factory(vk_id=950_010, name="Debtor")
+    debtor.paid_until = now - timedelta(hours=1)
+    db.commit()
+
+    assert reportable_student_id_set(db) == people["in"] | {debtor.id}
+
+
 def test_service_account_is_out(db, user_factory):
     from app.constants import REPORT_EXCLUDED_USER_IDS
 

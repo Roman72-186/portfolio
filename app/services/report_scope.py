@@ -11,9 +11,12 @@
 - `archived_at` пуст — архив прошлого потока; он тоже снимает `is_active`,
   но это отдельное состояние со своей колонкой, проверяется явно;
 - `deleted_at` пуст;
-- подписка активна: ни пробный срок (`access_until`), ни оплаченный
-  (`paid_until`, при включённой блокировке) не наступили — то же правило,
-  что запирает кабинет, `services/access_state.py`;
+- не ушёл с курса: срок доступа (`access_until`) пуст или впереди
+  (`access_state.not_left_clause`). Оплаченный срок (`paid_until`) учёт не
+  смотрит: владелец 16.10.2026 — «везде… только убирать ушедших»; должник,
+  которому кабинет закрыт за неоплату, остаётся в цифрах школы, пока не
+  ушёл. До 16.10 здесь стояло полное правило замка кабинета
+  (`access_open_clause`), и закрытые за неоплату выпадали из статистики;
 - не служебный аккаунт (`REPORT_EXCLUDED_USER_IDS`);
 - годовой курс: каникулярный набор (`User.program == 'holiday'`, созвон
   13.10.2026) — внешние ученики на неделю, отдельный список, в цифры школы
@@ -39,7 +42,7 @@ from sqlalchemy.orm import Session
 from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
 from app.models.role import Role
 from app.models.user import User
-from app.services.access_state import access_open_clause
+from app.services.access_state import not_left_clause
 
 
 def reportable_students_q(
@@ -55,7 +58,7 @@ def reportable_students_q(
             User.is_active == True,  # noqa: E712
             User.archived_at.is_(None),
             User.deleted_at.is_(None),
-            access_open_clause(now),
+            not_left_clause(now),
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
