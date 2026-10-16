@@ -108,7 +108,9 @@ def test_new_start_not_member_sends_support_message_and_creates_no_user(client, 
     assert resp.status_code == 200
     assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).first() is None
     assert len(sent_messages) == 1
-    assert "поддержк" in sent_messages[0]["text"].lower()
+    # Владелец 16.10.2026: не «к администратору», а в службу заботы.
+    assert "службу заботы" in sent_messages[0]["text"]
+    assert "администратор" not in sent_messages[0]["text"].lower()
     assert sent_messages[0]["reply_markup"]["inline_keyboard"][0][0]["url"] == "https://t.me/roman_chatbots"
 
 

@@ -191,7 +191,7 @@ async def forbidden_handler(request: Request, exc):
         return RedirectResponse("/cabinet/learning", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
-        reason = "Твой аккаунт заблокирован. Обратись к администратору."
+        reason = "Твой аккаунт заблокирован. Напиши в службу заботы."
     elif "удалён" in detail.lower():
         reason = "Аккаунт был удалён."
     else:

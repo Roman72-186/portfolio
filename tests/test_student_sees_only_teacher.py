@@ -95,3 +95,37 @@ def test_mock_dialog_signs_staff_as_teacher_for_student(auth_client, db, user_fa
     found = sorted({m.group(0) for m in STAFF_ROLE.finditer(text)})
     assert not found, f"ученик видит {found}"
     assert "Кураторов" not in resp.text and "Анна Главная" not in resp.text
+
+
+# Ученика не отправляют «к администратору» – только в службу заботы
+# (владелец 16.10.2026). Экраны отказа и тексты входа, которые читает ученик.
+CARE_TEMPLATES = STUDENT_TEMPLATES + ["blocked.html", "denied.html"]
+CARE_SOURCES = ["app/api/auth.py", "app/main.py", "app/services/feature_periods.py"]
+# Не ученику: машинный ответ выключенной интеграции n8n (`/auth/internal/issue-link`)
+# и вход сотрудников (`/staff/login`).
+ADMIN_ALLOWED = {
+    "Пользователь отключен администратором.",
+    "Аккаунт отключён. Обратитесь к администратору.",
+}
+ADMIN_WORD = re.compile(r"администратор", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("name", CARE_TEMPLATES)
+def test_student_screen_sends_to_care_not_admin(name):
+    source = (TEMPLATES / name).read_text(encoding="utf-8")
+    visible = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
+    assert not ADMIN_WORD.search(visible), f"{name}: «администратор» – пишите «служба заботы»"
+
+
+@pytest.mark.parametrize("path", CARE_SOURCES)
+def test_student_texts_send_to_care_not_admin(path):
+    import ast
+
+    tree = ast.parse((TEMPLATES.parent.parent / path).read_text(encoding="utf-8"))
+    found = sorted({
+        node.value for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and ADMIN_WORD.search(node.value) and node.value not in ADMIN_ALLOWED
+        and "\n" not in node.value.strip()  # докстринги и комментарии-строки
+    })
+    assert not found, f"{path}: ученик читает {found} – пишите «служба заботы»"

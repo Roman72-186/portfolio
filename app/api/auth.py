@@ -680,7 +680,7 @@ async def one_time_link_login(
     if not user.is_active:
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Твой доступ временно отключен. Напиши администратору.",
+            "reason": "Твой доступ временно отключен. Напиши в службу заботы.",
         })
     # Пускаем: учеников с открытым доступом (`is_group_member` — исторически
     # «член группы ВК», с 29.09.2026 просто «доступ открыт»), старых админов
@@ -689,7 +689,7 @@ async def one_time_link_login(
     if not user.is_admin and not user.is_group_member and role_rank < 2:
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Доступ к кабинету ещё не открыт. Напиши администратору.",
+            "reason": "Доступ к кабинету ещё не открыт. Напиши в службу заботы.",
         })
 
     if settings.n8n_enabled:
@@ -894,7 +894,7 @@ async def _send_membership_denied(chat_id: int) -> None:
     await telegram_service.send_message(
         chat_id,
         "Доступ закрыт: ты не состоишь в нашем закрытом канале. "
-        "Обратись в поддержку или к администратору.",
+        "Напиши в службу заботы.",
         reply_markup={"inline_keyboard": [[{"text": "Написать в поддержку", "url": _SUPPORT_URL}]]},
     )
 
@@ -984,7 +984,7 @@ async def _finish_membership_check_and_confirm(db: DBSession, user: User, chat_i
     правила, что и у vk_callback (fail-closed только для роли «ученик»,
     неопределённый ответ API не трактуется как отказ)."""
     if not user.is_active or user.deleted_at is not None:
-        await telegram_service.send_message(chat_id, "Твой доступ отключён. Обратись к администратору.")
+        await telegram_service.send_message(chat_id, "Твой доступ отключён. Напиши в службу заботы.")
         return
 
     # Каникулярный набор в канале школы не состоит (созвон 13.10.2026): его
@@ -1196,7 +1196,7 @@ def denied_page(request: Request):
     """Страница отказа, куда ведут редиректы (3D-лаборатория)."""
     return templates.TemplateResponse(request, "denied.html", {
         "request": request,
-        "reason": "Доступ к 3D лаборатории ещё не открыт. Напиши администратору.",
+        "reason": "Доступ к 3D лаборатории ещё не открыт. Напиши в службу заботы.",
     }, status_code=403)
 
 
