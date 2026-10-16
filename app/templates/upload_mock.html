@@ -493,7 +493,7 @@ submitBtn.addEventListener('click', function() {
     if (state.required && stagesTotal < state.required && !shortStagesConfirmed) {
         shortStagesConfirmed = true;
         showUploadMsg('Этапных ' + stagesTotal + ' из ' + state.required
-            + '. Можно добавить недостающие или отправить так – проверяющий увидит, что их меньше.', true);
+            + '. Можно добавить недостающие или отправить так – преподаватель увидит, что их меньше.', true);
         submitBtn.innerHTML = 'Отправить всё равно';
         return;
     }

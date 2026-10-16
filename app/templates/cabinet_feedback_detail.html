@@ -166,7 +166,8 @@
                         (viewer_role != 'student' and m.sender_role != 'student')
                     %}
                     {# Staff-сообщения обезличены для всех (и ученика, и staff): нейтральный
-                       аватар, в подписи только дата и время. Куратор находит свои сообщения
+                       аватар, в подписи «Преподаватель» и дата — как в диалогах по
+                       заданиям (`feedback.dialog_sender`). Куратор находит свои сообщения
                        по кнопке «✎ Изменить» (m.sender_id == user.user_id), подпись не нужна. #}
                     {% set anon_staff = m.sender_role != 'student' %}
                     {% set sender_label = (m.sender_name or m.sender_role_label or '?')|trim %}
@@ -202,7 +203,7 @@
                             </div>
                             <div class="dlg-msg-meta">
                                 {% if anon_staff %}
-                                    {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
+                                    Преподаватель · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
                                 {% else %}
                                     <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
                                 {% endif %}

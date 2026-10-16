@@ -652,7 +652,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             if (stageState.required && stagesTotal < stageState.required && !shortStagesConfirmed) {
                 shortStagesConfirmed = true;
                 showUploadMsg('Этапных ' + stagesTotal + ' из ' + stageState.required
-                    + '. Можно добавить недостающие или отправить так – проверяющий увидит, что их меньше.', true);
+                    + '. Можно добавить недостающие или отправить так – преподаватель увидит, что их меньше.', true);
                 submitBtn.innerHTML = 'Отправить всё равно';
                 return;
             }
