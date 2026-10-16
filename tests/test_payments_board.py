@@ -228,6 +228,72 @@ def test_board_lists_only_accounted_students(db, prices, make_payer, monkeypatch
     assert [s.id for s in board.no_window] == [no_window.id]
 
 
+def test_left_students_are_not_debtors(db, prices, make_payer, people):
+    """Ушли с курса (владелец 16.10.2026): месяц не оплачен, срок доступа
+    наступил — не должник, не «ждём оплату», в итогах нет; стоят отдельно.
+    Оплаченный до ухода месяц остаётся в деньгах. Срок впереди — ученик
+    ещё учится и считается как обычно."""
+    now = _msk(2026, 10, 16, 11, 0)
+    late = make_payer("Борисова Бэла")
+    gone = make_payer("Гадина Галя", access_until=_msk(2026, 10, 15, 0, 5))
+    gone_waiting = make_payer("Дёмина Дарья", window=(25, 30), access_until=_msk(2026, 10, 15, 0, 5))
+    paid_then_left = make_payer("Ежова Ева", access_until=_msk(2026, 10, 15, 0, 5))
+    _prodamus_paid(db, paid_then_left)
+    leaving = make_payer("Жукова Жанна", access_until=_msk(2026, 11, 30, 0, 0))
+
+    board = pb.month_board(db, OCT, now)
+
+    assert {s.id for s in board.left} == {gone.id, gone_waiting.id}
+    states = {r.student.id: r.state for r in board.rows}
+    assert states == {late.id: pb.STATE_OVERDUE, leaving.id: pb.STATE_OVERDUE,
+                      paid_then_left.id: pb.STATE_PAID}
+    assert (board.counts[pb.STATE_OVERDUE], board.debt_total_kop) == (2, 2 * 1325500)
+    assert board.counts[pb.STATE_UPCOMING] == 0
+    assert (board.paid_count, board.paid_total_kop) == (1, 1325500)
+    card = pb.stats_card(db, now)
+    assert (card["debt_count"], card["waiting_count"], card["paid_count"]) == (2, 0, 1)
+
+
+def test_left_students_in_xlsx_without_debt(db, prices, make_payer):
+    import io
+
+    import openpyxl
+
+    make_payer("Борисова Бэла")
+    make_payer("Гадина Галя", access_until=_msk(2026, 10, 15, 0, 5))
+    now = _msk(2026, 10, 16, 11, 0)
+
+    content = pb.build_month_xlsx(pb.month_board(db, OCT, now), pb.months_summary(db, now))
+
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    students = {r[0].value: [c.value for c in r] for r in wb["Ученики"].iter_rows(min_row=2)}
+    assert students["Гадина Галя"][4] == pb.LEFT_TEXT
+    assert students["Гадина Галя"][5] is None
+    assert students["Гадина Галя"][10] == "Доступ до 15.10.2026"
+    assert [r[0].value for r in wb["Должники"].iter_rows(min_row=2)] == ["Борисова Бэла"]
+
+
+def test_page_shows_left_students(db, client, session_factory, prices, make_payer, people, monkeypatch):
+    from app.api import cabinet_payments_admin as route
+
+    make_payer("Гадина Галя", access_until=_msk(2026, 10, 15, 0, 5))
+    fixed = _msk(2026, 10, 16, 11, 0)
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz) if tz else fixed
+
+    monkeypatch.setattr(route, "datetime", _Now)
+    client.cookies.set("session_id", session_factory(people["chief"]).id)
+
+    html = client.get("/cabinet/superadmin/payments?month=2026-10").text
+
+    assert "Ушли с курса: 1" in html
+    assert "Гадина Галя</a> (доступ до 15.10.2026)" in html
+    assert "Должники: 0" in html
+
+
 def test_rows_sorted_overdue_first(db, prices, make_payer, people):
     paid = make_payer("Аникина Ая")
     late = make_payer("Яковлева Яна", window=(1, 5))

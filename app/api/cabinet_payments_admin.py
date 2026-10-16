@@ -26,7 +26,7 @@ from app.models.user import User
 from app.services import payment_board, payments
 from app.services.notify import notify_many
 from app.services.user_management import _invalidate_user_sessions
-from app.services.tz import MSK_TZ
+from app.services.tz import MSK_TZ, msk_date_text
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/superadmin")
@@ -85,6 +85,7 @@ def payments_board_page(
         "contacts_text": payment_board.contacts_text,
         "period_label": payments.period_label,
         "no_payment_text": payment_board.NO_PAYMENT_TEXT,
+        "msk_date_text": msk_date_text,
     })
 
 
