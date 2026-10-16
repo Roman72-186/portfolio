@@ -17,12 +17,7 @@
   которому кабинет закрыт за неоплату, остаётся в цифрах школы, пока не
   ушёл. До 16.10 здесь стояло полное правило замка кабинета
   (`access_open_clause`), и закрытые за неоплату выпадали из статистики;
-- не служебный аккаунт (`REPORT_EXCLUDED_USER_IDS`);
-- годовой курс: каникулярный набор (`User.program == 'holiday'`, созвон
-  13.10.2026) — внешние ученики на неделю, отдельный список, в цифры школы
-  не входит. Исключение — статистика одного цикла (`cycle_stats`,
-  `include_holiday=True`): аудитория цикла уже из одной программы, и у
-  каникулярного цикла без набора не осталось бы никого.
+- не служебный аккаунт (`REPORT_EXCLUDED_USER_IDS`).
 
 До 07.10.2026 каждый сервис статистики отбирал учеников сам, и отборы
 расходились: одни отсекали только служебных, другие ещё и неактивных, срок
@@ -39,18 +34,16 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.role import Role
 from app.models.user import User
 from app.services.access_state import not_left_clause
 
 
-def reportable_students_q(
-    db: Session, now: datetime | None = None, *, include_holiday: bool = False,
-):
+def reportable_students_q(db: Session, now: datetime | None = None):
     """Запрос `User` по ученикам в учёте; к нему можно добавлять фильтры."""
     now = now or datetime.now(timezone.utc)
-    q = (
+    return (
         db.query(User)
         .join(Role, User.role_id == Role.id)
         .filter(
@@ -62,7 +55,6 @@ def reportable_students_q(
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
-    return q if include_holiday else q.filter(User.program != PROGRAM_HOLIDAY)
 
 
 def reportable_student_ids(db: Session, now: datetime | None = None):
