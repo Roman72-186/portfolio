@@ -15,6 +15,8 @@ import pytest
 TEMPLATES = Path(__file__).resolve().parent.parent / "app" / "templates"
 
 # Шаблоны ученических роутов (`require_student`) и экран видеоуроков.
+# Сдача пробника (`upload_mock.html` и встроенная `partials/inline/mock_exam.html`)
+# добавлена 16.10.2026: там нашёлся «проверяющий».
 STUDENT_TEMPLATES = [
     "cabinet_cycle.html",
     "cabinet_learning.html",
@@ -26,10 +28,13 @@ STUDENT_TEMPLATES = [
     "cabinet_student.html",
     "cabinet_tracker.html",
     "cabinet_videos.html",
+    "upload_mock.html",
+    "partials/inline/mock_exam.html",
 ]
 
 STAFF_ROLE = re.compile(
-    r"куратор|главн\w* преподават|суперадмин|модератор|\bГП\b", re.IGNORECASE,
+    r"куратор|главн\w* преподават|суперадмин|модератор|проверяющ|\bГП\b",
+    re.IGNORECASE,
 )
 
 
@@ -39,3 +44,54 @@ def test_student_screen_names_no_staff_role(name):
     visible = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
     found = sorted({m.group(0) for m in STAFF_ROLE.finditer(visible)})
     assert not found, f"{name}: ученик видит {found} – пишите «преподаватель»"
+
+
+def _visible_text(html: str) -> str:
+    """Текст страницы без скриптов, стилей и HTML-комментариев."""
+    html = re.sub(r"<script\b.*?</script>|<style\b.*?</style>|<!--.*?-->", "", html, flags=re.S)
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def test_mock_dialog_signs_staff_as_teacher_for_student(auth_client, db, user_factory):
+    """Диалог пробника: сообщения куратора и суперадмина ученик видит
+    подписанными «Преподаватель» — без имени и должности (16.10.2026)."""
+    from datetime import date
+
+    from app.models.exam_cycle import ExamCycle
+    from app.models.feedback import Feedback, FeedbackMessage
+    from app.models.work import WORK_TYPE_MOCK_EXAM, Work
+
+    client, student = auth_client
+    curator = user_factory(vk_id=200_002, name="Пётр Кураторов", role_name="куратор")
+    boss = user_factory(vk_id=200_003, name="Анна Главная", role_name="суперадмин")
+    cycle = ExamCycle(user_id=student.id, subject="Drawing", started_at=date(2026, 5, 10))
+    db.add(cycle)
+    db.flush()
+    work = Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="05", year=2026,
+        filename="final-1.jpg", subject="Drawing", status="success",
+        s3_url="https://example.test/final-1.jpg", is_final=True,
+        cycle_id=cycle.id, attempt_number=1,
+    )
+    db.add(work)
+    db.flush()
+    fb = Feedback(work_id=work.id, curator_id=curator.id)
+    db.add(fb)
+    db.flush()
+    db.add_all([
+        FeedbackMessage(feedback_id=fb.id, sender_id=curator.id,
+                        sender_role="curator", text="Разбор от первого"),
+        FeedbackMessage(feedback_id=fb.id, sender_id=boss.id,
+                        sender_role="superadmin", text="Разбор от второго"),
+    ])
+    db.commit()
+
+    resp = client.get(f"/cabinet/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    text = _visible_text(resp.text)
+    assert "Разбор от первого" in text and "Разбор от второго" in text
+    assert text.count("Преподаватель ·") == 2
+    found = sorted({m.group(0) for m in STAFF_ROLE.finditer(text)})
+    assert not found, f"ученик видит {found}"
+    assert "Кураторов" not in resp.text and "Анна Главная" not in resp.text
