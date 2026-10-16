@@ -18,7 +18,8 @@
   в меню), ученики её не видят.
 
 Кто в списке — тот же учёт, что на экране «Оплаты» (`payment_board`):
-ученики вне архива, без служебных, с окном оплаты. Должный месяц у каждого
+ученики вне архива, без служебных, с окном оплаты; без ушедших — у кого
+наступил срок доступа (`_left`, владелец 16.10.2026). Должный месяц у каждого
 свой (`payments.due_period`), поэтому должник прошлого месяца не прячется
 за «окно впереди» нового. Контакт — ник Telegram (в Telegram по нему сразу
 открывается чат), без ника — почта.
@@ -43,7 +44,7 @@ from app.services import payments
 from app.services import telegram as telegram_service
 from app.services.contacts import normalize_tg_username
 from app.services.payment_board import accounted_students, display_name
-from app.services.tz import MSK_TZ
+from app.services.tz import MSK_TZ, _as_utc
 
 logger = logging.getLogger(__name__)
 
@@ -81,12 +82,25 @@ def _debtor(db: DBSession, student: User, now: datetime) -> Debtor | None:
     )
 
 
+def _left(student: User, now: datetime) -> bool:
+    """Ушёл: срок доступа (`access_until`) поставлен и наступил. Владелец
+    16.10.2026: «если срок стоит в блокировке, значит, они ушли, и их не нужно
+    в список добавлять» — уходящим закрывают доступ сроком, окно оплаты при
+    этом остаётся, и без этого правила они числились бы должниками."""
+    return student.access_until is not None and _as_utc(student.access_until) <= now
+
+
+def _payers(db: DBSession, now: datetime) -> list[User]:
+    """Кого спрашивать об оплате: учёт оплаты, с окном, не ушедшие."""
+    return [
+        s for s in accounted_students(db) if payments.has_window(s) and not _left(s, now)
+    ]
+
+
 def debtors(db: DBSession, now: datetime) -> tuple[list[Debtor], list[Debtor]]:
     """(окно закрылось без оплаты, окно идёт и не оплачено)."""
     overdue, open_ = [], []
-    for student in accounted_students(db):
-        if not payments.has_window(student):
-            continue
+    for student in _payers(db, now):
         row = _debtor(db, student, now)
         if row is None:
             continue
@@ -192,9 +206,7 @@ def run_debt_report(db: DBSession, now: datetime | None = None) -> list[int]:
         return []
 
     unpaid, paid_count = [], 0
-    for student in accounted_students(db):
-        if not payments.has_window(student):
-            continue
+    for student in _payers(db, now):
         period = payments.due_period(student, now)
         cutoff = payments.window_cutoff(student, period)
         if _cutoff_day(cutoff) == ref and now >= cutoff:
