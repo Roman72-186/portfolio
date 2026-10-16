@@ -42,6 +42,14 @@ def access_expired(user: User, now: datetime | None = None) -> bool:
     return False
 
 
+def not_left_clause(now: datetime):
+    """Не ушёл с курса: срок доступа (`access_until`) пуст или ещё впереди.
+    Оплаченный срок не смотрит — должник с закрытым за неоплату кабинетом
+    остаётся учеником. То же правило, что `payment_board.has_left`, условием
+    для запроса; держит учёт статистики (`report_scope`)."""
+    return or_(User.access_until.is_(None), User.access_until > now)
+
+
 def access_open_clause(now: datetime):
     """То же условием для запроса по `User`: доступ ещё открыт."""
     paid_clause = (
@@ -49,4 +57,4 @@ def access_open_clause(now: datetime):
         if settings.payments_block_enabled
         else true()
     )
-    return or_(User.access_until.is_(None), User.access_until > now) & paid_clause
+    return not_left_clause(now) & paid_clause
