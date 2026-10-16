@@ -160,3 +160,19 @@ def test_named_account_gets_command_and_menu(db, school, care, user_factory, mon
     monkeypatch.setattr(pd, "PAYMENT_DEBTORS_COMMAND_EXTRA_IDS", frozenset({owner.id}))
     assert pd.can_use_command(owner)
     assert 777_199 in pd.menu_chat_ids(db)
+
+
+def test_left_students_not_in_list_or_report(db, school, care):
+    """Срок доступа наступил — ушёл, в список не попадает (владелец 16.10.2026).
+    Срок впереди — ещё учится, остаётся."""
+    unpaid_tg, unpaid_mail, paid, later = school
+    unpaid_mail.access_until = _msk(2026, 10, 15, 0, 5)
+    later.access_until = _msk(2026, 11, 30, 0, 0)
+    db.commit()
+    text = "\n".join(pd.command_messages(db, _msk(2026, 10, 26, 12, 0)))
+    assert "Петрова" not in text
+    assert "Иванова" in text and "Кузнецова" in text
+
+    note = db.get(Notification, pd.run_debt_report(db, _msk(2026, 10, 16, 10, 0))[0])
+    assert note.title == "Окно оплаты 10–15 закрылось: не оплатили 1"
+    assert "Петрова" not in note.text
