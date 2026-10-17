@@ -37,9 +37,10 @@
         жило в отдельной секции, а год поступления стоял в «О тебе», тогда как
         в анкете он в «Учёбе». Меняешь порядок в одном файле — меняй и во втором.
 
-        Каникулярный набор (`holiday_form`, 15.10.2026) правит здесь только поля
-        своей короткой анкеты: имя, фамилия, город, пояс, телефон, класс —
-        сервер принимает только их (`cabinet_personal._save_holiday_contacts`).
+        Каникулярный набор (`holiday_form`, 15.10.2026, поля школы 16.10.2026)
+        правит здесь только поля своей короткой анкеты: имя, фамилия, телефон,
+        ник Telegram (необязателен), «Где учишься?» — сервер принимает только их
+        (`cabinet_personal._save_holiday_contacts`).
         #}
         <div class="prs-section-title">О тебе</div>
         <div class="prs-group">
@@ -60,7 +61,6 @@
                        min="{{ birth_date_min }}" max="{{ birth_date_max }}" value="{{ form.birth_date }}"
                        autocomplete="bday">
             </div>
-            {% endif %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-city">Город <span class="prs-required">*</span></label>
                 <input class="prs-field-input" type="text" id="contacts-city" name="city" required
@@ -75,6 +75,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
         </div>
 
         <div class="prs-section-title">Контакты</div>
@@ -88,7 +89,16 @@
                        aria-describedby="contacts-phone-hint">
                 <p class="prs-field-note" id="contacts-phone-hint">Для номера другой страны укажи код, например +375.</p>
             </div>
-            {% if not holiday_form %}
+            {% if holiday_form %}
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-tg">Ник в Telegram</label>
+                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username"
+                       value="{{ form.tg_username }}" placeholder="@username"
+                       maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}"
+                       aria-describedby="contacts-tg-hint">
+                <p class="prs-field-note" id="contacts-tg-hint">Взяли из Telegram. Если ника нет – оставь поле пустым.</p>
+            </div>
+            {% else %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-parent-phone">Телефон родителя <span class="prs-required">*</span></label>
                 <input class="prs-field-input" type="tel" id="contacts-parent-phone" name="parent_phone" required
@@ -122,14 +132,14 @@
         </div>
 
         {% if holiday_form %}
-        <div class="prs-section-title">Школа</div>
+        <div class="prs-section-title">Учёба</div>
         <div class="prs-group">
             <div class="prs-field">
-                <label class="prs-field-label" for="contacts-school-grade">В каком ты классе <span class="prs-required">*</span></label>
+                <label class="prs-field-label" for="contacts-school-grade">Где учишься? <span class="prs-required">*</span></label>
                 <select class="prs-field-input" id="contacts-school-grade" name="school_grade" required>
-                    <option value="" disabled {% if not form.school_grade %}selected{% endif %}>Выбери класс</option>
-                    {% for g in school_grades %}
-                    <option value="{{ g }}" {% if form.school_grade == g %}selected{% endif %}>{{ g }} класс</option>
+                    <option value="" disabled {% if not form.school_grade %}selected{% endif %}>Выбери вариант</option>
+                    {% for g, g_label in school_grades %}
+                    <option value="{{ g }}" {% if form.school_grade == g %}selected{% endif %}>{{ g_label }}</option>
                     {% endfor %}
                 </select>
             </div>

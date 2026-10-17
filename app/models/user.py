@@ -174,9 +174,10 @@ class User(Base):
     program: Mapped[str] = mapped_column(
         String(20), nullable=False, default="annual", server_default="annual"
     )
-    # Класс школы — 10 или 11, спрашивает только анкета каникулярного набора
-    # (14.10.2026). По нему же ставится тег «10 класс» / «11 класс».
-    school_grade: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # «Где учишься?» — код варианта из `constants.SCHOOL_GRADES` (`grade9` …
+    # `college`), спрашивает только анкета каникулярного набора (14.10.2026,
+    # варианты школы 16.10.2026). По нему же ставится тег с подписью варианта.
+    school_grade: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Ежемесячная оплата (`app/services/payments.py`, 07.10.2026). Окно оплаты
     # — дни месяца «с» и «по» (крайний ≤ 28, чтобы окно было в любом месяце);
     # пусто — ученик вне автоматической оплаты, так живут все до импорта

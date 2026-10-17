@@ -22,6 +22,7 @@ from app.constants import (
     TARIFF_DISPLAY,
     MONTH_TO_NUM,
     MOCK_SUBJECTS,
+    HOLIDAY_TIMEZONE,
     PROGRAM_HOLIDAY,
     SCHOOL_GRADES,
     TIMEZONES,
@@ -368,8 +369,8 @@ def profile_post(
     if _is_holiday_student(user):
         return _save_holiday_profile(
             request, user, db,
-            first_name=first_name, last_name=last_name, phone=phone, city=city,
-            profile_timezone=profile_timezone, school_grade=school_grade,
+            first_name=first_name, last_name=last_name, phone=phone,
+            tg_username=tg_username, school_grade=school_grade,
         )
 
     errors = []
@@ -546,33 +547,33 @@ def _enrollment_now() -> tuple[int, datetime]:
 
 def _save_holiday_profile(
     request: Request, user: dict, db: DBSession, *,
-    first_name: str, last_name: str, phone: str, city: str,
-    profile_timezone: str, school_grade: str,
+    first_name: str, last_name: str, phone: str, tg_username: str,
+    school_grade: str,
 ):
-    """Короткая анкета каникулярного набора (созвон 13.10.2026, план — часть
-    3.3, допущение до ответа школы): имя, фамилия, телефон, город, часовой
-    пояс и класс. Остального годовой анкеты здесь нет вовсе — ни тарифа, ни
-    родителя, ни СДЭК, ни года поступления. Ник Telegram не спрашиваем и не
-    затираем: его записал вход через Telegram. Класс ставит тег
-    (`tags.ensure_grade_tag`)."""
+    """Короткая анкета каникулярного набора — поля школы 16.10.2026: имя,
+    фамилия, ник Telegram, телефон, «Где учишься?». Остального годовой анкеты
+    здесь нет вовсе — ни тарифа, ни родителя, ни СДЭК, ни года поступления,
+    ни города. Пояс не спрашиваем: каникулярный живёт по Москве
+    (`HOLIDAY_TIMEZONE`, владелец 16.10.2026). Ник подставлен из входа через
+    Telegram и необязателен; пустой не затирает записанный входом — иначе
+    человек, стерев поле, потерял бы ник до следующего входа. Вариант
+    «Где учишься?» ставит тег (`tags.ensure_grade_tag`)."""
     first_name = first_name.strip()
     last_name = last_name.strip()
-    city = city.strip()
-    profile_timezone = profile_timezone.strip()
     phone = normalize_phone(phone)
+    tg_username = normalize_tg_username(tg_username)
     grade = parse_school_grade(school_grade)
 
     errors = validate_holiday_profile(
-        first_name=first_name, last_name=last_name, city=city,
-        profile_timezone=profile_timezone, phone=phone, grade=grade,
+        db, user["user_id"], first_name=first_name, last_name=last_name,
+        phone=phone, tg_username=tg_username, grade=grade,
     )
     if errors:
         form = {
             "first_name": first_name,
             "last_name": last_name,
-            "city": city,
-            "timezone": profile_timezone,
             "phone": phone,
+            "tg_username": tg_username,
             "school_grade": grade,
         }
         return templates.TemplateResponse(request, "profile.html",
@@ -582,9 +583,10 @@ def _save_holiday_profile(
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"
-    db_user.city = city
-    db_user.timezone = profile_timezone
+    db_user.timezone = HOLIDAY_TIMEZONE
     db_user.phone = phone
+    if tg_username:
+        db_user.tg_username = tg_username
     db_user.school_grade = grade
     db_user.enrollment_year, db_user.enrolled_at = _enrollment_now()
     db_user.profile_completed = True

@@ -15,7 +15,7 @@ import re
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import SCHOOL_GRADES, TIMEZONES
+from app.constants import SCHOOL_GRADE_LABELS
 from app.models.role import Role
 from app.models.user import User
 
@@ -78,21 +78,29 @@ def validate_phone(phone: str) -> list[str]:
     return []
 
 
-def parse_school_grade(raw: str) -> int | None:
+def parse_school_grade(raw: str) -> str | None:
+    """Код варианта «Где учишься?» из формы; чужое значение — `None`."""
     value = (raw or "").strip()
-    return int(value) if value.isdigit() else None
+    return value if value in SCHOOL_GRADE_LABELS else None
 
 
 def validate_holiday_profile(
-    *, first_name: str, last_name: str, city: str, profile_timezone: str,
-    phone: str, grade: int | None,
+    db: DBSession, user_id: int, *, first_name: str, last_name: str, phone: str,
+    tg_username: str, grade: str | None,
 ) -> list[str]:
-    """Короткий набор полей каникулярного набора (созвон 13.10.2026): имя,
-    фамилия, город, часовой пояс, телефон, класс. Один канон для двух
+    """Короткий набор полей каникулярного набора — поля школы 16.10.2026: имя,
+    фамилия, ник Telegram, телефон, «Где учишься?». Город и часовой пояс сняты
+    (владелец 16.10.2026: пояс у каникулярного московский). Один канон для двух
     редакторов — короткой анкеты (`cabinet_student._save_holiday_profile`) и
     «Контактов» в «Личной информации»: 15.10.2026 «Контакты» требовали
-    у каникулярного все годовые поля (родитель, СДЭК, вуз, ник), и сохранить их
-    было нельзя. Значения уже очищены от пробелов, телефон нормализован."""
+    у каникулярного все годовые поля (родитель, СДЭК, вуз), и сохранить их
+    было нельзя.
+
+    Ник необязателен: у части людей его в Telegram нет, и запрет закрыл бы им
+    анкету. Пустой проходит, заполненный проверяется по `TG_RE` и на
+    занятость, как у годовых: по нику суперадмин заводит учеников пачкой, и
+    двое с одним ником слились бы в одну карточку. Значения уже очищены от
+    пробелов, телефон и ник нормализованы."""
     errors = []
     if not first_name:
         errors.append("Введи имя")
@@ -102,15 +110,15 @@ def validate_holiday_profile(
         errors.append("Введи фамилию")
     elif len(last_name) > 50:
         errors.append("Фамилия слишком длинная (максимум 50 символов)")
-    if not city:
-        errors.append("Укажи город")
-    elif len(city) > 100:
-        errors.append("Название города слишком длинное")
-    if profile_timezone not in {tz for tz, _ in TIMEZONES}:
-        errors.append("Укажи часовой пояс")
+    if tg_username and not TG_RE.match(tg_username):
+        errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
     errors.extend(validate_phone(phone))
-    if grade not in SCHOOL_GRADES:
-        errors.append("Выбери класс")
+    if grade is None:
+        errors.append("Выбери, где учишься")
+    if not errors and tg_username and find_student_by_tg_username(
+        db, tg_username, exclude_user_id=user_id
+    ):
+        errors.append("Такой ник в Telegram уже занят другим учеником. Проверь написание.")
     return errors
 
 

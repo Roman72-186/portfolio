@@ -44,7 +44,9 @@ from app.api.cabinet_student import (
 from app.cache import invalidate_session
 from app.config import settings
 from app.constants import (
-    MONTHS, PAYMENT_URL, PROGRAM_HOLIDAY, SCHOOL_GRADES, SUPPORT_URL, TARIFF_DISPLAY, TIMEZONES,
+    HOLIDAY_TIMEZONE, MONTHS, PAYMENT_URL, PROGRAM_HOLIDAY, SCHOOL_GRADE_LABELS, SCHOOL_GRADES,
+    SUPPORT_URL,
+    TARIFF_DISPLAY, TIMEZONES,
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -155,6 +157,10 @@ def cabinet_personal(
         # обучения было так, в середине уже вот так» — сравнение по датам.
         "skills": skills_history(db, user["user_id"]),
         "diagnostic_results": diagnostic_results,
+        # Каникулярному — только поля его короткой анкеты, без пустых строк
+        # годовой (город, родитель, СДЭК), и подпись «Где учишься?».
+        "holiday_form": _is_holiday(user),
+        "school_grade_label": SCHOOL_GRADE_LABELS.get(user.get("school_grade") or ""),
     })
 
 
@@ -192,8 +198,8 @@ def _is_holiday(user: dict) -> bool:
 def _contacts_ctx(request, user, errors=None, form=None):
     """Контекст единой формы самостоятельной правки личных данных.
 
-    Каникулярному набору (`holiday_form`) — те же шесть полей, что в его
-    короткой анкете: имя, фамилия, город, часовой пояс, телефон, класс
+    Каникулярному набору (`holiday_form`) — те же пять полей, что в его
+    короткой анкете: имя, фамилия, ник Telegram, телефон, «Где учишься?»
     (`contacts.validate_holiday_profile`)."""
     enrolled_at = user.get("enrolled_at")
     enrollment_month = MONTHS[enrolled_at.month - 1].capitalize() if enrolled_at else None
@@ -269,8 +275,8 @@ def cabinet_personal_contacts_save(
     if _is_holiday(user):
         return _save_holiday_contacts(
             request, user, db,
-            first_name=first_name, last_name=last_name, city=city,
-            profile_timezone=contacts_timezone, phone=phone, school_grade=school_grade,
+            first_name=first_name, last_name=last_name, phone=phone,
+            tg_username=tg_username, school_grade=school_grade,
         )
 
     first_name = first_name.strip()
@@ -437,29 +443,29 @@ def cabinet_personal_contacts_save(
 
 def _save_holiday_contacts(
     request: Request, user: dict, db: DBSession, *,
-    first_name: str, last_name: str, city: str, profile_timezone: str,
-    phone: str, school_grade: str,
+    first_name: str, last_name: str, phone: str, tg_username: str,
+    school_grade: str,
 ):
     """«Контакты» каникулярного набора: поля его короткой анкеты, без
-    родителя, СДЭК, вуза, почты и ника. Ник не сверяется с Telegram: у
-    каникулярного он ни к чему не привязан (`exam_scheduler` его не проверяет),
-    а записывает его вход через Telegram. Начало обучения не трогаем — его
-    поставила анкета."""
+    родителя, СДЭК, вуза, почты и города. Ник необязателен и с Telegram не
+    сверяется: у каникулярного он ни к чему не привязан (`exam_scheduler` его
+    не проверяет), а записывает его вход через Telegram; пустое поле записанный
+    ник не стирает. Пояс — московский (`HOLIDAY_TIMEZONE`). Начало обучения
+    не трогаем — его поставила анкета."""
     first_name = first_name.strip()
     last_name = last_name.strip()
-    city = city.strip()
-    profile_timezone = profile_timezone.strip()
     phone = normalize_phone(phone)
+    tg_username = normalize_tg_username(tg_username)
     grade = parse_school_grade(school_grade)
 
     errors = validate_holiday_profile(
-        first_name=first_name, last_name=last_name, city=city,
-        profile_timezone=profile_timezone, phone=phone, grade=grade,
+        db, user["user_id"], first_name=first_name, last_name=last_name,
+        phone=phone, tg_username=tg_username, grade=grade,
     )
     if errors:
         form = {
-            "first_name": first_name, "last_name": last_name, "city": city,
-            "timezone": profile_timezone, "phone": phone, "school_grade": grade,
+            "first_name": first_name, "last_name": last_name, "phone": phone,
+            "tg_username": tg_username, "school_grade": grade,
         }
         return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
             _contacts_ctx(request, user, errors=errors, form=form),
@@ -469,9 +475,10 @@ def _save_holiday_contacts(
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"
-    db_user.city = city
-    db_user.timezone = profile_timezone
+    db_user.timezone = HOLIDAY_TIMEZONE
     db_user.phone = phone
+    if tg_username:
+        db_user.tg_username = tg_username
     db_user.school_grade = grade
     ensure_grade_tag(db, db_user)
     db.commit()

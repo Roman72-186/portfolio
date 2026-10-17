@@ -19,8 +19,20 @@ PROGRAM_ANNUAL = "annual"
 PROGRAM_HOLIDAY = "holiday"
 PROGRAMS = (PROGRAM_ANNUAL, PROGRAM_HOLIDAY)
 PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный"}
-# Класс школы в анкете каникулярного набора (`User.school_grade`, 14.10.2026).
-SCHOOL_GRADES = (10, 11)
+# «Где учишься?» в анкете каникулярного набора (`User.school_grade`): варианты
+# школы 16.10.2026, код — в колонке, подпись — в форме и в имени тега
+# (`tags.ensure_grade_tag`). Порядок списка — порядок в выпадающем списке.
+SCHOOL_GRADES = (
+    ("grade9", "9 класс"),
+    ("grade10", "10 класс"),
+    ("grade11", "11 класс"),
+    ("uni12", "1–2 курс вуза"),
+    ("college", "Колледж"),
+)
+SCHOOL_GRADE_LABELS = dict(SCHOOL_GRADES)
+# Каникулярный набор живёт по Москве (владелец 16.10.2026), пояс в анкете не
+# спрашивается — сохранение ставит этот код из `TIMEZONES`.
+HOLIDAY_TIMEZONE = "0"
 
 # ── Tariffs ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-"""Каникулярный набор, кабинет: короткая анкета с классом, урезанный кабинет,
-отдельный список и адреса входа.
+"""Каникулярный набор, кабинет: короткая анкета с «Где учишься?», урезанный
+кабинет, отдельный список и адреса входа.
 
 Созвон 13.10.2026, план `plans/2026-10-14-apparchi-созвон-13-10.md`, часть 3.3.
 Вход по ссылке группы — `tests/test_holiday_intake.py`, разделение программ —
@@ -7,7 +7,9 @@
 """
 from datetime import datetime, timedelta, timezone
 
-from app.constants import PROGRAM_HOLIDAY
+import pytest
+
+from app.constants import HOLIDAY_TIMEZONE, PROGRAM_HOLIDAY, SCHOOL_GRADES
 from app.models.session import Session
 from app.models.tag import Tag, UserTag
 from app.services.login_ips import device_label, distinct_ips_by_user
@@ -29,10 +31,13 @@ def _login_as(client, session_factory, user):
     return client
 
 
+_GRADE_TAG_NAMES = [label for _code, label in SCHOOL_GRADES]
+
+
 def _grade_tags(db, user):
     return sorted(
         name for (name,) in db.query(Tag.name).join(UserTag, UserTag.tag_id == Tag.id)
-        .filter(UserTag.user_id == user.id, Tag.name.like("% класс"))
+        .filter(UserTag.user_id == user.id, Tag.name.in_(_GRADE_TAG_NAMES))
     )
 
 
@@ -40,17 +45,26 @@ def _grade_tags(db, user):
 # Анкета
 # ---------------------------------------------------------------------------
 
-def test_holiday_profile_form_is_short_with_class(client, db, user_factory, session_factory):
+def test_holiday_profile_form_has_the_school_fields(client, db, user_factory, session_factory):
+    """Поля школы 16.10.2026: имя, фамилия, ник, телефон, «Где учишься?».
+    Город и пояс сняты, ник подставлен из входа и необязателен."""
     student = _holiday(db, user_factory, profile_completed=False)
+    student.tg_username = "kanikuly_anya"
+    db.commit()
     page = _login_as(client, session_factory, student).get("/cabinet/profile")
 
     assert page.status_code == 200
-    assert 'name="school_grade"' in page.text
     for field in ("parent_phone", "parent_name", "sdek_address", "email", "birth_date",
-                  "university_year", "tariff", "tg_username"):
+                  "university_year", "tariff", "city", "timezone"):
         assert f'name="{field}"' not in page.text, field
-    for field in ("first_name", "last_name", "phone", "city", "timezone"):
+    for field in ("first_name", "last_name", "phone", "tg_username", "school_grade"):
         assert f'name="{field}"' in page.text, field
+    assert "Где учишься?" in page.text
+    assert 'value="kanikuly_anya"' in page.text
+    tg_input = page.text.split('id="profile-tg"', 1)[1].split(">", 1)[0]
+    assert "required" not in tg_input
+    for code, label in SCHOOL_GRADES:
+        assert f'value="{code}"' in page.text and label in page.text, code
 
 
 def test_holiday_profile_saves_and_tags_the_class(client, db, user_factory, session_factory):
@@ -60,19 +74,57 @@ def test_holiday_profile_saves_and_tags_the_class(client, db, user_factory, sess
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
         "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "8 999 123 45 67",
-        "city": "Казань", "timezone": "0", "school_grade": "11",
+        "tg_username": "@kanikuly_anya", "school_grade": "grade11",
     }, follow_redirects=False)
 
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/learning?welcome=1"
     db.refresh(student)
     assert student.profile_completed is True
-    assert (student.first_name, student.last_name, student.city) == ("Аня", "Котова", "Казань")
+    assert (student.first_name, student.last_name) == ("Аня", "Котова")
     assert student.phone == "+79991234567"
-    assert student.school_grade == 11
+    assert student.school_grade == "grade11"
     assert student.tg_username == "kanikuly_anya"
+    assert student.timezone == HOLIDAY_TIMEZONE
     assert student.tariff == ""
     assert _grade_tags(db, student) == ["11 класс"]
+
+
+def test_holiday_profile_saves_without_nick(client, db, user_factory, session_factory):
+    """Ника в Telegram у части людей нет — анкета без него сохраняется, а пояс
+    становится московским, даже если раньше стоял другой."""
+    student = _holiday(db, user_factory, profile_completed=False)
+    student.timezone = "4"
+    db.commit()
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "+79991234567",
+        "tg_username": "", "school_grade": "college",
+    }, follow_redirects=False)
+
+    assert resp.status_code == 302
+    db.refresh(student)
+    assert student.profile_completed is True
+    assert student.tg_username is None
+    assert student.timezone == HOLIDAY_TIMEZONE
+    assert _grade_tags(db, student) == ["Колледж"]
+
+
+def test_holiday_profile_rejects_bad_or_taken_nick(client, db, user_factory, session_factory):
+    other = user_factory(vk_id=300_010, name="Годовой Петя")
+    other.tg_username = "busy_nick"
+    student = _holiday(db, user_factory, profile_completed=False)
+    db.commit()
+    client = _login_as(client, session_factory, student)
+    base = {"csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+            "phone": "+79991234567", "school_grade": "grade9"}
+
+    bad = client.post("/cabinet/profile", data={**base, "tg_username": "ник"})
+    assert "Ник Telegram: только латиница" in bad.text
+    taken = client.post("/cabinet/profile", data={**base, "tg_username": "@Busy_Nick"})
+    assert "уже занят другим учеником" in taken.text
+    db.refresh(student)
+    assert student.profile_completed is False
 
 
 def test_holiday_profile_requires_class(client, db, user_factory, session_factory):
@@ -80,11 +132,11 @@ def test_holiday_profile_requires_class(client, db, user_factory, session_factor
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
         "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "+79991234567",
-        "city": "Казань", "timezone": "0", "school_grade": "9",
+        "school_grade": "11",
     })
 
     assert resp.status_code == 200
-    assert "Выбери класс" in resp.text
+    assert "Выбери, где учишься" in resp.text
     db.refresh(student)
     assert student.profile_completed is False
 
@@ -104,15 +156,25 @@ def test_annual_profile_without_parent_phone_explains_instead_of_422(client, db,
     assert student.profile_completed is False
 
 
-def test_grade_tag_follows_the_class(db, user_factory):
+@pytest.mark.parametrize("code,label", SCHOOL_GRADES)
+def test_each_school_option_gets_its_tag(db, user_factory, code, label):
     student = _holiday(db, user_factory)
-    student.school_grade = 10
-    ensure_grade_tag(db, student)
-    student.school_grade = 11
+    student.school_grade = code
     ensure_grade_tag(db, student)
     db.commit()
 
-    assert _grade_tags(db, student) == ["11 класс"]
+    assert _grade_tags(db, student) == [label]
+
+
+def test_grade_tag_follows_the_option(db, user_factory):
+    student = _holiday(db, user_factory)
+    student.school_grade = "grade10"
+    ensure_grade_tag(db, student)
+    student.school_grade = "uni12"
+    ensure_grade_tag(db, student)
+    db.commit()
+
+    assert _grade_tags(db, student) == ["1–2 курс вуза"]
 
 
 # ---------------------------------------------------------------------------
@@ -121,42 +183,47 @@ def test_grade_tag_follows_the_class(db, user_factory):
 
 def test_holiday_contacts_form_has_the_short_fields(client, db, user_factory, session_factory):
     student = _holiday(db, user_factory)
-    student.school_grade = 10
+    student.school_grade = "grade10"
+    student.tg_username = "kanikuly_anya"
     db.commit()
 
     page = _login_as(client, session_factory, student).get("/cabinet/personal/contacts")
 
     assert page.status_code == 200
-    for field in ("first_name", "last_name", "city", "timezone", "phone", "school_grade"):
+    for field in ("first_name", "last_name", "phone", "tg_username", "school_grade"):
         assert f'name="{field}"' in page.text, field
     for field in ("parent_phone", "parent_name", "sdek_address", "email", "birth_date",
-                  "university_year", "tg_username"):
+                  "university_year", "city", "timezone"):
         assert f'name="{field}"' not in page.text, field
-    assert '<option value="10" selected>10 класс</option>' in page.text
+    assert '<option value="grade10" selected>10 класс</option>' in page.text
+    assert 'value="kanikuly_anya"' in page.text
 
 
 def test_holiday_contacts_save_without_annual_fields(client, db, user_factory, session_factory):
     student = _holiday(db, user_factory)
-    student.school_grade = 10
+    student.school_grade = "grade10"
     student.tg_username = "kanikuly_anya"
+    student.city = "Казань"
+    student.timezone = "2"
     enrolled = (student.enrollment_year, student.enrolled_at)
     db.commit()
     ensure_grade_tag(db, student)
     db.commit()
 
     resp = _login_as(client, session_factory, student).post("/cabinet/personal/contacts", data={
-        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "city": "Самара",
-        "timezone": "1", "phone": "8 999 765 43 21", "school_grade": "11",
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+        "phone": "8 999 765 43 21", "tg_username": "", "school_grade": "grade11",
     }, follow_redirects=False)
 
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/personal?saved=1"
     db.refresh(student)
-    assert (student.first_name, student.last_name, student.city, student.timezone) == (
-        "Аня", "Котова", "Самара", "1",
-    )
+    assert (student.first_name, student.last_name) == ("Аня", "Котова")
+    # Город не трогаем (колонка остаётся), пояс — московский.
+    assert (student.city, student.timezone) == ("Казань", HOLIDAY_TIMEZONE)
     assert student.phone == "+79997654321"
-    assert student.school_grade == 11
+    assert student.school_grade == "grade11"
+    # Пустое поле ника не стирает записанный входом.
     assert student.tg_username == "kanikuly_anya"
     assert (student.enrollment_year, student.enrolled_at) == enrolled
     assert _grade_tags(db, student) == ["11 класс"]
@@ -166,20 +233,32 @@ def test_holiday_contacts_keep_the_short_rules(client, db, user_factory, session
     student = _holiday(db, user_factory)
 
     resp = _login_as(client, session_factory, student).post("/cabinet/personal/contacts", data={
-        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "city": "Самара",
-        "timezone": "1", "phone": "+79997654321",
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Новая", "phone": "+79997654321",
     })
 
     assert resp.status_code == 200
-    assert "Выбери класс" in resp.text
+    assert "Выбери, где учишься" in resp.text
     assert "телефона родителя" not in resp.text
     db.refresh(student)
-    assert student.city != "Самара"
+    assert student.last_name != "Новая"
+
+
+def test_holiday_personal_page_shows_only_short_fields(client, db, user_factory, session_factory):
+    student = _holiday(db, user_factory)
+    student.school_grade = "uni12"
+    db.commit()
+
+    page = _login_as(client, session_factory, student).get("/cabinet/personal")
+
+    assert page.status_code == 200
+    assert "1–2 курс вуза" in page.text
+    for label in ("Телефон родителя", "Адрес СДЭК", "Часовой пояс", "Дата рождения"):
+        assert label not in page.text, label
 
 
 def test_nightly_nick_check_skips_holiday(db, user_factory, monkeypatch):
-    """Ник каникулярного ни к чему не привязан, а поля ника в его «Контактах»
-    нет: отметка расхождения закрыла бы кабинет без выхода."""
+    """Ник каникулярного ни к чему не привязан и необязателен: отметка
+    расхождения закрыла бы кабинет человеку, которому ник не нужен."""
     from unittest.mock import AsyncMock
 
     from app.services.exam_scheduler import _run_tg_username_check

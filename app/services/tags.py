@@ -136,17 +136,13 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
     db.commit()
 
 
-def grade_tag_name(grade: int) -> str:
-    return f"{grade} класс"
-
-
 def ensure_grade_tag(db: DBSession, student: User) -> None:
-    """Тег «10 класс» / «11 класс» по `User.school_grade` (созвон 13.10.2026:
-    «10 / 11 класс в виде тега») — по нему каникулярный набор делят чипами и
-    адресуют рассылки. Тег класса у ученика один: смена класса снимает
-    прежний. Колонка — источник правды, тег её отражение."""
-    for grade in SCHOOL_GRADES:
-        name = grade_tag_name(grade)
+    """Тег «Где учишься?» по `User.school_grade` — «9 класс» … «Колледж»
+    (созвон 13.10.2026: «класс в виде тега», варианты школы 16.10.2026). По нему
+    каникулярный набор делят чипами и адресуют рассылки. Тег варианта у ученика
+    один: смена варианта снимает прежний. Колонка — источник правды, тег её
+    отражение, имя тега — подпись варианта из `SCHOOL_GRADES`."""
+    for grade, name in SCHOOL_GRADES:
         if grade == student.school_grade:
             tag = get_or_create_tag(db, name)
             tag.is_hidden = False
