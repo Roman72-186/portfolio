@@ -554,10 +554,9 @@ def _save_holiday_profile(
     фамилия, ник Telegram, телефон, «Где учишься?». Остального годовой анкеты
     здесь нет вовсе — ни тарифа, ни родителя, ни СДЭК, ни года поступления,
     ни города. Пояс не спрашиваем: каникулярный живёт по Москве
-    (`HOLIDAY_TIMEZONE`, владелец 16.10.2026). Ник подставлен из входа через
-    Telegram и необязателен; пустой не затирает записанный входом — иначе
-    человек, стерев поле, потерял бы ник до следующего входа. Вариант
-    «Где учишься?» ставит тег (`tags.ensure_grade_tag`)."""
+    (`HOLIDAY_TIMEZONE`, владелец 16.10.2026). Ник обязателен (владелец
+    17.10.2026), подставлен из входа через Telegram. Вариант «Где учишься?»
+    ставит тег (`tags.ensure_grade_tag`)."""
     first_name = first_name.strip()
     last_name = last_name.strip()
     phone = normalize_phone(phone)
@@ -585,8 +584,7 @@ def _save_holiday_profile(
     db_user.name = f"{first_name} {last_name}"
     db_user.timezone = HOLIDAY_TIMEZONE
     db_user.phone = phone
-    if tg_username:
-        db_user.tg_username = tg_username
+    db_user.tg_username = tg_username
     db_user.school_grade = grade
     db_user.enrollment_year, db_user.enrolled_at = _enrollment_now()
     db_user.profile_completed = True

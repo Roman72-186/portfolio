@@ -39,7 +39,7 @@
 
         Каникулярный набор (`holiday_form`, 15.10.2026, поля школы 16.10.2026)
         правит здесь только поля своей короткой анкеты: имя, фамилия, телефон,
-        ник Telegram (необязателен), «Где учишься?» — сервер принимает только их
+        ник Telegram, «Где учишься?» — сервер принимает только их
         (`cabinet_personal._save_holiday_contacts`).
         #}
         <div class="prs-section-title">О тебе</div>
@@ -91,12 +91,12 @@
             </div>
             {% if holiday_form %}
             <div class="prs-field">
-                <label class="prs-field-label" for="contacts-tg">Ник в Telegram</label>
-                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username"
+                <label class="prs-field-label" for="contacts-tg">Ник в Telegram <span class="prs-required">*</span></label>
+                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" required
                        value="{{ form.tg_username }}" placeholder="@username"
                        maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}"
                        aria-describedby="contacts-tg-hint">
-                <p class="prs-field-note" id="contacts-tg-hint">Взяли из Telegram. Если ника нет – оставь поле пустым.</p>
+                <p class="prs-field-note" id="contacts-tg-hint">Взяли из Telegram. Нет ника – задай его в настройках Telegram, поле «Имя пользователя».</p>
             </div>
             {% else %}
             <div class="prs-field">

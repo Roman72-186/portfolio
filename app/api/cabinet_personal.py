@@ -447,11 +447,11 @@ def _save_holiday_contacts(
     school_grade: str,
 ):
     """«Контакты» каникулярного набора: поля его короткой анкеты, без
-    родителя, СДЭК, вуза, почты и города. Ник необязателен и с Telegram не
-    сверяется: у каникулярного он ни к чему не привязан (`exam_scheduler` его
-    не проверяет), а записывает его вход через Telegram; пустое поле записанный
-    ник не стирает. Пояс — московский (`HOLIDAY_TIMEZONE`). Начало обучения
-    не трогаем — его поставила анкета."""
+    родителя, СДЭК, вуза, почты и города. Ник обязателен (владелец
+    17.10.2026), но с Telegram не сверяется: у каникулярного он ни к чему не
+    привязан (`exam_scheduler` его не проверяет), а обновляет его вход через
+    Telegram. Пояс — московский (`HOLIDAY_TIMEZONE`). Начало обучения не
+    трогаем — его поставила анкета."""
     first_name = first_name.strip()
     last_name = last_name.strip()
     phone = normalize_phone(phone)
@@ -477,8 +477,7 @@ def _save_holiday_contacts(
     db_user.name = f"{first_name} {last_name}"
     db_user.timezone = HOLIDAY_TIMEZONE
     db_user.phone = phone
-    if tg_username:
-        db_user.tg_username = tg_username
+    db_user.tg_username = tg_username
     db_user.school_grade = grade
     ensure_grade_tag(db, db_user)
     db.commit()

@@ -47,7 +47,7 @@ def _grade_tags(db, user):
 
 def test_holiday_profile_form_has_the_school_fields(client, db, user_factory, session_factory):
     """Поля школы 16.10.2026: имя, фамилия, ник, телефон, «Где учишься?».
-    Город и пояс сняты, ник подставлен из входа и необязателен."""
+    Город и пояс сняты, ник подставлен из входа и обязателен."""
     student = _holiday(db, user_factory, profile_completed=False)
     student.tg_username = "kanikuly_anya"
     db.commit()
@@ -62,7 +62,7 @@ def test_holiday_profile_form_has_the_school_fields(client, db, user_factory, se
     assert "Где учишься?" in page.text
     assert 'value="kanikuly_anya"' in page.text
     tg_input = page.text.split('id="profile-tg"', 1)[1].split(">", 1)[0]
-    assert "required" not in tg_input
+    assert "required" in tg_input
     for code, label in SCHOOL_GRADES:
         assert f'value="{code}"' in page.text and label in page.text, code
 
@@ -90,22 +90,36 @@ def test_holiday_profile_saves_and_tags_the_class(client, db, user_factory, sess
     assert _grade_tags(db, student) == ["11 класс"]
 
 
-def test_holiday_profile_saves_without_nick(client, db, user_factory, session_factory):
-    """Ника в Telegram у части людей нет — анкета без него сохраняется, а пояс
-    становится московским, даже если раньше стоял другой."""
+def test_holiday_profile_requires_nick(client, db, user_factory, session_factory):
+    """Владелец 17.10.2026: «username обязателен»."""
+    student = _holiday(db, user_factory, profile_completed=False)
+    client = _login_as(client, session_factory, student)
+
+    resp = client.post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "+79991234567",
+        "tg_username": "", "school_grade": "college",
+    })
+
+    assert resp.status_code == 200
+    assert "Укажи ник в Telegram" in resp.text
+    db.refresh(student)
+    assert student.profile_completed is False
+
+
+def test_holiday_profile_moves_timezone_to_moscow(client, db, user_factory, session_factory):
+    """Пояс не спрашивается: сохранение ставит МСК, даже если раньше стоял другой."""
     student = _holiday(db, user_factory, profile_completed=False)
     student.timezone = "4"
     db.commit()
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
         "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "+79991234567",
-        "tg_username": "", "school_grade": "college",
+        "tg_username": "anya_k", "school_grade": "college",
     }, follow_redirects=False)
 
     assert resp.status_code == 302
     db.refresh(student)
     assert student.profile_completed is True
-    assert student.tg_username is None
     assert student.timezone == HOLIDAY_TIMEZONE
     assert _grade_tags(db, student) == ["Колледж"]
 
@@ -132,7 +146,7 @@ def test_holiday_profile_requires_class(client, db, user_factory, session_factor
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
         "csrf_token": "x", "first_name": "Аня", "last_name": "Котова", "phone": "+79991234567",
-        "school_grade": "11",
+        "tg_username": "anya_k", "school_grade": "11",
     })
 
     assert resp.status_code == 200
@@ -212,7 +226,7 @@ def test_holiday_contacts_save_without_annual_fields(client, db, user_factory, s
 
     resp = _login_as(client, session_factory, student).post("/cabinet/personal/contacts", data={
         "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
-        "phone": "8 999 765 43 21", "tg_username": "", "school_grade": "grade11",
+        "phone": "8 999 765 43 21", "tg_username": "@anya_new", "school_grade": "grade11",
     }, follow_redirects=False)
 
     assert resp.status_code == 302
@@ -223,8 +237,8 @@ def test_holiday_contacts_save_without_annual_fields(client, db, user_factory, s
     assert (student.city, student.timezone) == ("Казань", HOLIDAY_TIMEZONE)
     assert student.phone == "+79997654321"
     assert student.school_grade == "grade11"
-    # Пустое поле ника не стирает записанный входом.
-    assert student.tg_username == "kanikuly_anya"
+    # Ник из формы сохраняется, с Telegram не сверяется.
+    assert student.tg_username == "anya_new"
     assert (student.enrollment_year, student.enrolled_at) == enrolled
     assert _grade_tags(db, student) == ["11 класс"]
 
@@ -257,8 +271,8 @@ def test_holiday_personal_page_shows_only_short_fields(client, db, user_factory,
 
 
 def test_nightly_nick_check_skips_holiday(db, user_factory, monkeypatch):
-    """Ник каникулярного ни к чему не привязан и необязателен: отметка
-    расхождения закрыла бы кабинет человеку, которому ник не нужен."""
+    """Ник каникулярного ни к чему не привязан: отметка
+    расхождения закрыла бы кабинет, хотя ник ему ни для чего не нужен."""
     from unittest.mock import AsyncMock
 
     from app.services.exam_scheduler import _run_tg_username_check

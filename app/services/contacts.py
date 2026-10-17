@@ -96,11 +96,10 @@ def validate_holiday_profile(
     у каникулярного все годовые поля (родитель, СДЭК, вуз), и сохранить их
     было нельзя.
 
-    Ник необязателен: у части людей его в Telegram нет, и запрет закрыл бы им
-    анкету. Пустой проходит, заполненный проверяется по `TG_RE` и на
-    занятость, как у годовых: по нику суперадмин заводит учеников пачкой, и
-    двое с одним ником слились бы в одну карточку. Значения уже очищены от
-    пробелов, телефон и ник нормализованы."""
+    Ник обязателен (владелец 17.10.2026: «username обязателен»): формат
+    `TG_RE` и занятость, как у годовых — по нику суперадмин заводит учеников
+    пачкой, и двое с одним ником слились бы в одну карточку. Значения уже
+    очищены от пробелов, телефон и ник нормализованы."""
     errors = []
     if not first_name:
         errors.append("Введи имя")
@@ -110,12 +109,14 @@ def validate_holiday_profile(
         errors.append("Введи фамилию")
     elif len(last_name) > 50:
         errors.append("Фамилия слишком длинная (максимум 50 символов)")
-    if tg_username and not TG_RE.match(tg_username):
+    if not tg_username:
+        errors.append("Укажи ник в Telegram")
+    elif not TG_RE.match(tg_username):
         errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
     errors.extend(validate_phone(phone))
     if grade is None:
         errors.append("Выбери, где учишься")
-    if not errors and tg_username and find_student_by_tg_username(
+    if not errors and find_student_by_tg_username(
         db, tg_username, exclude_user_id=user_id
     ):
         errors.append("Такой ник в Telegram уже занят другим учеником. Проверь написание.")
