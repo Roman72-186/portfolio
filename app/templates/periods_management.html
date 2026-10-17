@@ -125,16 +125,67 @@
 
     <div class="feature-section" data-group-links>
         <div class="feature-header">
-            <span class="feature-label">Ссылки групп каникулярного набора</span>
-            <button type="button" class="btn-add" onclick="toggleForm('group-new')">+ Ссылка</button>
+            <span class="feature-label">Каникулярный набор: общая ссылка и треки</span>
+            <button type="button" class="btn-add" onclick="toggleForm('group-new')">+ Трек</button>
         </div>
+
+        {# Общая ссылка набора (17.10.2026): по ней входят все, трек человек
+           выбирает и оплачивает на платформе (`intake_link.entry_link`). #}
+        {% if entry_link %}
+        <div class="period-card {% if entry_link.is_active %}active{% else %}inactive{% endif %}" data-entry-link>
+            <div>
+                <div class="period-dates">{{ entry_link.url }}</div>
+                <div class="period-title">
+                    Общая ссылка набора ·
+                    {% if entry_link.deadline_text %}доступ до {{ entry_link.deadline_text }} (МСК){% else %}дата не задана – ссылку нельзя включить{% endif %}
+                </div>
+            </div>
+            <div class="period-card-right">
+                <span class="period-status {% if entry_link.is_active %}status-active{% else %}status-inactive{% endif %}">
+                    {% if entry_link.is_active %}Открыт{% else %}Закрыт{% endif %}
+                </span>
+                <div class="period-actions">
+                    <button type="button" class="btn-sm" data-url="{{ entry_link.url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
+                    <button type="button" class="btn-sm" onclick="toggleForm('entry-deadline')">Дата</button>
+                    <form method="post" action="/cabinet/intake/{{ entry_link.slug }}/toggle">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        {% if entry_link.is_active %}
+                        <button type="submit" class="btn-danger">Выключить</button>
+                        {% else %}
+                        <button type="submit" class="btn-sm">Включить</button>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="create-form" id="form-entry-deadline">
+            <form method="post" action="/cabinet/intake/{{ entry_link.slug }}/deadline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label class="form-label" for="entry-deadline">Доступ до (МСК)</label>
+                <input id="entry-deadline" class="form-input" type="datetime-local" name="deadline"
+                       value="{{ entry_link.deadline_input }}">
+                <div class="form-actions">
+                    <button type="submit" class="btn-blue btn-save">Сохранить дату</button>
+                </div>
+            </form>
+        </div>
+        {% else %}
+        <form method="post" action="/cabinet/intake/entry" class="create-form open">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" for="entry-new-deadline">Общая ссылка набора – доступ до (МСК)</label>
+            <input id="entry-new-deadline" class="form-input" type="datetime-local" name="deadline">
+            <div class="form-actions">
+                <button type="submit" class="btn-blue btn-save">Создать общую ссылку</button>
+            </div>
+        </form>
+        {% endif %}
 
         <div class="create-form" id="form-group-new">
             <form method="post" action="/cabinet/intake/links">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <div class="period-form-grid">
                     <div>
-                        <label class="form-label" for="group-new-title">Группа – она же тег курса *</label>
+                        <label class="form-label" for="group-new-title">Трек – он же тег курса *</label>
                         <input id="group-new-title" class="form-input" type="text" name="title" required
                                maxlength="50" list="group-tag-choices" placeholder="Например: Каникулы 1 группа">
                         <datalist id="group-tag-choices">
@@ -148,7 +199,7 @@
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-sm" onclick="toggleForm('group-new')">Отмена</button>
-                    <button type="submit" class="btn-blue btn-save">Создать ссылку</button>
+                    <button type="submit" class="btn-blue btn-save">Создать трек</button>
                 </div>
             </form>
         </div>
@@ -160,6 +211,9 @@
                 <div class="period-title">
                     Тег «{{ link.tag_name or link.title }}» ·
                     {% if link.deadline_text %}доступ до {{ link.deadline_text }} (МСК){% else %}дата не задана – ссылку нельзя включить{% endif %}
+                    · {% if link.price_text %}{{ link.price_text }}, оплата на платформе{% else %}бесплатно, вход по своей ссылке{% endif %}
+                    {% if link.reminders_enabled %}· напоминания{% endif %}
+                    {% if link.dialog_enabled %}· переписка{% endif %}
                 </div>
             </div>
             <div class="period-card-right">
@@ -169,6 +223,7 @@
                 <div class="period-actions">
                     <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
                     <button type="button" class="btn-sm" onclick="toggleForm('group-{{ link.id }}')">Дата</button>
+                    <button type="button" class="btn-sm" onclick="toggleForm('track-{{ link.id }}')">Трек</button>
                     <form method="post" action="/cabinet/intake/{{ link.slug }}/toggle" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         {% if link.is_active %}
@@ -191,8 +246,24 @@
                 </div>
             </form>
         </div>
+        <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
+            <form method="post" action="/cabinet/intake/{{ link.slug }}/track">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label class="form-label" for="track-price-{{ link.id }}">Цена, ₽ – пусто: трек бесплатный, вход по своей ссылке</label>
+                <input id="track-price-{{ link.id }}" class="form-input" type="text" inputmode="decimal" name="price"
+                       value="{{ link.price_input }}" placeholder="Например: 900">
+                <label class="form-label" for="track-desc-{{ link.id }}">Что входит – ученик увидит перед оплатой</label>
+                <textarea id="track-desc-{{ link.id }}" class="form-input" name="description" rows="3"
+                          maxlength="1000">{{ link.description }}</textarea>
+                <label class="form-label"><input type="checkbox" name="reminders" value="1" {% if link.reminders_enabled %}checked{% endif %}> Напоминания в Telegram – о новом задании и сроке сдачи</label>
+                <label class="form-label"><input type="checkbox" name="dialog" value="1" {% if link.dialog_enabled %}checked{% endif %}> Переписка с преподавателем – в блоках, где в «Настройке диалога» отмечен «Каникулярный набор»</label>
+                <div class="form-actions">
+                    <button type="submit" class="btn-blue btn-save">Сохранить трек</button>
+                </div>
+            </form>
+        </div>
         {% else %}
-        <div class="empty-periods">Ссылок групп пока нет</div>
+        <div class="empty-periods">Треков пока нет</div>
         {% endfor %}
     </div>
 

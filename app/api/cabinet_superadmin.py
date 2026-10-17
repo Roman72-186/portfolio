@@ -1102,7 +1102,8 @@ def periods_list(
     today = today_msk()
     intake_link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
     base_url = str(request.base_url).rstrip("/")
-    group_links = intake_link_service.holiday_links(db)
+    group_links = intake_link_service.holiday_tracks(db)
+    entry = intake_link_service.entry_link(db)
     tag_names = {
         tag.id: tag.name
         for tag in db.query(Tag).filter(
@@ -1132,9 +1133,24 @@ def periods_list(
                 "url": f"{base_url}/join/{link.slug}",
                 "deadline_input": msk_input_value(link.access_until),
                 "deadline_text": msk_text(link.access_until),
+                # Трек (17.10.2026): цена — продаётся на платформе, без цены —
+                # бесплатная ссылка группы, как раньше.
+                "price_text": payments.rub_text(link.price_kop) if link.price_kop else "",
+                "price_input": payments.kop_to_rub_str(link.price_kop) if link.price_kop else "",
+                "description": link.description or "",
+                "reminders_enabled": link.reminders_enabled,
+                "dialog_enabled": link.dialog_enabled,
             }
             for link in group_links
         ],
+        # Общая ссылка набора (17.10.2026): вход без трека, трек — оплатой.
+        "entry_link": {
+            "slug": entry.slug,
+            "is_active": entry.is_active,
+            "url": f"{base_url}/join/{entry.slug}",
+            "deadline_input": msk_input_value(entry.access_until),
+            "deadline_text": msk_text(entry.access_until),
+        } if entry is not None else None,
         "tag_choices": [tag.name for tag in get_all_tags(db)],
     })
 
@@ -1178,6 +1194,62 @@ def intake_group_link_create(
         db, title=name, tag_id=tag.id, access_until=access_until,
         created_by_id=user["user_id"],
     )
+    db.commit()
+    return RedirectResponse("/cabinet/periods", status_code=303)
+
+
+@router.post("/intake/entry")
+def intake_entry_link_create(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    deadline: Annotated[str, Form()] = "",
+):
+    """Общая ссылка каникулярного набора (17.10.2026): одна на набор, трек
+    человек выбирает и оплачивает уже на платформе. Создаётся выключенной;
+    вторая не заводится."""
+    if intake_link_service.entry_link(db) is None:
+        access_until = None
+        if deadline.strip():
+            access_until = parse_msk_local(deadline.strip())
+            if access_until is None:
+                raise HTTPException(status_code=400, detail="Неверный формат даты")
+        intake_link_service.create_entry_link(
+            db, access_until=access_until, created_by_id=user["user_id"],
+        )
+        db.commit()
+    return RedirectResponse("/cabinet/periods", status_code=303)
+
+
+@router.post("/intake/{slug}/track")
+def intake_track_settings(
+    slug: str,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    price: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+    reminders: Annotated[str, Form()] = "",
+    dialog: Annotated[str, Form()] = "",
+):
+    """Настройки трека (17.10.2026): цена (пусто — бесплатная ссылка группы),
+    что входит, напоминания в Telegram и переписка с преподавателем — два
+    переключателя школы («потенциал»)."""
+    link = intake_link_service.get_link(db, slug)
+    if link is None or not intake_link_service.is_track(link):
+        raise HTTPException(status_code=404)
+    price_kop = None
+    if price.strip():
+        price_kop = payments.rub_str_to_kop(price.strip())
+        if not price_kop or price_kop <= 0:
+            raise HTTPException(status_code=400, detail="Цена — число рублей, например 900")
+    text = description.strip()
+    if len(text) > 1000:
+        raise HTTPException(status_code=400, detail="Описание — не длиннее 1000 знаков")
+    link.price_kop = price_kop
+    link.description = text or None
+    link.reminders_enabled = reminders == "1"
+    link.dialog_enabled = dialog == "1"
     db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
 

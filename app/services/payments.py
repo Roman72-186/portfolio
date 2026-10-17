@@ -40,13 +40,15 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
 from app.constants import (
-    PAYMENT_NOTIFY_RECIPIENT_IDS, PAYMENTS_EXTRA_USER_IDS, TARIFF_DISPLAY, TARIFFS_CURRENT,
+    PAYMENT_NOTIFY_RECIPIENT_IDS, PAYMENTS_EXTRA_USER_IDS, PROGRAM_HOLIDAY, TARIFF_DISPLAY,
+    TARIFFS_CURRENT,
 )
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.payment import (
     COHORT_LABELS,
     COHORTS,
+    KIND_HOLIDAY,
     KIND_MONTH,
     SOURCE_MANUAL,
     SOURCE_PRODAMUS,
@@ -58,8 +60,11 @@ from app.models.payment import (
     Payment,
     PaymentPrice,
 )
+from app.models.intake_link import IntakeLink
 from app.models.user import User
+from app.services import intake_link as intake_link_service
 from app.services.contacts import normalize_tg_username
+from app.services.tags import add_tag_to_user, remove_tag_from_user
 from app.services.tz import MSK_TZ, _as_utc, msk_text
 from app.services.user_management import apply_tariff_change
 
@@ -412,7 +417,23 @@ def paid_thanks_text(tariff: str | None, *, with_contact: bool = True) -> str:
     return text
 
 
-def build_link(payment: Payment, user: User, base_url: str) -> str:
+def holiday_thanks_text(track: IntakeLink | None) -> str:
+    """Благодарность за оплату трека: страница Продамуса, уведомление ученику
+    и плашка на странице треков."""
+    title = f"«{track.title}» " if track is not None else ""
+    return (f"Спасибо за оплату! Трек {title}открыт: вернись на платформу и заполни "
+            "короткую анкету.")
+
+
+def payment_subject(db: DBSession, payment: Payment) -> str:
+    """За что платёж — для журнала и уведомлений: месяц или трек набора."""
+    if payment.kind == KIND_HOLIDAY:
+        track = db.get(IntakeLink, payment.intake_link_id) if payment.intake_link_id else None
+        return f"трек «{track.title}»" if track is not None else "трек каникулярного набора"
+    return period_label(payment.period)
+
+
+def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink | None = None) -> str:
     """Подписанная ссылка на платёжную страницу Продамуса.
 
     Ссылку собираем и подписываем сами (`GET <страница>?…&signature=…`), без
@@ -427,8 +448,17 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
     Название, категория (`type=course` — «Доступ к курсу») и текст после оплаты
     (`paid_content`) — дословно по школе, 12.10.2026.
     """
-    tariff = _tariff_name(payment.tariff)
-    name = f"Годовой онлайн-курс тариф {tariff}" if tariff else "Годовой онлайн-курс"
+    if payment.kind == KIND_HOLIDAY:
+        # Трек каникулярного набора (17.10.2026): в чеке — название трека,
+        # возврат — на страницу треков, она же ждёт подтверждения оплаты.
+        name = f"Каникулярный набор: {track.title}" if track is not None else "Каникулярный набор"
+        thanks = holiday_thanks_text(track)
+        back = f"{base_url}/cabinet/personal/track"
+    else:
+        tariff = _tariff_name(payment.tariff)
+        name = f"Годовой онлайн-курс тариф {tariff}" if tariff else "Годовой онлайн-курс"
+        thanks = paid_thanks_text(payment.tariff)
+        back = f"{base_url}/cabinet/personal"
     data = {
         "order_id": order_number(payment),
         "products": [{
@@ -437,10 +467,10 @@ def build_link(payment: Payment, user: User, base_url: str) -> str:
             "quantity": "1",
             "type": "course",
         }],
-        "paid_content": paid_thanks_text(payment.tariff),
+        "paid_content": thanks,
         "customer_extra": f"Ученик #{user.id}, {user.name or ''}".strip(", "),
-        "urlSuccess": f"{base_url}/cabinet/personal?paid=1",
-        "urlReturn": f"{base_url}/cabinet/personal",
+        "urlSuccess": f"{back}?paid=1",
+        "urlReturn": back,
         "sys": "",
         "do": "pay",
     }
@@ -523,6 +553,54 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     db.add(payment)
     db.flush()
     payment.link_url = build_link(payment, user, base_url)
+    return payment
+
+
+def get_or_create_track_payment(
+    db: DBSession, user: User, track: IntakeLink, now: datetime, base_url: str,
+) -> Payment:
+    """Строка платежа за трек каникулярного набора со свежей ссылкой — кнопка
+    «Оплатить» на странице треков (17.10.2026). Те же правила, что у месяца:
+    живая ссылка с той же ценой отдаётся снова, сменилась цена — прежняя
+    отменяется. Ссылка живёт сутки. Не коммитит."""
+    if not payments_configured():
+        raise PaymentUnavailable("Оплата через сайт ещё не подключена")
+    if user.program != PROGRAM_HOLIDAY:
+        raise PaymentUnavailable("Треки каникулярного набора оплачивают только его ученики")
+    if track not in intake_link_service.tracks_on_sale(db):
+        raise PaymentUnavailable("Этот трек сейчас не продаётся")
+    if intake_link_service.track_of(db, user.id) is not None:
+        raise PaymentUnavailable("Трек уже оплачен")
+
+    pending = (
+        db.query(Payment)
+        .filter(Payment.user_id == user.id, Payment.kind == KIND_HOLIDAY,
+                Payment.intake_link_id == track.id, Payment.status == STATUS_PENDING)
+        .order_by(Payment.id.desc())
+        .all()
+    )
+    for row in pending:
+        alive = row.link_expires_at is None or _as_utc(row.link_expires_at) > _as_utc(now)
+        same_page = (row.link_url or "").startswith(settings.prodamus_form_url)
+        if row.amount_kop == track.price_kop and alive and row.link_url and same_page:
+            return row
+        row.status = STATUS_CANCELLED
+        row.note = _append_note(row.note, "ссылка заменена новой")
+
+    payment = Payment(
+        user_id=user.id,
+        period=month_start(now.astimezone(MSK_TZ).date()),
+        kind=KIND_HOLIDAY,
+        intake_link_id=track.id,
+        amount_kop=track.price_kop,
+        tariff="",
+        status=STATUS_PENDING,
+        source=SOURCE_PRODAMUS,
+        link_expires_at=_as_utc(now) + timedelta(days=1),
+    )
+    db.add(payment)
+    db.flush()
+    payment.link_url = build_link(payment, user, base_url, track=track)
     return payment
 
 
@@ -777,6 +855,18 @@ def record_paid(
         other.note = _append_note(other.note, f"месяц оплачен платежом #{payment.id}")
 
     extended = ""
+    track = None
+    if user is not None and payment.kind == KIND_HOLIDAY:
+        # Трек каникулярного набора: тег трека открывает его программу, срок —
+        # из трека и только вперёд (вход по общей ссылке уже дал свой срок).
+        track = db.get(IntakeLink, payment.intake_link_id) if payment.intake_link_id else None
+        if track is not None and track.tag_id is not None:
+            add_tag_to_user(db, user.id, track.tag_id)
+            if track.access_until is not None and (
+                user.access_until is None or _as_utc(user.access_until) < _as_utc(track.access_until)
+            ):
+                user.access_until = track.access_until
+            extended = f", доступ до {msk_text(user.access_until)}"
     if user is not None and has_window(user) and payment.kind == KIND_MONTH:
         new_until = paid_until_after(user, payment.period)
         if user.paid_until is None or _as_utc(user.paid_until) < new_until:
@@ -804,7 +894,7 @@ def record_paid(
         action="payment_paid",
         performed_by_id=performed_by_id,
         target_user_id=payment.user_id,
-        details=(f"Оплата #{payment.id} за {period_label(payment.period)}: "
+        details=(f"Оплата #{payment.id} за {payment_subject(db, payment)}: "
                  f"{rub_text(paid_sum_kop)}, {'вручную' if source == SOURCE_MANUAL else 'Продамус'}"
                  f"{extended}")[:1000],
     ))
@@ -815,14 +905,16 @@ def record_paid(
             user_id=user.id,
             # Тот же текст, что Продамус показывает после оплаты, — владелец 12.10.2026.
             title="Оплата принята",
-            text=paid_thanks_text(payment.tariff or user.tariff),
+            text=(holiday_thanks_text(track) if payment.kind == KIND_HOLIDAY
+                  else paid_thanks_text(payment.tariff or user.tariff)),
         )
         db.add(student_note)
         created.append(student_note)
         how = "перевод на счёт, отметил ГП" if source == SOURCE_MANUAL else "Продамус"
         created += _notify_staff(
             db, f"Оплата: {_who(user)}",
-            _paid_staff_text(user, payment, paid_sum_kop, how, tariff_from),
+            _paid_staff_text(user, payment, paid_sum_kop, how, tariff_from,
+                             subject=payment_subject(db, payment)),
         )
     return created
 
@@ -838,10 +930,17 @@ def _paid_period_text(user: User, period: date) -> str:
 
 
 def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str,
-                     tariff_from: str = "") -> str:
+                     tariff_from: str = "", subject: str = "") -> str:
     """Уведомление службе заботы об оплате — владелец 13.10.2026: ФИО, почта,
     сумма, период. Отчества на платформе нет — ФИО это `User.name`."""
     tg = normalize_tg_username(user.tg_username or "")
+    if payment.kind == KIND_HOLIDAY:
+        return "\n".join([
+            f"{user.name or f'#{user.id}'} оплатил(а) каникулярный набор: {subject}.",
+            f"Telegram: @{tg}" if tg else "Telegram: не указан",
+            f"Телефон: {user.phone or 'не указан'}",
+            f"Сумма: {rub_text(paid_sum_kop)} ({how})",
+        ])
     tariff = _tariff_name(payment.tariff or user.tariff)
     lines = [
         f"{user.name or f'#{user.id}'} оплатил(а) следующий месяц обучения.",
@@ -958,13 +1057,29 @@ def revert_paid(db: DBSession, payment: Payment, *, refund: bool, performed_by_i
                 new_until.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M") if new_until else "не ведётся"
             )
 
+    if user is not None and payment.kind == KIND_HOLIDAY and payment.intake_link_id:
+        # Трек без оплаты не держится: снимаем тег, если этот трек ученику не
+        # оплатил другой платёж. Срок доступа не трогаем — его дала и общая
+        # ссылка, а без тега трека кабинет и так закрыт до страницы оплаты.
+        track = db.get(IntakeLink, payment.intake_link_id)
+        other_paid = (
+            db.query(Payment.id)
+            .filter(Payment.user_id == user.id, Payment.kind == KIND_HOLIDAY,
+                    Payment.intake_link_id == payment.intake_link_id,
+                    Payment.status == STATUS_PAID, Payment.id != payment.id)
+            .first()
+        )
+        if track is not None and track.tag_id is not None and other_paid is None:
+            remove_tag_from_user(db, user.id, track.tag_id)
+            moved = f", тег трека «{track.title}» снят"
+
     action = "payment_refunded" if refund else "payment_mark_cancelled"
     what = "Возврат" if refund else "Отмена ручной отметки"
     db.add(AuditLog(
         action=action,
         performed_by_id=performed_by_id,
         target_user_id=payment.user_id,
-        details=(f"{what}: оплата #{payment.id} за {period_label(payment.period)}, "
+        details=(f"{what}: оплата #{payment.id} за {payment_subject(db, payment)}, "
                  f"{rub_text(payment.paid_sum_kop or payment.amount_kop)}{moved}")[:1000],
     ))
 
@@ -1016,7 +1131,7 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         notes = _notify_staff(
             db, "Двойная оплата",
             f"{_who(user) if user else payment.user_id}: за "
-            f"{period_label(payment.period)} пришла вторая оплата "
+            f"{payment_subject(db, payment)} пришла вторая оплата "
             f"{data.get('sum')} ₽ (Продамус № {prodamus_order_id}). Возврат или зачёт в "
             "следующий месяц — решите вручную.",
         )
@@ -1039,7 +1154,7 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         notes = _notify_staff(
             db, "Оплата по снятому платежу",
             f"{_who(user) if user else payment.user_id}: Продамус прислал оплату "
-            f"{data.get('sum')} ₽ за {period_label(payment.period)} "
+            f"{data.get('sum')} ₽ за {payment_subject(db, payment)} "
             f"(№ {prodamus_order_id or '—'}), а платёж #{payment.id} уже {what}. "
             "Не зачислено. "
             + ("Похоже на повтор прежнего уведомления – проверьте в кабинете Продамуса, "
@@ -1058,7 +1173,7 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         notes = _notify_staff(
             db, "Оплата не на ту сумму",
             f"{_who(user) if user else payment.user_id}: за "
-            f"{period_label(payment.period)} ждали {rub_text(payment.amount_kop)}, пришло "
+            f"{payment_subject(db, payment)} ждали {rub_text(payment.amount_kop)}, пришло "
             f"{data.get('sum')} ₽. Доступ не продлён — проверьте вручную.",
         )
         return WebhookResult(200, "sum mismatch", notes)
@@ -1075,7 +1190,7 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         notes += _notify_staff(
             db, "Оплата по отменённой ссылке",
             f"{_who(user) if user else payment.user_id}: оплатил(а) "
-            f"{period_label(payment.period)} по ссылке, которую уже заменили "
+            f"{payment_subject(db, payment)} по ссылке, которую уже заменили "
             f"(цена {rub_text(payment.amount_kop)}). Платёж засчитан — проверьте, "
             "не нужна ли доплата.",
         )

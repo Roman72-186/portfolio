@@ -50,8 +50,10 @@ from app.constants import (
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
+from app.models.intake_link import IntakeLink
 from app.models.user import User
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
+from app.services import intake_link as intake_link_service
 from app.models.task_block import TaskBlock, TaskBlockResponse
 from sqlalchemy import or_
 from app.services.archi_profile import result_for_answers
@@ -183,6 +185,66 @@ def cabinet_personal_pay(
     try:
         payment = payment_service.get_or_create_payment(
             db, student, datetime.now(timezone.utc), f"https://{settings.domain}",
+        )
+    except payment_service.PaymentUnavailable as exc:
+        db.rollback()
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    db.commit()
+    return JSONResponse({"url": payment.link_url})
+
+
+@router.get("/personal/track", response_class=HTMLResponse)
+def cabinet_personal_track(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Треки каникулярного набора: что можно оплатить и что уже оплачено
+    (17.10.2026, план `plans/2026-10-17-apparchi-оплата-трека.md`). Сюда же
+    ворота `dependencies.get_current_user` уводят каникулярного без трека, и
+    сюда Продамус возвращает после оплаты (`?paid=1`)."""
+    if not _is_holiday(user):
+        return RedirectResponse("/cabinet/personal", status_code=302)
+    track = intake_link_service.track_of(db, user["user_id"])
+    return templates.TemplateResponse(request, "cabinet_personal_track.html", {
+        "request": request,
+        "user": user,
+        "track": track,
+        "tracks": [
+            {
+                "id": link.id,
+                "title": link.title,
+                "description": link.description or "",
+                "price_text": payment_service.rub_text(link.price_kop),
+                "access_until_text": msk_text(link.access_until),
+            }
+            for link in intake_link_service.tracks_on_sale(db)
+        ] if track is None else [],
+        "paid_return": request.query_params.get("paid") == "1",
+        "paid_thanks": payment_service.holiday_thanks_text(track),
+        "support_url": SUPPORT_URL,
+    })
+
+
+@router.post("/personal/track/{track_id}/pay")
+def cabinet_personal_track_pay(
+    track_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_csrf)],
+):
+    """«Оплатить» трек: ссылка Продамуса, ответ — JSON с адресом, как у оплаты
+    месяца (`cabinet_personal_pay`). Адрес под `/cabinet/personal` — открыт
+    каникулярному до оплаты."""
+    if user.get("impersonated_by_id"):
+        return JSONResponse({"error": "В режиме просмотра оплата недоступна"}, status_code=403)
+    track = db.get(IntakeLink, track_id)
+    if track is None or not intake_link_service.is_track(track):
+        return JSONResponse({"error": "Такого трека нет"}, status_code=404)
+    student = db.get(User, user["user_id"])
+    try:
+        payment = payment_service.get_or_create_track_payment(
+            db, student, track, datetime.now(timezone.utc), f"https://{settings.domain}",
         )
     except payment_service.PaymentUnavailable as exc:
         db.rollback()

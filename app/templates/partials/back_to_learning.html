@@ -30,7 +30,7 @@
   Стили — .learning-back в static/css/base.css. Меняешь их — подними ?v=
   base.css в base.html.
 #}
-{% if request.url.path != "/cabinet/learning" and not user.access_expired|default(false) %}
+{% if request.url.path != "/cabinet/learning" and not user.access_expired|default(false) and not user.holiday_unpaid|default(false) %}
 <a href="/cabinet/learning" class="learning-back" data-nav-back
    aria-label="Обучение – вернуться в актуальное образовательное пространство">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -11,7 +11,7 @@ from datetime import date as date_type, datetime, timedelta, timezone
 from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS, TARIFFS
+from app.constants import DIALOG_HOLIDAY, MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_COMPARE,
     BLOCK_LINK,
@@ -973,7 +973,8 @@ def _sync_dialog_settings(db: DBSession, block: TaskBlock, item: dict) -> None:
     seen: set[str] = set()
     for raw in item.get("dialog_tariffs") or []:
         tariff = (raw or "").strip().upper()
-        if tariff not in TARIFFS or tariff in seen:
+        # «Каникулярный набор» (17.10.2026) — не тариф, но живёт тем же списком.
+        if (tariff not in TARIFFS and tariff != DIALOG_HOLIDAY) or tariff in seen:
             continue
         seen.add(tariff)
         db.add(TaskBlockDialogTariff(block_id=block.id, tariff=tariff))

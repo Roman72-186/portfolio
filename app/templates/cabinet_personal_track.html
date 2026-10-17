@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{# Треки каникулярного набора (17.10.2026, `cabinet_personal.cabinet_personal_track`):
+   оплата трека открывает кабинет, после неё — анкета и лента трека. Вид — карточки
+   «Личной информации» (`personal_ios.css`), кнопка и окно оплаты — общий
+   `partials/pay_opening.html`. #}
+{% block title %}Каникулярный набор{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=23">
+{% endblock %}
+{% block content %}
+<div class="prs-page ios-personal">
+
+    <div class="prs-hero">
+        <h1>Каникулярный набор</h1>
+        <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.</p>
+    </div>
+
+    {% if track %}
+    {% if paid_return %}
+    <div class="prs-saved" data-paid-thanks>{{ paid_thanks }}</div>
+    {% endif %}
+    <div class="prs-access-closed">
+        <h2>Трек «{{ track.title }}» оплачен</h2>
+        {% if user.profile_completed %}
+        <p>Задания трека – в разделе «Обучение».</p>
+        <div class="prs-access-closed-actions">
+            <a href="/cabinet/learning" class="btn-blue">Открыть обучение</a>
+        </div>
+        {% else %}
+        <p>Программа откроется в первый день занятий. А пока заполни анкету – это пара минут.</p>
+        <div class="prs-access-closed-actions">
+            <a href="/cabinet/profile" class="btn-blue">Перейти к анкете</a>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    {% if paid_return %}
+    <div class="prs-saved" data-paid-wait>Ждём подтверждения оплаты от банка – обычно это минута. Обнови страницу.</div>
+    {% endif %}
+    {% for item in tracks %}
+    <div class="prs-access-closed" data-pay-scope>
+        <h2>{{ item.title }}</h2>
+        {% for line in item.description.splitlines() if line.strip() %}
+        <p>{{ line }}</p>
+        {% endfor %}
+        <p class="prs-pay-due"><strong>{{ item.price_text }}</strong>, доступ до {{ item.access_until_text }} по Москве.</p>
+        <div class="prs-access-closed-actions">
+            <button type="button" class="btn-blue" data-pay-button data-pay-url="/cabinet/personal/track/{{ item.id }}/pay">Оплатить</button>
+        </div>
+        <p class="prs-pay-error" data-pay-error hidden></p>
+    </div>
+    {% else %}
+    <div class="prs-access-closed">
+        <h2>Оплата пока не открыта</h2>
+        <p>Как только школа откроет набор, здесь появятся треки. Если что-то срочно – напиши в службу заботы.</p>
+        <div class="prs-access-closed-actions">
+            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+</div>
+{% if tracks %}
+{% include "partials/pay_opening.html" %}
+{% endif %}
+{% endblock %}

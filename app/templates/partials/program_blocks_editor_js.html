@@ -330,7 +330,12 @@ function blockDialogSettingsHTML(type) {
         return '<label class="prg-field prg-field--row">'
             + '<input type="checkbox" data-b-dialog-tariff value="' + escapeHTML(tariff) + '">'
             + '<span>' + escapeHTML(tariff) + '</span></label>';
-    }).join('');
+    }).join('')
+        // Каникулярный набор (17.10.2026): отвечает тот, у чьего трека школа
+        // включила переписку («потенциал»), — тарифа у каникулярного нет.
+        + '<label class="prg-field prg-field--row">'
+        + '<input type="checkbox" data-b-dialog-tariff value="' + escapeHTML({{ DIALOG_HOLIDAY|tojson }}) + '">'
+        + '<span>Каникулярный набор – треки с перепиской</span></label>';
     return ''
         + '<details class="prg-settings" data-settings-panel data-dialog-settings data-settings-empty="' + emptySummary + '">'
         + '  <summary><span class="prg-settings-head">'
@@ -339,7 +344,7 @@ function blockDialogSettingsHTML(type) {
         + '  </span></summary>'
         + '  <div class="prg-settings-body">'
         + '  <div class="prg-blk-setting" data-sum-list="отвечают">'
-        + '    <p class="prg-hint">Кто может ответить на обратную связь куратора. Не отметили ни одного тарифа – ученик только читает ответ.</p>'
+        + '    <p class="prg-hint">Кто может ответить на обратную связь куратора. Не отметили ни одного – ученик только читает ответ.</p>'
         + checks
         + '  </div>'
         + '  <label class="prg-field prg-blk-setting">Сколько сообщений может отправить ученик'

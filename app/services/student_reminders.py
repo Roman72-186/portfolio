@@ -662,9 +662,26 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
     return out
 
 
+def _without_silent_holiday(db: Session, students: dict[int, User]) -> dict[int, User]:
+    """Каникулярному напоминания шлём, только если у его трека их включила
+    школа (`IntakeLink.reminders_enabled`, «потенциал», 17.10.2026: «остальным
+    не нужно»). Без трека (не оплатил) — тоже нет. Отбор только здесь:
+    `program_students` кормит и статистику «сдали / не сдали», где каникулярный
+    должник остаётся должником."""
+    from app.constants import PROGRAM_HOLIDAY
+    from app.services.intake_link import tracks_by_user
+
+    holiday_ids = [uid for uid, user in students.items() if user.program == PROGRAM_HOLIDAY]
+    if not holiday_ids:
+        return students
+    tracks = tracks_by_user(db, holiday_ids)
+    silent = {uid for uid in holiday_ids if not (tracks.get(uid) and tracks[uid].reminders_enabled)}
+    return {uid: user for uid, user in students.items() if uid not in silent}
+
+
 def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     """Что каждому ученику пора сообщить — без уже отправленного."""
-    students = program_students(db, now)
+    students = _without_silent_holiday(db, program_students(db, now))
     learners = program_learners(students)
     raw: dict[int, list[_Item]] = defaultdict(list)
     _collect_new_content(db, learners, now, raw)

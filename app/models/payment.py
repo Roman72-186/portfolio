@@ -53,6 +53,9 @@ SOURCE_MANUAL = "manual"
 # Вид платежа: обычный месяц или разовая доплата разницы при смене тарифа.
 KIND_MONTH = "month"
 KIND_EXTRA = "extra"
+# Оплата трека каникулярного набора (17.10.2026): разовая, ставит тег трека
+# и срок доступа, к окну и `paid_until` отношения не имеет.
+KIND_HOLIDAY = "holiday"
 
 
 class PaymentPrice(Base):
@@ -88,6 +91,10 @@ class Payment(Base):
     # Тариф на момент создания строки — для экрана «Оплаты» и для разбора
     # «оплатил по старой цене».
     tariff: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    # Трек каникулярного набора — только у `KIND_HOLIDAY` (`IntakeLink` с ценой).
+    intake_link_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("intake_links.id", ondelete="SET NULL"), nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_PENDING)
     source: Mapped[str] = mapped_column(String(10), nullable=False, default=SOURCE_PRODAMUS)
 

@@ -71,6 +71,22 @@ class ReplyState:
     staff_text: str
 
 
+def _dialog_open_for(db: DBSession, student: User, tariffs: set[str]) -> bool:
+    """Отмечен ли ученик в «Настройке диалога» блока. Годовой — своим тарифом.
+    Каникулярный (тарифа нет) — отметкой «Каникулярный набор» **и** включённой
+    перепиской у его трека (`IntakeLink.dialog_enabled`, «потенциал»,
+    17.10.2026): блок конца недели открыт одному треку, а не всему набору."""
+    from app.constants import DIALOG_HOLIDAY, PROGRAM_HOLIDAY
+    from app.services.intake_link import track_of
+
+    if student.program == PROGRAM_HOLIDAY:
+        if DIALOG_HOLIDAY not in tariffs:
+            return False
+        track = track_of(db, student.id)
+        return track is not None and track.dialog_enabled
+    return bool(student.tariff) and student.tariff in tariffs
+
+
 def student_can_reply(
     db: DBSession, submission: TaskBlockSubmission,
     feedback: TaskBlockFeedback | None,
@@ -112,7 +128,7 @@ def student_can_reply(
         return closed
     student = db.get(User, submission.user_id)
     tariffs = get_dialog_tariffs(db, [block.id]).get(block.id, set())
-    if student is None or student.tariff not in tariffs:
+    if student is None or not _dialog_open_for(db, student, tariffs):
         return closed
     limit = block.dialog_reply_limit or 1
     messages = feedback.messages if feedback is not None else []

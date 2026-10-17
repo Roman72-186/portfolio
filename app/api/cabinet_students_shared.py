@@ -551,7 +551,10 @@ def _render_students_panel(
     is_admin_panel = user["role_rank"] >= 4
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
     has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
-    holiday_b = is_admin_panel and program == PROGRAM_HOLIDAY
+    # Каникулярный набор — ГП и выше целиком, куратору — его каникулярные
+    # (`curator_id`, ветка куратора в `_get_accessible_students`; школа 17.10.2026:
+    # «должна быть возможность присвоить ученику куратора»).
+    holiday_b = program == PROGRAM_HOLIDAY
     # Архив прошлых потоков — только на чтение, кому открыт (`_can_read_archive`).
     archived_b = _can_read_archive(user) and _parse_bool(archived)
 

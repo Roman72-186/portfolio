@@ -16,13 +16,29 @@ from app.services.login_ips import device_label, distinct_ips_by_user
 from app.services.navigation import student_nav_items
 from app.services.report_scope import reportable_student_id_set
 from app.services.review_aggregate import _accessible_students
-from app.services.tags import ensure_grade_tag
+from app.models.intake_link import IntakeLink
+from app.services import intake_link as intake_link_service
+from app.services.tags import add_tag_to_user, ensure_grade_tag, get_or_create_tag
 
 
-def _holiday(db, user_factory, *, vk_id=300_001, name="Каникулярная Аня", profile_completed=True):
+def _holiday(db, user_factory, *, vk_id=300_001, name="Каникулярная Аня", profile_completed=True,
+             with_track=True):
+    """Каникулярный ученик. По умолчанию — с треком (тег бесплатной ссылки
+    группы): без трека ворота оплаты (17.10.2026) пускают только на страницу
+    треков, это проверяет `tests/test_holiday_track_payment.py`."""
     student = user_factory(vk_id=vk_id, name=name, tariff="", profile_completed=profile_completed)
     student.program = PROGRAM_HOLIDAY
     db.commit()
+    if with_track:
+        tag = get_or_create_tag(db, "Тестовая группа")
+        if intake_link_service.track_of(db, student.id) is None and not db.query(IntakeLink).filter(
+            IntakeLink.tag_id == tag.id
+        ).first():
+            intake_link_service.create_holiday_link(
+                db, title="Тестовая группа", tag_id=tag.id, access_until=None, created_by_id=student.id,
+            )
+        add_tag_to_user(db, student.id, tag.id)
+        db.commit()
     return student
 
 

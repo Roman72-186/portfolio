@@ -36,7 +36,8 @@ from app.api import cabinet_broadcasts
 from app.api import cabinet_staff_notifications
 from app.api import cabinet_access_admin
 from app.dependencies import (
-    ACCESS_EXPIRED_DETAIL, LIMITED_CABINET_DETAIL, PORTFOLIO_GATE_DETAIL, TG_MISMATCH_DETAIL,
+    ACCESS_EXPIRED_DETAIL, HOLIDAY_UNPAID_DETAIL, LIMITED_CABINET_DETAIL, PORTFOLIO_GATE_DETAIL,
+    TG_MISMATCH_DETAIL,
 )
 from app.services.section_access import SECTION_CLOSED_DETAIL, SECTION_VIEW_ONLY_DETAIL
 from app.services.cycle_feed import LINK_LOCKED_DETAIL
@@ -189,6 +190,9 @@ async def forbidden_handler(request: Request, exc):
     # АОП открыта всегда (`dependencies.LIMITED_CABINET_ALLOWED_EXACT`).
     if detail == LIMITED_CABINET_DETAIL:
         return RedirectResponse("/cabinet/learning", status_code=302)
+    # Каникулярный без оплаченного трека — на страницу треков (17.10.2026).
+    if detail == HOLIDAY_UNPAID_DETAIL:
+        return RedirectResponse("/cabinet/personal/track", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
         reason = "Твой аккаунт заблокирован. Напиши в службу заботы."

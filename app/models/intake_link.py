@@ -16,7 +16,7 @@ app/services/intake_link.py.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -35,6 +35,21 @@ class IntakeLink(Base):
     )
     tag_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("tags.id", ondelete="SET NULL"), nullable=True
+    )
+    # Трек каникулярного набора (17.10.2026): ссылка группы с ценой продаётся
+    # на платформе — оплата ставит тег трека и срок. Без цены — прежняя
+    # бесплатная ссылка группы. Каникулярная ссылка без тега — общая ссылка
+    # набора: вход без трека. Правила — app/services/intake_link.py.
+    price_kop: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Переключатели школы на треке («потенциал», 17.10.2026): напоминания в
+    # Telegram и переписка с преподавателем в блоках, отмеченных «Каникулярным
+    # набором» в «Настройке диалога».
+    reminders_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    dialog_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
     )
     created_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True

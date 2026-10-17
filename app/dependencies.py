@@ -14,6 +14,7 @@ from app.csrf import validate_csrf_token
 from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
+from app.services import intake_link as intake_link_service
 from app.services import view_host
 from app.services.access_state import access_expired as user_access_expired
 from app.services.portfolio_window import intake_portfolio_gate_required
@@ -105,6 +106,16 @@ LIMITED_CABINET_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES + (
     "/upload/finish-before",
     "/upload/works/",
 )
+
+
+HOLIDAY_UNPAID_DETAIL = "Трек каникулярного набора не оплачен"
+# Страница треков — `/cabinet/personal/track`, под «Личной информацией»: список
+# истёкшего срока её уже открывает. `/csrf` — свежий ключ для кнопки «Оплатить».
+HOLIDAY_UNPAID_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES + ("/csrf",)
+
+
+def is_path_allowed_when_holiday_unpaid(path: str) -> bool:
+    return path.startswith(HOLIDAY_UNPAID_ALLOWED_PREFIXES)
 
 
 def is_path_allowed_in_limited_cabinet(path: str) -> bool:
@@ -324,6 +335,15 @@ def get_current_user(
     # Каникулярный набор — урезанный кабинет, тем же приёмом. Только ученик:
     # сотруднику признак программы ничего не закрывает.
     limited_cabinet = role_rank == 1 and user.program == PROGRAM_HOLIDAY
+    # Трек не оплачен (17.10.2026): до оплаты открыты только «Личная
+    # информация» и страница треков под ней — тот же список, что у истёкшего
+    # срока. Трек ученика — его тег (`intake_link.track_of`), запрос только у
+    # каникулярных.
+    holiday_unpaid = (
+        limited_cabinet and not access_expired and intake_link_service.needs_track(db, user)
+    )
+    if holiday_unpaid and not is_path_allowed_when_holiday_unpaid(request.url.path):
+        raise HTTPException(status_code=403, detail=HOLIDAY_UNPAID_DETAIL)
     if limited_cabinet and not is_path_allowed_in_limited_cabinet(request.url.path):
         raise HTTPException(status_code=403, detail=LIMITED_CABINET_DETAIL)
 
@@ -353,6 +373,7 @@ def get_current_user(
         and not user.portfolio_do_completed
         and portfolio_required
         and not access_expired
+        and not holiday_unpaid
         and not tg_username_mismatch
     )
     if portfolio_gate and is_path_blocked_by_portfolio_gate(request.url.path):
@@ -406,6 +427,8 @@ def get_current_user(
         "school_grade": user.school_grade,
         # Урезанное меню (`navigation.student_nav_items`) и вводная инструкция.
         "limited_cabinet": limited_cabinet,
+        # Каникулярный без оплаченного трека — меню как у истёкшего срока.
+        "holiday_unpaid": holiday_unpaid,
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,

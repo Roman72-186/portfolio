@@ -5,7 +5,7 @@ import re
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS, TIMEZONE_DISPLAY
+from app.constants import DIALOG_HOLIDAY, TARIFF_DISPLAY, TARIFF_SLUGS, TIMEZONE_DISPLAY
 from app.csrf import generate_csrf_token
 from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
 from app.services.section_access import LEVEL_EDIT
@@ -64,6 +64,7 @@ templates.env.globals["unread_count_for"] = _unread_count_for
 templates.env.globals["curator_nav_items"] = curator_nav_items
 templates.env.globals["staff_nav_items"] = staff_nav_items
 templates.env.globals["student_nav_items"] = student_nav_items
+templates.env.globals["DIALOG_HOLIDAY"] = DIALOG_HOLIDAY
 
 
 def tariff_label(tariff: str | None) -> str:
