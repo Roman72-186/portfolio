@@ -68,7 +68,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                     <div>
                         <div class="mock-status-col-title">
                             <span>Не сдали ({{ not_submitted_students|length }})</span>
-                            {% if not_submitted_students and is_admin_panel %}
+                            {% if not_submitted_students %}
                             <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Скопировать ники</button>
                             {% endif %}
                         </div>

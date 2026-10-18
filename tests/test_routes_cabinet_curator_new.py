@@ -135,7 +135,8 @@ def test_portfolio_student_json_contains_works(curator_client, db, student):
 
 
 # ---------------------------------------------------------------------------
-# GET /cabinet/students/{id}/profile — контакты ученика скрыты от куратора
+# GET /cabinet/students/{id}/profile — контакты ученика скрыты от куратора,
+# кроме ника Telegram (владелец 18.10.2026)
 # ---------------------------------------------------------------------------
 
 def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
@@ -160,7 +161,8 @@ def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
     assert data["phone"] is None
     assert data["parent_phone"] is None
     assert data["parent_name"] is None
-    assert data["tg_username"] is None
+    # Ник куратору открыт: написать своему ученику (владелец 18.10.2026).
+    assert data["tg_username"] == "anna_ivanova"
     # VK из анкеты снят совсем (владелец 29.09.2026) — поля нет ни у кого.
     assert "vk_id" not in data
     assert "vk_profile_url" not in data
@@ -510,12 +512,29 @@ def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db
     text = resp.text
     assert "Сдали 1" in text
     assert "Не сдали 1" in text
-    # Telegram-ник — личные данные, куратору (ранг 2) не показывается.
-    assert "anna_ivanova" not in text
-    assert "petrov_p" not in text
-    assert "Скопировать ники" not in text
+    # Ник своих учеников куратор видит и копирует списком (владелец 18.10.2026).
+    assert "@anna_ivanova" in text
+    assert "@petrov_p" in text
+    assert "Скопировать ники" in text
     # Анна — в списке "не сдали" с пометкой предмета, по которому есть билет
     assert 'mock-status-pending">Рисунок<' in text
+
+
+def test_curator_student_list_searchable_by_own_student_username(curator_client, db, student, user_factory):
+    """Поиск по @нику в «Моих учениках» работает и у куратора, а ник чужого
+    ученика в его список не попадает."""
+    client, _ = curator_client
+    student.tg_username = "@Anna_Ivanova"
+    db.add(student)
+    other = user_factory(vk_id=800077, name="Foreign Student", role_name="ученик")
+    other.tg_username = "foreign_nick"
+    db.add(other)
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    assert 'data-tg-username="anna_ivanova"' in resp.text
+    assert "foreign_nick" not in resp.text
 
 
 def test_mock_status_panel_hidden_without_active_ticket(curator_client, student):

@@ -328,8 +328,7 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
             mock_counts_by_user: dict | None = None,
             unchecked_by_user: dict | None = None,
             scored_subjects_by_user: dict | None = None,
-            has_case_by_user: dict | None = None,
-            can_see_contacts: bool = True) -> dict:
+            has_case_by_user: dict | None = None) -> dict:
     return {
         "id": s.id,
         "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
@@ -348,7 +347,9 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "upload_count": counts_by_user.get(s.id, 0),
         "curator_id": s.curator_id or 0,
         "enrollment_year": s.enrollment_year or 0,
-        "tg_username": (s.tg_username or "").lstrip("@").lower() if can_see_contacts else "",
+        # Ник открыт всем, кому открыт список, и куратору тоже: у него в
+        # списке только свои ученики (владелец 18.10.2026).
+        "tg_username": (s.tg_username or "").lstrip("@").lower(),
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
@@ -478,7 +479,6 @@ def _sidebar_rows(
             unchecked_by_user,
             scored_subjects_by_user,
             has_case_by_user,
-            can_see_contacts=is_admin_panel,
         )
         for s in students
     ]
@@ -750,8 +750,10 @@ def get_student_profile(
         .scalar()
     ) or 0
 
-    # Контакты ученика (телефон/телефон родителя/Telegram) видны только рангам >= 4
-    # (админ/суперадмин) — куратор (rank=2) их больше не получает в ответе.
+    # Контакты ученика (телефоны, почта, город, адрес) видны только рангам >= 4
+    # (админ/суперадмин) — куратор (rank=2) их не получает в ответе. Ник Telegram
+    # не в их числе: куратору он нужен написать своему ученику, а чужого
+    # ученика `_check_access` ему не откроет (владелец 18.10.2026).
     can_see_contacts = user["role_rank"] >= 4
 
     # «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
@@ -792,7 +794,7 @@ def get_student_profile(
             "phone": student.phone if can_see_contacts else None,
             "parent_phone": student.parent_phone if can_see_contacts else None,
             "parent_name": student.parent_name if can_see_contacts else None,
-            "tg_username": student.tg_username if can_see_contacts else None,
+            "tg_username": student.tg_username,
             "email": student.email if can_see_contacts else None,
             "birth_date": (
                 student.birth_date.strftime("%d.%m.%Y")

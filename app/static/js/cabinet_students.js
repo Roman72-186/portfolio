@@ -244,14 +244,16 @@ function renderProfile(data) {
     html += buildStudyNow(s);
 
     // Fields
-    // Контакты (телефон/телефон родителя/Telegram) видны только рангам >= 4 —
-    // куратору бэкенд отдаёт can_see_contacts=false и сами поля пустыми, здесь
-    // это осознанное «скрыто», не «не указано».
+    // Ник Telegram видят все, кому открыта карточка, и куратор тоже
+    // (владелец 18.10.2026). У сохранённого ника бывает «@» в начале — срезаем.
+    html += profileField('Telegram', s.tg_username ? '@' + s.tg_username.replace(/^@/, '') : null);
+    // Остальные контакты видны только рангам >= 4 — куратору бэкенд отдаёт
+    // can_see_contacts=false и сами поля пустыми, здесь это осознанное
+    // «скрыто», не «не указано».
     if (s.can_see_contacts !== false) {
         html += profileField('Телефон', s.phone);
         html += profileField('Телефон родителя', s.parent_phone);
         html += profileField('Имя и отчество родителя', s.parent_name);
-        html += profileField('Telegram', s.tg_username ? '@' + s.tg_username : null);
         html += profileField('Email', s.email);
         html += profileField('Дата рождения', s.birth_date);
         html += profileField('Город', s.city);
