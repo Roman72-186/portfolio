@@ -77,13 +77,13 @@ def _dialog_open_for(db: DBSession, student: User, tariffs: set[str]) -> bool:
     перепиской у его трека (`IntakeLink.dialog_enabled`, «потенциал»,
     17.10.2026): блок конца недели открыт одному треку, а не всему набору."""
     from app.constants import DIALOG_HOLIDAY, PROGRAM_HOLIDAY
-    from app.services.intake_link import track_of
+    from app.services.intake_link import tracks_of
 
     if student.program == PROGRAM_HOLIDAY:
         if DIALOG_HOLIDAY not in tariffs:
             return False
-        track = track_of(db, student.id)
-        return track is not None and track.dialog_enabled
+        # Треков бывает несколько (школа 18.10.2026) — хватит одного с перепиской.
+        return any(track.dialog_enabled for track in tracks_of(db, student.id))
     return bool(student.tariff) and student.tariff in tariffs
 
 

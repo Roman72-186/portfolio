@@ -675,7 +675,11 @@ def _without_silent_holiday(db: Session, students: dict[int, User]) -> dict[int,
     if not holiday_ids:
         return students
     tracks = tracks_by_user(db, holiday_ids)
-    silent = {uid for uid in holiday_ids if not (tracks.get(uid) and tracks[uid].reminders_enabled)}
+    # Треков бывает несколько (школа 18.10.2026) — хватит одного с напоминаниями.
+    silent = {
+        uid for uid in holiday_ids
+        if not any(track.reminders_enabled for track in tracks.get(uid, []))
+    }
     return {uid: user for uid, user in students.items() if uid not in silent}
 
 

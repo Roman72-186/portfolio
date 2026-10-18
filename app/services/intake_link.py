@@ -129,9 +129,9 @@ def entry_link(db: DBSession) -> IntakeLink | None:
 
 
 def track_of(db: DBSession, user_id: int) -> IntakeLink | None:
-    """Трек ученика — каникулярная ссылка, чей тег у него стоит. Тегов трека
-    у одного человека не бывает больше одного, пока нет доплаты до большого
-    трека; если бывает — первый по порядку заведения."""
+    """Есть ли у ученика трек — первый по порядку заведения. Треков может быть
+    несколько (`tracks_of`); там, где важен любой из них (переписка,
+    напоминания), смотреть все."""
     from app.models.tag import UserTag
 
     return (
@@ -143,8 +143,22 @@ def track_of(db: DBSession, user_id: int) -> IntakeLink | None:
     )
 
 
-def tracks_by_user(db: DBSession, user_ids: list[int]) -> dict[int, IntakeLink]:
-    """`track_of` для многих — одним запросом (напоминания по расписанию)."""
+def tracks_of(db: DBSession, user_id: int) -> list[IntakeLink]:
+    """Все треки ученика: после купленного трека можно купить другой (школа
+    18.10.2026: «давайте сделаем такую возможность»)."""
+    from app.models.tag import UserTag
+
+    return (
+        db.query(IntakeLink)
+        .join(UserTag, UserTag.tag_id == IntakeLink.tag_id)
+        .filter(UserTag.user_id == user_id, IntakeLink.program == PROGRAM_HOLIDAY)
+        .order_by(IntakeLink.created_at, IntakeLink.id)
+        .all()
+    )
+
+
+def tracks_by_user(db: DBSession, user_ids: list[int]) -> dict[int, list[IntakeLink]]:
+    """`tracks_of` для многих — одним запросом (напоминания по расписанию)."""
     from app.models.tag import UserTag
 
     if not user_ids:
@@ -156,9 +170,9 @@ def tracks_by_user(db: DBSession, user_ids: list[int]) -> dict[int, IntakeLink]:
         .order_by(IntakeLink.created_at, IntakeLink.id)
         .all()
     )
-    result: dict[int, IntakeLink] = {}
+    result: dict[int, list[IntakeLink]] = {}
     for user_id, link in rows:
-        result.setdefault(user_id, link)
+        result.setdefault(user_id, []).append(link)
     return result
 
 

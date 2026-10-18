@@ -569,8 +569,9 @@ def get_or_create_track_payment(
         raise PaymentUnavailable("Треки каникулярного набора оплачивают только его ученики")
     if track not in intake_link_service.tracks_on_sale(db):
         raise PaymentUnavailable("Этот трек сейчас не продаётся")
-    if intake_link_service.track_of(db, user.id) is not None:
-        raise PaymentUnavailable("Трек уже оплачен")
+    # Другой трек купить можно (школа 18.10.2026), тот же второй раз — нет.
+    if any(owned.id == track.id for owned in intake_link_service.tracks_of(db, user.id)):
+        raise PaymentUnavailable("Этот трек уже оплачен")
 
     pending = (
         db.query(Payment)

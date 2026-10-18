@@ -205,11 +205,14 @@ def cabinet_personal_track(
     сюда Продамус возвращает после оплаты (`?paid=1`)."""
     if not _is_holiday(user):
         return RedirectResponse("/cabinet/personal", status_code=302)
-    track = intake_link_service.track_of(db, user["user_id"])
+    owned = intake_link_service.tracks_of(db, user["user_id"])
+    owned_ids = {link.id for link in owned}
     return templates.TemplateResponse(request, "cabinet_personal_track.html", {
         "request": request,
         "user": user,
-        "track": track,
+        # Купленные треки и что ещё можно купить: другой трек после
+        # купленного — можно (школа 18.10.2026), тот же второй раз — нет.
+        "owned": [{"title": link.title} for link in owned],
         "tracks": [
             {
                 "id": link.id,
@@ -219,9 +222,9 @@ def cabinet_personal_track(
                 "access_until_text": msk_text(link.access_until),
             }
             for link in intake_link_service.tracks_on_sale(db)
-        ] if track is None else [],
+            if link.id not in owned_ids
+        ],
         "paid_return": request.query_params.get("paid") == "1",
-        "paid_thanks": payment_service.holiday_thanks_text(track),
         "support_url": SUPPORT_URL,
     })
 

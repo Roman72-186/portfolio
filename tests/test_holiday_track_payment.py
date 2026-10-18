@@ -312,3 +312,51 @@ def test_curator_sees_own_holiday_students_in_filter(client, db, user_factory, s
     page = client.get("/cabinet/students?program=holiday")
     assert "Мой Каникулярный" in page.text
     assert "Чужой Каникулярный" not in page.text
+
+
+# ── Второй трек после купленного (школа 18.10.2026) ─────────────────────────
+
+def test_second_track_can_be_bought_same_cannot(client, db, user_factory, session_factory, prodamus):
+    first = _track(db, title="АРХИпроба 1 трек", price_kop=125500)
+    second = _track(db, title="ЭКЗпроба 1 трек", price_kop=125500)
+    student = _newcomer(db, user_factory)
+    add_tag_to_user(db, student.id, first.tag_id)
+    db.commit()
+    client = _login(client, session_factory, student)
+
+    page = client.get("/cabinet/personal/track")
+    assert "Твои треки" in page.text and "АРХИпроба 1 трек" in page.text
+    assert f'data-pay-url="/cabinet/personal/track/{second.id}/pay"' in page.text
+    assert f'data-pay-url="/cabinet/personal/track/{first.id}/pay"' not in page.text
+
+    same = client.post(f"/cabinet/personal/track/{first.id}/pay", headers={"Accept": "application/json"})
+    assert same.status_code == 409 and "уже оплачен" in same.json()["error"]
+    other = client.post(f"/cabinet/personal/track/{second.id}/pay", headers={"Accept": "application/json"})
+    assert other.status_code == 200 and other.json()["url"]
+
+
+def test_any_track_opens_dialog_and_reminders(db, user_factory):
+    from app.services.student_reminders import _without_silent_holiday
+    from app.services.task_block_feedback import _dialog_open_for
+
+    plain = _track(db, title="АРХИпроба 1 трек")
+    potential = _track(db, title="Потенциал", dialog_enabled=True, reminders_enabled=True)
+    student = _newcomer(db, user_factory)
+    add_tag_to_user(db, student.id, plain.tag_id)
+    db.commit()
+    assert _dialog_open_for(db, student, {DIALOG_HOLIDAY}) is False
+    assert student.id not in _without_silent_holiday(db, {student.id: student})
+
+    add_tag_to_user(db, student.id, potential.tag_id)
+    db.commit()
+    assert _dialog_open_for(db, student, {DIALOG_HOLIDAY}) is True
+    assert student.id in _without_silent_holiday(db, {student.id: student})
+
+
+def test_personal_page_links_holiday_to_tracks(client, db, user_factory, session_factory):
+    track = _track(db)
+    student = _newcomer(db, user_factory, profile_completed=True)
+    add_tag_to_user(db, student.id, track.tag_id)
+    db.commit()
+    page = _login(client, session_factory, student).get("/cabinet/personal")
+    assert "data-holiday-tracks-link" in page.text

@@ -98,6 +98,14 @@
     </div>
     {% endif %}
 
+    {# Каникулярный набор: купленные треки и покупка другого (школа 18.10.2026). #}
+    {% if holiday_form %}
+    <div class="prs-section-title">Каникулярный набор</div>
+    <div class="prs-group">
+        <a class="prs-row prs-row-link" href="/cabinet/personal/track" data-holiday-tracks-link><span>Мои треки и покупка нового</span></a>
+    </div>
+    {% endif %}
+
     <details class="prs-expand">
     <summary>Контакты</summary>
     <div class="prs-group">

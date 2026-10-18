@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {# Треки каникулярного набора (17.10.2026, `cabinet_personal.cabinet_personal_track`):
-   оплата трека открывает кабинет, после неё — анкета и лента трека. Вид — карточки
-   «Личной информации» (`personal_ios.css`), кнопка и окно оплаты — общий
-   `partials/pay_opening.html`. #}
+   оплата трека открывает кабинет, после неё — анкета и лента трека. Купив трек,
+   можно купить другой (школа 18.10.2026): сверху купленные, ниже — что ещё в
+   продаже. Вид — карточки «Личной информации» (`personal_ios.css`), кнопка и окно
+   оплаты — общий `partials/pay_opening.html`. #}
 {% block title %}Каникулярный набор{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/personal_ios.css?v=23">
@@ -12,17 +13,24 @@
 
     <div class="prs-hero">
         <h1>Каникулярный набор</h1>
+        {% if owned %}
+        <p>Твои треки и то, что ещё можно добавить.</p>
+        {% else %}
         <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.</p>
+        {% endif %}
     </div>
 
-    {% if track %}
     {% if paid_return %}
-    <div class="prs-saved" data-paid-thanks>{{ paid_thanks }}</div>
+    <div class="prs-saved" data-paid-wait>Спасибо за оплату! Как только банк её подтвердит – обычно это минута – трек появится в списке «Твои треки». Обнови страницу.</div>
     {% endif %}
-    <div class="prs-access-closed">
-        <h2>Трек «{{ track.title }}» оплачен</h2>
+
+    {% if owned %}
+    <div class="prs-access-closed" data-owned-tracks>
+        <h2>Твои треки</h2>
+        {% for item in owned %}
+        <p><strong>{{ item.title }}</strong> – оплачен</p>
+        {% endfor %}
         {% if user.profile_completed %}
-        <p>Задания трека – в разделе «Обучение».</p>
         <div class="prs-access-closed-actions">
             <a href="/cabinet/learning" class="btn-blue">Открыть обучение</a>
         </div>
@@ -33,10 +41,11 @@
         </div>
         {% endif %}
     </div>
-    {% else %}
-    {% if paid_return %}
-    <div class="prs-saved" data-paid-wait>Ждём подтверждения оплаты от банка – обычно это минута. Обнови страницу.</div>
+    {% if tracks %}
+    <div class="prs-section-title">Можно добавить</div>
     {% endif %}
+    {% endif %}
+
     {% for item in tracks %}
     <div class="prs-access-closed" data-pay-scope>
         <h2>{{ item.title }}</h2>
@@ -50,6 +59,7 @@
         <p class="prs-pay-error" data-pay-error hidden></p>
     </div>
     {% else %}
+    {% if not owned %}
     <div class="prs-access-closed">
         <h2>Оплата пока не открыта</h2>
         <p>Как только школа откроет набор, здесь появятся треки. Если что-то срочно – напиши в службу заботы.</p>
@@ -57,8 +67,8 @@
             <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
         </div>
     </div>
-    {% endfor %}
     {% endif %}
+    {% endfor %}
 
 </div>
 {% if tracks %}
