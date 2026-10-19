@@ -252,6 +252,10 @@ SUPPORT_URL = "https://t.me/roman_chatbots"
 # включатель хранятся в БД (`IntakeLink`), не константой — см.
 # app/models/intake_link.py и app/services/intake_link.py.
 INTAKE_TRIAL_SLUG = "proba"
+# Короткий адрес общей ссылки каникулярного набора (владелец 19.10.2026: «какую-
+# нибудь интересную ссылку»): kodarhitektora.ru/kanikuly ведёт туда же, что и
+# /join/<адрес общей ссылки> (`auth.holiday_entry_short`).
+HOLIDAY_ENTRY_PATH = "/kanikuly"
 
 # Служебные аккаунты — вне любого учёта, но с доступом ученика (владелец
 # 29.09.2026: «никуда, никакой учёт не идут. Но я как ученик Роман Махметов

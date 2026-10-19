@@ -384,3 +384,33 @@ def test_paying_one_track_keeps_open_link_of_another(client, db, user_factory, p
     assert {"АРХИпроба 1 трек", "ЭКЗпроба 1 трек"} <= _tags(db, student)
     staff_titles = [n.title for n in db.query(Notification).filter(Notification.user_id != student.id)]
     assert "Оплата по отменённой ссылке" not in staff_titles
+
+
+# ── Короткий адрес набора (19.10.2026) ──────────────────────────────────────
+
+def test_short_entry_path_leads_to_entry_link(client, db, monkeypatch):
+    from app.constants import HOLIDAY_ENTRY_PATH
+
+    assert client.get(HOLIDAY_ENTRY_PATH, follow_redirects=False).status_code == 404
+    entry = intake_link_service.create_entry_link(
+        db, access_until=datetime.now(timezone.utc) + timedelta(days=5), created_by_id=None,
+    )
+    db.commit()
+    # Выключена — экран «Набор закрыт», как у /join/<адрес>.
+    closed = client.get(HOLIDAY_ENTRY_PATH, follow_redirects=False)
+    assert closed.status_code == 200
+
+    entry.is_active = True
+    db.commit()
+    monkeypatch.setattr("app.api.auth._telegram_login_enabled", lambda: True)
+    short = client.get(HOLIDAY_ENTRY_PATH, follow_redirects=False)
+    long = client.get(f"/join/{entry.slug}", follow_redirects=False)
+    assert short.status_code == long.status_code == 302
+    assert short.headers["location"].split("?")[0] == long.headers["location"].split("?")[0]
+
+
+def test_periods_screen_shows_short_entry_url(admin_client, db):
+    client, _admin = admin_client
+    intake_link_service.create_entry_link(db, access_until=None, created_by_id=None)
+    db.commit()
+    assert "/kanikuly" in client.get("/cabinet/periods").text

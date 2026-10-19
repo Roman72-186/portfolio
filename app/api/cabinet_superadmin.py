@@ -24,6 +24,7 @@ from app.constants import (
     FEATURE_LABELS,
     FEATURE_PORTFOLIO_UPLOAD,
     FEATURE_MOCK_EXAM,
+    HOLIDAY_ENTRY_PATH,
     INTAKE_TRIAL_SLUG,
     TARIFFS,
     TARIFFS_CURRENT,
@@ -1147,7 +1148,8 @@ def periods_list(
         "entry_link": {
             "slug": entry.slug,
             "is_active": entry.is_active,
-            "url": f"{base_url}/join/{entry.slug}",
+            # Короткий адрес набора (19.10.2026) — его и отправляют ученикам.
+            "url": f"{base_url}{HOLIDAY_ENTRY_PATH}",
             "deadline_input": msk_input_value(entry.access_until),
             "deadline_text": msk_text(entry.access_until),
         } if entry is not None else None,

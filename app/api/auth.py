@@ -17,7 +17,7 @@ from app.cache import (
     invalidate_session, pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
 )
 from app.config import settings
-from app.constants import INTAKE_TRIAL_SLUG, SUPPORT_URL
+from app.constants import HOLIDAY_ENTRY_PATH, INTAKE_TRIAL_SLUG, SUPPORT_URL
 from app.csrf import generate_csrf_token
 from app.db.database import get_db
 from app.dependencies import (
@@ -450,7 +450,28 @@ async def holiday_group_entry(
     link = intake_link_service.get_link(db, slug)
     if not intake_link_service.is_holiday(link):
         raise HTTPException(status_code=404)
+    return _holiday_entry(request, db, link)
 
+
+@router.get(HOLIDAY_ENTRY_PATH)
+@limiter.limit("20/minute")
+async def holiday_entry_short(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Короткий адрес набора — `kodarhitektora.ru/kanikuly` (владелец
+    19.10.2026). Ведёт на общую ссылку набора (`intake_link.entry_link`), тем же
+    входом, что `/join/<адрес>`; прежний адрес общей ссылки тоже работает.
+    Литерал, а не `/{slug}`: см. `intake_trial_entry`."""
+    link = intake_link_service.entry_link(db)
+    if link is None:
+        raise HTTPException(status_code=404)
+    return _holiday_entry(request, db, link)
+
+
+def _holiday_entry(request: Request, db: DBSession, link):
+    """Вход по каникулярной ссылке: живая сессия — в кабинет, закрытая ссылка —
+    «Набор закрыт», иначе Telegram с меткой ссылки."""
     if _has_live_session(request, db):
         return RedirectResponse("/cabinet", status_code=302)
 
