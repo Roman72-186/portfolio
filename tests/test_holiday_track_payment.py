@@ -360,3 +360,27 @@ def test_personal_page_links_holiday_to_tracks(client, db, user_factory, session
     db.commit()
     page = _login(client, session_factory, student).get("/cabinet/personal")
     assert "data-holiday-tracks-link" in page.text
+
+
+def test_paying_one_track_keeps_open_link_of_another(client, db, user_factory, prodamus, no_delivery):
+    """Оплата одного трека не гасит ссылку на другой: иначе её оплата пришла бы
+    «по отменённой ссылке» с ложной тревогой службе заботы (проверка 19.10.2026)."""
+    from app.models.payment import STATUS_PENDING
+
+    first = _track(db, title="АРХИпроба 1 трек", price_kop=125500)
+    second = _track(db, title="ЭКЗпроба 1 трек", price_kop=125500)
+    student = _newcomer(db, user_factory)
+    now = datetime.now(timezone.utc)
+    pay_first = ps.get_or_create_track_payment(db, student, first, now, "https://x")
+    pay_second = ps.get_or_create_track_payment(db, student, second, now, "https://x")
+    db.commit()
+
+    _post_webhook(client, pay_first, total="1255.00")
+    db.refresh(pay_second)
+    assert pay_second.status == STATUS_PENDING
+    _post_webhook(client, pay_second, total="1255.00", order_id="400156")
+    db.refresh(pay_second)
+    assert pay_second.status == STATUS_PAID
+    assert {"АРХИпроба 1 трек", "ЭКЗпроба 1 трек"} <= _tags(db, student)
+    staff_titles = [n.title for n in db.query(Notification).filter(Notification.user_id != student.id)]
+    assert "Оплата по отменённой ссылке" not in staff_titles

@@ -845,15 +845,20 @@ def record_paid(
     if note:
         payment.note = _append_note(payment.note, note)
 
-    for other in (
+    same_thing = (
         db.query(Payment)
         .filter(Payment.user_id == payment.user_id, Payment.period == payment.period,
                 Payment.kind == payment.kind, Payment.status == STATUS_PENDING,
                 Payment.id != payment.id)
-        .all()
-    ):
+    )
+    if payment.kind == KIND_HOLIDAY:
+        # Треков за месяц бывает несколько (школа 18.10.2026): отменяем только
+        # ссылки на этот же трек, иначе оплата одного трека гасила бы открытую
+        # ссылку на другой, и её оплата пришла бы «по отменённой ссылке».
+        same_thing = same_thing.filter(Payment.intake_link_id == payment.intake_link_id)
+    for other in same_thing.all():
         other.status = STATUS_CANCELLED
-        other.note = _append_note(other.note, f"месяц оплачен платежом #{payment.id}")
+        other.note = _append_note(other.note, f"оплачено платежом #{payment.id}")
 
     extended = ""
     track = None
