@@ -119,6 +119,11 @@
         <span class="ss-since">Данные о входах, реакциях и правках собираются с 11.07.2026</span>
     </div>
 
+    {# Годовой курс / Каникулярный курс (владелец 19.10.2026): программа учёта на
+       время запроса — `report_scope.report_program`, все карточки учеников
+       считают выбранную программу. Общий партиал переключателя. #}
+    {% include "partials/program_switch.html" %}
+
     {# Переключатель ролей — общий .nav-pill из base.css, та же разметка, что
        «Задачи / Дайджест» в трекере ученика: кнопки с aria-pressed, а не
        role="tab" (tablist обязан ходить по стрелкам с roving tabindex).
@@ -153,6 +158,68 @@
             <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
         </div>
     </div>
+
+    {# Каникулярный набор поимённо (владелец 19.10.2026: «кто вошёл, по каким
+       трекам, что купил, на каком месте находятся… сдал, не сдал») —
+       `activity_stats.get_holiday_overview`. Только в режиме «Каникулярный курс». #}
+    {% if holiday_overview %}
+    {% set ho = holiday_overview %}
+    <details class="ss-acc" data-holiday-overview>
+        <summary><h2 class="ss-acc-title">Каникулярный набор поимённо</h2><span class="ss-acc-badge">вошли {{ ho.total }}, с треком {{ ho.with_track }}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ ho.total }}</div><div class="ss-stat-lbl">Вошли</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ ho.with_track }}</div><div class="ss-stat-lbl">С треком{% if ho.paid_total %} · оплачено {{ ho.paid_total }}{% endif %}</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ ho.without_track }}</div><div class="ss-stat-lbl">Без трека{% if ho.waiting %} · {{ ho.waiting }} открыли оплату{% endif %}</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ ho.profile_done }}<span class="ss-suffix-dim"> / {{ ho.total }}</span></div><div class="ss-stat-lbl">Анкета заполнена</div></div>
+            </div>
+            {% if ho.by_track %}
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">По трекам</h3>
+                <table class="ss-table">
+                    <thead><tr><th>Трек</th><th>Цена</th><th class="ss-ta-r">Учеников</th><th class="ss-ta-r">Оплат</th><th>Сумма</th></tr></thead>
+                    <tbody>
+                    {% for t in ho.by_track %}
+                    <tr>
+                        <td data-label="Трек" class="ss-bold">{{ t.title }}{% if not t.on_sale %} <span class="ss-dim-sm">· продажа выключена</span>{% endif %}</td>
+                        <td data-label="Цена">{{ t.price }}</td>
+                        <td data-label="Учеников" class="ss-ta-r">{{ t.count }}</td>
+                        <td data-label="Оплат" class="ss-ta-r">{{ t.paid_count }}</td>
+                        <td data-label="Сумма">{{ t.amount or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Ученики <span class="ss-sub-count">{{ ho.rows | length }}</span></h3>
+                {% if ho.rows %}
+                <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Треки</th><th>Оплата</th><th>Анкета</th><th>Вошёл</th><th>Последний вход</th><th class="ss-ta-r">Адресов за неделю</th><th>Задания</th></tr></thead>
+                    <tbody>
+                    {% for r in ho.rows %}
+                    <tr>
+                        <td data-label="Ученик"><a class="ss-link ss-bold" href="/cabinet/students?program=holiday&amp;student={{ r.id }}">{{ r.name }}</a><br><span class="ss-dim-sm">{{ tg_copy(r.nick) }}</span></td>
+                        <td data-label="Треки">{{ r.tracks | join(', ') if r.tracks else '—' }}</td>
+                        <td data-label="Оплата">{{ r.pay_state }}{% if r.paid_text %}<br><span class="ss-dim-sm">{{ r.paid_text }}{% if r.paid_at %} · {{ r.paid_at }}{% endif %}</span>{% endif %}</td>
+                        <td data-label="Анкета">{% if r.profile_completed %}заполнена{% if r.school %}<br><span class="ss-dim-sm">{{ r.school }}</span>{% endif %}{% else %}не заполнена{% endif %}</td>
+                        <td data-label="Вошёл" class="ss-dim">{{ r.entered_at or '—' }}</td>
+                        <td data-label="Последний вход" class="ss-dim">{{ r.last_login or 'Не заходил' }}</td>
+                        <td data-label="Адресов за неделю" class="ss-ta-r">{{ r.ips }}</td>
+                        <td data-label="Задания">{% if r.tasks_total %}сдал {{ r.tasks_done }} из {{ r.tasks_total }}{% if r.tasks_overdue %}<br><span class="ss-dim-sm">просрочено {{ r.tasks_overdue }}</span>{% endif %}{% else %}—{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+                {% else %}<div class="ss-empty">В каникулярный набор пока никто не вошёл</div>{% endif %}
+            </div>
+            <p class="ss-dim-sm">Кто сдал конкретное задание – в «Учениках поимённо» ниже: фильтр «Задание» и «Сдача».</p>
+        </div>
+    </details>
+    {% endif %}
 
     <!-- Поимённая сводка: входы, портфолио, сдача конкретного задания. Первая под плитками (владелец 03.10.2026) -->
     <details class="ss-acc" data-activity-portfolio>
@@ -211,6 +278,24 @@
        месяца и сводка — payment_board.stats_card, тот же расчёт, что у экрана
        «Оплаты»; поимённый список с фильтром и кнопками — на экране, ссылки
        ведут туда. Карточку видят только те, кому открыта оплата. #}
+    {# Оплаты треков каникулярного набора — итоги, подробно на экране «Оплаты»
+       в том же режиме (`payment_board.holiday_board`). #}
+    {% if holiday_payment_stats %}
+    {% set hp = holiday_payment_stats %}
+    <details class="ss-acc" data-holiday-payment-card>
+        <summary><h2 class="ss-acc-title">Оплаты треков</h2><span class="ss-acc-badge">оплатили {{ hp.paid_count }}{% if hp.paid_total %} на {{ hp.paid_total }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-filters">
+                <a class="btn-blue btn-save" href="/cabinet/superadmin/payments?program=holiday">Все платежи и возвраты</a>
+            </div>
+            <div class="ss-stats-strip">
+                {% for t in hp.tracks %}<div class="ss-stat"><div class="ss-stat-val">{{ t.paid_count }}</div><div class="ss-stat-lbl">{{ t.title }}{% if t.amount != '–' %} · {{ t.amount }}{% endif %}</div></div>{% endfor %}
+                <div class="ss-stat"><div class="ss-stat-val">{{ hp.without_track | length }}</div><div class="ss-stat-lbl">Вошли, не оплатили</div></div>
+            </div>
+        </div>
+    </details>
+    {% endif %}
+
     {% if payment_stats %}
     <details class="ss-acc" data-payment-card>
         <summary><h2 class="ss-acc-title">Оплаты</h2><span class="ss-acc-badge">{{ payment_stats.month_title }}: оплатили {{ payment_stats.paid_count }}, не оплатили {{ payment_stats.unpaid_count }}</span></summary>
@@ -341,6 +426,7 @@
        25.09.2026. Данные считает staff_dashboard.py — те же функции кормят
        выгрузку в Excel. Карточка регистраций раскрыта, пока задан фильтр:
        иначе после «Применить» она схлопнется и результата не видно. #}
+    {% if tariff_registration_stats %}
     <details class="ss-acc"{% if registration_filtered %} open{% endif %}>
         <summary><h2 class="ss-acc-title">Регистрации по тарифам</h2><span class="ss-acc-badge">{{ tariff_registration_stats.total }} зарегистрировались</span></summary>
         <div class="ss-acc-body">
@@ -380,6 +466,7 @@
             </div>
         </div>
     </details>
+    {% endif %}
 
     <!-- Журнал действий учеников -->
     <details class="ss-acc">

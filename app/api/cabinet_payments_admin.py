@@ -53,7 +53,24 @@ def payments_board_page(
     month: str = Query(""),
     status: str = Query(""),
     q: str = Query(""),
+    program: str = Query(""),
 ):
+    from app.constants import PROGRAM_HOLIDAY
+    from app.services.report_scope import parse_report_program, report_program_switch
+
+    # «Годовой курс / Каникулярный курс» (владелец 19.10.2026): каникулярный
+    # набор платит за трек — свой список с возвратом (`holiday_board`).
+    program = parse_report_program(program)
+    switch = report_program_switch(request.url.path, program)
+    if program == PROGRAM_HOLIDAY:
+        return templates.TemplateResponse(request, "superadmin_payments.html", {
+            "request": request,
+            "user": user,
+            "program_switch": switch,
+            "holiday": payment_board.holiday_board(db),
+            "display_name": payment_board.display_name,
+            "contacts_text": payment_board.contacts_text,
+        })
     now = datetime.now(timezone.utc)
     period = payment_board.parse_month(month, now)
     board = payment_board.month_board(db, period, now)
@@ -65,6 +82,8 @@ def payments_board_page(
     return templates.TemplateResponse(request, "superadmin_payments.html", {
         "request": request,
         "user": user,
+        "program_switch": switch,
+        "holiday": None,
         "board": board,
         "rows": rows,
         "filters": {"status": status, "q": q},

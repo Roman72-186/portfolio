@@ -1903,3 +1903,114 @@ def student_statistics(
         "video_days": video["days"],
     }
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Каникулярный набор поимённо (владелец 19.10.2026)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_holiday_overview(db: DBSession) -> dict:
+    """Карточка «Каникулярный набор поимённо» (владелец 19.10.2026: «кто вошёл,
+    по каким трекам, что купил, на каком месте находятся, заполнил, не
+    заполнил, оплатил… задание сдал, не сдал»).
+
+    Ученики — каникулярный учёт `report_scope` (без отсечки по сроку, чтобы
+    после 1.11 набор оставался виден). Трек — тег (`intake_link.tracks_by_user`),
+    оплата — платежи `KIND_HOLIDAY`, адреса — `login_ips`, задания — тот же
+    `_assignment_activity`, что у «Учеников поимённо» и напоминаний о сроке:
+    своей копии правил «кому сдавать и сдал ли» здесь нет."""
+    from app.constants import PROGRAM_HOLIDAY, SCHOOL_GRADE_LABELS
+    from app.models.payment import KIND_HOLIDAY, STATUS_PAID, STATUS_PENDING, Payment
+    from app.services.contacts import normalize_tg_username
+    from app.services.intake_link import holiday_tracks, tracks_by_user
+    from app.services.login_ips import distinct_ips_by_user
+    from app.services.payments import rub_text
+    from app.services.report_scope import report_program
+    from app.services.staff_dashboard import _assignment_activity
+
+    with report_program(PROGRAM_HOLIDAY):
+        students = _active_students_q(db).order_by(User.created_at, User.id).all()
+    ids = [s.id for s in students]
+    tracks = tracks_by_user(db, ids)
+    ips = distinct_ips_by_user(db, ids)
+    payments = (
+        db.query(Payment)
+        .filter(Payment.kind == KIND_HOLIDAY, Payment.user_id.in_(ids))
+        .order_by(Payment.paid_at, Payment.id)
+        .all()
+    ) if ids else []
+    paid_by_user: dict[int, list[Payment]] = defaultdict(list)
+    waiting: set[int] = set()
+    for payment in payments:
+        if payment.status == STATUS_PAID:
+            paid_by_user[payment.user_id].append(payment)
+        elif payment.status == STATUS_PENDING:
+            waiting.add(payment.user_id)
+
+    tasks: dict[int, dict] = {uid: {"eligible": 0, "submitted": 0, "overdue": 0} for uid in ids}
+    for item in _assignment_activity(db, students) if students else []:
+        for uid in item["eligible"]:
+            tasks[uid]["eligible"] += 1
+        for uid in item["submitted"]:
+            tasks[uid]["submitted"] += 1
+        for uid in item["overdue"]:
+            tasks[uid]["overdue"] += 1
+
+    rows = []
+    for student in students:
+        own = tracks.get(student.id, [])
+        paid = paid_by_user.get(student.id, [])
+        paid_kop = sum(p.paid_sum_kop or p.amount_kop for p in paid)
+        last_paid = max((p.paid_at for p in paid if p.paid_at), default=None)
+        nick = normalize_tg_username(student.tg_username or "")
+        t = tasks[student.id]
+        if own and paid:
+            pay_state = "оплачен"
+        elif own:
+            pay_state = "трек без платежа"
+        elif student.id in waiting:
+            pay_state = "открыл оплату"
+        else:
+            pay_state = "не оплатил"
+        rows.append({
+            "id": student.id,
+            "name": _student_name(student.first_name, student.last_name, student.name),
+            "nick": f"@{nick}" if nick else "(нет username)",
+            "tracks": [track.title for track in own],
+            "pay_state": pay_state,
+            "paid_text": rub_text(paid_kop) if paid_kop else "",
+            "paid_at": _when_msk(last_paid),
+            "profile_completed": bool(student.profile_completed),
+            "school": SCHOOL_GRADE_LABELS.get(student.school_grade or "", ""),
+            "entered_at": _when_msk(student.created_at),
+            "last_login": _when_msk(student.last_login_at),
+            "ips": ips.get(student.id, 0),
+            "tasks_total": t["eligible"],
+            "tasks_done": t["submitted"],
+            "tasks_overdue": t["overdue"],
+        })
+
+    by_track = []
+    for track in holiday_tracks(db):
+        holders = [r for r in rows if track.title in r["tracks"]]
+        track_paid = [p for p in payments if p.status == STATUS_PAID and p.intake_link_id == track.id]
+        amount = sum(p.paid_sum_kop or p.amount_kop for p in track_paid)
+        by_track.append({
+            "title": track.title,
+            "price": rub_text(track.price_kop) if track.price_kop else "бесплатно",
+            "count": len(holders),
+            "paid_count": len(track_paid),
+            "amount": rub_text(amount) if amount else "",
+            "on_sale": bool(track.is_active and track.price_kop),
+        })
+    total_kop = sum(p.paid_sum_kop or p.amount_kop for p in payments if p.status == STATUS_PAID)
+    return {
+        "rows": rows,
+        "by_track": by_track,
+        "total": len(rows),
+        "with_track": sum(1 for r in rows if r["tracks"]),
+        "without_track": sum(1 for r in rows if not r["tracks"]),
+        "profile_done": sum(1 for r in rows if r["profile_completed"]),
+        "paid_total": rub_text(total_kop) if total_kop else "",
+        "waiting": sum(1 for r in rows if r["pay_state"] == "открыл оплату"),
+    }

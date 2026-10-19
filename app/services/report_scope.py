@@ -29,20 +29,70 @@
 подписки не смотрел никто. Новая выборка учеников для статистики берётся
 отсюда; своя копия условий — тот же разъезд заново.
 
+**Программа учёта** (владелец 19.10.2026: «в статистике… переключатель —
+годовой курс и каникулярный курс»). По умолчанию — годовой курс, как
+описано выше. Страница статистики на время своего запроса включает
+каникулярный (`with report_program(PROGRAM_HOLIDAY):`), и тогда в учёте
+каникулярные ученики: роль ученика, активные, не в архиве, не удалённые, не
+служебные — **без отсечки по сроку доступа**: набор длится неделю, и после
+1.11 его история должна оставаться видна. Так все карточки, которые считают
+через это правило, переключаются сразу, без своей копии условий. Программа
+живёт в `ContextVar` и сбрасывается по выходу из `with`: в остальных
+запросах учёт годовой.
+
 Не для карточки одного ученика: её открывают и у архивного, там считается
 он сам (`activity_stats._scope_ids`). Не для очередей проверки, подбора
 получателей и аудиторий заданий — это не учёт, у них свои правила.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, PROGRAMS, REPORT_EXCLUDED_USER_IDS
 from app.models.role import Role
 from app.models.user import User
 from app.services.access_state import not_left_clause
+
+
+_REPORT_PROGRAM: ContextVar[str] = ContextVar("report_program", default=PROGRAM_ANNUAL)
+
+
+@contextmanager
+def report_program(program: str):
+    """Программа учёта на время блока `with` — переключатель страницы
+    статистики. Незнакомое значение — годовой курс."""
+    token = _REPORT_PROGRAM.set(program if program in PROGRAMS else PROGRAM_ANNUAL)
+    try:
+        yield
+    finally:
+        _REPORT_PROGRAM.reset(token)
+
+
+def current_report_program() -> str:
+    return _REPORT_PROGRAM.get()
+
+
+REPORT_PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный курс"}
+
+
+def parse_report_program(raw: str | None) -> str:
+    return raw if raw in PROGRAMS else PROGRAM_ANNUAL
+
+
+def report_program_switch(path: str, program: str) -> dict:
+    """Данные переключателя «Годовой курс / Каникулярный курс» над страницей
+    статистики и экраном «Оплаты» — общий `partials/program_switch.html`."""
+    return {
+        "current": program,
+        "options": [
+            {"value": value, "label": REPORT_PROGRAM_LABELS[value], "href": f"{path}?program={value}"}
+            for value in PROGRAMS
+        ],
+    }
 
 
 def reportable_students_q(
@@ -50,6 +100,19 @@ def reportable_students_q(
 ):
     """Запрос `User` по ученикам в учёте; к нему можно добавлять фильтры."""
     now = now or datetime.now(timezone.utc)
+    if _REPORT_PROGRAM.get() == PROGRAM_HOLIDAY:
+        return (
+            db.query(User)
+            .join(Role, User.role_id == Role.id)
+            .filter(
+                Role.rank == 1,
+                User.program == PROGRAM_HOLIDAY,
+                User.is_active == True,  # noqa: E712
+                User.archived_at.is_(None),
+                User.deleted_at.is_(None),
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            )
+        )
     q = (
         db.query(User)
         .join(Role, User.role_id == Role.id)

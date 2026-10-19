@@ -1434,11 +1434,31 @@ def superadmin_activity(
     registration_from: str | None = Query(None),
     registration_to: str | None = Query(None),
     registration_tariff: str = Query(""),
+    program: str = Query(""),
 ):
     """Статистика активности, разложенная по вкладкам ролей: ученики
     (диагностика, входы, видео, задания, сдачи, пробник), кураторы, Главные
     преподаватели с модераторами, суперадмин (журнал изменений). Во вкладку
     строку кладёт поле role_group из activity_stats.role_group()."""
+    from app.constants import PROGRAM_HOLIDAY
+    from app.services.report_scope import parse_report_program, report_program, report_program_switch
+
+    # Переключатель «Годовой курс / Каникулярный курс» (владелец 19.10.2026):
+    # программу учёта на время запроса держит `report_scope`, и все карточки,
+    # которые считают через него, переключаются вместе.
+    program = parse_report_program(program)
+    holiday = program == PROGRAM_HOLIDAY
+    program_switch = report_program_switch(request.url.path, program)
+    with report_program(program):
+        return _activity_page(request, user, db, holiday=holiday, program_switch=program_switch,
+                              registration_from=registration_from, registration_to=registration_to,
+                              registration_tariff=registration_tariff)
+
+
+def _activity_page(request, user, db, *, holiday, program_switch,
+                   registration_from, registration_to, registration_tariff):
+    """Тело «Статистики активности» — внутри программы учёта, которую
+    выставил `superadmin_activity`."""
     from app.services.activity_stats import (
         get_audit_feed,
         get_curator_review_speed,
@@ -1446,6 +1466,7 @@ def superadmin_activity(
         get_diagnostic_stats,
         get_feedback_curator_stats,
         get_feedback_rating_by_task,
+        get_holiday_overview,
         get_login_link_stats,
         get_login_stats,
         get_mock_attempt_stats,
@@ -1468,6 +1489,10 @@ def superadmin_activity(
     return templates.TemplateResponse(request, "superadmin_activity.html", {
         "request": request,
         "user": user,
+        "program_switch": program_switch,
+        "holiday": holiday,
+        # Каникулярный набор поимённо и оплата треков — только в своём режиме.
+        "holiday_overview": get_holiday_overview(db) if holiday else None,
         "logins": get_login_stats(db),
         "review_speed": get_curator_review_speed(db),
         "feedback_curators": get_feedback_curator_stats(db),
@@ -1498,7 +1523,8 @@ def superadmin_activity(
         # Регистрации и поимённая сводка переехали сюда с «Пользователей»
         # 25.09.2026. Считает их staff_dashboard.py, а не activity_stats.py:
         # те же функции кормят CSV-выгрузку и дашборд сотрудника.
-        "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
+        # Регистрации по тарифам и месячная оплата — про годовой курс.
+        "tariff_registration_stats": None if holiday else get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
         "student_activity": get_student_activity_overview(db, include_assignments=True),
         # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
@@ -1506,7 +1532,11 @@ def superadmin_activity(
         # карточку видят только те, кому открыта оплата.
         "payment_stats": (
             payment_board.stats_card(db, datetime.now(timezone.utc))
-            if payments.is_payments_viewer(user) else None
+            if payments.is_payments_viewer(user) and not holiday else None
+        ),
+        "holiday_payment_stats": (
+            payment_board.holiday_board(db)
+            if payments.is_payments_viewer(user) and holiday else None
         ),
     })
 

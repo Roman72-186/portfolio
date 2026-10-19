@@ -29,10 +29,11 @@ from datetime import date, datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFF_DISPLAY
+from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, TARIFF_DISPLAY
 from app.models.payment import (
     KIND_MONTH,
     SOURCE_MANUAL,
+    STATUS_CANCELLED,
     STATUS_PAID,
     STATUS_REFUNDED,
     STATUS_SUM_MISMATCH,
@@ -151,8 +152,10 @@ def parse_month(raw: str | None, now: datetime) -> date:
 
 
 def accounted_students(db: DBSession) -> list[User]:
-    """Ученики учёта оплаты: вне архива, активные, без служебных. Тот же
-    список читает отчёт о неоплативших (`payment_debtors`)."""
+    """Ученики учёта оплаты: вне архива, активные, без служебных, годового
+    курса — каникулярный набор платит за трек, у него свой экран
+    (`holiday_board`, 19.10.2026). Тот же список читает отчёт о неоплативших
+    (`payment_debtors`)."""
     return (
         db.query(User)
         .join(Role, Role.id == User.role_id)
@@ -162,6 +165,7 @@ def accounted_students(db: DBSession) -> list[User]:
             User.archived_at.is_(None),
             User.is_active == True,  # noqa: E712
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            User.program != PROGRAM_HOLIDAY,
         )
         .order_by(User.last_name, User.first_name, User.id)
         .all()
@@ -384,6 +388,78 @@ def stats_card(db: DBSession, now: datetime) -> dict:
         "unpaid_count": month.unpaid_count if month else 0,
         "no_payment_count": month.no_payment_count if month else 0,
         "months": months,
+    }
+
+
+# ── Каникулярный набор: оплата треков (19.10.2026) ───────────────────────────
+
+HOLIDAY_STATUS_LABELS = {
+    "paid": "Оплачен",
+    "pending": "Ссылка открыта",
+    "sum_mismatch": "Не та сумма",
+    "refunded": "Возврат",
+    "cancelled": "Ссылка заменена",
+}
+
+
+def holiday_board(db: DBSession) -> dict:
+    """Экран «Оплаты», режим «Каникулярный курс» (владелец 19.10.2026: оплаты
+    «такой же, как у нас по годовому курсу»): итоги по трекам, все платежи
+    треков с кнопкой «Возврат оформлен» (`payments.revert_paid` снимает тег
+    трека) и вошедшие без оплаты. Ученики — каникулярный учёт `report_scope`."""
+    from app.models.intake_link import IntakeLink
+    from app.models.payment import KIND_HOLIDAY
+    from app.services.intake_link import holiday_tracks, tracks_by_user
+    from app.services.report_scope import report_program, reportable_students_q
+
+    with report_program(PROGRAM_HOLIDAY):
+        students = reportable_students_q(db).order_by(User.last_name, User.first_name, User.id).all()
+    by_id = {s.id: s for s in students}
+    track_titles = {t.id: t.title for t in db.query(IntakeLink).filter(IntakeLink.program == PROGRAM_HOLIDAY)}
+    rows = []
+    for payment in (
+        db.query(Payment)
+        .filter(Payment.kind == KIND_HOLIDAY)
+        .order_by(Payment.created_at.desc(), Payment.id.desc())
+        .all()
+    ):
+        student = by_id.get(payment.user_id) or db.get(User, payment.user_id)
+        if student is None or payment.status == STATUS_CANCELLED:
+            continue
+        rows.append({
+            "payment": payment,
+            "student": student,
+            "track": track_titles.get(payment.intake_link_id, "–"),
+            "amount": payments.rub_text(payment.paid_sum_kop or payment.amount_kop),
+            "status": HOLIDAY_STATUS_LABELS.get(payment.status, payment.status),
+            "is_paid": payment.status == STATUS_PAID,
+            "when": msk_date_text(payment.paid_at or payment.created_at),
+        })
+    holders = tracks_by_user(db, list(by_id))
+    paid_rows = [r for r in rows if r["is_paid"]]
+    tracks = []
+    for track in holiday_tracks(db):
+        track_paid = [r for r in paid_rows if r["payment"].intake_link_id == track.id]
+        amount = sum(r["payment"].paid_sum_kop or r["payment"].amount_kop for r in track_paid)
+        tracks.append({
+            "title": track.title,
+            "price": payments.rub_text(track.price_kop) if track.price_kop else "бесплатно",
+            "on_sale": bool(track.is_active and track.price_kop),
+            "paid_count": len(track_paid),
+            "amount": payments.rub_text(amount) if amount else "–",
+        })
+    total = sum(r["payment"].paid_sum_kop or r["payment"].amount_kop for r in paid_rows)
+    return {
+        "rows": rows,
+        "tracks": tracks,
+        "paid_count": len(paid_rows),
+        "paid_total": payments.rub_text(total) if total else "",
+        "students_total": len(students),
+        "without_track": [s for s in students if not holders.get(s.id)],
+        "manual_tracks": [
+            s for s in students
+            if holders.get(s.id) and not any(r["student"].id == s.id for r in paid_rows)
+        ],
     }
 
 
