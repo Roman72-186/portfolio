@@ -30,6 +30,20 @@ STUDENT_TEMPLATES = [
     "cabinet_videos.html",
     "upload_mock.html",
     "partials/inline/mock_exam.html",
+    # Сверка 19.10.2026: страница треков каникулярного набора, закрытый набор,
+    # загрузка и пересдача, галерея, история, анкета, старое портфолио, видео,
+    # экраны отказа.
+    "cabinet_personal_track.html",
+    "intake_closed.html",
+    "upload.html",
+    "upload_retake.html",
+    "gallery.html",
+    "history.html",
+    "profile.html",
+    "legacy_portfolio.html",
+    "cabinet_video.html",
+    "blocked.html",
+    "denied.html",
 ]
 
 STAFF_ROLE = re.compile(
@@ -99,7 +113,9 @@ def test_mock_dialog_signs_staff_as_teacher_for_student(auth_client, db, user_fa
 
 # Ученика не отправляют «к администратору» – только в службу заботы
 # (владелец 16.10.2026). Экраны отказа и тексты входа, которые читает ученик.
-CARE_TEMPLATES = STUDENT_TEMPLATES + ["blocked.html", "denied.html"]
+# `cabinet_video.html` вне списка: «администратор» там только в JS-комментарии
+# режима `watch_debug`, который ученику не рисуется.
+CARE_TEMPLATES = [t for t in STUDENT_TEMPLATES if t != "cabinet_video.html"]
 CARE_SOURCES = ["app/api/auth.py", "app/main.py", "app/services/feature_periods.py"]
 # Не ученику: машинный ответ выключенной интеграции n8n (`/auth/internal/issue-link`)
 # и вход сотрудников (`/staff/login`).
