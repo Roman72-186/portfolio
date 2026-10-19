@@ -414,3 +414,35 @@ def test_periods_screen_shows_short_entry_url(admin_client, db):
     intake_link_service.create_entry_link(db, access_until=None, created_by_id=None)
     db.commit()
     assert "/kanikuly" in client.get("/cabinet/periods").text
+
+
+# ── Тестовый проход служебного аккаунта (19.10.2026) ────────────────────────
+
+def test_service_account_opens_track_without_payment(client, db, user_factory, session_factory, monkeypatch):
+    from app.constants import REPORT_EXCLUDED_USER_IDS
+    from app.models.audit_log import AuditLog
+
+    track = _track(db, title="АРХИпроба 1 трек", price_kop=125500)
+    student = _newcomer(db, user_factory)
+    monkeypatch.setattr("app.constants.REPORT_EXCLUDED_USER_IDS", frozenset(REPORT_EXCLUDED_USER_IDS) | {student.id})
+    monkeypatch.setattr("app.services.payments.REPORT_EXCLUDED_USER_IDS", frozenset(REPORT_EXCLUDED_USER_IDS) | {student.id})
+    client = _login(client, session_factory, student)
+
+    page = client.get("/cabinet/personal/track")
+    assert "Открыть без оплаты (служебный)" in page.text
+    resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
+    assert resp.status_code == 200 and resp.json()["url"] == "/cabinet/personal/track?test=1"
+    assert "АРХИпроба 1 трек" in _tags(db, student)
+    assert db.query(Payment).filter(Payment.user_id == student.id).count() == 0
+    assert db.query(AuditLog).filter(AuditLog.action == "holiday_track_test_grant").count() == 1
+    assert client.get("/cabinet/profile", follow_redirects=False).status_code == 200
+
+
+def test_regular_student_still_goes_to_prodamus(client, db, user_factory, session_factory, prodamus):
+    track = _track(db, title="АРХИпроба 1 трек", price_kop=125500)
+    student = _newcomer(db, user_factory)
+    client = _login(client, session_factory, student)
+    assert "Открыть без оплаты" not in client.get("/cabinet/personal/track").text
+    resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
+    assert resp.json()["url"].startswith("https://apparchi-test.payform.ru/")
+    assert "АРХИпроба 1 трек" not in _tags(db, student)

@@ -40,8 +40,8 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
 from app.constants import (
-    PAYMENT_NOTIFY_RECIPIENT_IDS, PAYMENTS_EXTRA_USER_IDS, PROGRAM_HOLIDAY, TARIFF_DISPLAY,
-    TARIFFS_CURRENT,
+    PAYMENT_NOTIFY_RECIPIENT_IDS, PAYMENTS_EXTRA_USER_IDS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS,
+    TARIFF_DISPLAY, TARIFFS_CURRENT,
 )
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
@@ -556,6 +556,46 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     return payment
 
 
+def open_track(db: DBSession, user: User, track: IntakeLink) -> bool:
+    """Открыть ученику трек: тег трека (по нему открывается программа) и срок
+    доступа из трека, только вперёд. Зовут оплата (`record_paid`) и тестовый
+    проход служебного аккаунта (`grant_track_for_test`). Не коммитит."""
+    if track.tag_id is None:
+        return False
+    add_tag_to_user(db, user.id, track.tag_id)
+    if track.access_until is not None and (
+        user.access_until is None or _as_utc(user.access_until) < _as_utc(track.access_until)
+    ):
+        user.access_until = track.access_until
+    return True
+
+
+def is_test_account(user_id: int) -> bool:
+    """Служебный аккаунт (`REPORT_EXCLUDED_USER_IDS`) — им владелец и школа
+    проверяют путь ученика (владелец 19.10.2026: «если я нажимаю, то нужно
+    просто пропустить»)."""
+    return user_id in REPORT_EXCLUDED_USER_IDS
+
+
+def grant_track_for_test(db: DBSession, user: User, track: IntakeLink, *, now: datetime) -> None:
+    """Тестовый проход: служебный аккаунт получает трек без оплаты — без
+    Продамуса и без строки платежа (иначе тест попал бы в «Оплаты» и итоги).
+    След — журнал `holiday_track_test_grant`. Не коммитит."""
+    if not is_test_account(user.id):
+        raise PaymentUnavailable("Без оплаты трек открывается только служебным аккаунтам")
+    if track not in intake_link_service.tracks_on_sale(db):
+        raise PaymentUnavailable("Этот трек сейчас не продаётся")
+    if any(owned.id == track.id for owned in intake_link_service.tracks_of(db, user.id)):
+        raise PaymentUnavailable("Этот трек уже открыт")
+    open_track(db, user, track)
+    db.add(AuditLog(
+        action="holiday_track_test_grant",
+        performed_by_id=user.id,
+        target_user_id=user.id,
+        details=f"Тестовый проход без оплаты: трек «{track.title}», доступ до {msk_text(user.access_until)}"[:1000],
+    ))
+
+
 def get_or_create_track_payment(
     db: DBSession, user: User, track: IntakeLink, now: datetime, base_url: str,
 ) -> Payment:
@@ -866,12 +906,7 @@ def record_paid(
         # Трек каникулярного набора: тег трека открывает его программу, срок —
         # из трека и только вперёд (вход по общей ссылке уже дал свой срок).
         track = db.get(IntakeLink, payment.intake_link_id) if payment.intake_link_id else None
-        if track is not None and track.tag_id is not None:
-            add_tag_to_user(db, user.id, track.tag_id)
-            if track.access_until is not None and (
-                user.access_until is None or _as_utc(user.access_until) < _as_utc(track.access_until)
-            ):
-                user.access_until = track.access_until
+        if track is not None and open_track(db, user, track):
             extended = f", доступ до {msk_text(user.access_until)}"
     if user is not None and has_window(user) and payment.kind == KIND_MONTH:
         new_until = paid_until_after(user, payment.period)

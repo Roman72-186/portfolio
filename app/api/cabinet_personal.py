@@ -225,6 +225,9 @@ def cabinet_personal_track(
             if link.id not in owned_ids
         ],
         "paid_return": request.query_params.get("paid") == "1",
+        "test_return": request.query_params.get("test") == "1",
+        # Служебный аккаунт открывает трек без оплаты — кнопка так и подписана.
+        "test_account": payment_service.is_test_account(user["user_id"]),
         "support_url": SUPPORT_URL,
     })
 
@@ -245,6 +248,16 @@ def cabinet_personal_track_pay(
     if track is None or not intake_link_service.is_track(track):
         return JSONResponse({"error": "Такого трека нет"}, status_code=404)
     student = db.get(User, user["user_id"])
+    if payment_service.is_test_account(student.id):
+        # Служебный аккаунт — тестовый проход без Продамуса (19.10.2026).
+        try:
+            payment_service.grant_track_for_test(db, student, track, now=datetime.now(timezone.utc))
+        except payment_service.PaymentUnavailable as exc:
+            db.rollback()
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        db.commit()
+        invalidate_session(user["session_id"])
+        return JSONResponse({"url": "/cabinet/personal/track?test=1"})
     try:
         payment = payment_service.get_or_create_track_payment(
             db, student, track, datetime.now(timezone.utc), f"https://{settings.domain}",

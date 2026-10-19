@@ -20,6 +20,9 @@
         {% endif %}
     </div>
 
+    {% if test_return %}
+    <div class="prs-saved" data-test-grant>Тестовый проход: трек открыт без оплаты.</div>
+    {% endif %}
     {% if paid_return %}
     <div class="prs-saved" data-paid-wait>Спасибо за оплату! Как только банк её подтвердит – обычно это минута – трек появится в списке «Твои треки». Обнови страницу.</div>
     {% endif %}
@@ -54,7 +57,7 @@
         {% endfor %}
         <p class="prs-pay-due"><strong>{{ item.price_text }}</strong>, доступ до {{ item.access_until_text }} по Москве.</p>
         <div class="prs-access-closed-actions">
-            <button type="button" class="btn-blue" data-pay-button data-pay-url="/cabinet/personal/track/{{ item.id }}/pay">Оплатить</button>
+            <button type="button" class="btn-blue" data-pay-button data-pay-url="/cabinet/personal/track/{{ item.id }}/pay">{% if test_account %}Открыть без оплаты (служебный){% else %}Оплатить{% endif %}</button>
         </div>
         <p class="prs-pay-error" data-pay-error hidden></p>
     </div>
