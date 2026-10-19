@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.constants import REPORT_EXCLUDED_USER_IDS, tariffs_for_data
+from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
 from app.models.exam_assignment import ExamAssignment
@@ -558,6 +559,8 @@ def hard_delete_user(
         "сдачи работ в заданиях": len(block_submission_ids),
         "экзаменационные циклы": db.query(ExamCycle.id).filter(ExamCycle.user_id == target_user_id).count(),
         "уведомления": db.query(Notification.id).filter(Notification.user_id == target_user_id).count(),
+        "события активности": db.query(StudentActivityEvent.id)
+        .filter(StudentActivityEvent.user_id == target_user_id).count(),
     }
     name = user.name
     telegram_chat_id = user.telegram_chat_id
@@ -596,6 +599,11 @@ def hard_delete_user(
     db.execute(delete(TelegramLinkToken).where(TelegramLinkToken.user_id == target_user_id))
     db.execute(delete(MockExamLock).where(MockExamLock.user_id == target_user_id))
     db.execute(delete(Session).where(Session.user_id == target_user_id))
+    # Журнал активности — след самого ученика, `user_id` без ondelete. До
+    # 19.10.2026 его здесь не было, и удаление любого ученика, который хоть раз
+    # заходил, падало на внешнем ключе (пробный прогон по #199). Новые связи
+    # с users без каскада сторожит `test_services_hard_delete_user.py`.
+    db.execute(delete(StudentActivityEvent).where(StudentActivityEvent.user_id == target_user_id))
 
     # audit_logs.performed_by_id — NOT NULL и без ondelete: ученик мог сам
     # менять себе тариф (log_tariff_change), это его собственный след, не

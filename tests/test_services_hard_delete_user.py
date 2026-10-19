@@ -188,3 +188,61 @@ def test_hard_delete_lets_same_telegram_account_start_fresh(db, user_factory):
     assert new_user.profile_completed is False
     assert new_user.curator_id is None
     assert new_user.portfolio_do_completed is False
+
+
+def test_hard_delete_removes_activity_events(db, user_factory):
+    from app.models.activity_event import StudentActivityEvent
+
+    superadmin = user_factory(vk_id=920101, name="Superadmin", role_name="суперадмин", is_admin=True)
+    student = user_factory(vk_id=920102, name="Активный ученик", role_name="ученик")
+    db.add(StudentActivityEvent(user_id=student.id, event_type="login"))
+    db.commit()
+
+    ok, reason = hard_delete_user(db, student.id, superadmin.id)
+
+    assert ok, reason
+    assert db.query(StudentActivityEvent).filter_by(user_id=student.id).count() == 0
+
+
+# Связи с users без ondelete: удаление строки упадёт на внешнем ключе, если
+# функция их не чистит. SQLite в тестах ключи не проверяет, поэтому такой
+# пропуск виден только на проде (журнал активности, 19.10.2026). Каждая новая
+# связь должна попасть в один из двух списков — осознанно.
+_HANDLED_BY_HARD_DELETE = {
+    "audit_logs.performed_by_id", "audit_logs.target_user_id",
+    "curator_reports.viewed_by_id",
+    "exam_cycles.user_id", "exam_cycles.viewed_by_id",
+    "legacy_portfolio_photos.user_id", "login_tokens.user_id",
+    "mock_exam_locks.unlocked_by_id", "mock_exam_locks.user_id",
+    "notifications.user_id",
+    "sessions.impersonated_by_id", "sessions.user_id",
+    "student_activity_events.user_id",
+    "telegram_link_tokens.user_id", "upload_log.user_id", "user_tags.user_id",
+    "users.curator_id", "users.portfolio_after_scored_by_id", "users.portfolio_before_scored_by_id",
+    "works.scored_by_id", "works.uploaded_by_id", "works.user_id", "works.viewed_by_id",
+    # Свои диалоги уходят вместе с работами и сдачами, чужие — отказ
+    # (`_foreign_actor_refs`).
+    "feedbacks.curator_id", "feedback_messages.sender_id",
+    "homework_feedbacks.curator_id", "homework_feedback_messages.sender_id",
+    "task_block_feedbacks.curator_id", "task_block_feedback_messages.sender_id",
+}
+# Ставит только сотрудник — у ученика (единственная роль, которую функция
+# удаляет) таких строк не бывает.
+_STAFF_ONLY = {
+    "broadcasts.created_by_id", "broadcasts.sent_by_id",
+    "curator_reports.curator_id", "exam_assignments.created_by_id",
+    "feature_periods.created_by_id", "point_a_level_audios.uploaded_by_id",
+    "users.viewer_owner_id",
+}
+
+
+def test_every_non_cascading_user_reference_is_accounted_for():
+    from app.db.database import Base
+
+    restrict = set()
+    for table in Base.metadata.tables.values():
+        for fk in table.foreign_keys:
+            if fk.column.table.name == "users" and fk.ondelete is None:
+                restrict.add(f"{table.name}.{fk.parent.name}")
+    unknown = restrict - _HANDLED_BY_HARD_DELETE - _STAFF_ONLY
+    assert not unknown, f"hard_delete_user не знает про связи: {sorted(unknown)}"
