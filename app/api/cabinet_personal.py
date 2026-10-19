@@ -212,11 +212,15 @@ def cabinet_personal_track(
         "user": user,
         # Купленные треки и что ещё можно купить: другой трек после
         # купленного — можно (школа 18.10.2026), тот же второй раз — нет.
-        "owned": [{"title": link.title} for link in owned],
+        "owned": [
+            {"title": link.title, "color": intake_link_service.track_color(link.title)}
+            for link in owned
+        ],
         "tracks": [
             {
                 "id": link.id,
                 "title": link.title,
+                "color": intake_link_service.track_color(link.title),
                 "description": link.description or "",
                 "price_text": payment_service.rub_text(link.price_kop),
                 "access_until_text": msk_text(link.access_until),

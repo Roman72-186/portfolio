@@ -119,6 +119,26 @@ def tracks_on_sale(db: DBSession) -> list[IntakeLink]:
     ]
 
 
+# Цвет курса в названии трека (служба заботы 19.10.2026): АРХИпроба — голубой,
+# ЭКЗпроба — розовый, «Попробуй обучение» (она же «пробоподготовка») —
+# фиолетовый. Курс читается из начала названия трека, отдельного поля нет;
+# значения — ключи палитры `--evt-*` из base.css. Незнакомое название — без цвета.
+_TRACK_COURSE_COLORS = (
+    ("архипроба", "sky"),
+    ("экзпроба", "pink"),
+    ("попробуй", "violet"),
+    ("пробоподготов", "violet"),
+)
+
+
+def track_color(title: str | None) -> str:
+    name = (title or "").strip().casefold()
+    for prefix, color in _TRACK_COURSE_COLORS:
+        if name.startswith(prefix):
+            return color
+    return ""
+
+
 def entry_link(db: DBSession) -> IntakeLink | None:
     """Общая ссылка набора — каникулярная без тега."""
     return (

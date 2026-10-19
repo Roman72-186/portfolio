@@ -389,6 +389,37 @@
     background: var(--on-color);
     color: var(--blue-deep);
 }
+/* Карточки треков каникулярного набора (служба заботы 19.10.2026): белые
+   вместо жёлтой плашки, у курса свой цвет названия и полоска слева — ребёнок
+   находит свой курс по цвету; сумма отдельной крупной строкой, срок под ней.
+   Цвет — палитра `--evt-*` из base.css, ключ даёт `intake_link.track_color`.
+   Чистые оттенки на белом не дотягивают до AA, поэтому затемнены (≈5:1),
+   в тёмной теме — осветлены. Специфичность `p` та же, что у жёлтой плашки, —
+   выигрывает порядком, а `.prs-pay-error` по-прежнему красная. */
+.ios-personal .prs-access-closed.prs-track-card {
+    background: var(--surface);
+    border-color: var(--line);
+    box-shadow: inset 4px 0 0 var(--track-c, transparent);
+}
+.ios-personal .prs-track-card h2 { color: var(--ink); }
+.ios-personal .prs-track-card p { color: var(--text); }
+.ios-personal .prs-track--sky    { --track-c: color-mix(in srgb, var(--evt-sky) 75%, black); }
+.ios-personal .prs-track--pink   { --track-c: color-mix(in srgb, var(--evt-pink) 75%, black); }
+.ios-personal .prs-track--violet { --track-c: color-mix(in srgb, var(--evt-violet) 75%, black); }
+:root[data-theme="dark"] .ios-personal .prs-track--sky    { --track-c: color-mix(in srgb, var(--evt-sky) 75%, white); }
+:root[data-theme="dark"] .ios-personal .prs-track--pink   { --track-c: color-mix(in srgb, var(--evt-pink) 75%, white); }
+:root[data-theme="dark"] .ios-personal .prs-track--violet { --track-c: color-mix(in srgb, var(--evt-violet) 75%, white); }
+.ios-personal .prs-track-card .prs-track-name {
+    color: var(--track-c, var(--ink));
+    font-weight: 800;
+}
+.ios-personal .prs-track-card h2.prs-track-name { font-size: 21px; margin-bottom: 10px; }
+.ios-personal .prs-track-card .prs-track-price {
+    margin: 4px 0 2px;
+    font: 800 30px/1.15 var(--ios-font);
+    color: var(--ink);
+}
+.ios-personal .prs-track-card .prs-track-until { color: var(--muted); }
 
 /* ── Строка-документ как <button>, а не <a> — сброс нативного вида кнопки,
    визуально это тот же .prs-row-link (13.09.2026, поп-ап с текстом оферты

@@ -108,6 +108,23 @@ def test_track_tag_opens_cabinet(client, db, user_factory, session_factory):
     assert resp.status_code == 200
 
 
+def test_track_cards_colored_by_course(client, db, user_factory, session_factory):
+    """Служба заботы 19.10.2026: у курса свой цвет названия, сумма отдельной
+    строкой — ребёнок не теряется в одной строке."""
+    _track(db, title="АРХИпроба 1 трек", price_kop=125500)
+    _track(db, title="ЭКЗпроба 2 трек", price_kop=285500)
+    _track(db, title="Попробуй обучение", price_kop=345500)
+    _track(db, title="Потенциал")
+    page = _login(client, session_factory, _newcomer(db, user_factory)).get("/cabinet/personal/track")
+    html = page.text
+    assert html.count("prs-track--sky") == 1
+    assert html.count("prs-track--pink") == 1
+    assert html.count("prs-track--violet") == 1
+    assert '<p class="prs-track-price">1 255 ₽</p>' in html
+    assert intake_link_service.track_color("Пробоподготовка") == "violet"
+    assert intake_link_service.track_color("Потенциал") == ""
+
+
 def test_annual_student_never_sees_track_page(auth_client):
     client, _student = auth_client
     resp = client.get("/cabinet/personal/track", follow_redirects=False)
