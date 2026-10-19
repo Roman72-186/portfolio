@@ -34,6 +34,7 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
 from app.services.cycle_feed import archive_cycle_ids, archive_for_student, feed_for_student
+from app.services import intake_link as intake_link_service
 from app.services.program import item_details
 from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
@@ -81,6 +82,14 @@ def cabinet_learning(
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
+    # Каникулярный оплатил трек, программа ещё не открылась — карточка с датой
+    # вместо ленты (служба заботы 19.10.2026, `dependencies.get_current_user`).
+    if user.get("holiday_waiting"):
+        return templates.TemplateResponse(request, "cabinet_learning_waiting.html", {
+            "request": request,
+            "user": user,
+            "opens_at": intake_link_service.program_opens_at(),
+        })
 
     # `?cycle=` — возврат в пройденный цикл (владелец 03.09.2026: «он может
     # вернуться в этот цикл… если он задание выполнил, у него будет доступно к

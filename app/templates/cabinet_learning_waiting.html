@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Актуальное образовательное пространство{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=88">
+{% endblock %}
+{% block content %}
+{# Каникулярный оплатил трек, а программа ещё не открылась
+   (`constants.HOLIDAY_PROGRAM_OPENS_AT`, служба заботы 19.10.2026: «он попадает
+   в актуальное образовательное пространство, и ему написано, что доступ к
+   программе откроется 25 октября»). Ленты нет вовсе: остальные адреса закрыты
+   в `dependencies.get_current_user`. Классы — карточка «На сегодня всё» ленты. #}
+<div class="lrn-page ios-learning">
+
+    <div class="lrn-hero">
+        <h1>Актуальное образовательное пространство</h1>
+    </div>
+
+    <div class="lrn-card lrn-waiting" data-role="holiday-waiting">
+        <div class="lrn-card-title">Оплата прошла, трек твой</div>
+        <p class="lrn-card-note">
+            Доступ к программе откроется {{ opens_at | msk_text }} по Москве.
+            Задания появятся здесь, на этой странице.
+        </p>
+    </div>
+
+</div>
+
+{% set active_tab = "learning" %}
+{% include "partials/bottom_nav.html" %}
+{% endblock %}

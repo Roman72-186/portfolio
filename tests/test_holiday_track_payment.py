@@ -446,3 +446,84 @@ def test_regular_student_still_goes_to_prodamus(client, db, user_factory, sessio
     resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert resp.json()["url"].startswith("https://apparchi-test.payform.ru/")
     assert "АРХИпроба 1 трек" not in _tags(db, student)
+
+
+# ── Ожидание открытия программы (служба заботы 19.10.2026) ─────────────────
+
+OPENS_LATER = datetime(2099, 10, 24, 21, 0, tzinfo=timezone.utc)  # 25.10.2099 00:00 МСК
+
+
+def _paid_newcomer(db, user_factory, *, vk_id=310_050, profile_completed=True):
+    track = _track(db)
+    student = _newcomer(db, user_factory, vk_id=vk_id, profile_completed=profile_completed)
+    add_tag_to_user(db, student.id, track.tag_id)
+    db.commit()
+    return student
+
+
+def test_paid_student_waits_for_program_opening(client, db, user_factory, session_factory, monkeypatch):
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    client = _login(client, session_factory, _paid_newcomer(db, user_factory))
+
+    page = client.get("/cabinet/learning", follow_redirects=False)
+    assert page.status_code == 200
+    assert 'data-role="holiday-waiting"' in page.text
+    assert "Доступ к программе откроется 25.10.2099 в 00:00" in page.text
+
+    for path in (
+        "/cabinet/portfolio", "/cabinet/learning/archive", "/cabinet/tracker/tasks/1/blocks",
+        "/cabinet/videos/1", "/upload",
+    ):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 302, path
+        assert resp.headers["location"] == "/cabinet/learning", path
+
+    assert client.get("/cabinet/personal/contacts", follow_redirects=False).status_code == 200
+    track_page = client.get("/cabinet/personal/track")
+    assert "Доступ к программе откроется 25.10.2099 в 00:00" in track_page.text
+
+
+def test_waiting_student_can_fill_profile(client, db, user_factory, session_factory, monkeypatch):
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    student = _paid_newcomer(db, user_factory, profile_completed=False)
+    client = _login(client, session_factory, student)
+    assert client.get("/cabinet/profile", follow_redirects=False).status_code == 200
+    resp = client.get("/cabinet/learning", follow_redirects=False)
+    assert resp.headers["location"] == "/cabinet/profile"
+
+
+def test_program_opens_after_the_date(client, db, user_factory, session_factory):
+    client = _login(client, session_factory, _paid_newcomer(db, user_factory))
+    page = client.get("/cabinet/learning", follow_redirects=False)
+    assert page.status_code == 200
+    assert 'data-role="holiday-waiting"' not in page.text
+    assert "Доступ к программе откроется" not in client.get("/cabinet/personal/track").text
+
+
+def test_unpaid_student_still_goes_to_track_page(client, db, user_factory, session_factory, monkeypatch):
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    _track(db)
+    client = _login(client, session_factory, _newcomer(db, user_factory))
+    resp = client.get("/cabinet/learning", follow_redirects=False)
+    assert resp.headers["location"] == "/cabinet/personal/track"
+    assert "Программа откроется 25.10.2099 в 00:00" in client.get("/cabinet/personal/track").text
+
+
+def test_service_account_does_not_wait(client, db, user_factory, session_factory, monkeypatch):
+    from app.constants import REPORT_EXCLUDED_USER_IDS
+
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    student = _paid_newcomer(db, user_factory)
+    monkeypatch.setattr("app.constants.REPORT_EXCLUDED_USER_IDS", frozenset(REPORT_EXCLUDED_USER_IDS) | {student.id})
+    client = _login(client, session_factory, student)
+    page = client.get("/cabinet/learning", follow_redirects=False)
+    assert page.status_code == 200
+    assert 'data-role="holiday-waiting"' not in page.text
+
+
+def test_annual_student_does_not_wait(auth_client, monkeypatch):
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    client, _student = auth_client
+    page = client.get("/cabinet/learning", follow_redirects=False)
+    assert page.status_code == 200
+    assert 'data-role="holiday-waiting"' not in page.text

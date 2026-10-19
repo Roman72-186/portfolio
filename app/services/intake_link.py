@@ -12,6 +12,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session as DBSession
 
+from app import constants
 from app.constants import INTAKE_TRIAL_SLUG, PROGRAM_HOLIDAY
 from app.models.intake_link import IntakeLink
 from app.models.user import User
@@ -180,6 +181,20 @@ def needs_track(db: DBSession, user: User) -> bool:
     """Каникулярный без трека — до оплаты ему открыта только страница треков
     (`dependencies.get_current_user`)."""
     return user.program == PROGRAM_HOLIDAY and track_of(db, user.id) is None
+
+
+def program_opens_at() -> datetime:
+    """Когда каникулярному открывается программа — `constants.HOLIDAY_PROGRAM_OPENS_AT`.
+    Читается через модуль, а не копией имени: тесты двигают дату в одном месте."""
+    return constants.HOLIDAY_PROGRAM_OPENS_AT
+
+
+def waits_for_program(user_id: int, now: datetime) -> bool:
+    """Программа набора ещё не открылась, и этот человек её ждёт (служба заботы
+    19.10.2026). Служебные (`REPORT_EXCLUDED_USER_IDS`) не ждут: ими проверяют
+    программу, пока её наполняют. Что закрыто на время ожидания —
+    `dependencies.get_current_user`."""
+    return now < program_opens_at() and user_id not in constants.REPORT_EXCLUDED_USER_IDS
 
 
 def create_entry_link(

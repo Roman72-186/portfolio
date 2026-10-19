@@ -16,7 +16,7 @@
         {% if owned %}
         <p>Твои треки и то, что ещё можно добавить.</p>
         {% else %}
-        <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.</p>
+        <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.{% if program_opens_text %} Программа откроется {{ program_opens_text }} по Москве.{% endif %}</p>
         {% endif %}
     </div>
 
@@ -33,12 +33,15 @@
         {% for item in owned %}
         <p><strong>{{ item.title }}</strong> – оплачен</p>
         {% endfor %}
+        {% if program_opens_text %}
+        <p data-program-opens>Доступ к программе откроется {{ program_opens_text }} по Москве.</p>
+        {% endif %}
         {% if user.profile_completed %}
         <div class="prs-access-closed-actions">
             <a href="/cabinet/learning" class="btn-blue">Открыть обучение</a>
         </div>
         {% else %}
-        <p>Программа откроется в первый день занятий. А пока заполни анкету – это пара минут.</p>
+        <p>{% if not program_opens_text %}Программа откроется в первый день занятий. {% endif %}А пока заполни анкету – это пара минут.</p>
         <div class="prs-access-closed-actions">
             <a href="/cabinet/profile" class="btn-blue">Перейти к анкете</a>
         </div>

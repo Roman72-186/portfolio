@@ -238,6 +238,23 @@ def reset_rate_limiter():
 
 
 @pytest.fixture(autouse=True)
+def holiday_program_open(monkeypatch):
+    """Программа каникулярного набора по умолчанию уже открыта.
+
+    `constants.HOLIDAY_PROGRAM_OPENS_AT` — настоящая дата (25.10.2026), а тесты
+    бегут по настоящим часам: до неё ожидание запирало бы каникулярный кабинет
+    во всех тестах, после — нет. Ожидание проверяет `test_holiday_track_payment.py`,
+    переставляя дату в будущее своим monkeypatch.
+    """
+    from datetime import datetime, timezone
+    from app import constants
+
+    monkeypatch.setattr(
+        constants, "HOLIDAY_PROGRAM_OPENS_AT", datetime(2000, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+@pytest.fixture(autouse=True)
 def mock_exam_access_default_time(monkeypatch):
     """Заморозить «сейчас» mock-exam доступа на сегодня 13:00 МСК.
 

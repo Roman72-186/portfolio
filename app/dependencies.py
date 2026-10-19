@@ -118,6 +118,28 @@ def is_path_allowed_when_holiday_unpaid(path: str) -> bool:
     return path.startswith(HOLIDAY_UNPAID_ALLOWED_PREFIXES)
 
 
+# Трек оплачен, но программа ещё не открылась (`HOLIDAY_PROGRAM_OPENS_AT`,
+# служба заботы 19.10.2026): кроме открытого неоплаченному — анкета и АОП с
+# карточкой «Доступ к программе откроется …», уведомления. Адреса заданий,
+# видео, портфолио и загрузок закрыты — программу наполняют до открытия.
+HOLIDAY_WAITING_DETAIL = "Программа каникулярного набора ещё не открылась"
+HOLIDAY_WAITING_ALLOWED_EXACT = (
+    "/cabinet",
+    "/cabinet/learning",
+    "/cabinet/profile",
+    "/cabinet/notifications",
+)
+HOLIDAY_WAITING_ALLOWED_PREFIXES = HOLIDAY_UNPAID_ALLOWED_PREFIXES + (
+    "/cabinet/notifications/",
+    "/cabinet/push/",
+    "/cabinet/avatar",
+)
+
+
+def is_path_allowed_when_holiday_waiting(path: str) -> bool:
+    return path in HOLIDAY_WAITING_ALLOWED_EXACT or path.startswith(HOLIDAY_WAITING_ALLOWED_PREFIXES)
+
+
 def is_path_allowed_in_limited_cabinet(path: str) -> bool:
     return path in LIMITED_CABINET_ALLOWED_EXACT or path.startswith(LIMITED_CABINET_ALLOWED_PREFIXES)
 
@@ -344,6 +366,13 @@ def get_current_user(
     )
     if holiday_unpaid and not is_path_allowed_when_holiday_unpaid(request.url.path):
         raise HTTPException(status_code=403, detail=HOLIDAY_UNPAID_DETAIL)
+    # Трек оплачен, программа ещё не открылась — тем же приёмом.
+    holiday_waiting = (
+        limited_cabinet and not access_expired and not holiday_unpaid
+        and intake_link_service.waits_for_program(user.id, now)
+    )
+    if holiday_waiting and not is_path_allowed_when_holiday_waiting(request.url.path):
+        raise HTTPException(status_code=403, detail=HOLIDAY_WAITING_DETAIL)
     if limited_cabinet and not is_path_allowed_in_limited_cabinet(request.url.path):
         raise HTTPException(status_code=403, detail=LIMITED_CABINET_DETAIL)
 
@@ -374,6 +403,7 @@ def get_current_user(
         and portfolio_required
         and not access_expired
         and not holiday_unpaid
+        and not holiday_waiting
         and not tg_username_mismatch
     )
     if portfolio_gate and is_path_blocked_by_portfolio_gate(request.url.path):
@@ -429,6 +459,9 @@ def get_current_user(
         "limited_cabinet": limited_cabinet,
         # Каникулярный без оплаченного трека — меню как у истёкшего срока.
         "holiday_unpaid": holiday_unpaid,
+        # Трек оплачен, программа ещё не открылась — АОП рисует карточку
+        # ожидания вместо ленты (`cabinet_learning`).
+        "holiday_waiting": holiday_waiting,
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,

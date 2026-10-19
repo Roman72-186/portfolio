@@ -228,6 +228,13 @@ def cabinet_personal_track(
         "test_return": request.query_params.get("test") == "1",
         # Служебный аккаунт открывает трек без оплаты — кнопка так и подписана.
         "test_account": payment_service.is_test_account(user["user_id"]),
+        # Когда откроется программа (служба заботы 19.10.2026) — пока не
+        # открылась; служебные не ждут, им дата не печатается.
+        "program_opens_text": (
+            msk_text(intake_link_service.program_opens_at())
+            if intake_link_service.waits_for_program(user["user_id"], datetime.now(timezone.utc))
+            else ""
+        ),
         "support_url": SUPPORT_URL,
     })
 
