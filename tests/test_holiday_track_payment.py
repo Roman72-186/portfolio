@@ -165,7 +165,8 @@ def test_pay_button_builds_track_link(client, db, user_factory, session_factory,
     resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert resp.status_code == 200
     query = dict(parse_qsl(urlsplit(resp.json()["url"]).query))
-    assert query["products[0][name]"] == "Каникулярный набор: Потенциал"
+    assert query["products[0][name]"] == "Онлайн-курс Потенциал"
+    assert query["products[0][type]"] == "course"
     assert query["products[0][price]"] == "900.00"
     assert query["urlSuccess"].endswith("/cabinet/personal/track?paid=1")
     payment = db.query(Payment).filter(Payment.user_id == student.id).one()
@@ -174,6 +175,23 @@ def test_pay_button_builds_track_link(client, db, user_factory, session_factory,
     again = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert again.json()["url"] == resp.json()["url"]
     assert db.query(Payment).filter(Payment.user_id == student.id).count() == 1
+
+
+@pytest.mark.parametrize("title, name, thanks", [
+    ("АРХИпроба 1 трек", "Доступ к материалам АРХИпроба 1 трек",
+     "Благодарю за оплату доступа к материалам АРХИпроба 1 трек"),
+    ("ЭКЗпроба 1 трек", "Доступ к материалам ЭКЗпроба 1 трек",
+     "Благодарю за оплату доступа к материалам ЭКЗпроба 1 трек"),
+    ("АРХИпроба 2 трек", "Онлайн-курс АРХИпроба 2 трек", "Благодарю за оплату курса АРХИпроба 2 трек"),
+    ("ЭКЗпроба 2 трек", "Онлайн-курс ЭКЗпроба 2 трек", "Благодарю за оплату курса ЭКЗпроба 2 трек"),
+    ("Попробуй обучение", "Онлайн-курс Попробуй подготовку", "Благодарю за оплату курса Попробуй подготовку"),
+])
+def test_track_receipt_wording(db, title, name, thanks):
+    """Чек трека дословно по школе 19.10.2026: 1 трек — доступ к материалам,
+    2 трек и «Попробуй подготовку» — онлайн-курс."""
+    got_name, got_thanks = ps.holiday_receipt(_track(db, title=title))
+    assert got_name == name
+    assert got_thanks == f"{thanks}\nАдминистратор тг-канала https://t.me/creativeanalytic свяжется с тобой"
 
 
 def test_closed_track_cannot_be_paid(client, db, user_factory, session_factory, prodamus):

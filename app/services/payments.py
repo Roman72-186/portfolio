@@ -417,9 +417,37 @@ def paid_thanks_text(tariff: str | None, *, with_contact: bool = True) -> str:
     return text
 
 
+def _track_receipt_title(track: IntakeLink) -> str:
+    """Трек в чеке. «Попробуй обучение» на платформе — в чеке «Попробуй
+    подготовку» (школа 19.10.2026); остальные — как названы на платформе."""
+    title = track.title.strip()
+    if intake_link_service.track_color(title) == "violet":
+        return "Попробуй подготовку"
+    return title
+
+
+def _track_is_materials(track: IntakeLink) -> bool:
+    """1 трек — доступ к материалам, 2 трек и «Попробуй подготовку» — онлайн-курс
+    (школа 19.10.2026). Номер трека читается из названия, отдельного поля нет."""
+    return re.search(r"(?<!\d)1\s*трек", track.title.casefold()) is not None
+
+
+def holiday_receipt(track: IntakeLink | None) -> tuple[str, str]:
+    """Название позиции в чеке и текст после оплаты (`paid_content`) для трека,
+    дословно по школе 19.10.2026."""
+    if track is None:
+        return "Каникулярный набор", holiday_thanks_text(None)
+    title = _track_receipt_title(track)
+    if _track_is_materials(track):
+        name, thanks = f"Доступ к материалам {title}", f"Благодарю за оплату доступа к материалам {title}"
+    else:
+        name, thanks = f"Онлайн-курс {title}", f"Благодарю за оплату курса {title}"
+    return name, f"{thanks}\nАдминистратор тг-канала {SCHOOL_CHANNEL_URL} свяжется с тобой"
+
+
 def holiday_thanks_text(track: IntakeLink | None) -> str:
-    """Благодарность за оплату трека: страница Продамуса, уведомление ученику
-    и плашка на странице треков."""
+    """Благодарность за оплату трека: уведомление ученику и плашка на странице
+    треков. На странице Продамуса — текст школы из `holiday_receipt`."""
     title = f"«{track.title}» " if track is not None else ""
     return (f"Спасибо за оплату! Трек {title}открыт: вернись на платформу и заполни "
             "короткую анкету.")
@@ -451,8 +479,7 @@ def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink
     if payment.kind == KIND_HOLIDAY:
         # Трек каникулярного набора (17.10.2026): в чеке — название трека,
         # возврат — на страницу треков, она же ждёт подтверждения оплаты.
-        name = f"Каникулярный набор: {track.title}" if track is not None else "Каникулярный набор"
-        thanks = holiday_thanks_text(track)
+        name, thanks = holiday_receipt(track)
         back = f"{base_url}/cabinet/personal/track"
     else:
         tariff = _tariff_name(payment.tariff)
