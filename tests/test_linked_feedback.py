@@ -196,6 +196,26 @@ def test_main_screen_lists_linked_works_with_dates(db, group, client, session_fa
     assert "https://s3/first.jpg" in page.text
 
 
+def test_main_screen_shows_all_works_in_one_strip_with_task_captions(db, group, client, session_factory):
+    """Владелец 20.10.2026: «все работы в ряд с миниатюрами и снизу подпись,
+    от какого задания» — одна лента по дате сдачи, а не карточка на работу."""
+    main = group["submit_main"]()
+    _login(client, session_factory, group["curator"])
+
+    page = client.get(f"/cabinet/staff/task-block-submissions/{main.id}/feedback").text
+
+    strip = page.split('data-gallery="group-', 1)[1].split("</div>", 1)[0]
+    photos = ["https://s3/first.jpg", "https://s3/second.jpg", "https://s3/main.jpg"]
+    assert all(url in strip for url in photos)
+    assert [strip.index(url) for url in photos] == sorted(strip.index(url) for url in photos)
+    captions = strip.split("<figcaption>")[1:]
+    assert [c.split("</strong>")[0] for c in captions] == [
+        "<strong>Неделя 1 – перспектива", "<strong>Неделя 2 – светотень", "<strong>Неделя 3 – натюрморт",
+    ]
+    # Фото главной работы второй раз отдельной сеткой не рисуются.
+    assert page.count("https://s3/main.jpg") == 1
+
+
 def test_linked_work_pages_lead_to_the_main_dialog(db, group, client, session_factory):
     main = group["submit_main"]()
     first = group["works"]["first"]

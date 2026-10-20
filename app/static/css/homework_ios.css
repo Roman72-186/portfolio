@@ -77,6 +77,19 @@
 
 .ios-homework .photo-grid img { border-radius: 10px; border: none; }
 
+/* Лента работ общей ОС (`task_block_feedback_detail.html`, 20.10.2026): та же
+   `.photo-grid`, у каждого фото снизу подпись — из какого задания и когда сдано. */
+.ios-homework .hw-group-work { margin: 0; min-width: 0; }
+.ios-homework .hw-group-work figcaption {
+    margin-top: 4px; color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font);
+    overflow-wrap: anywhere;
+}
+.ios-homework .hw-group-work figcaption strong { display: block; color: var(--ios-label); font-weight: 600; }
+.ios-homework .hw-group-nophoto {
+    display: grid; place-items: center; aspect-ratio: 1; border-radius: 10px;
+    border: 1.5px dashed var(--ios-label-3); color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font);
+}
+
 .ios-homework .section-label { color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.06em; }
 .ios-homework .hw-section-label { margin-top: 18px; }
 
