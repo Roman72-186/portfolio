@@ -162,6 +162,7 @@ from app.services.tracker import (
     create_task,
     cycle_label,
     delete_task,
+    TaskHasSubmissionsError,
     get_homework,
     get_task,
     homework_images,
@@ -2510,7 +2511,7 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
             action="program_cycle_item_create",
             performed_by_id=user["user_id"],
             details=json.dumps(
-                {"topic_id": topic.id, "task_id": task.id}, ensure_ascii=False
+                {"topic_id": topic.id, "task_id": task.id, "title": (task.title or "")[:200]}, ensure_ascii=False
             ),
         )
     )
@@ -3443,6 +3444,8 @@ def create_mock_item(
                         "day": iso,
                         "subject": block.subject,
                         "assignment_id": assignment.id,
+                        "task_id": task.id,
+                        "title": (task.title or "")[:200],
                         "tickets": len(block.tickets),
                     },
                     ensure_ascii=False,
@@ -3796,7 +3799,7 @@ def create_video_item(
             action="program_video_create",
             performed_by_id=user["user_id"],
             details=json.dumps(
-                {"day": iso, "video_id": video.id, "topic_id": topic.id},
+                {"day": iso, "video_id": video.id, "topic_id": topic.id, "task_id": task.id, "title": (task.title or "")[:200]},
                 ensure_ascii=False,
             ),
         )
@@ -3869,7 +3872,7 @@ def create_homework_item(
             action="program_homework_create",
             performed_by_id=user["user_id"],
             details=json.dumps(
-                {"day": iso, "homework_id": homework.id}, ensure_ascii=False
+                {"day": iso, "homework_id": homework.id, "task_id": task.id, "title": (task.title or "")[:200]}, ensure_ascii=False
             ),
         )
     )
@@ -3964,7 +3967,7 @@ def _create_simple_item(
         AuditLog(
             action=f"program_{kind}_create",
             performed_by_id=user["user_id"],
-            details=json.dumps({"day": iso, "topic_id": topic.id}, ensure_ascii=False),
+            details=json.dumps({"day": iso, "topic_id": topic.id, "task_id": task.id, "title": (task.title or "")[:200]}, ensure_ascii=False),
         )
     )
     db.commit()
@@ -4639,6 +4642,21 @@ def delete_program_item(
     task = get_task(db, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Элемент не найден")
-    delete_task(task)
+    try:
+        delete_task(db, task)
+    except TaskHasSubmissionsError as exc:
+        return JSONResponse({"ok": False, "detail": str(exc)}, status_code=409)
+    # До 20.10.2026 удаление не писалось в журнал: задание №111 с 83 работами
+    # удалили 14.10, и автора нашли только по адресу в логе запросов.
+    db.add(
+        AuditLog(
+            action="program_item_delete",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"task_id": task.id, "title": (task.title or "")[:200], "topic_id": task.topic_id},
+                ensure_ascii=False,
+            ),
+        )
+    )
     db.commit()
     return JSONResponse({"ok": True})

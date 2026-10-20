@@ -44,6 +44,7 @@ from app.services.tracker import (
     create_homework,
     create_task,
     delete_task,
+    TaskHasSubmissionsError,
     get_assignee_ids,
     get_homework,
     get_tag_ids,
@@ -396,7 +397,10 @@ def delete_tracker_task(
     # требовать «сначала скройте» здесь значило бы требовать снять всю неделю.
     if task.is_published and task.topic_id is None:
         return JSONResponse({"ok": False, "error": "unpublish_first"}, status_code=409)
-    delete_task(task)
+    try:
+        delete_task(db, task)
+    except TaskHasSubmissionsError as exc:
+        return JSONResponse({"ok": False, "detail": str(exc)}, status_code=409)
     _audit_task(db, action="tracker_task_delete", user_id=user["user_id"], task=task)
     db.commit()
     return JSONResponse({"ok": True})

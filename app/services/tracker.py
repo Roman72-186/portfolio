@@ -1247,9 +1247,52 @@ def unpublish_task(task: TrackerTask) -> None:
     task.published_by_id = None
 
 
-def delete_task(task: TrackerTask) -> None:
+class TaskHasSubmissionsError(Exception):
+    """Удаляют задание, в котором ученики уже сдали работы.
+
+    Не `ValueError`: роуты ловят его как ошибку ввода (422), а это отказ по
+    состоянию данных — 409, как `task_blocks.BlockHasSubmissionsError`.
+    """
+
+
+def submitted_works_count(db: Session, task_id: int) -> int:
+    """Сданные работы задания: в его блоках и в старой «Домашке»."""
+    from app.models.homework_submission import HomeworkSubmission
+    from app.models.task_block import TaskBlock, TaskBlockSubmission
+
+    in_blocks = (
+        db.query(TaskBlockSubmission.id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .filter(TaskBlock.task_id == task_id, TaskBlockSubmission.submitted_at.isnot(None))
+        .count()
+    )
+    homework = (
+        db.query(HomeworkSubmission.id)
+        .filter(
+            HomeworkSubmission.tracker_task_id == task_id,
+            HomeworkSubmission.submitted_at.isnot(None),
+        )
+        .count()
+    )
+    return in_blocks + homework
+
+
+def delete_task(db: Session, task: TrackerTask) -> None:
     """Мягкое удаление: строки состояния учеников остаются, задача пропадает из
-    выдачи по `deleted_at`. Физического удаления нет, отчётность не теряется."""
+    выдачи по `deleted_at`. Физического удаления нет, отчётность не теряется.
+
+    Задание со сданными работами не удаляется (владелец 20.10.2026). Прецедент
+    14.10.2026: задание №111 «1 неделя l математический метод l композиция» с
+    блоком «Скопируй рисунок на глаз» удалили из конструктора как дубль, и 83
+    сданные работы пропали у учеников и кураторов на шесть дней. Мягкое удаление
+    данные хранит, но вернуть их можно было только правкой базы.
+    """
+    count = submitted_works_count(db, task.id)
+    if count:
+        raise TaskHasSubmissionsError(
+            f"Нельзя удалить задание «{task.title}»: в нём уже есть сданные работы "
+            f"учеников ({count}). После удаления они пропали бы у учеников и кураторов."
+        )
     task.deleted_at = datetime.now(timezone.utc)
     task.is_published = False
 

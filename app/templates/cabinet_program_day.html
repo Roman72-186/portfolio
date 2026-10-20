@@ -1901,9 +1901,10 @@ FORM: Operate.
         removeButton.disabled = true;
         api('/cabinet/staff/program/items/' + row.dataset.itemId + '/delete')
             .then(function () { window.location.reload(); })
-            .catch(function () {
+            .catch(function (error) {
                 removeButton.disabled = false;
-                window.alert('Не удалось удалить. Попробуйте ещё раз.');
+                // 409 — задание со сданными работами (20.10.2026): причину пишет сервер.
+                window.alert(error.status === 409 ? error.message : 'Не удалось удалить. Попробуйте ещё раз.');
             });
     });
 })();

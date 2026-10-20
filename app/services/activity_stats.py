@@ -696,7 +696,36 @@ _AUDIT_LABELS = {
     "event_type_archive": "Тип события: скрыт",
     "event_type_restore": "Тип события: возвращён",
     "event_type_delete": "Тип события: удалён",
+    # Рамки программы — свои подписи, не «Задание: …» из `audit_label`.
+    "program_period_delete": "Период: удалён",
+    "program_stage_delete": "Этап: удалён",
+    "program_cycle_delete": "Цикл: удалён",
+    "program_cycle_remind": "Цикл: напоминание должникам",
+    "tracker_task_publish": "Задание: опубликовано",
+    "tracker_task_unpublish": "Задание: скрыто",
 }
+
+# Задания программы и трекера (владелец 20.10.2026: «записывай, кто удалял
+# или добавлял»). Ключ — `program_<вид>_<действие>` или `tracker_task_<действие>`,
+# видов почти десяток (материал, видео, домашка, пробник…), поэтому подпись
+# собирается по последнему слову, а не перечислением каждого ключа.
+_TASK_AUDIT_VERBS = {
+    "create": "Задание: добавлено",
+    "update": "Задание: изменено",
+    "delete": "Задание: удалено",
+    "restore": "Задание: восстановлено",
+}
+
+
+def audit_label(action: str) -> str:
+    """Подпись действия для «Журнала изменений»; без подписи — сам ключ."""
+    if action in _AUDIT_LABELS:
+        return _AUDIT_LABELS[action]
+    if action.startswith(("program_", "tracker_task_")):
+        verb = action.rsplit("_", 1)[-1]
+        if verb in _TASK_AUDIT_VERBS:
+            return _TASK_AUDIT_VERBS[verb]
+    return action
 
 
 def get_diagnostic_stats(db: DBSession, *, student_id: int | None = None) -> list[dict]:
@@ -1671,7 +1700,7 @@ def get_audit_feed(db: DBSession, limit: int = 50) -> list[dict]:
         {
             "created_at": _msk(r.created_at),
             "action": r.action,
-            "action_label": _AUDIT_LABELS.get(r.action, r.action),
+            "action_label": audit_label(r.action),
             "performed_by": names.get(r.performed_by_id, f"id={r.performed_by_id}"),
             "target": names.get(r.target_user_id) if r.target_user_id else None,
             "details": r.details,
@@ -1841,7 +1870,7 @@ def student_activity(
             feed.append({
                 "at": _utc(r.created_at),
                 "kind": "staff",
-                "label": _AUDIT_LABELS.get(r.action, r.action),
+                "label": audit_label(r.action),
                 "details": details,
                 "by": names.get(r.performed_by_id, f"id={r.performed_by_id}"),
             })

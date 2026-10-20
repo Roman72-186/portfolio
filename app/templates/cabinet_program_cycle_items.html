@@ -873,8 +873,9 @@ function uploadImage(file, url) {
             if (!window.confirm('Убрать это задание из цикла?')) return;
             api('/cabinet/staff/program/items/' + itemId + '/delete', {}).then(function () {
                 window.location.reload();
-            }).catch(function () {
-                window.alert('Не удалось удалить задание.');
+            }).catch(function (err) {
+                // 409 — задание со сданными работами (20.10.2026): причину пишет сервер.
+                window.alert(err.status === 409 ? err.message : 'Не удалось удалить задание.');
             });
         });
     });

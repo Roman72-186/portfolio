@@ -311,6 +311,7 @@ FORM: Operate, расширение существующего кабинета 
             actionButton.disabled = false;
             window.alert(error.message === 'unpublish_first'
                 ? 'Задача опубликована и висит у учеников. Сначала скройте её.'
+                : error.status === 409 ? error.message
                 : 'Действие не выполнено. Попробуйте ещё раз.');
         });
     });
