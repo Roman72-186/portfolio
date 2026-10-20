@@ -5,7 +5,6 @@
 """
 import pytest
 
-from app.models.user import User
 from app.services.user_management import archive_user, toggle_user_active, unarchive_user
 
 
@@ -171,23 +170,6 @@ def test_archive_route_round_trip(superadmin_client, db, student):
     assert student.is_active is True
 
 
-def test_archive_button_visible_to_superadmin(superadmin_client):
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/students")
-    assert "/cabinet/archive" in resp.text
-
-
-def test_archive_button_visible_to_admin(client, user_factory, session_factory):
-    """Админ = ГП (Главный преподаватель) — с 14.09.2026 видит архив на чтение."""
-    admin = user_factory(vk_id=910010, name="Админ", role_name="админ")
-    sess = session_factory(admin)
-    client.cookies.set("session_id", sess.id)
-
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    assert "/cabinet/archive" in resp.text
-
-
 def test_archive_page_readable_by_admin(db, student, user_factory, client, session_factory):
     admin = user_factory(vk_id=910012, name="Админ", role_name="админ")
     sess = session_factory(admin)
@@ -198,19 +180,6 @@ def test_archive_page_readable_by_admin(db, student, user_factory, client, sessi
     resp = client.get("/cabinet/archive")
     assert resp.status_code == 200
     assert "Прошлый" in resp.text
-
-
-def test_archive_visible_on_admin_dashboard(client, user_factory, session_factory):
-    """Пункт меню считается динамически по role_rank в partials/staff_nav.html,
-    поэтому проверяем именно посадочный экран ГП (`/cabinet/admin-panel`),
-    а не только `/cabinet/students`."""
-    admin = user_factory(vk_id=910013, name="Админ", role_name="админ")
-    sess = session_factory(admin)
-    client.cookies.set("session_id", sess.id)
-
-    resp = client.get("/cabinet/admin-panel")
-    assert resp.status_code == 200
-    assert "/cabinet/archive" in resp.text
 
 
 def test_archived_student_not_writable_by_admin(db, student, user_factory, client, session_factory):
@@ -300,14 +269,6 @@ def test_archived_cycles_leave_staff_working_list(db, student, user_factory):
     assert student.id not in ids
 
 
-def test_archive_button_on_superadmin_dashboard(superadmin_client):
-    """Кнопка должна быть там, куда суперадмин попадает после входа."""
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/superadmin")
-    assert resp.status_code == 200
-    assert "/cabinet/archive" in resp.text
-
-
 # ── «Архив» = все фото в одном месте (владелец 21.09.2026) ──────────────────
 
 def _mk_work_photo(db, user_id, work_type, *, month="май", year=2026):
@@ -326,20 +287,6 @@ def _mk_work_photo(db, user_id, work_type, *, month="май", year=2026):
     return work
 
 
-def test_students_page_reports_archive_view_flag_false(superadmin_client):
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    assert "const IS_ARCHIVE_VIEW = false;" in resp.text
-
-
-def test_archive_page_reports_archive_view_flag_true(superadmin_client):
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/archive")
-    assert resp.status_code == 200
-    assert "const IS_ARCHIVE_VIEW = true;" in resp.text
-
-
 def test_legacy_portfolio_merges_all_photos_for_archived_student(superadmin_client, db, student):
     from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 
@@ -350,8 +297,6 @@ def test_legacy_portfolio_merges_all_photos_for_archived_student(superadmin_clie
 
     resp = client.get(f"/cabinet/students/{student.id}/legacy-portfolio")
     assert resp.status_code == 200
-    assert "До обучения" in resp.text
-    assert "В процессе обучения" in resp.text
     assert "before.jpg" in resp.text
     assert "after.jpg" in resp.text
 

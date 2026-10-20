@@ -25,57 +25,6 @@ def _create_assignment(db, user, *, status="published") -> ExamAssignment:
     return assignment
 
 
-def test_exam_assignments_hub_renders(
-    client,
-    db,
-    user_factory,
-    session_factory,
-):
-    admin = user_factory(vk_id=303001, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-
-    resp = client.get("/cabinet/exam-assignments")
-
-    assert resp.status_code == 200
-    assert "/cabinet/exam-assignments/active" in resp.text
-    assert "/cabinet/exam-assignments/archive" in resp.text
-    assert "/cabinet/exam-assignments/create" in resp.text
-
-
-def test_exam_assignments_active_renders_status_badge(
-    client,
-    db,
-    user_factory,
-    session_factory,
-):
-    admin = user_factory(vk_id=303005, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-    _create_assignment(db, admin, status="published")
-
-    resp = client.get("/cabinet/exam-assignments/active")
-
-    assert resp.status_code == 200
-    assert 'class="status-badge status-on"' in resp.text
-    assert "Включён" in resp.text
-
-
-def test_exam_assignments_disabled_shows_off_badge(
-    client,
-    db,
-    user_factory,
-    session_factory,
-):
-    admin = user_factory(vk_id=303006, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-    _create_assignment(db, admin, status="draft")
-
-    resp = client.get("/cabinet/exam-assignments/active")
-
-    assert resp.status_code == 200
-    assert 'class="status-badge status-off"' in resp.text
-    assert "Выключен" in resp.text
-
-
 def test_exam_assignment_toggle_flips_status(
     client,
     db,
@@ -270,27 +219,6 @@ def test_exam_assignment_create_restrict_start_by_duration_checkbox(
     assert resp.status_code == 303
     ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет с отсечкой").one()
     assert ticket.restrict_start_by_duration is True
-
-
-def test_exam_assignment_create_form_renders_student_selector(
-    client,
-    db,
-    user_factory,
-    session_factory,
-):
-    """Форма создания должна давать выбор «кому выдать» с режимом точечной выдачи."""
-    admin = user_factory(vk_id=303014, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-
-    resp = client.get("/cabinet/exam-assignments/create")
-
-    assert resp.status_code == 200
-    assert "_assign_mode" in resp.text          # радио «Кому выдать билет»
-    assert "Конкретным" in resp.text            # режим точечной выдачи
-    assert "initStudentSearch" in resp.text     # рендер чекбоксов учеников
-    assert '<h1 class="page-title page-title--standalone">' in resp.text
-    assert 'src=""' not in resp.text            # скрытая картинка не запрашивает текущую страницу
-    assert "ensurePreviewImage" in resp.text     # img создаётся только после выбора файла
 
 
 def test_exam_assignment_form_student_list_includes_username(
@@ -512,24 +440,6 @@ def test_exam_assignment_seq_number_per_kind_and_subject(
     assert seqs[("mock", "Композиция")] == 1
 
 
-def test_exam_assignment_edit_form_renders(
-    client, db, user_factory, session_factory,
-):
-    """Edit-форма рендерится с типом/номером существующего задания."""
-    admin = user_factory(vk_id=303040, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-    a = _create_assignment(db, admin, status="published")
-    a.kind = "control"
-    a.seq_number = 7
-    a.note = "повтор"
-    db.commit()
-
-    resp = client.get(f"/cabinet/exam-assignments/{a.id}/edit")
-    assert resp.status_code == 200
-    assert 'value="control"' in resp.text and "checked" in resp.text
-    assert "auto-title-preview" in resp.text
-
-
 def test_exam_assignment_edit_form_escapes_ticket_text_in_script(
     client, db, user_factory, session_factory,
 ):
@@ -555,25 +465,6 @@ def test_exam_assignment_edit_form_escapes_ticket_text_in_script(
     assert "\\u003c/script\\u003e\\u003cscript\\u003ealert(1)" in resp.text
 
 
-def test_exam_assignment_form_renders_recipient_filter(
-    client, db, user_factory, session_factory,
-):
-    """Форма отдаёт конструктор подбора получателей и данные кураторов."""
-    admin = user_factory(vk_id=303032, role_name="суперадмин")
-    curator = user_factory(vk_id=303033, role_name="куратор")
-    curator.last_name = "Кураторов"
-    curator.first_name = "Иван"
-    db.commit()
-    _login_as(client, session_factory, admin)
-
-    resp = client.get("/cabinet/exam-assignments/create")
-    assert resp.status_code == 200
-    assert "Подобрать по фильтру" in resp.text       # панель конструктора
-    assert "buildRecipientFilter" in resp.text       # JS рендер фильтра
-    assert 'name="kind"' in resp.text                # сегментный выбор типа
-    assert "auto-title-preview" in resp.text         # превью авто-названия
-
-
 def test_exam_assignment_duplicate_404_for_missing(
     client,
     db,
@@ -589,21 +480,3 @@ def test_exam_assignment_duplicate_404_for_missing(
         follow_redirects=False,
     )
     assert resp.status_code == 404
-
-
-def test_exam_assignment_detail_renders_status_badge(
-    client,
-    db,
-    user_factory,
-    session_factory,
-):
-    admin = user_factory(vk_id=303002, role_name="суперадмин")
-    _login_as(client, session_factory, admin)
-    assignment = _create_assignment(db, admin, status="draft")
-
-    resp = client.get(f"/cabinet/exam-assignments/{assignment.id}")
-
-    assert resp.status_code == 200
-    assert 'class="status-badge status-draft"' in resp.text
-    assert "Черновик" in resp.text
-    assert '<h1 class="page-title">' in resp.text

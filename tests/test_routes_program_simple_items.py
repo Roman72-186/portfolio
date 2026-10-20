@@ -170,3 +170,8 @@ def test_student_marks_simple_item_manually(
     )
     task = db.query(TrackerTask).one()
     assert task.source_kind is None
+
+    client.cookies.set("session_id", session_factory(student).id)
+    toggled = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert toggled.status_code == 200, toggled.text
+    assert toggled.json()["status"] == "done"

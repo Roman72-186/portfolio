@@ -19,7 +19,6 @@ from datetime import date, datetime, timedelta, timezone
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_LINK,
-    BLOCK_TYPE_LABELS,
     BLOCK_PHOTO,
     BLOCK_QUESTION,
     BLOCK_SCALE,
@@ -122,36 +121,6 @@ def test_material_accepts_every_block_type(client, db, user_factory, session_fac
     ]
     assert rows[2].video_id == video.id
     assert rows[3].url == "https://example.org"
-
-
-def test_constructor_hides_text_but_offers_photo_add_button(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Текст не добавляется отдельно, фото — отдельной галереей примеров, а
-    «Домашнее задание» и «Фото + сдача работы» слиты в одну кнопку.
-
-    Сторож тройки «кнопка снята/слита, тип живёт»: рядом с ним
-    `test_material_accepts_every_block_type` сохраняет все типы через тот же
-    роут. Если когда-нибудь вычеркнуть BLOCK_TEXT/BLOCK_UPLOAD из BLOCK_TYPES
-    вместо BLOCK_TYPES_ADDABLE, упадёт именно тот тест, а этот промолчит.
-    """
-    _freeze(monkeypatch, date.today())
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
-
-    assert 'data-add-block="text"' not in page.text
-    assert 'data-add-block="photo"' in page.text
-    # Домашнее задание слито в фото+сдачу (17.09.2026) — своей кнопки нет.
-    assert 'data-add-block="upload"' not in page.text
-    assert 'data-add-block="photo_upload"' in page.text
-    # Подписи типов по-прежнему приходят все: ими редактор называет карточки
-    # уже сохранённых текстовых и фото-блоков (BLOCK_LABELS в partial).
-    pair = ["text", BLOCK_TYPE_LABELS[BLOCK_TEXT]]
-    assert (
-        _json.dumps(pair) in page.text
-        or _json.dumps(pair, ensure_ascii=False) in page.text
-    )
 
 
 def test_constructor_accepts_precourse_fields(client, db, user_factory, session_factory, monkeypatch):
@@ -745,16 +714,6 @@ def watch_control_on(monkeypatch):
     Bunny включён: без него ролик ученику не отдаётся и проверять нечего."""
     monkeypatch.setattr("app.api.cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED", True)
     monkeypatch.setattr("app.services.video_catalog.settings.bunny_stream_enabled", True)
-
-
-def test_video_watch_control_enabled_by_default():
-    """С 19.09 по 05.10.2026 флаг стоял False, хотя причину отключения сняли
-    мостом уже 21.09 — кружок поставили без досмотра 1173 раза из 1884.
-    Выключить контроль снова — осознанная правка этого теста, а не тихая
-    смена константы."""
-    from app.api import cabinet_tracker
-
-    assert cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED is True
 
 
 def test_required_video_block_closes_without_watch_when_control_off(

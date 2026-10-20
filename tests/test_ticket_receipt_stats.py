@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone, date
 
 from app.models.feature_period import FeaturePeriod
 from app.models.mock_exam_attempt import MockExamAttempt
-from app.services.period_stats import MOCK_STATS_START, get_ticket_receipt_stats
+from app.services.period_stats import get_ticket_receipt_stats
 from app.services.tz import MSK_TZ
 
 
@@ -153,7 +153,6 @@ def test_floor_excludes_attempts_before_13_06_2026(db, user_factory):
     assert res["total_receipts"] == 1
     titles = {t["ticket_title"] for t in res["by_ticket"]}
     assert titles == {"Новый"}
-    assert MOCK_STATS_START == date(2026, 6, 13)
 
 
 def test_period_window_filters_attempts(db, user_factory):

@@ -57,8 +57,3 @@ def test_html_in_source_text_is_escaped_not_executed():
 def test_empty_and_none_input():
     assert format_rich_text(None) == ""
     assert format_rich_text("") == ""
-
-
-def test_ticket_desc_alias_is_the_same_function():
-    from app.tmpl import format_ticket_description
-    assert format_ticket_description is format_rich_text

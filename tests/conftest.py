@@ -57,9 +57,6 @@ from app.db.database import Base, get_db             # noqa: E402
 # Отключать безопасно: `_get_client()` в каждом из двух сервисов создаёт клиент
 # сам при первом обращении, а тесты наружу не ходят. Прод не затронут — правка
 # живёт только в тестовой обвязке.
-#
-# `tests/test_main_lifespan.py` ставит поверх свои AsyncMock через monkeypatch,
-# его проверки продолжают работать.
 import app.services.telegram as _tg_service           # noqa: E402
 import app.services.telegram_login as _tg_login_service  # noqa: E402
 
@@ -81,10 +78,63 @@ from app.dependencies import require_csrf, require_csrf_header  # noqa: E402
 from app.config import settings as _app_settings     # noqa: E402
 
 
+class _MemoryS3:
+    """S3 в памяти: те же вызовы, что делает `app/services/s3.py`, без сети."""
+
+    def __init__(self):
+        self.objects: dict[str, bytes] = {}
+
+    def put_object(self, *, Key, Body, **_):
+        self.objects[Key] = Body if isinstance(Body, bytes) else Body.read()
+
+    def get_object(self, *, Key, **_):
+        import io
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+    def delete_object(self, *, Key, **_):
+        self.objects.pop(Key, None)
+
+    def copy_object(self, *, Key, CopySource, **_):
+        self.objects[Key] = self.objects[CopySource["Key"]]
+
+
+@pytest.fixture(autouse=True)
+def s3_in_memory(monkeypatch):
+    """Ни один тест не ходит в настоящий S3.
+
+    Локальный `.env` указывает на боевой бакет (те же адрес и ключ, что в
+    `.env.prod`, сверено 20.10.2026), и тесты с успешной загрузкой клали туда
+    файлы, а тесты удаления — удаляли, по 17 секунд сети на тест. Хранилище
+    подменено целиком: адрес вымышленный, клиент — словарь в памяти, так что
+    тесту не нужно помнить про свою заглушку. Тест, которому нужен «S3 не
+    настроен», по-прежнему подменяет `is_configured` сам.
+    """
+    import app.services.s3 as s3_module
+
+    for name, value in (
+        ("s3_endpoint", "https://s3.test"),
+        ("s3_bucket", "test-bucket"),
+        ("s3_access_key", "test"),
+        ("s3_secret_key", "test"),
+        ("s3_public_base_url", ""),
+    ):
+        monkeypatch.setattr(_app_settings, name, value)
+    storage = _MemoryS3()
+    monkeypatch.setattr(s3_module, "_get_client", lambda: storage)
+    return storage
+
+
 @pytest.fixture
 def enable_n8n(monkeypatch):
-    """Opt in only tests that explicitly exercise the legacy n8n contract."""
+    """Opt in only tests that explicitly exercise the legacy n8n contract.
+
+    Адреса — несуществующие (`.invalid` зарезервирован под это): локальный
+    `.env` держит настоящий вебхук, и тест без своей заглушки отправлял туда
+    фото (20.10.2026). Тест контракта подменяет HTTP-клиент сам."""
     monkeypatch.setattr(_app_settings, "n8n_enabled", True)
+    monkeypatch.setattr(_app_settings, "n8n_base_url", "https://n8n.invalid")
+    monkeypatch.setattr(_app_settings, "n8n_webhook_upload", "https://n8n.invalid/webhook/upload")
+    monkeypatch.setattr(_app_settings, "n8n_webhook_download_file", "https://n8n.invalid/webhook/download")
 
 # ─── Fix SQLite naive-datetime issue.
 #
@@ -400,3 +450,34 @@ def admin_client(client, session_factory, admin_user):
     sess = session_factory(admin_user)
     client.cookies.set("session_id", sess.id)
     return client, admin_user
+
+
+@pytest.fixture()
+def rendered(monkeypatch):
+    """Данные, которые роут передал в шаблон: `rendered("history.html")` —
+    контекст последней отрисовки этого шаблона.
+
+    Тест проверяет числа и списки страницы, а не её разметку: переверстали
+    шаблон — тест не заметил, сломали подсчёт в роуте — заметил. Рендер идёт
+    как обычно, фикстура только запоминает контекст.
+    """
+    from app.tmpl import templates
+
+    original = templates.TemplateResponse
+    seen: dict[str, dict] = {}
+
+    def remember(*args, **kwargs):
+        name = kwargs.get("name") or next(a for a in args if isinstance(a, str))
+        context = kwargs.get("context")
+        if context is None:
+            context = next(a for a in args if isinstance(a, dict))
+        seen[name] = context
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(templates, "TemplateResponse", remember)
+
+    def last(name: str) -> dict:
+        assert name in seen, f"шаблон {name} не отрисован, были: {sorted(seen)}"
+        return seen[name]
+
+    return last

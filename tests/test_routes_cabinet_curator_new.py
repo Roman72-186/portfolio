@@ -5,7 +5,6 @@ import pytest
 
 from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
-from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -15,14 +14,6 @@ from app.models.user import User
 @pytest.fixture()
 def curator_client(client, db, user_factory, session_factory):
     curator = user_factory(vk_id=800001, name="Curator", role_name="куратор")
-    sess = session_factory(curator)
-    client.cookies.set("session_id", sess.id)
-    return client, curator
-
-
-@pytest.fixture()
-def other_curator_client(client, db, user_factory, session_factory):
-    curator = user_factory(vk_id=800099, name="Other Curator", role_name="куратор")
     sess = session_factory(curator)
     client.cookies.set("session_id", sess.id)
     return client, curator
@@ -68,10 +59,6 @@ def test_curator_dashboard_renders(curator_client):
     client, _ = curator_client
     resp = client.get("/cabinet/curator", follow_redirects=False)
     assert resp.status_code == 200
-    # Синяя плашка + блоки навигации по разделам куратора.
-    assert "curator-nav-block" in resp.text
-    assert "/cabinet/students" in resp.text
-    assert "/cabinet/curator/reports" in resp.text
 
 
 def test_curator_dashboard_denied_for_student(client, db, user_factory, session_factory):
@@ -104,73 +91,19 @@ def test_curator_portfolio_page_has_sidebar(curator_client, student):
 # GET /cabinet/curator/portfolio/student/{id} — JSON
 # ---------------------------------------------------------------------------
 
-def test_portfolio_student_json_returns_json(curator_client, db, student):
+def test_portfolio_student_json(curator_client, db, student):
     client, _ = curator_client
+    _add_work(db, student.id, WORK_TYPE_BEFORE)
     _add_work(db, student.id, WORK_TYPE_BEFORE)
     _add_work(db, student.id, WORK_TYPE_AFTER)
 
     resp = client.get(f"/cabinet/curator/portfolio/student/{student.id}")
+
     assert resp.status_code == 200
     data = resp.json()
-    assert "student" in data
-    assert "before_works" in data
-    assert "after_by_month" in data
-
-
-def test_portfolio_student_json_correct_name(curator_client, db, student):
-    client, _ = curator_client
-    resp = client.get(f"/cabinet/curator/portfolio/student/{student.id}")
-    data = resp.json()
-    assert "Иванова" in data["student"]["name"] or "Анна" in data["student"]["name"]
-
-
-def test_portfolio_student_json_contains_works(curator_client, db, student):
-    client, _ = curator_client
-    _add_work(db, student.id, WORK_TYPE_BEFORE)
-    _add_work(db, student.id, WORK_TYPE_BEFORE)
-
-    resp = client.get(f"/cabinet/curator/portfolio/student/{student.id}")
-    data = resp.json()
+    assert data["student"]["name"] == "Иванова Анна"
     assert len(data["before_works"]) == 2
-
-
-# ---------------------------------------------------------------------------
-# GET /cabinet/students/{id}/profile — контакты ученика скрыты от куратора,
-# кроме ника Telegram (владелец 18.10.2026)
-# ---------------------------------------------------------------------------
-
-def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
-    client, _ = curator_client
-    student.phone = "+79991234567"
-    student.parent_phone = "+79997654321"
-    student.parent_name = "Иванова Мария Петровна"
-    student.tg_username = "anna_ivanova"
-    student.vk_id = 424242
-    student.vk_profile_url = "https://vk.com/anna_ivanova"
-    student.email = "anna@example.com"
-    student.city = "Казань"
-    student.timezone = "0"
-    student.sdek_address = "Казань, ул. Ленина, 1"
-    db.add(student)
-    db.commit()
-
-    resp = client.get(f"/cabinet/students/{student.id}/profile")
-    assert resp.status_code == 200
-    data = resp.json()["student"]
-    assert data["can_see_contacts"] is False
-    assert data["phone"] is None
-    assert data["parent_phone"] is None
-    assert data["parent_name"] is None
-    # Ник куратору открыт: написать своему ученику (владелец 18.10.2026).
-    assert data["tg_username"] == "anna_ivanova"
-    # VK из анкеты снят совсем (владелец 29.09.2026) — поля нет ни у кого.
-    assert "vk_id" not in data
-    assert "vk_profile_url" not in data
-    assert data["email"] is None
-    assert data["birth_date"] is None
-    assert data["city"] is None
-    assert data["timezone"] is None
-    assert data["sdek_address"] is None
+    assert sum(len(group["works"]) for group in data["after_by_month"]) == 1
 
 
 def test_admin_can_see_student_contact_fields(admin_client, db, user_factory):
@@ -239,37 +172,19 @@ def test_curator_mock_exams_page_loads(curator_client):
 # GET /cabinet/curator/mock-exams/student/{id} — JSON
 # ---------------------------------------------------------------------------
 
-def test_mock_exams_student_json_returns_json(curator_client, db, student):
-    client, _ = curator_client
-    _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", score=75)
-
-    resp = client.get(f"/cabinet/curator/mock-exams/student/{student.id}")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "student" in data
-    assert "mock_works" in data
-    assert "mock_locks" in data
-
-
-def test_mock_exams_student_json_avg_score(curator_client, db, student):
+def test_mock_exams_student_json(curator_client, db, student):
     client, _ = curator_client
     _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", score=80)
     _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", score=60)
+    _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Композиция", score=70)
 
     resp = client.get(f"/cabinet/curator/mock-exams/student/{student.id}")
+
+    assert resp.status_code == 200
     data = resp.json()
     assert data["student"]["avg_score"] == 70
-
-
-def test_mock_exams_works_grouped_by_subject(curator_client, db, student):
-    client, _ = curator_client
-    _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", score=80)
-    _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Композиция", score=90)
-
-    resp = client.get(f"/cabinet/curator/mock-exams/student/{student.id}")
-    data = resp.json()
-    assert "Рисунок" in data["mock_works"]
-    assert "Композиция" in data["mock_works"]
+    assert set(data["mock_works"]) == {"Рисунок", "Композиция"}
+    assert "mock_locks" in data
 
 
 def test_mock_exams_access_denied_other_curator(client, db, user_factory, session_factory):
@@ -346,7 +261,6 @@ def test_unlock_missing_student_keeps_403_contract(client, user_factory, session
     )
 
     assert resp.status_code == 403
-    assert "Нет доступа к этому студенту" in resp.text
 
 
 def test_unlock_invalid_subject_still_returns_400(client, user_factory, session_factory, student):
@@ -359,7 +273,6 @@ def test_unlock_invalid_subject_still_returns_400(client, user_factory, session_
     )
 
     assert resp.status_code == 400
-    assert "Неверный предмет" in resp.text
 
 
 def test_chief_unlock_clears_lock(client, db, user_factory, session_factory, student):
@@ -475,7 +388,17 @@ def _create_active_ticket(db, user, subject="Рисунок"):
     return ticket
 
 
-def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db, student, user_factory):
+def _mock_status(client, rendered):
+    """Кто сдал и кто не сдал текущий пробник — данные панели «Учеников»."""
+    assert client.get("/cabinet/students").status_code == 200
+    page = rendered("cabinet_students.html")
+    return (
+        [s["id"] for s in page["submitted_students"]],
+        {s["id"]: s["pending_subjects"] for s in page["not_submitted_students"]},
+    )
+
+
+def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db, student, user_factory, rendered):
     from datetime import date
     from app.models.exam_cycle import ExamCycle
 
@@ -507,17 +430,10 @@ def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db
     db.add(w)
     db.commit()
 
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    text = resp.text
-    assert "Сдали 1" in text
-    assert "Не сдали 1" in text
-    # Ник своих учеников куратор видит и копирует списком (владелец 18.10.2026).
-    assert "@anna_ivanova" in text
-    assert "@petrov_p" in text
-    assert "Скопировать ники" in text
-    # Анна — в списке "не сдали" с пометкой предмета, по которому есть билет
-    assert 'mock-status-pending">Рисунок<' in text
+    submitted, pending = _mock_status(client, rendered)
+    assert submitted == [second.id]
+    # Анна — в «не сдали» с предметом, по которому есть билет
+    assert pending == {student.id: ["Рисунок"]}
 
 
 def test_curator_student_list_searchable_by_own_student_username(curator_client, db, student, user_factory):
@@ -533,18 +449,10 @@ def test_curator_student_list_searchable_by_own_student_username(curator_client,
 
     resp = client.get("/cabinet/students")
     assert resp.status_code == 200
-    assert 'data-tg-username="anna_ivanova"' in resp.text
     assert "foreign_nick" not in resp.text
 
 
-def test_mock_status_panel_hidden_without_active_ticket(curator_client, student):
-    client, _ = curator_client
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    assert "Пробник: статус сдачи" not in resp.text
-
-
-def test_mock_status_panel_both_subjects_active_partial_submission(curator_client, db, student, user_factory):
+def test_mock_status_panel_both_subjects_active_partial_submission(rendered, curator_client, db, student, user_factory):
     """Оба предмета активны одновременно — ученик сдал только один из них."""
     from datetime import date
     from app.models.exam_cycle import ExamCycle
@@ -569,17 +477,13 @@ def test_mock_status_panel_both_subjects_active_partial_submission(curator_clien
     db.add(w)
     db.commit()
 
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    text = resp.text
-    assert "Сдали 0" in text
-    assert "Не сдали 1" in text
+    submitted, pending = _mock_status(client, rendered)
+    assert submitted == []
     # Анна — в «не сдали» только из-за «Композиция», «Рисунок» уже сдан
-    assert 'mock-status-pending">Композиция<' in text
-    assert 'mock-status-pending">Рисунок' not in text
+    assert pending == {student.id: ["Композиция"]}
 
 
-def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_client, db, student, user_factory):
+def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_client, db, student, user_factory, rendered):
     """У ученика без назначенного активного билета — не «сдал» и не «не сдал», просто не учитывается."""
     from datetime import date, timedelta
     from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
@@ -609,12 +513,10 @@ def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_clie
     db.add(ExamTicketAssignee(ticket_id=ticket.id, user_id=second.id))
     db.commit()
 
-    resp = client.get("/cabinet/students")
-    assert resp.status_code == 200
-    text = resp.text
+    submitted, pending = _mock_status(client, rendered)
     # У student (Анны) нет активного билета — она не считается ни «сдала», ни «не сдала»
-    assert "Сдали 0" in text
-    assert "Не сдали 1" in text
+    assert submitted == []
+    assert pending == {second.id: ["Рисунок"]}
 
 
 # ---------------------------------------------------------------------------

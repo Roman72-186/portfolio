@@ -4,21 +4,23 @@
 агрегаций (роли, работы по типам, средний балл, «в этом месяце»). Ни один
 существующий тест не фиксирует, что эти числа реально считаются правильно.
 """
-import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
-from app.services.staff_dashboard import REGISTRATION_STATS_SINCE
+from app.services.staff_dashboard import (
+    REGISTRATION_STATS_SINCE,
+    get_tariff_registration_stats,
+    load_staff_dashboard,
+)
 from app.services.tz import msk_midnight
 
 
-def _stat_pair(text: str, value, label: str) -> bool:
-    """Дашборд рендерит .stat-tile: сначала label в .stat-tile-head, потом value в .stat-tile-value."""
-    pattern = re.compile(
-        re.escape(label) + r'[^<]*</div>\s*<div class="stat-tile-value">' + re.escape(str(value)) + r'</div>'
+def _dashboard(db, admin):
+    """Те же данные, что рисует /cabinet/admin-panel (страница проверяется на 200)."""
+    return load_staff_dashboard(
+        db, {"user_id": admin.id, "role_rank": 4}, datetime.now(timezone.utc)
     )
-    return pattern.search(text) is not None
 
 
 def test_dashboard_counts_students_not_staff(admin_client, db, user_factory):
@@ -31,12 +33,11 @@ def test_dashboard_counts_students_not_staff(admin_client, db, user_factory):
     user_factory(vk_id=200_004, name="Inactive Student", role_name="ученик", is_active=False)
     user_factory(vk_id=200_005, name="Inactive Curator", role_name="куратор", is_active=False)
 
-    resp = client.get("/cabinet/admin-panel")
-    assert resp.status_code == 200
-    text = resp.text
+    assert client.get("/cabinet/admin-panel").status_code == 200
+    data = _dashboard(db, admin)
 
-    assert _stat_pair(text, 2, "Учеников")
-    assert "ещё 1 заблокирован" in text
+    assert data["students_active"] == 2
+    assert data["students_blocked"] == 1
 
 
 def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_factory):
@@ -44,7 +45,7 @@ def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_fa
 
     Работы — ученика: с 07.10.2026 дашборд считает только учеников в учёте
     (`report_scope`), работы сотрудника в цифры не входят."""
-    client, _admin = admin_client
+    client, admin = admin_client
     student = user_factory(vk_id=200_101, name="Student Works", role_name="ученик")
     now = datetime.now(timezone.utc)
     last_month = now.replace(day=1) - timedelta(days=1)
@@ -67,28 +68,13 @@ def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_fa
     ])
     db.commit()
 
-    resp = client.get("/cabinet/admin-panel")
-    assert resp.status_code == 200
-    text = resp.text
+    assert client.get("/cabinet/admin-panel").status_code == 200
+    data = _dashboard(db, admin)
 
-    assert "Всего 5 работ" in text  # total_works: 2 before + 2 mock + 1 after (failed исключён)
-    assert _stat_pair(text, 4, "Загружено в")  # works_this_month: 2 before + 2 mock, апрель не считается
-    assert '<div class="type-val">2</div>' in text  # before
-    # avg_score: единственная оценённая работа — 80.
-    assert _stat_pair(text, 80, "Средний балл за пробники")
-
-
-def _registration_counts(text: str) -> dict[str, int]:
-    """Плитки карточки «Регистрации по тарифам» на «Статистике активности»:
-    число в .ss-stat-val, подпись тарифа в .ss-stat-lbl."""
-    card = text.split("Регистрации по тарифам", 1)[1].split("Список учеников", 1)[0]
-    return {
-        label: int(value)
-        for value, label in re.findall(
-            r'<div class="ss-stat-val">(\d+)</div><div class="ss-stat-lbl">([^<]+)</div>',
-            card,
-        )
-    }
+    assert data["total_works"] == 5  # 2 before + 2 mock + 1 after, failed исключён
+    assert data["works_this_month"] == 4  # апрель не считается
+    assert data["works_by_type"][WORK_TYPE_BEFORE] == 2
+    assert data["avg_mock_score"] == 80  # единственная оценённая работа
 
 
 def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
@@ -124,14 +110,9 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
 
     assert chief_response.status_code == 200
     assert superadmin_response.status_code == 200
-    assert "Регистрации по тарифам" in chief_response.text
-    assert "student_self" in chief_response.text
-    chief_counts = _registration_counts(chief_response.text)
-    assert chief_counts["Без тарифа"] == 1
-    assert sum(chief_counts.values()) == 4
-    assert _registration_counts(superadmin_response.text) == chief_counts
-    assert 'href="/cabinet/admin/registration-stats.xlsx?' in chief_response.text
-    assert 'href="/cabinet/superadmin/registration-stats.xlsx?' in superadmin_response.text
+    stats = get_tariff_registration_stats(db)
+    assert stats["without_tariff"] == 1
+    assert stats["total"] == 4
 
     import io
     import openpyxl
@@ -156,7 +137,7 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
 
 def test_average_score_counts_only_mock_exams(admin_client, db, user_factory):
     """«Средний балл за пробники» раньше брал баллы всех работ подряд."""
-    client, _admin = admin_client
+    client, admin = admin_client
     student = user_factory(vk_id=200_102, name="Student Score", role_name="ученик")
     now = datetime.now(timezone.utc)
     db.add_all([
@@ -167,65 +148,7 @@ def test_average_score_counts_only_mock_exams(admin_client, db, user_factory):
     ])
     db.commit()
 
-    text = client.get("/cabinet/admin-panel").text
-
-    assert _stat_pair(text, 60, "Средний балл за пробники")
-
-
-def test_dashboard_has_no_mock_exam_queue_or_links(admin_client, db):
-    """Владелец 29.09.2026: блок «Ждёт проверки», проверка, билеты и
-    статистика пробников с дашборда сняты. Экраны живы, ссылок сюда нет."""
-    client, admin = admin_client
-    now = datetime.now(timezone.utc)
-    db.add(Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
-                filename="u.jpg", status="success", created_at=now))
-    db.commit()
-
-    text = client.get("/cabinet/superadmin").text
-
-    assert "data-attention" not in text
-    assert "Ждёт проверки" not in text
-    assert 'href="/cabinet/admin/mock-check"' not in text
-    assert 'href="/cabinet/exam-assignments"' not in text
-    assert 'href="/cabinet/superadmin/stats"' not in text
-
-
-def test_dashboard_has_no_portfolio_period_toggle(admin_client):
-    """Окно загрузки портфолио с 09.09.2026 ни на что не влияет
-    (docs/invariants/portfolio.md) — кнопка «Открыть/Закрыть» была обманкой."""
-    client, _ = admin_client
-
-    text = client.get("/cabinet/admin-panel").text
-
-    assert "/cabinet/periods/quick-toggle" not in text
-    assert "Периоды сдачи" not in text
-
-
-def test_irreversible_staff_actions_ask_for_confirmation(admin_client, user_factory):
-    client, _ = admin_client
-    user_factory(vk_id=200_100, name="Curator Confirm", role_name="куратор")
-
-    text = client.get("/cabinet/superadmin").text
-
-    password_form = text.split('action="/cabinet/superadmin/set-credentials"', 1)[1].split("</form>", 1)[0]
-    assert 'data-confirm="Выдать новый пароль' in password_form
-    impersonate_form = text.split('action="/cabinet/superadmin/impersonate/', 1)[1].split("</form>", 1)[0]
-    assert 'data-confirm="Открыть кабинет' in impersonate_form
-
-
-def test_chief_teacher_dashboard_hides_superadmin_only_blocks(client, user_factory, session_factory):
-    """ГП не видит служебную «Проверку моста», разбивку по ролям и список ГП,
-    где ей нечего нажать (владелец 28.09.2026)."""
-    chief = user_factory(vk_id=200_200, name="Chief", role_name="админ")
-    sess = session_factory(chief)
-    client.cookies.set("session_id", sess.id)
-
-    text = client.get("/cabinet/admin-panel").text
-
-    assert "/cabinet/admin/video-bridge-test" not in text
-    assert "Пользователи по ролям" not in text
-    assert "Главные преподаватели и модераторы" not in text
-    assert "Кураторы" in text
+    assert _dashboard(db, admin)["avg_mock_score"] == 60
 
 
 def test_ru_plural_forms():

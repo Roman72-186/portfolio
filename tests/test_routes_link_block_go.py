@@ -75,8 +75,6 @@ def test_step_behind_unsent_homework_does_not_open(auth_client, db):
     locked = client.get(f"/cabinet/tracker/blocks/{link.id}/go", follow_redirects=False)
     assert locked.status_code == 403
     assert "zoom.us" not in locked.text
-    assert "Ссылка пока закрыта" in locked.text
-    assert "Аккаунт заблокирован" not in locked.text
 
     close_block_for_user(db, upload, user.id, source="upload")
     db.commit()

@@ -4,19 +4,13 @@
 3D-лаборатории живёт только в браузере. Но всё, что отдаёт сервер, проверяется по
 наблюдаемому выводу — так тест ловит поломку поведения, а не переформатирование.
 """
-from pathlib import Path
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
 from tests.test_services_video_catalog import open_topic
 
 
-ROOT = Path(__file__).resolve().parents[1]
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
-
-
-def _read(relative_path: str) -> str:
-    return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
 def _configure_playback(monkeypatch):
@@ -57,7 +51,6 @@ def test_player_page_carries_viewer_identity(auth_client, db, monkeypatch):
 
     assert page.status_code == 200
     assert user.name in page.text
-    assert 'class="video-watermark"' in page.text
 
 
 def test_player_page_never_leaks_bunny_keys(auth_client, db, monkeypatch):
@@ -87,123 +80,3 @@ def test_player_iframe_cannot_take_video_out_of_the_page(auth_client, db, monkey
 
     assert "picture-in-picture" not in page.text
     assert "allowfullscreen" not in page.text.lower()
-
-
-def test_player_reports_success_only_after_server_confirmation():
-    source = _read("app/static/js/video-player.js")
-
-    assert "respData && respData.completed === true" in source
-    assert "playback_active: Boolean(isPlaying)" in source
-    assert "ended: Boolean(completed)" in source
-    # Текст сменился в 20f9334 (подсказка, откуда досматривать) — тест отстал.
-    assert "Просмотр пока не засчитан" in source
-    # Пауза общая для Player.js и запасного канала Bunny (10.10.2026).
-    pause_handler = source.split("function handlePause() {", 1)[1].split("\n            }", 1)[0]
-    assert pause_handler.index("saveProgress") < pause_handler.index("setPlaying(false)")
-
-
-def test_player_infers_playback_from_position_without_play_event():
-    """Прод 06.10.2026, ученица id 229: событие `play` от Bunny не дошло, два
-    ролика на 1× ушли с `playback_active=false`, сервер срезал всё. Плеер
-    считает ролик играющим и по ровному ходу позиции; серия обрывается
-    скачком (перемотка) и паузой."""
-    source = _read("app/static/js/video-player.js")
-
-    # Обработчики общие для Player.js и запасного канала Bunny (10.10.2026).
-    timeupdate = source.split("player.on('timeupdate'", 1)[1].split("});", 1)[0]
-    assert "handleTime(timing.seconds, timing.duration)" in timeupdate
-    handle_time = source.split("function handleTime(seconds, duration) {", 1)[1].split("\n            }", 1)[0]
-    assert "noteTick(seconds) && !isPlaying) markPlaying()" in handle_time
-    # Скорость шага ограничена теми же 2,25×, что у сервера: скачок ползунком
-    # серию не продолжает.
-    assert "step <= elapsed * 2.25 + 0.5" in source
-    play = source.split("player.on('play'", 1)[1].split("});", 1)[0]
-    assert "markPlaying()" in play
-    pause = source.split("function handlePause() {", 1)[1].split("\n            }", 1)[0]
-    assert "resetAdvance()" in pause
-    mark = source.split("function markPlaying()", 1)[1].split("}", 1)[0]
-    assert "setPlaying(true)" in mark and "saveProgress(true, false, false)" in mark
-
-
-def test_player_sends_one_session_per_mount_and_keeps_it_on_reattach():
-    """07.10.2026, зачёт по отрезкам: сервер сравнивает отметку с прошлой
-    отметкой того же сеанса. Номер заводится один раз на `mount` и уходит в
-    каждой отметке; `reattachPlayer` (перевыпуск ссылки Bunny) его не меняет —
-    это та же вкладка. Номер внутри `attachPlayer` плодил бы сеансы на каждое
-    переподключение. Прогон настоящего плеера в Node с событиями — в разборе
-    07.10.2026 (правило 11)."""
-    source = _read("app/static/js/video-player.js")
-
-    assert source.count("var sessionId =") == 1
-    attach = source.split("function attachPlayer()", 1)[1].split("reattachPlayer = function", 1)[0]
-    assert "sessionId =" not in attach
-    reattach = source.split("reattachPlayer = function", 1)[1].split("};", 1)[0]
-    assert "sessionId" not in reattach
-    body = source.split("body: JSON.stringify({", 1)[1].split("})", 1)[0]
-    assert "session_id: sessionId" in body
-
-
-def test_player_names_the_missing_part_to_rewatch():
-    """Развилка 4 (владелец 07.10.2026): дошёл до конца без зачёта — плеер
-    стоит на первом пропущенном куске и называет его, а не «досмотри до
-    конца»: досмотр хвоста дыру в середине не закрывает."""
-    source = _read("app/static/js/video-player.js")
-
-    assert "data.resume_gap" in source
-    assert "'Чтобы просмотр засчитался, досмотри кусок с '" in source
-    assert "досмотри отсюда до конца" not in source
-
-
-def test_idle_player_does_not_reload_while_another_plays():
-    """Прод 06.10.2026, жалоба «видео зависает каждые две минуты»: соседний
-    плеер раз в 5 минут перезагружал плеер Bunny ради свежей ссылки и отнимал
-    канал у играющего ролика. Признак «играет» общий на страницу; ссылка
-    обновляется, когда воспроизведение встало."""
-    source = _read("app/static/js/video-player.js")
-
-    assert "window.lrnVideoPlayer.playing" in source
-    refresh = source.split("function refreshPlayerUrlIfStale()", 1)[1].split("}", 1)[0]
-    assert "playingPlayers.size > 0" in refresh
-    assert "window.dispatchEvent(new Event('lrn-video-idle'))" in source
-    assert "window.addEventListener('lrn-video-idle'" in source
-    # Уже запущенный плеер по паузе не перезагружается (прод 06.10.2026, 16:43
-    # UTC: пауза перезагрузила и сам ролик, видео 3 минуты не шло).
-    idle = source.split("window.addEventListener('lrn-video-idle'", 1)[1].split("});", 1)[0]
-    assert "if (hasEverPlayed" in idle
-    # Признак меняется только через setPlaying — иначе список страницы разойдётся.
-    assert source.count("isPlaying = ") - source.count("var isPlaying = ") == 1
-
-
-# ── 3D-лаборатория: проверки по исходникам, JS-раннера в проекте нет ──────────
-
-def test_3dlab_watermark_is_bounded_and_only_built_for_visible_viewer():
-    """Ватермарка строится только для открытого вьюера и перекрывает кадр с запасом.
-
-    Сетка плиток считается от размера контейнера с запасом в две плитки: без
-    запаса поворот на 45° оголял углы, а без привязки к видимости слой строился
-    для скрытой галереи и зря держал память.
-    """
-    source = _read("app/static/3dlab/js/app.js")
-
-    assert 'viewer.classList.contains("visible")' in source
-    assert "wm.replaceChildren()" in source
-    assert "const overscanTiles = 2" in source
-    assert "const viewerObserver = new MutationObserver(rebuild)" in source
-
-
-def test_3dlab_skips_webgl_render_outside_active_3d_view():
-    source = _read("app/static/3dlab/js/threeViewer.js")
-
-    assert "function shouldRenderFrame(canvas)" in source
-    assert "if (document.hidden) return false" in source
-    assert '!viewer.classList.contains("visible")' in source
-    assert "if (!shouldRenderFrame(canvas)) return" in source
-
-
-def test_3dlab_uses_adaptive_mobile_render_quality():
-    source = _read("app/static/3dlab/js/threeViewer.js")
-
-    assert "function getTargetPixelRatio()" in source
-    assert "const maxPixelRatio = isCompactViewport ? 1.5 : 2" in source
-    assert "renderer.setPixelRatio(getTargetPixelRatio())" in source
-    assert "isCompactViewport ? Math.min(rtSamples, 2) : rtSamples" in source

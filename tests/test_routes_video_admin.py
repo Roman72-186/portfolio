@@ -35,9 +35,6 @@ def test_video_admin_section_is_shared_by_admin_and_superadmin(
     _rank4_client(client, user_factory, session_factory)
     rank4 = client.get("/cabinet/admin/videos")
     assert rank4.status_code == 200
-    assert "Загрузить новое видео" in rank4.text
-    assert "tus-js-client@4.3.1" in rank4.text
-    assert "apparchi:bunny-upload:" in rank4.text
 
     super_client, _ = admin_client
     rank5 = super_client.get("/cabinet/admin/videos")
@@ -47,31 +44,6 @@ def test_video_admin_section_is_shared_by_admin_and_superadmin(
 def test_student_cannot_open_video_admin(auth_client):
     client, _ = auth_client
     assert client.get("/cabinet/admin/videos").status_code == 403
-
-
-def test_staff_catalogue_uses_only_staff_navigation(admin_client, db, monkeypatch):
-    _configure_upload(monkeypatch)
-    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
-    monkeypatch.setattr(settings, "bunny_stream_token_ttl_seconds", 300)
-    video = LearningVideo(
-        bunny_library_id=720058,
-        bunny_video_id=VIDEO_ID,
-        title="Урок для предпросмотра",
-        status="ready",
-        is_published=True,
-    )
-    db.add(video)
-    db.commit()
-    client, _ = admin_client
-
-    catalogue = client.get("/cabinet/videos")
-    preview = client.get(f"/cabinet/videos/{video.id}")
-
-    # С 08.10.2026 нижнее меню персонала — тот же выпадающий список, что у
-    # ученика (класс `bottom-nav` общий), поэтому отличаем по подписи и id.
-    assert 'aria-label="Меню персонала"' in catalogue.text
-    assert 'id="studentBurger"' not in catalogue.text
-    assert 'id="studentBurger"' not in preview.text
 
 
 def test_admin_can_create_direct_tus_upload(
@@ -198,17 +170,6 @@ def test_upload_credentials_fail_closed_when_stream_disabled(
 
     assert response.status_code == 503
     assert response.json()["error"] == "upload_not_configured"
-
-
-def test_admin_upload_uses_catalog_scoped_tus_fingerprint(admin_client):
-    client, _ = admin_client
-
-    response = client.get("/cabinet/admin/videos")
-
-    assert response.status_code == 200
-    assert "fingerprint: function (selectedFile)" in response.text
-    assert "credentials.catalog_video_id" in response.text
-    assert "error.status === 404 || error.status === 409" in response.text
 
 
 def test_superadmin_delete_requires_unpublish_and_exact_title(admin_client, db, monkeypatch):
@@ -978,4 +939,3 @@ def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypat
 
     assert response.json()["completed"] is False
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
-

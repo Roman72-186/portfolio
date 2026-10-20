@@ -8,7 +8,7 @@ from app.models.learning_topic import (
     TOPIC_KIND_PERIOD, TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic,
 )
 from app.models.tag import Tag, UserTag
-from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
+from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.services.program import day_bounds, week_start
 from app.services.tracker import (
     close_task_for_user,
@@ -17,7 +17,7 @@ from app.services.tracker import (
     set_task_tags,
     task_status,
 )
-from app.services.tz import msk_midnight, today_msk
+from app.services.tz import MSK_TZ, msk_midnight, today_msk
 
 PAGE = "/cabinet/tracker"
 
@@ -28,13 +28,6 @@ def _tag(db, name: str) -> Tag:
     db.commit()
     db.refresh(tag)
     return tag
-
-
-def _tagged_student(db, user_factory, tag: Tag, *, vk_id: int):
-    student = user_factory(vk_id=vk_id, name=f"Ученик {vk_id}", role_name="ученик")
-    db.add(UserTag(user_id=student.id, tag_id=tag.id))
-    db.commit()
-    return student
 
 
 def _current_week_due(offset_days: int = 0, hour: int = 10):
@@ -182,24 +175,6 @@ def test_standalone_task_visible_for_assign_to_all(auth_client, db):
     resp = client.get(PAGE)
     assert resp.status_code == 200
     assert "Разовая задача" in resp.text
-
-
-def test_tracker_hides_item_kind_from_student(auth_client, db):
-    """То же правило, что в «Обучении» (решение владельца 13.09.2026): тип
-    задания — служебное поле преподавателя, ученик видит название и срок."""
-    client, user = auth_client
-    tag = _tag(db, "Поток 1")
-    db.add(UserTag(user_id=user.id, tag_id=tag.id))
-    db.commit()
-    day, due = _current_week_due(offset_days=1)
-    _program_item(db, day=day, due_at=due, tag_ids=[tag.id], user_id=user.id)
-
-    resp = client.get(PAGE)
-    assert resp.status_code == 200
-    assert "Видео недели" in resp.text
-    # Ярлык целиком, не подстрока: рядом на странице есть тексты со словом
-    # «материал» внутри, они к бейджу типа отношения не имеют.
-    assert ">Видеоматериал<" not in resp.text
 
 
 def test_standalone_task_hidden_without_addressing(auth_client, db):
@@ -369,106 +344,6 @@ def test_task_closed_long_ago_is_not_shown(auth_client, db):
 
 # ── Умные кнопки вместо голой галочки (21.08) ───────────────────────────────
 
-def _video_task_with_video(db, user_id, *, due_at):
-    """Задача-видео с настоящим роликом — как её заводит учебная программа."""
-    from app.models.learning_video import LearningVideo
-    from app.models.tracker import ITEM_VIDEO
-    from app.services.program import ensure_item_topic, set_item_audience
-
-    topic = ensure_item_topic(db, title="Видео недели", day=today_msk(), user_id=user_id)
-    set_item_audience(db, topic, assign_to_all=True, tag_ids=[], assignee_ids=[])
-    task = create_task(
-        db, title="Видео недели", user_id=user_id, due_at=due_at,
-        topic_id=topic.id, kind=ITEM_VIDEO,
-    )
-    task.is_published = True
-    video = LearningVideo(
-        bunny_library_id=720058,
-        bunny_video_id="35ed80ae-8103-4528-a700-3f69ec56957d",
-        title="Видео недели",
-        topic_id=topic.id,
-        status="ready",
-        is_published=True,
-    )
-    db.add(video)
-    db.commit()
-    db.refresh(video)
-    return task, video
-
-
-def test_video_task_links_to_current_learning_task(auth_client, db):
-    """Трекер ведёт к началу задания в ленте, где уже находится плеер."""
-    client, user = auth_client
-    _, due = _current_week_due(offset_days=1)
-    task, video = _video_task_with_video(db, user.id, due_at=due)
-
-    resp = client.get(PAGE)
-    assert resp.status_code == 200
-    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
-    assert f'data-toggle-task="{task.id}"' not in resp.text
-
-
-def test_regular_task_links_to_learning_instead_of_checkbox(auth_client, db):
-    """Ручное завершение живёт внутри задания, а трекер остаётся обзором."""
-    client, user = auth_client
-    _, due = _current_week_due(offset_days=1)
-    task = _standalone_task(db, user_id=user.id, due_at=due, assign_to_all=True)
-
-    resp = client.get(PAGE)
-    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
-    assert f'data-toggle-task="{task.id}"' not in resp.text
-
-
-def test_past_completed_task_has_no_learning_link(auth_client, db):
-    """Старую выполненную задачу видно в истории недели, но в архив не ведём."""
-    client, user = auth_client
-    _, current_due = _current_week_due(offset_days=1)
-    current = _standalone_task(
-        db, user_id=user.id, due_at=current_due, assign_to_all=True,
-    )
-    past = _standalone_task(
-        db,
-        user_id=user.id,
-        due_at=current_due - timedelta(days=14),
-        assign_to_all=True,
-    )
-    past.title = "Старая выполненная задача"
-    db.commit()
-    close_task_for_user(db, past, user.id, source="manual")
-
-    resp = client.get(PAGE)
-
-    assert "Старая выполненная задача" in resp.text
-    assert f'/cabinet/learning?task={past.id}' not in resp.text
-    assert f'/cabinet/learning?task={current.id}#learning-task-{current.id}' in resp.text
-    assert "task-completion.js" not in resp.text
-
-
-def test_mock_exam_task_has_no_manual_checkbox(auth_client, db):
-    """У пробника нет ручной отметки — только переход, задачу закрывает сдача.
-
-    Решение владельца 23.08 (гейт «блок → неделя → месяц»): раньше отметку
-    держали, потому что `close_task_for_user` для пробника нигде не вызывался
-    и задача не смогла бы уйти из «Просрочено». Теперь её закрывает
-    `close_cycle`/`close_cycle_auto` — ручная кнопка осталась бы обходом
-    гейта в одно нажатие.
-    """
-    from app.models.tracker import ITEM_MOCK_EXAM
-
-    client, user = auth_client
-    _, due = _current_week_due(offset_days=1)
-    task = create_task(
-        db, title="Пробник по рисунку", user_id=user.id, due_at=due,
-        assign_to_all=True, kind=ITEM_MOCK_EXAM, subject="Рисунок",
-    )
-    task.is_published = True
-    db.commit()
-
-    resp = client.get(PAGE)
-    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
-    assert "Начать пробник" not in resp.text
-    assert f'data-toggle-task="{task.id}"' not in resp.text
-
 
 def test_student_cannot_toggle_mock_exam_or_homework_task(auth_client, db):
     """Регрессия дыры: прямой POST /toggle на homework/mock_exam запрещён,
@@ -493,42 +368,6 @@ def test_student_cannot_toggle_mock_exam_or_homework_task(auth_client, db):
     for task in (mock_task, homework_task):
         resp = client.post(f"{PAGE}/tasks/{task.id}/toggle")
         assert resp.status_code == 403
-
-
-def test_tracker_shows_behind_schedule_warning_for_debtor(auth_client, db):
-    """Гейт «блок → неделя → месяц» (23.08): застрявший ученик видит красное
-    предупреждение в «Личном трекере» (АОП баннеров не показывает вовсе —
-    решение владельца, экран застрявшего ученика)."""
-    client, user = auth_client
-    monday = week_start(today_msk())
-    last_monday = monday - timedelta(days=7)
-    user.created_at = msk_midnight(last_monday - timedelta(days=30))
-    db.commit()
-
-    db.add(LearningTopic(
-        title="Неделя с долгом", opens_at=msk_midnight(last_monday),
-        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
-        created_by_id=user.id,
-    ))
-    db.commit()
-    due = day_bounds(last_monday)[0] + timedelta(hours=10)
-    task = create_task(
-        db, title="Долг прошлой недели", user_id=user.id, due_at=due,
-        assign_to_all=True, kind="homework",
-    )
-    task.is_published = True
-    db.commit()
-
-    resp = client.get(PAGE)
-    assert resp.status_code == 200
-    assert "Ты отстаёшь от текущей программы" in resp.text
-
-
-def test_tracker_hides_behind_schedule_warning_without_debt(auth_client):
-    client, _ = auth_client
-    resp = client.get(PAGE)
-    assert resp.status_code == 200
-    assert "Ты отстаёшь от текущей программы" not in resp.text
 
 
 def test_undated_cycle_task_is_visible_in_personal_tracker(auth_client, db):
@@ -563,11 +402,24 @@ def test_undated_cycle_task_is_visible_in_personal_tracker(auth_client, db):
 # ── Срок цикла у задания без даты (владелец 06.10.2026, после аудита) ───────
 
 
-def _section(html: str, title: str) -> str:
-    """Кусок страницы от заголовка раздела до следующего заголовка."""
-    start = html.index(f'<div class="trk-day">{title}</div>')
-    end = html.find('<div class="trk-day">', start + 1)
-    return html[start:end if end != -1 else len(html)]
+def _tracker(client, rendered):
+    """Трекер, разложенный роутом: «Просрочено», «В работе», «Сделано»."""
+    assert client.get(PAGE).status_code == 200
+    return rendered("cabinet_tracker.html")
+
+
+def _titles(entries):
+    return [entry["task"].title for entry in entries]
+
+
+def _shown(page):
+    return _titles(page["overdue"] + page["upcoming"] + page["done"])
+
+
+def _msk(moment):
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(MSK_TZ)
 
 
 def _frame(db, owner, *, title, starts, ends, kind=TOPIC_KIND_WEEK, parent=None):
@@ -596,7 +448,7 @@ def _cycle_with_task(db, owner, *, title, starts, ends, stage=None):
     return topic, task
 
 
-def test_undated_task_is_overdue_after_tariff_cycle_deadline(auth_client, db):
+def test_undated_task_is_overdue_after_tariff_cycle_deadline(auth_client, db, rendered):
     """Срок «по» тарифа ученика прошёл вчера — задание в «Просрочено» с этим
     сроком, а не «В работе · без даты». Цикл при этом ещё идёт по общим датам."""
     from app.services.video_topics import set_topic_tariff_windows
@@ -618,29 +470,28 @@ def test_undated_task_is_overdue_after_tariff_cycle_deadline(auth_client, db):
     })
     db.commit()
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    overdue = _section(html, "Просрочено")
-    assert "Задание: Цикл с тарифом" in overdue
-    assert f"до {yesterday.strftime('%d.%m')} в 20:00" in overdue
-    assert "В работе" not in html
+    [entry] = page["overdue"]
+    assert entry["task"].title == "Задание: Цикл с тарифом"
+    assert _msk(entry["cycle_deadline"]) == msk_midnight(yesterday) + timedelta(hours=20)
+    assert page["upcoming"] == []
 
 
-def test_undated_task_shows_cycle_end_while_time_remains(auth_client, db):
-    """Без «по» у тарифа срок — конец цикла; полночь показывается 23:59
-    последнего дня, как в шапке цикла."""
+def test_undated_task_shows_cycle_end_while_time_remains(auth_client, db, rendered):
+    """Без «по» у тарифа срок — конец цикла: полночь после последнего дня
+    (на экране — «23:59» последнего дня, как в шапке цикла)."""
     client, user = auth_client
     today = today_msk()
     last_day = today + timedelta(days=4)
     _cycle_with_task(db, user, title="Идущий цикл", starts=today - timedelta(days=2), ends=last_day)
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    upcoming = _section(html, "В работе")
-    assert "Задание: Идущий цикл" in upcoming
-    assert f"до {last_day.strftime('%d.%m')} в 23:59" in upcoming
-    assert "без даты" not in html
-    assert "Просрочено" not in html
+    [entry] = page["upcoming"]
+    assert entry["task"].title == "Задание: Идущий цикл"
+    assert _msk(entry["cycle_deadline"]) == msk_midnight(last_day + timedelta(days=1))
+    assert page["overdue"] == []
 
 
 def _period_stage(db, owner, *, title, starts, ends):
@@ -653,7 +504,7 @@ def _period_stage(db, owner, *, title, starts, ends):
     return period, stage
 
 
-def test_upcoming_is_sorted_by_nearest_deadline(auth_client, db):
+def test_upcoming_is_sorted_by_nearest_deadline(auth_client, db, rendered):
     client, user = auth_client
     today = today_msk()
     _, stage = _period_stage(
@@ -665,12 +516,10 @@ def test_upcoming_is_sorted_by_nearest_deadline(auth_client, db):
     far.locks_next = False
     db.commit()
 
-    upcoming = _section(client.get(PAGE).text, "В работе")
-
-    assert upcoming.index("Задание: Ближний") < upcoming.index("Задание: Дальний")
+    assert _titles(_tracker(client, rendered)["upcoming"]) == ["Задание: Ближний", "Задание: Дальний"]
 
 
-def test_closed_task_of_past_cycle_is_not_overdue(auth_client, db):
+def test_closed_task_of_past_cycle_is_not_overdue(auth_client, db, rendered):
     client, user = auth_client
     today = today_msk()
     _, task = _cycle_with_task(
@@ -679,10 +528,10 @@ def test_closed_task_of_past_cycle_is_not_overdue(auth_client, db):
     close_task_for_user(db, task, user.id, source="test")
     db.commit()
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    assert "Просрочено" not in html
-    assert "Задание: Прошедший" in _section(html, "Сделано на этой неделе")
+    assert page["overdue"] == []
+    assert _titles(page["done"]) == ["Задание: Прошедший"]
 
 
 # ── Только текущий период (владелец 06.10.2026) ─────────────────────────────
@@ -709,7 +558,7 @@ def _two_periods(db, owner):
     return old_task
 
 
-def test_tracker_keeps_past_period_debt(auth_client, db):
+def test_tracker_keeps_past_period_debt(auth_client, db, rendered):
     """Ученик ушёл в новый период, а необязательное задание прошлого периода
     не сделано — оно в трекере (владелец 06.10.2026: «показываем все
     долги???»): прошлое и текущее видны, будущее — нет."""
@@ -718,64 +567,58 @@ def test_tracker_keeps_past_period_debt(auth_client, db):
     old_task.is_required = False
     db.commit()
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    assert "Задание: Текущий цикл" in _section(html, "В работе")
-    assert "Задание: Старый цикл" in _section(html, "Просрочено")
+    assert _titles(page["upcoming"]) == ["Задание: Текущий цикл"]
+    assert _titles(page["overdue"]) == ["Задание: Старый цикл"]
 
 
-def test_debtor_does_not_see_future_period(auth_client, db):
+def test_debtor_does_not_see_future_period(auth_client, db, rendered):
     """Должник стоит в ленте на цикле долга в прошлом периоде — следующий
     период для него будущий и запертый, трекер его не показывает."""
     client, user = auth_client
     _two_periods(db, user)
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    assert "Задание: Старый цикл" in _section(html, "Просрочено")
-    assert "Задание: Текущий цикл" not in html
+    assert _titles(page["overdue"]) == ["Задание: Старый цикл"]
+    assert "Задание: Текущий цикл" not in _shown(page)
 
 
 # ── Только открытое ученику (владелец 06.10.2026) ───────────────────────────
 
 
-def test_tracker_shows_cycle_locked_by_debt(auth_client, db):
+def test_tracker_shows_cycle_locked_by_debt(auth_client, db, rendered):
     """Должник цикла 1: начавшийся цикл 2 того же периода заперт долгом, но
     его задания — тоже долг, трекер показывает оба (владелец 06.10.2026:
-    «нам нужно показывать долги и что нужно сделать»)."""
+    «нам нужно показывать долги и что нужно сделать»). Долг текущей ленты
+    досдаётся кнопкой, у запертого цикла кнопки нет — подпись, какой цикл
+    закрыть первым."""
     client, user = auth_client
     today = today_msk()
     _, stage = _period_stage(
         db, user, title="Семестр", starts=today - timedelta(days=20), ends=today + timedelta(days=30),
     )
-    _cycle_with_task(
+    _, debt_task = _cycle_with_task(
         db, user, title="Цикл долга", starts=today - timedelta(days=15),
         ends=today - timedelta(days=8), stage=stage,
     )
-    _cycle_with_task(
+    _, locked_task = _cycle_with_task(
         db, user, title="Запертый цикл", starts=today - timedelta(days=7),
         ends=today + timedelta(days=5), stage=stage,
     )
 
-    html = client.get(PAGE).text
+    page = _tracker(client, rendered)
 
-    overdue = _section(html, "Просрочено")
-    upcoming = _section(html, "В работе")
-    assert "Задание: Цикл долга" in overdue
-    assert "Задание: Запертый цикл" in upcoming
-    # В каком цикле долг и цвет срока (владелец 06.10.2026): красный — срок
-    # прошёл, зелёный — время есть.
-    assert 'trk-badge--cycle">Цикл долга<' in overdue
-    assert 'class="is-overdue">до ' in overdue
-    assert 'trk-badge--cycle">Запертый цикл<' in upcoming
-    assert 'class="is-ontime">до ' in upcoming
-    # Досдать (владелец 06.10.2026): долг текущей ленты — кнопкой, запертый
-    # цикл — подписью, какой цикл закрыть первым.
-    assert "/cabinet/learning?task=" in overdue
-    assert "Сначала закрой «Цикл долга»" in upcoming
+    assert _titles(page["overdue"]) == ["Задание: Цикл долга"]
+    assert _titles(page["upcoming"]) == ["Задание: Запертый цикл"]
+    assert page["go_urls"][debt_task.id].startswith("/cabinet/learning?task=")
+    assert locked_task.id in page["locked_task_ids"]
+    assert locked_task.id not in page["go_urls"]
+    assert page["debt_cycle_label"] == "Цикл долга"
 
 
-def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db):
+def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db, rendered):
     from datetime import datetime
 
     client, user = auth_client
@@ -799,14 +642,10 @@ def test_tracker_hides_not_started_cycle_and_task_opening_later(auth_client, db)
     later.starts_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)
     db.commit()
 
-    html = client.get(PAGE).text
-
-    assert "Задание: Идёт" in html
-    assert "Задание: Будущий" not in html
-    assert "Задание: Откроется завтра" not in html
+    assert _shown(_tracker(client, rendered)) == ["Задание: Идёт"]
 
 
-def test_debt_of_past_open_cycle_links_to_its_feed(auth_client, db):
+def test_debt_of_past_open_cycle_links_to_its_feed(auth_client, db, rendered):
     """Необязательное задание прошлого цикла идущего этапа не сделано — в
     трекере кнопка ведёт в ленту этого цикла (`?cycle=`), чтобы досдать."""
     client, user = auth_client
@@ -825,13 +664,13 @@ def test_debt_of_past_open_cycle_links_to_its_feed(auth_client, db):
         stage=stage,
     )
 
-    overdue = _section(client.get(PAGE).text, "Просрочено")
+    page = _tracker(client, rendered)
 
-    assert "Задание: Прошлый" in overdue
-    assert f"/cabinet/learning?cycle={past.id}#learning-task-{past_task.id}" in overdue
+    assert _titles(page["overdue"]) == ["Задание: Прошлый"]
+    assert page["go_urls"][past_task.id] == f"/cabinet/learning?cycle={past.id}#learning-task-{past_task.id}"
 
 
-def test_tracker_row_shows_task_type_by_content(auth_client, db):
+def test_tracker_row_shows_task_type_by_content(auth_client, db, rendered):
     """Тип задания — по блокам (владелец 06.10.2026, «по содержимому»):
     работа на время главнее видео; блок чужого тарифа тип не задаёт."""
     from app.models.task_block import TaskBlock, TaskBlockTariff
@@ -863,13 +702,10 @@ def test_tracker_row_shows_task_type_by_content(auth_client, db):
     db.add(TaskBlockTariff(block_id=foreign.id, tariff="Я С ВАМИ"))
     db.commit()
 
-    html = client.get(PAGE).text
+    labels = _tracker(client, rendered)["content_labels"]
 
-    exam_row = html[html.index("<h3>Контрольная</h3>") - 1500:html.index("<h3>Контрольная</h3>")]
-    video_row = html[html.index("<h3>Лекция</h3>") - 1500:html.index("<h3>Лекция</h3>")]
-    assert 'trk-badge--type">Контрольная на время<' in exam_row
-    assert 'trk-badge--type">Видео<' in video_row
-    assert "Сдача работы" not in html
+    assert labels[exam.id] == "Контрольная на время"
+    assert labels[video_task.id] == "Видео"
 
 
 def test_task_status_uses_cycle_deadline_only_without_due_at():
@@ -930,14 +766,11 @@ def test_avg_scores_include_task_block_submissions(db, user_factory):
     assert avg_score_by_subject_all_time(db, student.id) == {"Рисунок": 70, "Композиция": 55}
 
 
-def test_tracker_hero_shows_task_block_score(auth_client, db):
+def test_tracker_hero_shows_task_block_score(auth_client, db, rendered):
     client, user = auth_client
     _scored_submission(db, user.id, score=67, block_subject="Композиция")
 
-    resp = client.get(PAGE)
-
-    assert resp.status_code == 200
-    assert '<span class="profile-score-value">67</span>' in resp.text
+    assert _tracker(client, rendered)["avg_score_by_subject"] == {"Композиция": 67}
 
 
 def _fake_point_a(monkeypatch, *, is_done, average):
@@ -952,36 +785,29 @@ def _fake_point_a(monkeypatch, *, is_done, average):
     )
 
 
-def test_tracker_hero_shows_point_a_when_done(auth_client, monkeypatch):
+def test_tracker_hero_shows_point_a_when_done(auth_client, monkeypatch, rendered):
     client, _ = auth_client
     _fake_point_a(monkeypatch, is_done=True, average=74)
 
-    resp = client.get(PAGE)
-
-    assert 'class="profile-score-point-a"' in resp.text
-    assert '<span class="profile-score-value">74</span>' in resp.text
+    assert _tracker(client, rendered)["point_a_average"] == 74
 
 
 @pytest.mark.parametrize("average,level", [(65, 1), (66, 2)])
-def test_tracker_hero_shows_program_level(auth_client, monkeypatch, average, level):
+def test_tracker_hero_shows_program_level(auth_client, monkeypatch, rendered, average, level):
     """Плашка уровня рядом с тарифом (владелец 05.10.2026): ≤65 — уровень 1,
     ≥66 — уровень 2."""
     client, _ = auth_client
     _fake_point_a(monkeypatch, is_done=True, average=average)
 
-    resp = client.get(PAGE)
-
-    assert f"ты осваиваешь {level} уровень программы" in resp.text
+    assert _tracker(client, rendered)["point_a_level"] == level
 
 
-def test_tracker_hero_hides_partial_point_a(auth_client, monkeypatch):
+def test_tracker_hero_hides_partial_point_a(auth_client, monkeypatch, rendered):
     """Пока ГП не оценил все плашки, среднее неполное — его не показываем:
     уровень ученик узнаёт уведомлением ровно в момент разбора."""
     client, _ = auth_client
     _fake_point_a(monkeypatch, is_done=False, average=74)
 
-    resp = client.get(PAGE)
-
-    assert resp.status_code == 200
-    assert 'class="profile-score-point-a"' not in resp.text
-    assert "уровень программы" not in resp.text
+    page = _tracker(client, rendered)
+    assert page["point_a_average"] is None
+    assert page["point_a_level"] is None

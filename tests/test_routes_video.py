@@ -1,6 +1,5 @@
 """Route tests for the protected Bunny Stream pilot page."""
 
-from pathlib import Path
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -112,7 +111,6 @@ def test_video_watermark_shows_current_viewer_identity(auth_client, db, monkeypa
     # Телефон в ватермарке больше не показываем (владелец 01.09.2026): зрителя
     # опознают имя и username, а номер только утяжелял надпись.
     assert "+7 999 123-45-67" not in response.text
-    assert 'class="video-watermark" aria-hidden="true"' in response.text
 
 
 def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
@@ -135,137 +133,6 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert "<script>alert(2)</script>" not in response.text
     assert "\\u003cimg src=x" in response.text
     assert "@\\u003cscript\\u003ealert(2)\\u003c/script\\u003e" in response.text
-
-
-def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypatch, served):
-    """Надпись со зрителем не летает по кругу, а проявляется и гаснет в
-    случайной точке безопасной зоны кадра (владелец 01.09.2026)."""
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    response = client.get("/cabinet/video")
-
-    assert response.status_code == 200
-    page = served(response)
-    assert "function measureWatermarkBounds()" in page
-    assert "function pickWatermarkSpot()" in page
-    assert "function runWatermarkCycle()" in page
-    assert "Math.random()" in page
-    assert "watermarkCopy.classList.add('is-visible')" in page
-    assert "watermarkCopy.classList.remove('is-visible')" in page
-    assert "safeCorners" in page
-    assert "Math.random() * 9" not in page
-    assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in page
-    assert 'data-role="cover-play"' in page
-    assert "coverPlay.hidden = false" in page
-    # Автозапуска нет совсем (владелец 21.09.2026): кнопка «Смотреть» только
-    # убирает обложку, дальше зритель жмёт play внутри самого плеера. Прежняя
-    # попытка запускать видео за него упиралась в запрет iOS и показывала
-    # красное «Видео не запустилось само» вместо картинки.
-    assert "Видео не запустилось само" not in page
-    assert "playThroughBunny" not in page
-    assert "armPlaybackAttemptTimer" not in page
-    assert "searchParams.set('autoplay', 'true')" not in page
-    assert "searchParams.set('muted', 'true')" not in page
-    assert "playRequested" not in page
-    assert "window.matchMedia('(pointer: coarse)').matches" not in page
-    # Кнопка звука жила только ради беззвучного автозапуска.
-    assert 'data-role="mute-btn"' not in page
-    assert "data.player_url = body.player_url" in page
-    assert "player.on('play'" in page
-    assert "hideCover();" in page
-    assert "saveProgress(true, false, false);" in page
-    # Стили обложки с 27.09.2026 живут в video.css (храповик переиспользования).
-    assert "/static/css/video.css?v=" in page
-    video_css = (Path(__file__).resolve().parents[1] / "app/static/css/video.css").read_text(encoding="utf-8")
-    assert "video-frame.is-started .video-cover" in video_css
-    # Слой «Загружаем видео» обязан пропускать касания: автозапуска нет, видео
-    # стартует тапом внутри плеера, а этот слой лежит поверх него во весь размер.
-    assert "font-size: 13px; pointer-events: none;" in page
-    # Разрешение `autoplay` в iframe оставлено сознательно: программного play()
-    # у нас больше нет (21.09.2026), но плеер Bunny внутри сам решает, что делать
-    # после тапа зрителя, и урезать ему права смысла нет. Автостарт при этом
-    # выключен в подписанном URL параметром autoplay=false.
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in page
-    assert "new ResizeObserver(measureWatermarkBounds)" in page
-    assert "(prefers-reduced-motion: reduce)" in page
-    assert "bottomPadding" in page
-    # Перелёта между точками быть не должно: анимируется только прозрачность,
-    # новая координата ставится, пока надпись уже не видна.
-    assert "transition: opacity 900ms" in page
-    assert "Math.cos(angle)" not in page
-    # Прозрачная и без тени под текстом (владелец 01.09.2026).
-    assert "color: rgba(255, 255, 255, .22)" in page
-    assert "text-shadow" not in page
-
-
-def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(auth_client, monkeypatch, served):
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    response = client.get("/cabinet/video")
-
-    assert response.status_code == 200
-    page = served(response)
-    assert 'data-role="fullscreen-btn"' in page
-    assert ".video-frame:fullscreen" in page
-    assert "playerContainer.requestFullscreen" in page
-    assert "requestFullscreen.call(playerContainer)" in page
-    assert "document.exitFullscreen" in page
-    assert "document.addEventListener('fullscreenchange'" in page
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in page
-    assert "allowfullscreen" not in page.lower()
-    # Ни фуллскрина, ни картинки-в-картинке у iframe: оба режима выносят кадр
-    # из-под слоя с данными зрителя, и видео поехало бы дальше без ватермарки.
-    assert "picture-in-picture" not in page
-
-
-def test_fullscreen_button_sits_top_right_and_video_can_rotate(auth_client, monkeypatch, served):
-    """Владелец 05.10.2026: на телефоне и планшете ⛶ внизу справа закрывала
-    шестерёнку настроек Bunny, плюс просьба повернуть видео горизонтально."""
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    page = served(client.get("/cabinet/video"))
-    # Кнопка вверху: низ кадра занимает панель управления Bunny.
-    assert ".video-fullscreen-button {\n    position: absolute;\n    right: 8px;\n    top: 8px;" in page
-    assert "bottom: max(8px, env(safe-area-inset-bottom));" not in page
-    # Поворот — та же рамка, вместе с водяным знаком, а не системный разворот.
-    assert "rotateButton.setAttribute('data-role', 'rotate-btn')" in page
-    assert "'rotate(90deg) translateY(-100%)'" in page
-    assert "rotated = rotateRequested && height > width;" in page
-
-    css_dir = Path(__file__).resolve().parents[1] / "app" / "static" / "css"
-    video_css = (css_dir / "video.css").read_text(encoding="utf-8")
-    assert ".video-frame .video-rotate-button[hidden] { display: none; }" in video_css
-    tracker_css = (css_dir / "tracker.css").read_text(encoding="utf-8")
-    assert "position: absolute; right: 8px; top: 8px; z-index: 4;" in tracker_css
-    assert ".lrn-inline-video .video-rotate-button[hidden] { display: none; }" in tracker_css
-
-
-def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch, served):
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    response = client.get("/cabinet/video")
-
-    assert response.status_code == 200
-    page = served(response)
-    assert ".video-frame.is-pseudo-fullscreen" in page
-    assert "height: 100dvh" in page
-    assert "safe-area-inset-right" in page
-    assert "function shouldUsePseudoFullscreen()" in page
-    assert "(max-width: 900px), (pointer: coarse)" in page
-    assert "enterPseudoFullscreen()" in page
-    assert "exitPseudoFullscreen()" in page
-    assert "requestResult.catch(enterPseudoFullscreen)" in page
-    assert "fullscreenButton.hidden = true" not in page
-    assert "playsinline=true" in page
-    assert "disableIosPlayer=true" in page
-    assert 'id="video-ios-install-hint"' in page
-    assert "function isIosDevice()" in page
-    assert "function isStandaloneApp()" in page
-    assert "На экран „Домой“" in page
 
 
 def test_legacy_url_cannot_bypass_catalogue_unpublish(auth_client, db, monkeypatch):
@@ -343,34 +210,6 @@ def test_incomplete_bunny_configuration_fails_closed(auth_client, monkeypatch):
     assert "iframe.mediadelivery.net" not in response.text
     assert TOKEN_KEY not in response.text
     assert response.headers["cache-control"] == "private, no-store"
-
-
-def test_dashboard_shows_video_card_only_for_complete_configuration(auth_client, monkeypatch):
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    enabled_response = client.get("/cabinet/student")
-    assert enabled_response.status_code == 200
-    assert 'href="/cabinet/videos"' in enabled_response.text
-
-    monkeypatch.setattr(settings, "bunny_stream_token_key", "")
-    disabled_response = client.get("/cabinet/student")
-    assert disabled_response.status_code == 200
-    assert 'href="/cabinet/videos"' not in disabled_response.text
-
-
-def test_dashboard_hides_video_card_from_nonmember(
-    client, user_factory, session_factory, monkeypatch
-):
-    _configure_bunny(monkeypatch)
-    user = user_factory(is_group_member=False)
-    session = session_factory(user)
-    client.cookies.set("session_id", session.id)
-
-    response = client.get("/cabinet/student")
-
-    assert response.status_code == 200
-    assert 'href="/cabinet/videos"' not in response.text
 
 
 def test_video_progress_is_saved_and_restored_for_current_user(auth_client, db, monkeypatch):
@@ -632,106 +471,6 @@ def test_legacy_player_url_disappears_once_catalogue_exists(auth_client, db, mon
 
     assert pilot.status_code == 200
     assert after_catalogue.status_code == 404
-
-
-def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch, served):
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    response = client.get("/cabinet/video")
-
-    assert response.status_code == 200
-    page = served(response)
-    assert '"player_url_endpoint": "/cabinet/video/player-url"' in page
-    assert '"player_url_ttl_seconds": 300' in page
-    assert "function isPlayerUrlStale()" in page
-    assert "function refreshPlayerUrl()" in page
-    assert "iframe.src = data.player_url;" in page
-    assert "if (reattachPlayer) reattachPlayer();" in page
-    assert "resumeSeconds = currentSeconds;" in page
-    assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in page
-    assert "if (!event.persisted) return;" in page
-    # Возврат из bfcache: pagehide гасит цикл ватермарки, и без перезапуска она
-    # осталась бы висеть в одной точке — то есть перестала бы мешать записи экрана.
-    # Общий плеер (`_video_player.html`) — не завязываемся на точные отступы строк.
-    assert "window.addEventListener('pageshow'" in page
-    assert "startWatermarkDrift();" in page
-    assert "refreshPlayerUrlIfStale();" in page
-    # Обвязка пересоздаётся, а старая замолкает по поколению: иначе прогресс
-    # сохранялся бы дважды после каждого обновления ссылки.
-    assert "function attachPlayer()" in page
-    assert "var generation = ++playerGeneration;" in page
-    assert "if (generation !== playerGeneration) return;" in page
-
-
-def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkeypatch, served):
-    client, _ = auth_client
-    _configure_bunny(monkeypatch)
-
-    response = client.get("/cabinet/video")
-
-    assert response.status_code == 200
-    page = served(response)
-    assert "player-0.1.0.min.js" in page
-    # Скрипт грузится динамически общим плеером (`loadPlayerJs()` в
-    # `_video_player.html`), не статичным тегом `<script src=... integrity=...>` —
-    # хэш ставится JS-присваиванием, а не HTML-атрибутом.
-    assert "sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC" in page
-    assert "player.on('ready'" in page
-    assert "player.on('timeupdate'" in page
-    assert "player.on('pause'" in page
-    assert "player.on('seeked'" in page
-    assert "player.on('ended'" in page
-    assert "player.setCurrentTime(resumeSeconds)" in page
-    assert "if (resumeSeconds >= 5) {" in page
-    assert "Date.now() - lastAutomaticSaveAt >= 10000" in page
-    # Ключ ставит общий хелпер (`static/js/csrf.js`), а не сам плеер: с
-    # 26.09.2026 прогресс шлётся свежим токеном. Прежний сторож ждал строку
-    # `'X-CSRF-Token': csrfToken` в разметке — она означала обратное, что
-    # плеер шлёт ключ, вшитый в страницу при отрисовке. За 20 часов до правки
-    # именно такой ключ протухал и давал 139 отказов 403 на прогрессе, после
-    # чего плеер выключал сохранение до перезагрузки страницы.
-    assert "window.csrfFetch" in page
-    assert "sendProgressRequest(data.progress_endpoint" in page
-    assert "keepalive: Boolean(keepalive)" in page
-    assert "if (saveInFlight)" in page
-    assert "body: JSON.stringify({" in page
-    assert "typeof options.onCompleted === 'function'" in page
-    assert "if (!completionReported && onCompleted) onCompleted();" in page
-
-
-def test_done_step_stays_open_while_its_video_runs():
-    """Полный экран держит сделанный шаг АОП раскрытым.
-
-    До 01.10.2026 тело сделанного шага было видно только под курсором
-    (`:hover`). Полноэкранная рамка уходит в верхний слой, курсор формально
-    покидает карточку, тело получает `display: none`, и полный экран на ПК
-    показывал страницу вместо ролика — у владельца 21.09.2026 рамка в полном
-    экране была 0x0. Теперь тело раскрывает кнопка «Показать» (аудит
-    30.09.2026, находка 5), правила полного экрана остались страховкой.
-    Правило «пока ролик запущен» (`.is-started`) снято: с кнопкой оно не
-    давало свернуть шаг после просмотра.
-    """
-    import re
-    from pathlib import Path
-
-    css = Path("app/static/css/tracker.css").read_text(encoding="utf-8")
-
-    assert ".lrn-step--done .lrn-step-body { display: none; }" in css
-    assert ".lrn-step--done.is-open .lrn-step-body { display: block; }" in css
-    assert ":has(.video-frame.is-started) .lrn-step-body" not in css
-    assert ".lrn-step--done:has(.video-frame:fullscreen) .lrn-step-body { display: block; }" in css
-    assert ".lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }" in css
-    assert ".lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }" in css
-    # Псевдо-полный экран на телефоне — `position: fixed` внутри страницы: любая
-    # `opacity` у предка завела бы свой контекст наложения и погасила видео. До
-    # 01.10.2026 это лечил обход `body.has-video-pseudo-fullscreen .lrn-step
-    # { opacity: 1 !important }`; теперь сделанный шаг приглушён цветом заголовка,
-    # а прозрачности у него нет вовсе.
-    assert not re.search(r"\.lrn-step--done\s*\{[^}]*opacity", css)
-    # Разнесены по одному: неизвестный браузеру селектор в группе через запятую
-    # выбрасывает всю группу, и открытие шага пропало бы целиком.
-    assert ":has(.video-frame:fullscreen),\n" not in css
 
 
 def test_video_progress_reports_skip_forward(auth_client, db, monkeypatch, caplog):

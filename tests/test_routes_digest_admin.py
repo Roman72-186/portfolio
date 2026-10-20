@@ -262,7 +262,16 @@ def _event_body(type_id, **extra):
     return body
 
 
-def test_event_color_comes_from_its_type_and_tariffs_are_kept(client, db, user_factory, session_factory):
+def _calendar(client, rendered, digest_id):
+    """Редактор месяца: события по id и клетки календаря по дате."""
+    assert client.get(f"{PAGE}/{digest_id}/events").status_code == 200
+    page = rendered("cabinet_digest_events.html")
+    events = {event["id"]: event for event in page["events_payload"]}
+    days = {day["iso"]: day for day in page["digest_days"]}
+    return page, events, days
+
+
+def test_event_color_comes_from_its_type_and_tariffs_are_kept(client, db, user_factory, session_factory, rendered):
     from app.services.tracker import event_tariffs_map
 
     _staff_client(client, user_factory, session_factory)
@@ -278,33 +287,35 @@ def test_event_color_comes_from_its_type_and_tariffs_are_kept(client, db, user_f
     event_id = created.json()["event_id"]
     assert sorted(event_tariffs_map(db, [event_id])[event_id]) == ["УВЕРЕННЫЙ МАКСИМУМ", "Я С ВАМИ"]
 
-    page = client.get(f"{PAGE}/{digest_id}/events")
-    assert page.status_code == 200
-    assert "dgst-cal dgst-cal--edit" in page.text
-    assert 'data-day="2026-10-07"' in page.text
-    assert "dgst-color--sky" in page.text
+    _, events, days = _calendar(client, rendered, digest_id)
+    assert events[event_id]["type_color"] == "sky"
+    assert days["2026-10-07"]["dot"]["color"] == "sky"
 
     # Сменили тип — сменился цвет; снятые галочки — снова «всем тарифам».
     updated = client.post(f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(broadcast.id, tariffs=[]))
     assert updated.status_code == 200
-    page = client.get(f"{PAGE}/{digest_id}/events")
-    assert "dgst-color--orange" in page.text
+    # Тест и запросы делят одну сессию базы: связь события с прежним типом
+    # осталась бы в её кэше. На проде у каждого запроса своя сессия.
+    db.expire_all()
+    _, events, days = _calendar(client, rendered, digest_id)
+    assert events[event_id]["type_color"] == "orange"
+    assert days["2026-10-07"]["dot"]["color"] == "orange"
     assert event_tariffs_map(db, [event_id]) == {}
 
 
-def test_recolouring_a_type_recolours_its_events(client, db, user_factory, session_factory):
+def test_recolouring_a_type_recolours_its_events(client, db, user_factory, session_factory, rendered):
     """Связка «тип + цвет» (владелец 04.10.2026): цвет у события не свой."""
     _staff_client(client, user_factory, session_factory)
     lesson = _type(db, "Занятие", "sky", "fill")
     digest_id = _digest_id(client)
-    client.post(f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id))
+    event_id = client.post(f"{PAGE}/{digest_id}/events", json=_event_body(lesson.id)).json()["event_id"]
 
     response = client.post(f"{PAGE}/types/{lesson.id}", json={"name": "Занятие", "color": "pink", "style": "fill"})
 
     assert response.status_code == 200
-    page = client.get(f"{PAGE}/{digest_id}/events")
-    assert "dgst-color--pink" in page.text
-    assert "dgst-color--sky" not in page.text
+    _, events, days = _calendar(client, rendered, digest_id)
+    assert events[event_id]["type_color"] == "pink"
+    assert days["2026-10-07"]["dot"]["color"] == "pink"
 
 
 def test_event_rejects_unknown_type_and_unknown_tariff(client, db, user_factory, session_factory):
@@ -321,7 +332,7 @@ def test_event_rejects_unknown_type_and_unknown_tariff(client, db, user_factory,
     assert old_color_field.status_code == 422
 
 
-def test_hidden_type_is_not_offered_but_old_event_keeps_it(client, db, user_factory, session_factory):
+def test_hidden_type_is_not_offered_but_old_event_keeps_it(client, db, user_factory, session_factory, rendered):
     _staff_client(client, user_factory, session_factory)
     old = _type(db, "Старый тип", "gray", "fill")
     digest_id = _digest_id(client)
@@ -336,27 +347,28 @@ def test_hidden_type_is_not_offered_but_old_event_keeps_it(client, db, user_fact
         f"{PAGE}/{digest_id}/events/{event_id}", json=_event_body(old.id, title="Переименовано")
     )
     assert edited.status_code == 200
-    page = client.get(f"{PAGE}/{digest_id}/events")
-    assert f'name="event-type" value="{old.id}"' not in page.text
-    assert "dgst-color--gray" in page.text
+    page, events, _ = _calendar(client, rendered, digest_id)
+    assert old.id not in {event_type.id for event_type in page["event_types"]}
+    assert events[event_id]["type_id"] == old.id
+    assert events[event_id]["type_color"] == "gray"
 
 
 # ── Экран типов событий ────────────────────────────────────────────────────
 
-def test_types_page_lists_types_with_usage(client, db, user_factory, session_factory):
+def test_types_page_lists_types_with_usage(client, db, user_factory, session_factory, rendered):
     _staff_client(client, user_factory, session_factory)
     used = _type(db, "Пробник", "teal", "ring")
-    _type(db, "Обратная связь", "mint", "fill")
+    unused = _type(db, "Обратная связь", "mint", "fill")
     digest_id = _digest_id(client)
     client.post(f"{PAGE}/{digest_id}/events", json=_event_body(used.id))
 
     page = client.get(f"{PAGE}/types")
 
     assert page.status_code == 200
-    assert "Пробник" in page.text and "Обратная связь" in page.text
-    assert "событий: 1" in page.text
-    assert "не используется" in page.text
-    assert "dgst-chip is-ring dgst-color--teal" in page.text
+    data = rendered("cabinet_digest_types.html")
+    assert {used.id, unused.id} <= {event_type.id for event_type in data["event_types"]}
+    assert data["type_usage"].get(used.id) == 1
+    assert data["type_usage"].get(unused.id, 0) == 0
 
 
 def test_type_create_update_validation(client, db, user_factory, session_factory):
@@ -509,10 +521,10 @@ def test_event_create_update_delete_leave_audit_trail(client, db, user_factory, 
     )
     assert json.loads(rows[2].details)["event_id"] == event_id
 
+    # В журнале — слова, а не ключ действия.
     labels = {item["action"]: item["action_label"] for item in get_audit_feed(db)}
-    assert labels["digest_event_create"] == "Событие дайджеста: создано"
-    assert labels["digest_event_delete"] == "Событие дайджеста: удалено"
-    assert labels["digest_create"] == "Дайджест: создан"
+    for action in ("digest_event_create", "digest_event_update", "digest_event_delete"):
+        assert labels[action] and labels[action] != action
 
 
 def test_refused_event_save_leaves_no_audit_row(client, db, user_factory, session_factory):

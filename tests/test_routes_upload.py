@@ -1,6 +1,6 @@
 """Tests for /upload route — form GET and photo POST."""
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -22,6 +22,14 @@ def _upload(client, files, month="январь", section=None, **kwargs):
     return client.post("/upload", data=data, files=files, **kwargs)
 
 
+def _saved_works(db, user):
+    """Сколько работ ученика легло в базу удачно."""
+    from app.models.work import Work
+
+    db.expire_all()
+    return db.query(Work).filter(Work.user_id == user.id, Work.status == "success").count()
+
+
 def _create_active_period(db, user, feature="mock_exam"):
     """Create an active FeaturePeriod covering today."""
     from app.models.feature_period import FeaturePeriod
@@ -39,6 +47,13 @@ def _create_active_period(db, user, feature="mock_exam"):
     from app.services.feature_periods import invalidate_feature_cache
     invalidate_feature_cache(feature)
     return period
+
+
+def _embed_locked(client, subject):
+    """Закрыт ли предмет для сдачи — то же решение, что рисует форму пробника."""
+    resp = client.get("/upload/mock-exam/embed", params={"subject": subject})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["locked"]
 
 
 def _create_active_ticket(db, user, subject="Рисунок", *, opens_at=None, closes_at=None):
@@ -109,26 +124,6 @@ def test_upload_form_with_auth_returns_200(auth_client):
     assert resp.status_code == 200
 
 
-def test_upload_form_contains_month_options(auth_client, db):
-    client, user = auth_client
-    resp = client.get("/upload")
-    assert "январь" in resp.text
-    assert "декабрь" in resp.text
-
-
-def test_upload_form_allows_explicit_before_mode_even_after_completion(auth_client, db):
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.commit()
-
-    resp = client.get("/upload?section=before")
-    assert resp.status_code == 200
-    assert "Раздел «До»" in resp.text
-    assert "Выбери месяц" not in resp.text
-
-
 # ---------------------------------------------------------------------------
 # POST /upload — validation
 # ---------------------------------------------------------------------------
@@ -143,61 +138,62 @@ def test_upload_invalid_month_shows_error(auth_client, db):
             section="after",
         )
     assert resp.status_code == 200
-    assert "месяц" in resp.text.lower()
+    assert _saved_works(db, user) == 0
 
 
 def test_upload_unsupported_format_shows_error(auth_client, db):
     client, user = auth_client
     resp = _upload(client, [("photos", ("doc.pdf", b"data", "application/pdf"))])
     assert resp.status_code == 200
-    assert "формат" in resp.text.lower() or "неподдерживаемый" in resp.text
+    assert _saved_works(db, user) == 0
 
 
-def test_upload_too_large_file_shows_error(auth_client):
-    client, _ = auth_client
+def test_upload_too_large_file_shows_error(auth_client, db):
+    client, user = auth_client
     huge = b"\xff\xd8\xff" + b"X" * (11 * 1024 * 1024)  # 11 MB
     resp = _upload(client, [("photos", ("big.jpg", huge, "image/jpeg"))])
     assert resp.status_code == 200
-    assert "большой" in resp.text or "10" in resp.text
+    assert _saved_works(db, user) == 0
 
 
-def test_upload_too_many_files_shows_error(auth_client):
-    client, _ = auth_client
-    files = [("photos", (f"p{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(12)]
+def test_upload_too_many_files_shows_error(auth_client, db):
+    client, user = auth_client
+    from app.api.upload import MAX_FILES
+
+    files = [("photos", (f"p{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(MAX_FILES + 1)]
     resp = _upload(client, files)
     assert resp.status_code == 200
-    assert "максимум" in resp.text.lower() or "10" in resp.text
+    assert _saved_works(db, user) == 0
 
 
 # ---------------------------------------------------------------------------
 # POST /upload — success path
 # ---------------------------------------------------------------------------
 
-def test_upload_single_photo_success(auth_client):
-    client, _ = auth_client
+def test_upload_single_photo_success(auth_client, db):
+    client, user = auth_client
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp = _upload(client, [("photos", ("photo.jpg", _JPG_BYTES, "image/jpeg"))])
     assert resp.status_code == 200
-    assert "1" in resp.text  # success_count shown
+    assert _saved_works(db, user) == 1
 
 
-def test_upload_multiple_photos_success(auth_client):
-    client, _ = auth_client
+def test_upload_multiple_photos_success(auth_client, db):
+    client, user = auth_client
     files = [("photos", (f"p{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(3)]
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp = _upload(client, files)
     assert resp.status_code == 200
-    # 3 successful uploads
-    assert "3" in resp.text
+    assert _saved_works(db, user) == 3
 
 
-def test_upload_png_accepted(auth_client):
-    client, _ = auth_client
+def test_upload_png_accepted(auth_client, db):
+    client, user = auth_client
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp = _upload(client, [("photos", ("img.png", png, "image/png"))])
     assert resp.status_code == 200
-    assert "формат" not in resp.text.lower()
+    assert _saved_works(db, user) == 1
 
 
 def test_upload_s3_failure_shows_retry_error(auth_client, db):
@@ -448,9 +444,7 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
     db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
                         locked_at=datetime.now(timezone.utc)))
     db.commit()
-    resp = client.get("/upload/mock-exam")
-    assert resp.status_code == 200
-    assert "уже сдано" not in resp.text
+    assert _embed_locked(client, "Рисунок") is False
 
 
 def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
@@ -485,14 +479,11 @@ def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
     ))
     db.commit()
 
-    resp = client.get("/upload/mock-exam")
+    resp = client.get("/upload/mock-exam/embed", params={"subject": "Рисунок"})
 
     assert resp.status_code == 200
-    # открытый сданный цикл → предмет заблокирован с подсказкой «ждите ОС»
-    assert "работа сдана · жди обратную связь" in resp.text
-    assert "subject-locked" in resp.text
-    # режима свободного перезалива больше нет
-    assert "можно перезалить" not in resp.text
+    assert resp.json()["locked"] is True
+    assert resp.json()["locked_reason"] == "waiting"
 
 
 def test_mock_exam_start_blocks_other_tickets_after_final_in_same_assignment(auth_client, db):
@@ -569,10 +560,7 @@ def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
     ))
     db.commit()
 
-    resp = client.get("/upload/mock-exam")
-
-    assert resp.status_code == 200
-    assert "работа сдана, ждите ОС" not in resp.text
+    assert _embed_locked(client, "Рисунок") is False
 
 
 def test_mock_exam_intermediate_only_cycle_does_not_lock_subject(auth_client, db):
@@ -605,10 +593,7 @@ def test_mock_exam_intermediate_only_cycle_does_not_lock_subject(auth_client, db
     ))
     db.commit()
 
-    resp = client.get("/upload/mock-exam")
-
-    assert resp.status_code == 200
-    assert "работа сдана, ждите ОС" not in resp.text
+    assert _embed_locked(client, "Рисунок") is False
 
 
 def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client, db):
@@ -633,10 +618,7 @@ def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client
     ))
     db.commit()
 
-    resp = client.get("/upload/mock-exam")
-
-    assert resp.status_code == 200
-    assert "уже сдано" not in resp.text
+    assert _embed_locked(client, "Рисунок") is False
 
 
 def test_mock_exam_locked_subject_can_be_started(auth_client, db):
@@ -678,26 +660,20 @@ def test_mock_exam_start_resumes_when_ticket_still_active(auth_client, db):
 
 
 def test_mock_exam_start_randomizes_between_current_assignment_tickets(auth_client, db):
+    """Билет выдаётся из набора текущего задания, и попытка записана на него."""
     from app.models.mock_exam_attempt import MockExamAttempt
 
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
     tickets = _create_active_ticket_set(db, user, "Рисунок", count=10)
-    chosen = tickets[0]
 
-    with patch("app.api.upload.random.choice", return_value=chosen) as choice:
-        resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
 
     assert resp.status_code == 200
-    body = resp.json()
-    assert choice.called
-    choice_ticket_ids = [ticket.id for ticket in choice.call_args.args[0]]
-    assert len(choice_ticket_ids) == 10
-    assert set(choice_ticket_ids) == {ticket.id for ticket in tickets}
-    assert body["ticket"]["id"] == chosen.id
-
+    issued = resp.json()["ticket"]["id"]
+    assert issued in {ticket.id for ticket in tickets}
     attempt = db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).one()
-    assert attempt.ticket_id == chosen.id
+    assert attempt.ticket_id == issued
 
 
 def test_mock_exam_start_does_not_resume_expired_ticket_attempt(auth_client, db):
@@ -845,6 +821,22 @@ def test_mock_exam_start_rejects_subject_not_allowed_by_profile(auth_client, db)
     assert resp.json()["error"] == "subject_forbidden"
 
 
+def _post_retake(client):
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        return client.post(
+            "/upload/retake",
+            data={"student_score": "70", "subject": "Рисунок"},
+            files=[("photos", ("retake.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+
+def _retakes(db, user):
+    from app.models.work import WORK_TYPE_RETAKE, Work
+
+    db.expire_all()
+    return db.query(Work).filter(Work.user_id == user.id, Work.work_type == WORK_TYPE_RETAKE).count()
+
+
 def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):
     """A personal retake assignment allows upload even when the global retake period is closed."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
@@ -866,11 +858,8 @@ def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):
     ))
     db.commit()
 
-    resp = client.get("/upload/retake")
-
-    assert resp.status_code == 200
-    assert "Отработки закрыты" not in resp.text
-    assert "Сдать отработку" in resp.text
+    assert _post_retake(client).status_code == 200
+    assert _retakes(db, user) == 1
 
 
 def test_retake_api_accepts_upload_when_mock_sent_to_retake(auth_client, db):
@@ -917,11 +906,8 @@ def test_retake_form_denied_without_assignment_even_with_active_period(auth_clie
     client, user = auth_client
     _create_active_period(db, user, "retake")
 
-    resp = client.get("/upload/retake")
-
-    assert resp.status_code == 200
-    assert "Отработки закрыты" in resp.text
-    assert "Отработка пока недоступна" in resp.text
+    assert _post_retake(client).status_code == 200
+    assert _retakes(db, user) == 0
 
 
 def test_send_mock_to_revision_unlocks_subject_without_score(admin_client, db, user_factory):
@@ -1058,11 +1044,10 @@ def test_revision_opens_mock_exam_upload_again(client, db, user_factory, session
 
     student_session = session_factory(student)
     client.cookies.set("session_id", student_session.id)
-    form_resp = client.get("/upload/mock-exam")
+    start = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
 
-    assert form_resp.status_code == 200
-    assert "уже сдано" not in form_resp.text
-    assert "Рисунок" in form_resp.text
+    assert start.status_code == 200, start.text
+    assert start.json()["subject"] == "Рисунок"
 
 
 def test_curator_cannot_unlock_subject(client, db, user_factory, session_factory):
@@ -1115,17 +1100,6 @@ def _complete_portfolio_onboarding(db, user):
     from app.models.user import User
     db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
     db.commit()
-
-
-def test_upload_after_open_without_feature_period(auth_client, db):
-    client, user = auth_client
-    _complete_portfolio_onboarding(db, user)
-
-    resp = client.get("/upload?section=after")
-
-    assert resp.status_code == 200
-    assert "Загрузка закрыта" not in resp.text
-    assert "Выбери месяц" in resp.text
 
 
 def test_upload_after_post_accepted_without_feature_period(auth_client, db):

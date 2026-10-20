@@ -5,7 +5,6 @@
 «Портфолио» и всё дальнейшее — видеть. Граница — `User.program_access_from`,
 правило — `video_topics.ended_before_arrival_filter`.
 """
-import re
 from datetime import datetime, timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
@@ -199,7 +198,7 @@ def test_new_telegram_account_gets_the_mark(db, role_factory):
 
 # ── трекер ведёт в ленту этапа ──────────────────────────────────────────────
 
-def test_tracker_link_to_portfolio_opens_the_stage(auth_client, db):
+def test_tracker_link_to_portfolio_opens_the_stage(auth_client, db, rendered):
     """«Перейти» у «Портфолио» в трекере: задания нет в ленте цикла, экран сам
     открывает ленту этапа."""
     client, user = auth_client
@@ -208,8 +207,8 @@ def test_tracker_link_to_portfolio_opens_the_stage(auth_client, db):
     response = client.get(f"/cabinet/learning?task={portfolio.id}")
 
     assert response.status_code == 200
-    assert f'id="learning-task-{portfolio.id}"' in response.text
-    chip = re.search(
-        r'<a class="([^"]*)"[^>]*data-pinned-task-id="%d"' % portfolio.id, response.text,
-    )
-    assert chip is not None and "is-current" in chip.group(1)
+    page = rendered("cabinet_learning.html")
+    assert page["focus_task_id"] == portfolio.id
+    assert portfolio.id in {step["task"].id for step in page["feed"]["steps"]}
+    pinned = next(p for p in page["feed"]["pinned_tasks"] if p["id"] == portfolio.id)
+    assert pinned["is_current"]

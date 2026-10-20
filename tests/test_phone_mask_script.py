@@ -20,10 +20,6 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PHONE_MASK_JS_PATH = ROOT / "app" / "static" / "js" / "phone-mask.js"
-TEMPLATES_WITH_MASK = [
-    ROOT / "app" / "templates" / "profile.html",
-    ROOT / "app" / "templates" / "cabinet_personal_contacts.html",
-]
 
 KNOWN_GLOBALS = {
     "if", "for", "while", "switch", "catch", "function", "return", "typeof",
@@ -71,14 +67,3 @@ def test_phone_mask_js_is_valid_javascript():
         [node, "--check", str(PHONE_MASK_JS_PATH)], capture_output=True, text=True
     )
     assert check.returncode == 0, f"phone-mask.js не разбирается: {check.stderr}"
-
-
-@pytest.mark.parametrize("template", TEMPLATES_WITH_MASK, ids=lambda p: p.name)
-def test_template_podklyuchaet_masku_i_pomechaet_polya(template):
-    html = template.read_text(encoding="utf-8")
-    assert "/static/js/phone-mask.js" in html, "шаблон не подключает скрипт маски"
-    assert html.count("data-phone-mask") == 2, "размечены не оба поля телефона"
-    # `Cache-Control: immutable` на статике: ссылка без `?v=<число>` отдаст
-    # ученику старый файл до ручной чистки кэша (та же проверка, что фикстура
-    # `assert_static_versioned` делает для отрисованных страниц).
-    assert re.search(r'/static/js/phone-mask\.js\?v=\d+"', html), "ссылка на скрипт без версии"

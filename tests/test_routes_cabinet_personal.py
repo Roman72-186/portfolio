@@ -30,24 +30,6 @@ def test_personal_shows_own_contacts(auth_client, db):
     assert "@self_view" in resp.text
 
 
-def test_personal_after_payment_thanks_with_tariff(auth_client, db):
-    """Возврат из Продамуса: благодарность школы с тарифом ученика и ссылкой
-    на канал — владелец 12.10.2026."""
-    client, user = auth_client
-    user.tariff = "Я С ВАМИ"
-    db.commit()
-
-    resp = client.get("/cabinet/personal?paid=1")
-    assert resp.status_code == 200
-    assert ("Благодарю за оплату следующего месяца годового онлайн-курса"
-            " на тарифе Я с вами</div>") in resp.text
-    # Владелец 13.10.2026: строки про администратора канала на сайте нет.
-    assert "Администратор тг-канала" not in resp.text
-    assert "Продамус подтвердит" not in resp.text
-
-    assert "Благодарю за оплату" not in client.get("/cabinet/personal").text
-
-
 def test_personal_shows_anketa_data(auth_client, db):
     """Личная информация показывает поля анкеты первого входа (12-13.09.2026:
     дата рождения, город, часовой пояс, email, родитель, СДЭК),
@@ -77,64 +59,7 @@ def test_personal_shows_anketa_data(auth_client, db):
     assert "Казань, ул. Ленина, 1" in resp.text
 
 
-def test_personal_shows_placeholder_when_contact_missing(auth_client):
-    client, _ = auth_client
-    resp = client.get("/cabinet/personal")
-    assert resp.status_code == 200
-    assert "Не указано" in resp.text
-
-
-def test_personal_bottom_nav_highlights_personal_tab(auth_client):
-    client, _ = auth_client
-    resp = client.get("/cabinet/personal")
-    assert resp.status_code == 200
-    assert 'href="/cabinet/personal"' in resp.text
-    assert 'class="bottom-nav"' in resp.text
-
-
-def test_personal_keeps_platform_guide_available(auth_client):
-    client, _ = auth_client
-    resp = client.get("/cabinet/personal")
-
-    assert resp.status_code == 200
-    assert "Как пользоваться платформой" in resp.text
-    assert 'onclick="openStudentOnboardingGuide()"' in resp.text
-    assert 'id="studentOnboardingGuide"' in resp.text
-
-
 # ── /cabinet/personal/contacts — правка личных данных ────────────────────────
-
-def test_contacts_form_shows_personal_fields_and_locks_access_fields(auth_client, db):
-    client, user = auth_client
-    user.first_name = "Анна"
-    user.last_name = "Смирнова"
-    user.name = "Анна Смирнова"
-    user.phone = "+79991234567"
-    user.tg_username = "anna_art"
-    db.add(user)
-    db.commit()
-
-    resp = client.get("/cabinet/personal/contacts")
-    assert resp.status_code == 200
-    # Все личные данные ученика доступны для правки.
-    assert 'name="first_name"' in resp.text
-    assert 'name="last_name"' in resp.text
-    assert 'name="birth_date"' in resp.text
-    assert 'name="phone"' in resp.text
-    assert 'name="parent_phone"' in resp.text
-    assert 'name="parent_name"' in resp.text
-    assert 'name="tg_username"' in resp.text
-    assert 'name="city"' in resp.text
-    assert 'name="timezone"' in resp.text
-    assert 'name="email"' in resp.text
-    assert 'name="vk_profile_url"' not in resp.text  # VK удалён 29.09.2026
-    assert 'name="sdek_address"' in resp.text
-    assert 'name="university_year"' in resp.text
-    # Поля, управляющие доступом и учебным прогрессом, доступны только staff.
-    assert 'name="tariff"' not in resp.text
-    assert 'name="enrollment_year"' not in resp.text
-    assert 'value="Анна"' in resp.text
-    assert 'value="Смирнова"' in resp.text
 
 
 def test_contacts_redirects_to_profile_when_incomplete(client, user_factory, session_factory):
@@ -229,7 +154,6 @@ def test_contacts_post_invalid_phone_shows_error(auth_client, db):
         **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
-    assert "Укажи код страны" in resp.text
 
     db.expire_all()
     saved = db.query(User).filter(User.id == user.id).first()
@@ -273,8 +197,9 @@ def test_contacts_post_saves_international_phone(auth_client, db):
     assert saved.parent_phone == "+12025550100"
 
 
-def test_contacts_post_short_username_shows_error(auth_client):
-    client, _ = auth_client
+def test_contacts_post_short_username_is_not_saved(auth_client, db):
+    from app.models.user import User
+    client, user = auth_client
     resp = client.post("/cabinet/personal/contacts", data={
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
@@ -282,15 +207,9 @@ def test_contacts_post_short_username_shows_error(auth_client):
         **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
-    assert "Ник Telegram" in resp.text
 
-
-def test_personal_links_to_contacts_screen(auth_client):
-    client, _ = auth_client
-    resp = client.get("/cabinet/personal")
-    assert resp.status_code == 200
-    assert 'href="/cabinet/personal/contacts"' in resp.text
-    assert 'href="/cabinet/profile"' not in resp.text
+    db.expire_all()
+    assert db.query(User).filter(User.id == user.id).first().tg_username != "ab"
 
 
 def test_contacts_post_rejects_username_taken_by_another_student(

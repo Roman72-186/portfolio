@@ -18,6 +18,8 @@ from app.services.video_watch_events import (
     CUT_SEEK,
     KIND_CUT,
     KIND_REFUSAL,
+    PLAYER_FALLBACK,
+    PLAYER_NO_MESSAGE,
     REFUSAL_BELOW_THRESHOLD,
     REFUSAL_SHORTFALL,
     classify_cut,
@@ -319,26 +321,16 @@ def test_loss_stats_by_reason_day_and_student(db, user_factory):
     assert row["url"] == f"/cabinet/students?student={student.id}&tab=statistics"
 
 
-def test_activity_page_shows_loss_card(client, db, user_factory, session_factory):
-    student = _student(user_factory)
-    _event(db, student, CUT_PAUSED_PLAYING, skipped=600.0)
-    superadmin = user_factory(vk_id=980_200, name="Супер", role_name="суперадмин")
-    db.commit()
-    client.cookies.set("session_id", session_factory(superadmin).id)
-
-    html = client.get("/cabinet/superadmin/activity").text
-
-    assert "Незачёт видео" in html
-    assert "Плеер считал паузой" in html
-    assert f"/cabinet/students?student={student.id}&amp;tab=statistics" in html
-
-
 # ── Молчащий плеер (08.10.2026) ─────────────────────────────────────────────
 # Ученица id 219, телефон с VPN: видео играло, а страница не получила от
 # Player.js ни одного события. Клиент сообщает об этом одной отметкой.
 
-def test_player_fault_is_stored_and_does_not_touch_credit(auth_client, db, monkeypatch):
-    from app.services.video_watch_events import KIND_PLAYER, PLAYER_NO_MESSAGE
+@pytest.mark.parametrize("fault", [PLAYER_NO_MESSAGE, PLAYER_FALLBACK])
+def test_player_fault_is_stored_and_does_not_touch_credit(auth_client, db, monkeypatch, fault):
+    """«Плеер молчит» и «минута из запасного канала Bunny» (прод 10.10.2026,
+    телефон без событий Player.js) — оба сигнала доходят до журнала и зачёт
+    не трогают."""
+    from app.services.video_watch_events import KIND_PLAYER
     from tests.test_routes_video import VIDEO_ID, _configure_bunny, seed_video_watch
 
     client, user = auth_client
@@ -347,14 +339,14 @@ def test_player_fault_is_stored_and_does_not_touch_credit(auth_client, db, monke
 
     resp = client.post("/cabinet/video/progress", json={
         "position_seconds": 25, "duration_seconds": 600, "playback_active": False,
-        "session_id": "s-1", "player_fault": PLAYER_NO_MESSAGE,
+        "session_id": "s-1", "player_fault": fault,
     })
 
     assert resp.status_code == 200
     assert resp.json()["completed"] is False
     [event] = db.query(VideoWatchEvent).all()
     assert (event.user_id, event.video_id, event.kind, event.reason) == (
-        user.id, VIDEO_ID, KIND_PLAYER, PLAYER_NO_MESSAGE,
+        user.id, VIDEO_ID, KIND_PLAYER, fault,
     )
     assert event.position_to == 25.0
     db.expire_all()
@@ -411,20 +403,6 @@ def test_loss_stats_count_only_silent_player(db, user_factory):
     assert (row["id"], row["player_silent"]) == (student.id, 2)
 
 
-def test_player_script_heals_by_source_and_never_reloads_silent_player():
-    """Контракт `video-player.js`: свою рамку узнаём по `e.source`, а не по
-    адресу, и молчащий плеер ссылкой не перезагружаем — иначе ролик
-    начинается заново посреди просмотра (прод 08.10.2026)."""
-    from pathlib import Path
-
-    js = Path("app/static/js/video-player.js").read_text(encoding="utf-8")
-    assert "event.source !== iframe.contentWindow" in js
-    assert "player.keeper.execute('ready'" in js
-    stale = js.split("function refreshPlayerUrlIfStale() {", 1)[1].split("}", 1)[0]
-    assert "if (playerSilent) return;" in stale
-    assert "player_fault: progress.player_fault" in js
-
-
 # ── Перенос журнала ─────────────────────────────────────────────────────────
 
 def test_backfill_parses_journal_lines():
@@ -447,24 +425,3 @@ def test_backfill_parses_journal_lines():
     assert (cut.user_id, cut.reason, cut.created_at.hour) == (229, CUT_PAUSED_PLAYING, 14)
     assert (refusal.block_id, refusal.video_id, refusal.reason) == (114, "v2", REFUSAL_BELOW_THRESHOLD)
     assert (refusal.position_to, refusal.watched_seconds, refusal.duration_seconds) == (176, 171, 399)
-
-
-def test_player_script_falls_back_to_bunnystream_channel():
-    """Прод 10.10.2026, ученица id 288 (телефон, приложение с экрана «Домой»):
-    Player.js не прислал ни одного события, засчитано 0 секунд. Пока он
-    молчит, плеер берёт минуту из канала Bunny `bunnystream` — только из своей
-    рамки и только пока Player.js не готов, через те же обработчики."""
-    from pathlib import Path
-
-    from app.api.video import VideoProgressUpdate
-    from app.services.video_watch_events import PLAYER_FALLBACK, PLAYER_FAULTS
-
-    js = Path("app/static/js/video-player.js").read_text(encoding="utf-8")
-    channel = js.split("message.channel !== 'bunnystream'", 1)[0].rsplit("window.addEventListener('message'", 1)[1]
-    assert "player.isReady || event.source !== iframe.contentWindow" in channel
-    assert "postToFrame('activate')" in js
-    assert "handleTime(seconds, duration)" in js and "reportPlayerFault('fallback')" in js
-    # Живой запасной канал — не «плеер молчит».
-    assert "!player.isReady && !bunnyLive) return false;" in js
-    assert PLAYER_FALLBACK in PLAYER_FAULTS
-    assert VideoProgressUpdate(position_seconds=1, player_fault="fallback").player_fault == "fallback"

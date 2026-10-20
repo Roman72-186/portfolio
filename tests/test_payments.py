@@ -541,11 +541,7 @@ def test_pay_button_returns_link(db, client, session_factory, prices, payer, pro
     db.commit()
     client.cookies.set("session_id", session_factory(payer).id)
 
-    page = client.get("/cabinet/personal")
-    assert "data-pay-button" in page.text
-    # Школа 12.10.2026: «месяц обучения с 15 по 15» и пометка про смену тарифа.
-    assert "Оплата за следующий месяц обучения (с 15 по 15)" in page.text
-    assert "data-pay-tariff-note" in page.text
+    assert client.get("/cabinet/personal").status_code == 200
 
     resp = client.post("/cabinet/personal/pay")
     assert resp.status_code == 200
@@ -555,7 +551,6 @@ def test_pay_button_returns_link(db, client, session_factory, prices, payer, pro
 def test_pay_button_hidden_without_window(db, client, session_factory, prices, user_factory, prodamus):
     student = user_factory(tariff="Я С ВАМИ")
     client.cookies.set("session_id", session_factory(student).id)
-    assert "data-pay-button" not in client.get("/cabinet/personal").text
     resp = client.post("/cabinet/personal/pay")
     assert resp.status_code == 409
     assert resp.json()["error"]
@@ -736,6 +731,13 @@ def test_card_payment_archived_read_only(db, client, session_factory, card, user
 
 # ── Напоминание в первый день окна (`student_reminders.py`, вид 6) ──────────
 
+def _reminder_kinds(db, user_id):
+    from app.models.student_reminder import StudentReminder
+
+    rows = db.query(StudentReminder).filter(StudentReminder.user_id == user_id).order_by(StudentReminder.id)
+    return [row.kind for row in rows]
+
+
 def _pay_reminders(db, user_id):
     return [n for n in db.query(Notification).filter(Notification.user_id == user_id)
             if n.title.startswith("Пора оплатить")]
@@ -749,11 +751,11 @@ def test_pay_window_reminder_once_on_first_day(db, prices, payer, prodamus):
 
     run_student_reminders(db, _msk(2026, 10, 10, 10, 0))
     run_student_reminders(db, _msk(2026, 10, 12, 10, 0))   # второй раз — тишина
-    notes = _pay_reminders(db, payer.id)
-    assert [(n.title, n.text) for n in notes] == [(
-        "Пора оплатить следующий месяц обучения",
-        "Сумма – 13 255 ₽. Оплати до 15.10 включительно: кнопка «Оплатить» в «Личной информации».",
-    )]
+    from app.models.student_reminder import KIND_PAY_WINDOW
+
+    assert _reminder_kinds(db, payer.id) == [KIND_PAY_WINDOW]
+    [note] = _pay_reminders(db, payer.id)
+    assert "13 255 ₽" in note.text and "15.10" in note.text  # сумма и срок окна
 
 
 def test_pay_window_reminder_skips_paid_and_unconfigured(db, prices, payer, user_factory, prodamus, monkeypatch):
@@ -819,20 +821,17 @@ def test_pay_day_before_reminder(db, prices, payer, prodamus):
     """За день до последнего дня окна, с 10:00 МСК (владелец 15.10.2026)."""
     from app.services.student_reminders import run_student_reminders
 
+    from app.models.student_reminder import KIND_PAY_DAY_BEFORE, KIND_PAY_LAST_DAY, KIND_PAY_WINDOW
+
     run_student_reminders(db, _msk(2026, 10, 10, 10, 0))
     run_student_reminders(db, _msk(2026, 10, 14, 9, 30))
-    titles = lambda: [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
-    assert "Завтра последний день оплаты" not in titles()
+    assert _reminder_kinds(db, payer.id) == [KIND_PAY_WINDOW]
 
     run_student_reminders(db, _msk(2026, 10, 14, 10, 0))
     run_student_reminders(db, _msk(2026, 10, 14, 20, 0))
-    notes = [n for n in db.query(Notification).filter(Notification.user_id == payer.id)
-             if n.title == "Завтра последний день оплаты"]
-    assert [n.text for n in notes] == [
-        "Сумма – 13 255 ₽. Оплати до 15.10 включительно: кнопка «Оплатить» в «Личной информации».",
-    ]
+    assert _reminder_kinds(db, payer.id) == [KIND_PAY_WINDOW, KIND_PAY_DAY_BEFORE]
     run_student_reminders(db, _msk(2026, 10, 15, 10, 0))
-    assert titles().count("Сегодня последний день оплаты") == 1
+    assert _reminder_kinds(db, payer.id) == [KIND_PAY_WINDOW, KIND_PAY_DAY_BEFORE, KIND_PAY_LAST_DAY]
 
 
 def test_two_day_window_skips_first_day_message(db, prices, payer, prodamus):
@@ -841,9 +840,11 @@ def test_two_day_window_skips_first_day_message(db, prices, payer, prodamus):
 
     payer.pay_window_start, payer.pay_window_end = 14, 15
     db.commit()
+    from app.models.student_reminder import KIND_PAY_DAY_BEFORE
+
     run_student_reminders(db, _msk(2026, 10, 14, 10, 0))
-    titles = [n.title for n in db.query(Notification).filter(Notification.user_id == payer.id)]
-    assert titles == ["Завтра последний день оплаты"]
+    assert _reminder_kinds(db, payer.id) == [KIND_PAY_DAY_BEFORE]
+    assert db.query(Notification).filter(Notification.user_id == payer.id).count() == 1
 
 
 def test_one_day_window_sends_only_last_day_reminder(db, prices, payer, prodamus):

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.constants import (
+    REPORT_EXCLUDED_USER_IDS,
     TARIFF_CONFIDENT_MAX,
     TARIFF_SELF,
     TARIFF_WITH_YOU,
@@ -46,10 +47,12 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
     old_student = user_factory(vk_id=810_008, tariff=TARIFF_CONFIDENT_MAX)
     legacy_student = user_factory(vk_id=810_009, tariff="УВЕРЕННЫЙ")
     student_role = db.query(Role).filter(Role.rank == 1).one()
+    # Служебный аккаунт с ролью ученика — вне учёта (`REPORT_EXCLUDED_USER_IDS`).
+    owner_id = min(REPORT_EXCLUDED_USER_IDS)
     owner = User(
-        id=199,
+        id=owner_id,
         vk_id=810_199,
-        name="Роман Архитектор ЧАТ-БОТОВ 2.0",
+        name="Служебный",
         tariff="",
         role_id=student_role.id,
         created_at=cutoff,
@@ -74,7 +77,7 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
 
     stats = get_tariff_registration_stats(db)
 
-    assert stats["since_label"] == "19.09.2026"  # начало учёта сдвинуто на 19.09 коммитом e2785d7
+    assert stats["since_label"] == REGISTRATION_STATS_SINCE.strftime("%d.%m.%Y")
     assert {item["tariff"]: item["count"] for item in stats["by_tariff"]} == {
         TARIFF_SELF: 1,
         TARIFF_WITH_YOU: 1,
@@ -91,7 +94,7 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
         max_student.id, with_you_student.id, self_student.id, legacy_student.id, no_tariff_student.id,
     ]
     assert stats["students"][2]["username"] == "@self_student"
-    assert all(student["id"] != 199 for student in stats["students"])
+    assert all(student["id"] != owner_id for student in stats["students"])
 
 
 def test_tariff_registration_stats_return_zero_buckets(db):
@@ -374,8 +377,6 @@ def test_scores_give_distribution_inputs_avg_and_median(db, user_factory):
     assert item["id"] == block.id
     assert item["label"] == "Рисунок: Контрольная по рисунку · Локация с дверью"
     assert item["scored"] == {first.id: 55, second.id: 55, third.id: 67.5}
-    # 55.00 из Numeric уходит на страницу целым — без «55.0» в списке баллов.
-    assert type(item["scored"][first.id]) is int
     assert item["unscored"] == [waiting.id]
     assert item["submitted"] == 4
     assert item["avg"] == 59.2

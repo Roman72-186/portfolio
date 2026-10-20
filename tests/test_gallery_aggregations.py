@@ -21,7 +21,7 @@ def _work(user_id, work_type, *, status="success", month="май", year=2026, fi
     )
 
 
-def test_gallery_counts_match_work_rows_per_type(auth_client, db):
+def test_gallery_counts_match_work_rows_per_type(auth_client, db, rendered):
     """before/after/mock/retake считают ровно то, что реально в БД (group.total по месяцу)."""
     client, user = auth_client
     db.add_all([
@@ -33,18 +33,15 @@ def test_gallery_counts_match_work_rows_per_type(auth_client, db):
     ])
     db.commit()
 
-    resp = client.get("/cabinet/gallery")
-    assert resp.status_code == 200
-    text = resp.text
-    # «До» — плоская лента без месяцев (владелец 09.09.2026), поэтому у него
-    # нет подписи месяца: считаем сами карточки.
-    before_section = text[text.index('id="section-before"'):text.index('id="section-after"')]
-    assert before_section.count('class="work-cell"') == 2  # b1 + b2
-    # Остальные разделы остались помесячными: after, mock, retake — по одной.
-    assert text.count('<span class="month-count">1 фото</span>') == 3
+    assert client.get("/cabinet/gallery").status_code == 200
+    page = rendered("gallery.html")
+    # «До» — плоская лента без месяцев (владелец 09.09.2026).
+    assert (page["before_count"], page["after_count"], page["mock_count"], page["retake_count"]) == (2, 1, 1, 1)
+    # Остальные разделы остались помесячными: по одной работе в месяце.
+    assert [g["total"] for key in ("after_groups", "mock_groups", "retake_groups") for g in page[key]] == [1, 1, 1]
 
 
-def test_gallery_excludes_non_success_and_other_users_works(auth_client, db, user_factory):
+def test_gallery_excludes_non_success_and_other_users_works(auth_client, db, user_factory, rendered):
     """Незавершённые (status != success) и чужие Work не должны попадать в счётчики."""
     client, user = auth_client
     other = user_factory(vk_id=555_444, name="Other Student")
@@ -60,16 +57,14 @@ def test_gallery_excludes_non_success_and_other_users_works(auth_client, db, use
     resp = client.get("/cabinet/gallery")
     assert resp.status_code == 200
     text = resp.text
-    # Ровно одна успешная своя работа — в ленте «До» одна карточка, не четыре.
-    before_section = text[text.index('id="section-before"'):text.index('id="section-after"')]
-    assert before_section.count('class="work-cell"') == 1
-    assert "mine.jpg" in text
+    # Ровно одна успешная своя работа — в ленте «До» одна, не четыре.
+    assert [w.filename for w in rendered("gallery.html")["before_works"]] == ["mine.jpg"]
     assert "others.jpg" not in text
     assert "pending.jpg" not in text
     assert "failed.jpg" not in text
 
 
-def test_history_totals_count_success_and_failed_separately(auth_client, db):
+def test_history_totals_count_success_and_failed_separately(auth_client, db, rendered):
     """/cabinet/history: total_success/total_failed/total_photos считаются раздельно.
 
     2 успешных лога (photo_count 3+2=5) + 1 неудачный → total_success=2,
@@ -86,9 +81,6 @@ def test_history_totals_count_success_and_failed_separately(auth_client, db):
     ])
     db.commit()
 
-    resp = client.get("/cabinet/history")
-    assert resp.status_code == 200
-    text = resp.text
-    assert 'Всего фото: <span style="color:var(--blue-text)">5</span>' in text
-    assert 'Успешно: <span style="color:var(--success)">2</span>' in text
-    assert 'Ошибок: <span style="color:var(--error)">1</span>' in text
+    assert client.get("/cabinet/history").status_code == 200
+    page = rendered("history.html")
+    assert (page["total_photos"], page["total_success"], page["total_failed"]) == (5, 2, 1)

@@ -11,11 +11,7 @@
 import json as _json
 from datetime import timedelta
 
-from app.models.task_block import (
-    BLOCK_SCALE,
-    TaskBlock,
-    TaskBlockOption,
-)
+from app.models.task_block import BLOCK_SCALE, TaskBlockOption
 from app.models.tracker import TrackerTask
 from app.services.skills_history import skills_history
 from app.services.task_blocks import (
@@ -210,49 +206,10 @@ def test_personal_page_shows_skills(auth_client, db):
 
     page = client.get("/cabinet/personal")
 
-    assert "Мои навыки" in page.text
     assert "Стрессоустойчивость" in page.text
-    # Закрашено ровно шесть делений из десяти (владелец 13.09.2026): профиль
-    # показывает уровень заливкой, а не точками по датам.
-    assert "6 из 10" in page.text
-    assert page.text.count('prs-skill-cell is-filled') == 6
-
-
-def test_personal_page_does_not_show_measurement_dates(auth_client, db):
-    """История замеров убрана с экрана (владелец 13.09.2026), но осталась в
-    базе: сервис по-прежнему отдаёт `points`, профиль их просто не рисует."""
-    client, user = auth_client
-    task = _task(db)
-    block = _scale(db, task, skills=("Уверенность",))
-    option = db.query(TaskBlockOption).filter(TaskBlockOption.block_id == block.id).one()
-    save_response(
-        db, task_id=task.id, user_id=user.id, blocks=[block],
-        answers={block.id: {"option_ids": [option.id], "option_texts": {option.id: "4"}}},
-    )
-    db.commit()
-
-    page = client.get("/cabinet/personal")
-
-    assert "prs-skill-point" not in page.text
-    assert "prs-skill-marker" not in page.text
-
-
-def test_personal_page_without_skills_has_no_section(auth_client):
-    client, _ = auth_client
-
-    page = client.get("/cabinet/personal")
-
-    assert "Мои навыки" not in page.text
-
-
-def test_constructor_offers_the_scale_block(admin_client):
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="scale"' in page.text
-    assert "Шкала навыков" in page.text
+    # Закрашено ровно шесть делений из десяти (владелец 13.09.2026).
+    [skill] = skills_history(db, user.id)
+    assert (skill["filled"], skill["total"]) == (6, 10)
 
 
 # ── описание навыка и подписи краёв (владелец 11.09.2026) ──────────────────

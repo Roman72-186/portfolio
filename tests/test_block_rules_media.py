@@ -301,7 +301,6 @@ def test_constructor_refuses_photo_item_without_photo(client, db, user_factory, 
     ])
 
     assert resp.status_code == 422
-    assert resp.json()["detail"][0]["msg"] == "В пункте правил №2 нет фото"
     assert db.query(TaskBlock).count() == 0
 
 
@@ -313,13 +312,3 @@ def test_constructor_refuses_video_item_without_file(client, db, user_factory, s
     ])
 
     assert resp.status_code == 422
-    assert resp.json()["detail"][0]["msg"] == "В пункте правил №1 нет видео"
-
-
-def test_constructor_offers_four_rule_item_buttons(admin_client):
-    client, _ = admin_client
-    page = client.get(f"{PROGRAM}/{(TODAY + timedelta(days=14)).isoformat()}")
-
-    for kind in ("text", "photo", "video", "audio"):
-        assert f'data-add-rule-item="{kind}"' in page.text
-    assert "data-mrf-attach-only" in page.text

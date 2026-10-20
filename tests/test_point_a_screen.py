@@ -18,6 +18,7 @@ from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.user import User
 from app.models.work import Work
+from app.services.point_a import student_point_a
 
 LIST_URL = "/cabinet/staff/point-a"
 DETAIL_URL = "/cabinet/staff/point-a/{}"
@@ -109,7 +110,6 @@ def test_head_teacher_opens_the_list(client, session_factory, admin):
     resp = client.get(LIST_URL)
 
     assert resp.status_code == 200
-    assert "Оценка точки А" in resp.text
 
 
 def test_superadmin_sees_students_in_the_list(
@@ -141,7 +141,6 @@ def test_head_teacher_sees_students_in_the_list(
     resp = client.get(LIST_URL)
 
     assert student.name in resp.text
-    assert "оценено 0 из 1" in resp.text
 
 
 def test_archived_student_is_not_in_the_list(
@@ -211,27 +210,16 @@ def test_unknown_student_is_404(client, session_factory, admin):
 # ── плашки ──────────────────────────────────────────────────────────────────
 
 
-def test_student_without_works_has_no_plates(client, session_factory, admin, student):
-    """Плашка появляется только под существующие работы: иначе новичок висел
-    бы вечным «не оценено» без способа это снять."""
-    _as(client, session_factory, admin)
-
-    resp = client.get(DETAIL_URL.format(student.id))
-
-    assert resp.status_code == 200
-    assert "Ученик пока ничего не сдал" in resp.text
-
-
 def test_portfolio_plates_show_up_with_works(client, db, session_factory, admin, student):
     _before_work(db, student.id)
     _after_work(db, student.id)
     _as(client, session_factory, admin)
 
-    resp = client.get(DETAIL_URL.format(student.id))
+    assert client.get(DETAIL_URL.format(student.id)).status_code == 200
 
-    assert "Портфолио «До»" in resp.text
-    assert "Портфолио «После»" in resp.text
-    assert "https://s3.example.com/before.jpg" in resp.text  # оценка не вслепую
+    plates = {p.key: p for p in student_point_a(db, student).plates}
+    assert set(plates) == {"portfolio_before", "portfolio_after"}
+    assert plates["portfolio_before"].images == ["https://s3.example.com/before.jpg"]  # оценка не вслепую
 
 
 def test_mock_and_control_are_separate_plates(client, db, session_factory, admin, student):
@@ -241,10 +229,9 @@ def test_mock_and_control_are_separate_plates(client, db, session_factory, admin
     _exam_work(db, user_id=student.id, admin_id=admin.id, kind="control", subject="Рисунок", seq=2)
     _as(client, session_factory, admin)
 
-    resp = client.get(DETAIL_URL.format(student.id))
+    assert client.get(DETAIL_URL.format(student.id)).status_code == 200
 
-    assert "Пробник — рисунок" in resp.text
-    assert "Контрольная — рисунок" in resp.text
+    assert {p.key for p in student_point_a(db, student).plates} == {"mock_drawing", "control_drawing"}
 
 
 def test_intermediate_attempt_is_not_a_plate(client, db, session_factory, admin, student):
@@ -256,9 +243,9 @@ def test_intermediate_attempt_is_not_a_plate(client, db, session_factory, admin,
     )
     _as(client, session_factory, admin)
 
-    resp = client.get(DETAIL_URL.format(student.id))
+    assert client.get(DETAIL_URL.format(student.id)).status_code == 200
 
-    assert "Пробник — композиция" not in resp.text
+    assert student_point_a(db, student).plates == []
 
 
 def test_latest_submission_wins_when_there_are_several_cycles(db, user_factory):

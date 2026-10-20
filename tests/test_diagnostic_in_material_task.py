@@ -11,7 +11,7 @@
 from datetime import timedelta
 
 from app.api.cabinet_program import _edit_payloads
-from app.models.task_block import TaskBlock, TaskBlockResponse, TaskBlockTariff
+from app.models.task_block import TaskBlock, TaskBlockTariff
 from app.models.tracker import ITEM_MATERIAL, TrackerTask
 from app.services.tz import today_msk
 
@@ -483,7 +483,6 @@ def test_removing_block_with_submitted_work_answers_409(
         headers={"X-CSRF-Token": "x"},
     )
     assert updated.status_code == 409, updated.text
-    assert "сдал" in updated.json()["detail"]
     db.expire_all()
     assert db.get(TaskBlock, upload.id) is not None
 

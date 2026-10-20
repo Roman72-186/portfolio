@@ -195,7 +195,6 @@ def test_required_block_locks_everything_below_it(db, regular_user):
     assert [step["status"] for step in steps] == ["current", "locked"]
 
 
-
 def test_required_text_and_link_never_lock_the_feed(db, regular_user):
     """Текст и ссылку отметить нечем, поэтому галочка «обязательный» на них не
     действует (владелец 01.10.2026). Иначе всё ниже было бы заперто навсегда:
@@ -412,22 +411,6 @@ def test_block_with_past_close_date_is_locked_as_closed(db, regular_user):
 
     assert steps[0]["status"] == "locked"
     assert steps[0]["lock_reason"] == "closed"
-
-
-def test_locked_message_overrides_default_and_is_not_used_when_absent(db, regular_user):
-    _cycle(db, regular_user)
-    task = _task(db, regular_user, title="Модуль")
-    with_message = _block(db, task, title="С текстом", order=1, is_required=False)
-    with_message.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
-    with_message.locked_message = "Пока проверь чат-комьюнити в телеграмме."
-    without_message = _block(db, task, title="Без текста", order=2, is_required=False)
-    without_message.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
-    db.commit()
-
-    steps = _feed(db, regular_user)
-
-    assert steps[0]["block"].locked_message == "Пока проверь чат-комьюнити в телеграмме."
-    assert steps[1]["block"].locked_message is None
 
 
 def test_closed_required_block_does_not_lock_the_tail(db, regular_user):

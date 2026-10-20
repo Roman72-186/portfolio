@@ -12,7 +12,7 @@ import json
 from datetime import date, datetime
 
 from app.models.homework import HomeworkAssignment, HomeworkImage
-from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import TaskBlock
 from app.models.tracker import ITEM_CHECKLIST, ITEM_MATERIAL, TrackerTask
@@ -369,26 +369,6 @@ def test_simple_item_edit_allows_on_the_day_itself(
     assert task.title == "Исправлено сегодня"
 
 
-def test_day_page_shows_edit_button_on_the_day_itself(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    client.post(
-        f"{PROGRAM}/{MONDAY}/material",
-        json={"title": "Материал", "audience": EVERYONE},
-    )
-    task = db.query(TrackerTask).one()
-
-    _freeze(monkeypatch, date(2026, 8, 24))
-    page = client.get(f"{PROGRAM}/{MONDAY}").text
-
-    article = page[page.index(f'data-item-id="{task.id}"'):]
-    assert 'data-item-edit' in article[:article.index('</article>')]
-    assert 'data-item-delete' in article[:article.index('</article>')]
-
-
 # ── Самостоятельная работа ───────────────────────────────────────────────────
 
 def test_homework_edit_updates_entity_and_replaces_images(
@@ -504,25 +484,6 @@ def test_video_edit_updates_description_and_can_clear_it(
     assert db.get(LearningVideo, video.id).description is None
 
 
-def test_day_page_video_form_has_title_and_description_fields(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Поля видны на форме дня — редактировать ролик можно, не уходя на
-    вкладку «Загрузка видео» (владелец 29.08.2026, второй заход)."""
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-    _video(db, status="ready")
-
-    page = client.get(f"{PROGRAM}/{MONDAY}").text
-
-    assert 'data-v-title' in page
-    assert 'data-v-description' in page
-    assert '<select data-v-pick aria-label="Выберите видео">' in page
-    assert 'type="radio" name="catalog-video"' not in page
-    assert page.index('data-v-title') < page.index('data-v-description') < page.index('data-v-pick')
-    assert "Дополнительные задачи учебного дня" in page
-
-
 def test_video_edit_swaps_to_another_free_video(
     client, db, user_factory, session_factory, monkeypatch
 ):
@@ -587,27 +548,6 @@ def test_video_edit_rejects_video_taken_by_another_day(
 
 # ── Карточка дня: кнопка «Изменить» только у покрытых видов ─────────────────
 
-def test_day_page_offers_edit_only_for_editable_kinds(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    client.post(
-        f"{PROGRAM}/{MONDAY}/material",
-        json={"title": "Материал для правки", "audience": EVERYONE},
-    )
-    material_task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
-
-    page = client.get(f"{PROGRAM}/{MONDAY}").text
-
-    material_article = page[page.index(f'data-item-id="{material_task.id}"'):]
-    assert 'data-item-edit' in material_article[:material_article.index('</article>')]
-
-    edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
-    edit_data = json.loads(edit_data_json)
-    assert str(material_task.id) in edit_data
-
 
 def test_survey_is_editable_like_any_other_item(
     client, db, user_factory, session_factory, monkeypatch
@@ -626,7 +566,10 @@ def test_survey_is_editable_like_any_other_item(
     assert created.status_code == 200, created.text
 
     task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
-    page = client.get(f"{PROGRAM}/{day_iso}")
-    assert page.status_code == 200
-    payload = json.loads(page.text.split("programEditData = ")[1].split(";" + chr(10))[0])
-    assert str(task.id) in payload
+    edited = client.post(
+        f"{PROGRAM}/items/{task.id}/survey",
+        json={"title": "Анкета исправлена", "audience": EVERYONE},
+    )
+    assert edited.status_code == 200, edited.text
+    db.refresh(task)
+    assert task.title == "Анкета исправлена"

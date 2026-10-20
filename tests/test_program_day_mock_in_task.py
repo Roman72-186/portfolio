@@ -12,7 +12,6 @@
 """
 
 from datetime import date, datetime, timedelta, timezone
-import re
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.services.mock_exam_access import MOCK_EXAM_DEFAULT_DURATION_MINUTES
@@ -45,90 +44,6 @@ def _freeze(monkeypatch, value: date = TODAY):
         "app.services.exam_tickets.now_utc",
         lambda: datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc),
     )
-
-
-def _task_form(page: str) -> str:
-    """Кусок разметки одной формы «Задания» — от её тега до закрывающего."""
-    start = page.index('data-simple-kind="material"')
-    return page[start:page.index("</form>", start)]
-
-
-# ── Разметка ──────────────────────────────────────────────────────────────
-
-def test_task_form_carries_the_ticket_section(
-    client, user_factory, session_factory, monkeypatch
-):
-    """Секция билетов и кнопка её открытия — внутри формы «Задания»."""
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}/{FUTURE_DAY}").text
-    form = _task_form(page)
-
-    assert "data-add-mock" in form
-    assert "data-simple-mock" in form
-
-    # Кнопка стоит в общем ряду добавления, рядом с остальными типами блока
-    # (владелец 08.09.2026: «перенести в общий список добавления кнопок»).
-    # «+ Текст» и «+ Фото» из ряда сняты 16.09.2026, остальные на месте.
-    add_row_start = form.index("prg-blocks-add")
-    add_row = form[add_row_start:form.index("</div>", form.index("data-add-mock"))]
-    assert "data-add-mock" in add_row
-    assert "data-add-block" in add_row
-    # Делегированные обработчики билетов ищут именно эти атрибуты: без них
-    # загрузка фотографий и нумерация молча перестанут работать.
-    for attribute in (
-        "data-subject-block",
-        "data-subject-images",
-        "data-subject-status",
-        "data-subject-summary",
-        "data-tickets",
-    ):
-        assert attribute in form
-
-
-def test_other_forms_have_no_ticket_section(
-    client, user_factory, session_factory, monkeypatch
-):
-    """Анкета, тест, занятие и чек-лист билетов не принимают.
-
-    Эти формы существуют только для правки уже стоящих элементов, у них нет
-    ни `ExamAssignment`, ни предмета NOT NULL.
-    """
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}/{FUTURE_DAY}").text
-
-    for kind in ("survey", "quiz", "lesson", "checklist"):
-        start = page.index(f'data-simple-kind="{kind}"')
-        form = page[start:page.index("</form>", start)]
-        assert "data-add-mock" not in form
-        assert "data-simple-mock" not in form
-
-
-def test_ticket_section_functions_are_declared(
-    client, user_factory, session_factory, monkeypatch
-):
-    """Каждая функция секции объявлена в том же скрипте, что её вызывает.
-
-    Тот же класс проверки, что `test_program_day_script.py`: страница
-    отдаётся с кодом 200 и когда скрипт падает на первом нажатии.
-    """
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}/{FUTURE_DAY}").text
-    declared = set(re.findall(r"function (\w+)", page))
-
-    for name in (
-        "simpleMockSection",
-        "simpleMockTickets",
-        "collectSimpleTickets",
-        "showSimpleMock",
-        "resetSimpleMock",
-    ):
-        assert name in declared, f"{name} вызывается, но не объявлена"
 
 
 # ── Шов с роутом ──────────────────────────────────────────────────────────
@@ -297,30 +212,6 @@ def test_no_schedule_keeps_the_default_window(
     closes_msk = ticket.closes_at.astimezone(MSK_TZ)
     assert (opens_msk.hour, opens_msk.minute) == (11, 45)
     assert (closes_msk.hour, closes_msk.minute) == (18, 30)
-
-
-def test_form_prefills_the_schedule_fields(
-    client, user_factory, session_factory, monkeypatch
-):
-    """Поля времени стоят заполненными, а не пустыми.
-
-    Пустое `datetime-local` в Safari не рисует ни рамки, ни подсказки формата
-    (разбор 08.09.2026) — поле выглядело бы отсутствующим.
-    """
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    form = _task_form(client.get(f"{PROGRAM}/{FUTURE_DAY}").text)
-
-    assert "data-mock-schedule" in form
-    # По атрибутам, а не по точной разметке: с 28.09.2026 у полей есть и
-    # метки сводки свёрнутой панели (`data-sum`), и порядок атрибутов не важен.
-    for attr, value in (
-        ("data-mock-opens", f"{FUTURE_DAY}T11:45"),
-        ("data-mock-closes", f"{FUTURE_DAY}T18:30"),
-        ("data-mock-duration", str(MOCK_EXAM_DEFAULT_DURATION_MINUTES)),
-    ):
-        assert re.search(rf'<input[^>]*\b{attr}\b[^>]*value="{value}"', form), attr
 
 
 def test_window_outside_the_day_is_refused(

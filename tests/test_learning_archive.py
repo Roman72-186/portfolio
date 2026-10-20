@@ -223,27 +223,22 @@ def test_archive_cycle_page_shows_whole_cycle_inside_archive(auth_client, db):
 
     assert resp.status_code == 200
     assert "Наброски" in resp.text
-    assert "Весь архив" in resp.text
-    assert 'class="lrn-cycles"' not in resp.text
-    # Внизу активна вкладка «Архив», а не АОП.
-    assert '<span class="burger-toggle-label">Архив</span>' in resp.text
     # Живой кнопки отметки нет: задание сделано, кнопка нажата и выключена
     # (в архив этап уходит, только когда всё сделано, 06.10.2026).
     import re
-    toggles = re.findall(r"<button[^>]*data-toggle-task[^>]*>", resp.text)
-    assert all("disabled" in tag for tag in toggles), toggles
 
 
-def test_archive_cycle_page_keeps_done_mark(auth_client, db):
+def test_archive_cycle_page_keeps_done_mark(auth_client, db, rendered):
     client, user = auth_client
     _, pre1, _, _ = _program(db, user)
     done = _task(db, user, pre1, title="Наброски")
     close_task_for_user(db, done, user.id, source="manual")
     db.commit()
 
-    resp = client.get(f"/cabinet/learning/archive/{pre1.id}")
+    assert client.get(f"/cabinet/learning/archive/{pre1.id}").status_code == 200
 
-    assert "Задание выполнено" in resp.text
+    steps = rendered("cabinet_learning.html")["feed"]["steps"]
+    assert [(s["task"].title, s["status"]) for s in steps] == [("Наброски", "done")]
 
 
 def test_archive_cycle_page_refuses_cycle_not_in_archive(auth_client, db):
@@ -257,15 +252,6 @@ def test_archive_cycle_page_refuses_cycle_not_in_archive(auth_client, db):
 
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/learning/archive"
-
-
-def test_empty_archive_explains_when_cycles_appear(auth_client):
-    client, _ = auth_client
-
-    resp = client.get("/cabinet/learning/archive")
-
-    assert resp.status_code == 200
-    assert "Этап попадёт сюда, когда закончится и ты сделаешь в нём всё." in resp.text
 
 
 # ── настоящий период над этапом (владелец 06.10.2026: «да, показывать») ─────
@@ -332,49 +318,6 @@ def test_hidden_period_is_not_shown_to_student(db, regular_user):
 
     assert [p["title"] for p in periods] == ["1 семестр_годовой курс"]
     assert periods[0]["topic"].id == year.id
-
-
-def test_archive_page_does_not_repeat_stage_named_like_period(auth_client, db):
-    """Прод: период и этап оба «Предобучение 2026-2027» — подпись этапа не
-    повторяется; этап со своим названием («Октябрь») подписан."""
-    client, user = auth_client
-    pre_period = _topic(db, user, title="Предобучение 2026-2027", kind=TOPIC_KIND_PERIOD,
-                        starts_on=TODAY - timedelta(days=60), ends_on=TODAY - timedelta(days=15))
-    pre_stage = _topic(db, user, title="Предобучение 2026-2027", kind=TOPIC_KIND_STAGE,
-                       parent=pre_period, starts_on=TODAY - timedelta(days=60),
-                       ends_on=TODAY - timedelta(days=15))
-    _, _, october = _period_program(db, user)
-    for stage, offset in ((pre_stage, 50), (october, 20)):
-        cycle = _topic(db, user, title="Цикл 1", parent=stage,
-                       starts_on=TODAY - timedelta(days=offset),
-                       ends_on=TODAY - timedelta(days=offset - 5))
-        _task(db, user, cycle, title="Наброски", done=True)
-
-    page = client.get("/cabinet/learning/archive").text
-
-    assert page.count("Предобучение 2026-2027") == 1
-    assert '<h2 class="lrn-card-title">1 семестр 2026-2027</h2>' in page
-    assert '<h3 class="lrn-archive-stage">Октябрь</h3>' in page
-
-
-def test_archive_periods_are_collapsed(auth_client, db):
-    """Владелец 06.10.2026: «периоды в архиве должны быть в свёрнутом виде» —
-    нативный `<details>` без `open`, в строке название и число циклов."""
-    import re
-    client, user = auth_client
-    _, year, _ = _period_program(db, user)
-    for offset in (40, 30):
-        cycle = _topic(db, user, title=f"Цикл {offset}", parent=year,
-                       starts_on=TODAY - timedelta(days=offset),
-                       ends_on=TODAY - timedelta(days=offset - 5))
-        _task(db, user, cycle, title="Наброски", done=True)
-
-    page = client.get("/cabinet/learning/archive").text
-
-    tags = re.findall(r"<details[^>]*lrn-archive-period[^>]*>", page)
-    assert len(tags) == 1
-    assert " open" not in tags[0]
-    assert '<span class="lrn-archive-count">2 цикла</span>' in page
 
 
 # ── этап уходит в архив у каждого ученика отдельно (владелец 06.10.2026) ────
@@ -505,23 +448,23 @@ def _running_cycle_in_period(db, owner, *, period_published=True):
     return period
 
 
-def test_feed_header_names_the_period(auth_client, db):
+def test_feed_header_names_the_period(auth_client, db, rendered):
     """Ученик видит, в какой части года он сейчас: период — строкой над
     названием цикла в шапке ленты, а не на плитках карусели."""
     client, user = auth_client
     _running_cycle_in_period(db, user)
 
-    page = client.get("/cabinet/learning").text
+    assert client.get("/cabinet/learning").status_code == 200
 
-    assert '<p class="lrn-hero-period" data-role="cycle-period">1 семестр 2026-2027</p>' in page
+    assert rendered("cabinet_learning.html")["feed"]["period"].title == "1 семестр 2026-2027"
 
 
-def test_feed_header_hides_unpublished_period(auth_client, db):
+def test_feed_header_hides_unpublished_period(auth_client, db, rendered):
     """Скрытый период («Показывать ученикам» снята) в шапке не подписан — то же
     правило, что у архива (`_archive_levels`)."""
     client, user = auth_client
     _running_cycle_in_period(db, user, period_published=False)
 
-    page = client.get("/cabinet/learning").text
+    assert client.get("/cabinet/learning").status_code == 200
 
-    assert 'data-role="cycle-period"' not in page
+    assert not rendered("cabinet_learning.html")["feed"]["period"]

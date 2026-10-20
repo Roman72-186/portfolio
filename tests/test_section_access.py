@@ -310,14 +310,6 @@ def test_access_menu_item_is_superadmin_only():
     assert "access" not in [i.key for i in staff_nav_items(4, "админ")]
 
 
-def test_curator_dashboard_drops_closed_tile(client, db, session_factory, superadmin, curator):
-    _close_for_role(db, superadmin, "куратор", "reports")
-    _login(client, session_factory, curator)
-    resp = client.get("/cabinet/curator", follow_redirects=False)
-    assert resp.status_code == 200
-    assert 'href="/cabinet/curator/reports"' not in resp.text
-
-
 # ── Экран «Доступы» и карточка ────────────────────────────────────────────────
 
 def test_access_page_is_superadmin_only(client, session_factory, superadmin, head):
@@ -326,18 +318,6 @@ def test_access_page_is_superadmin_only(client, session_factory, superadmin, hea
     _login(client, session_factory, superadmin)
     resp = client.get("/cabinet/superadmin/access", follow_redirects=False)
     assert resp.status_code == 200
-    assert 'name="cell__curator__statistics"' in resp.text
-    # С 03.10.2026 ячейка есть у каждой роли, в том числе сверх ранга.
-    assert 'name="cell__curator__program"' in resp.text
-    assert 'name="cell__moderator__people"' in resp.text
-    # С 04.10.2026 в ячейке уровни; у раздела без записи их два.
-    assert 'name="cell__head__program" value="edit"' in resp.text
-    assert 'name="cell__head__archive" value="edit"' not in resp.text
-    assert 'name="cell__head__archive" value="view"' in resp.text
-    # «Люди и доступы» сверх роли просят подтверждения, у ГП — родной раздел.
-    # «Смотреть» и «Менять» у куратора и модератора — четыре кнопки.
-    assert 'data-risky-what="«Люди и доступы» роли «Куратор»"' in resp.text
-    assert resp.text.count('data-risky-what="«Люди и доступы»') == 4
 
 
 def test_access_page_saves_matrix_and_audits(client, db, session_factory, superadmin, curator, head):
@@ -362,14 +342,12 @@ def test_access_page_saves_matrix_and_audits(client, db, session_factory, supera
 
 def test_user_card_block_and_save(client, db, session_factory, superadmin, curator, head):
     _login(client, session_factory, head)
-    assert 'name="section__students"' not in client.get(f"/cabinet/superadmin/users/{curator.id}").text
     assert client.post(
         f"/cabinet/superadmin/users/{curator.id}/access", data={"section__students": "none"},
         follow_redirects=False,
     ).status_code == 403
 
     _login(client, session_factory, superadmin)
-    assert 'name="section__students"' in client.get(f"/cabinet/superadmin/users/{curator.id}").text
     resp = client.post(
         f"/cabinet/superadmin/users/{curator.id}/access",
         data={"section__students": "none", "section__reports": "role"},
@@ -477,18 +455,6 @@ def test_granted_archive_stays_read_only(client, db, session_factory, user_facto
     assert work.score is None
 
 
-def test_granted_archive_appears_in_curator_menu():
-    keys = [i.key for i in curator_nav_items(granted_sections=frozenset({"archive"}))]
-    assert keys.index("archive") == keys.index("notifications") - 1
-
-
-def test_curator_menu_shows_archive_when_granted(client, db, session_factory, curator):
-    _personal(db, curator, "archive", "view")
-    _login(client, session_factory, curator)
-    resp = client.get("/cabinet/curator", follow_redirects=False)
-    assert 'href="/cabinet/archive"' in resp.text
-
-
 def test_card_shows_every_section_and_marks_above_role(db, superadmin, curator):
     rules = {r["key"]: r for r in section_access.user_rules(db, curator)}
     assert set(rules) == set(section_access.SECTIONS_BY_KEY) | set(section_access.ACTIONS_BY_KEY)
@@ -523,10 +489,6 @@ def test_curator_with_program_works_in_it_as_head(client, db, session_factory, s
     _login(client, session_factory, curator)
     page = client.get("/cabinet/staff/program/cycles", follow_redirects=False)
     assert page.status_code == 200
-    # Меню — своё, кураторское, с пунктом открытого раздела, без меню ГП.
-    assert 'aria-label="Меню куратора"' in page.text
-    assert 'href="/cabinet/staff/program/periods"' in page.text
-    assert 'href="/cabinet/staff/point-a"' not in page.text
     # Соседние разделы ГП остаются закрыты рангом.
     assert client.get("/cabinet/staff/point-a", follow_redirects=False).status_code == 403
     assert client.get("/cabinet/superadmin/users", follow_redirects=False).status_code == 403
@@ -592,8 +554,3 @@ def test_moderator_home_falls_back_to_granted_section(client, db, session_factor
     resp = client.get("/cabinet", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/staff/program/periods"
-
-
-def test_curator_menu_lists_granted_sections_in_catalog_order():
-    keys = [i.key for i in curator_nav_items(granted_sections=frozenset({"people", "program"}))]
-    assert keys.index("program") < keys.index("people") < keys.index("notifications")

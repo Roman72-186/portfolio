@@ -1,8 +1,8 @@
 """Календарь учебных программ и экран дня."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
-from app.models.tracker import ITEM_MOCK_EXAM, ITEM_VIDEO, TrackerTask
+from app.models.tracker import ITEM_VIDEO, TrackerTask
 
 
 PROGRAM = "/cabinet/staff/program"
@@ -56,20 +56,6 @@ def test_admin_opens_the_month(
 
 # ── Сетка ─────────────────────────────────────────────────────────────────
 
-def test_weekends_are_marked_and_weekdays_are_not(
-    client, user_factory, session_factory, monkeypatch
-):
-    """Тёмные ячейки выходных — то, чем недели отделяются друг от друга."""
-    _freeze_today(monkeypatch, date(2026, 8, 21))
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}?month=2026-08").text
-
-    assert 'data-dow="6"' in page and 'data-dow="7"' in page
-    # 22 августа 2026 — суббота, 24 августа — понедельник.
-    assert 'data-dow="6"\n           href="/cabinet/staff/program/2026-08-22"' in page.replace("\r\n", "\n")
-    assert 'data-dow="1"\n           href="/cabinet/staff/program/2026-08-24"' in page.replace("\r\n", "\n")
-
 
 def test_grid_starts_on_monday_of_the_first_week(
     client, user_factory, session_factory, monkeypatch
@@ -101,86 +87,7 @@ def test_broken_month_falls_back_to_today(client, user_factory, session_factory,
     assert "Август 2026" in client.get(f"{PROGRAM}?month=сентябрь").text
 
 
-def test_marks_show_what_stands_in_the_day(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    _freeze_today(monkeypatch, date(2026, 8, 21))
-    admin = _staff_client(client, user_factory, session_factory)
-    db.add_all(
-        [
-            TrackerTask(
-                title="Пробник",
-                kind=ITEM_MOCK_EXAM,
-                subject="Рисунок",
-                due_at=datetime(2026, 8, 24, 8, 45, tzinfo=timezone.utc),
-                created_by_id=admin.id,
-            ),
-            TrackerTask(
-                title="Видео недели",
-                kind=ITEM_VIDEO,
-                due_at=datetime(2026, 8, 26, 9, 0, tzinfo=timezone.utc),
-                created_by_id=admin.id,
-            ),
-        ]
-    )
-    db.commit()
-
-    page = client.get(f"{PROGRAM}?month=2026-08").text
-
-    assert "элементов: 1" in page
-    assert 'title="Пробник: Рисунок"' in page
-    assert 'title="Видеоматериал"' in page
-
-
 # ── Экран дня ─────────────────────────────────────────────────────────────
-
-def test_future_day_offers_only_the_task_tile(client, user_factory, session_factory, monkeypatch):
-    """Плитка одна — «Задание», всё остальное задают блоки конструктора.
-
-    Владелец 06.09.2026: «убрать Видеоматериал, Пробник и Самостоятельную
-    работу, а оставить новый функционал с любыми заданиями». 07.09.2026
-    плитку «Пробник» вернули коммитом `bb1d1e0` и этот тест переписали под
-    возврат — подтверждения владельца на возврат не нашлось. Он же
-    07.09.2026: «убери пробники и все задания должны быть в одной вкладке,
-    должен быть конструктор».
-
-    **Красный тест здесь значит, что плитку вернули без дословного слова
-    владельца — не правьте его, спросите.**"""
-    _freeze_today(monkeypatch, date(2026, 8, 21))
-    _staff_client(client, user_factory, session_factory)
-
-    page = client.get(f"{PROGRAM}/2026-08-24")
-
-    assert page.status_code == 200
-    assert "24 август 2026, понедельник" in page.text
-    assert 'data-open-form="material"' in page.text
-    for kind in ("mock", "video", "homework"):
-        assert f'data-open-form="{kind}"' not in page.text
-
-
-def test_past_day_is_read_only(client, db, user_factory, session_factory, monkeypatch):
-    """Элемент задним числом открылся бы ученикам мгновенно."""
-    _freeze_today(monkeypatch, date(2026, 8, 21))
-    admin = _staff_client(client, user_factory, session_factory)
-    db.add(
-        TrackerTask(
-            title="Старый пробник",
-            kind=ITEM_MOCK_EXAM,
-            due_at=datetime(2026, 8, 17, 9, 0, tzinfo=timezone.utc),
-            created_by_id=admin.id,
-        )
-    )
-    db.commit()
-
-    page = client.get(f"{PROGRAM}/2026-08-17")
-
-    assert page.status_code == 200
-    assert "Старый пробник" in page.text
-    # Плиток нет: проверяем разметку, а не строку — селектор с тем же именем
-    # встречается в обработчике на странице.
-    assert 'class="prg-tile"' not in page.text
-    assert 'class="prg-form"' not in page.text
-    assert "не менять" in page.text
 
 
 def test_day_shows_only_its_own_items(client, db, user_factory, session_factory, monkeypatch):

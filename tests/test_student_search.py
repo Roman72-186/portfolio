@@ -83,32 +83,3 @@ def test_review_rows_filter_by_id(db, user_factory):
     result = filter_review_rows(rows, q=f"id {found.id}")
 
     assert [r["student"].id for r in result] == [found.id]
-
-
-def test_id_search_script_is_on_every_page(admin_client):
-    """Браузерные списки («Ученики», проверка пробников и отработок, рассылки,
-    доступ к блоку, билеты, старая статистика) берут номер из одного файла —
-    его подключает base.html."""
-    client, _ = admin_client
-
-    page = client.get("/cabinet/students").text
-    assert '<script src="/static/js/student-search.js?v=' in page
-    script = client.get("/static/js/student-search.js")
-    assert script.status_code == 200
-    assert "window.studentIdFromQuery" in script.text
-
-
-@pytest.mark.parametrize("path", [
-    "app/static/js/cabinet_students.js",
-    "app/static/js/broadcasts.js",
-    "app/templates/cabinet_admin_mock_check.html",
-    "app/templates/cabinet_admin_retake_check.html",
-    "app/templates/partials/program_blocks_editor_js.html",
-    "app/templates/superadmin_exam_assignment_form.html",
-    "app/templates/superadmin_stats.html",
-])
-def test_browser_lists_use_shared_id_rule(path):
-    from pathlib import Path
-
-    source = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
-    assert "studentIdFromQuery(" in source

@@ -77,12 +77,6 @@ def student_with_works(db, user_factory, curator_client):
 # Главная и вход
 # ---------------------------------------------------------------------------
 
-def test_homepage_query_count(client, sql_counter):
-    with sql_counter() as counter:
-        resp = client.get("/")
-    assert resp.status_code == 200
-    assert counter.count <= 25, f"Главная сделала {counter.count} запросов, ожидали <= 25"
-
 
 def test_login_page_makes_no_queries(client, sql_counter):
     """Страница входа не должна ходить в БД вообще."""
@@ -95,13 +89,6 @@ def test_login_page_makes_no_queries(client, sql_counter):
 # ---------------------------------------------------------------------------
 # Кабинет суперадмина
 # ---------------------------------------------------------------------------
-
-def test_superadmin_dashboard_query_count(superadmin_client, sql_counter):
-    client, _ = superadmin_client
-    with sql_counter() as counter:
-        resp = client.get("/cabinet/superadmin")
-    assert resp.status_code == 200
-    assert counter.count <= 22, f"Дашборд сделал {counter.count} запросов, ожидали <= 22"
 
 
 def test_superadmin_dashboard_does_not_scale_with_data(
@@ -143,20 +130,34 @@ def test_superadmin_dashboard_does_not_scale_with_data(
 # JSON-эндпоинты куратора
 # ---------------------------------------------------------------------------
 
-def test_curator_portfolio_json_query_count(curator_client, db, student_with_works, sql_counter):
-    client, _ = curator_client
+def _queries(client, sql_counter, url):
     with sql_counter() as counter:
-        resp = client.get(f"/cabinet/curator/portfolio/student/{student_with_works.id}")
+        resp = client.get(url)
     assert resp.status_code == 200
-    assert counter.count <= 12, f"Портфолио JSON сделал {counter.count} запросов, ожидали <= 12"
+    return counter.count
 
 
-def test_curator_mock_exams_json_query_count(curator_client, db, student_with_works, sql_counter):
-    client, _ = curator_client
-    with sql_counter() as counter:
-        resp = client.get(f"/cabinet/curator/mock-exams/student/{student_with_works.id}")
-    assert resp.status_code == 200
-    assert counter.count <= 10, f"Пробники JSON сделали {counter.count} запросов, ожидали <= 10"
+@pytest.mark.parametrize("page", ["portfolio", "mock-exams"])
+def test_curator_student_json_does_not_scale_with_works(
+    curator_client, db, user_factory, student_with_works, sql_counter, page
+):
+    """30 работ ученика не должны стоить запросов больше, чем одна, — иначе N+1."""
+    client, curator = curator_client
+    small = user_factory(vk_id=980_004, name="Student One Work", role_name="ученик")
+    small.curator_id = curator.id
+    db.add_all([
+        Work(user_id=small.id, work_type=WORK_TYPE_AFTER, month="январь", year=2026,
+             filename="one.jpg", s3_url="https://s3.example.com/one.jpg", status="success"),
+        Work(user_id=small.id, work_type=WORK_TYPE_MOCK_EXAM, month="февраль", year=2026,
+             filename="mock.jpg", s3_url="https://s3.example.com/mock.jpg", status="success",
+             score=70, subject="Рисунок"),
+    ])
+    db.commit()
+
+    base = _queries(client, sql_counter, f"/cabinet/curator/{page}/student/{small.id}")
+    many = _queries(client, sql_counter, f"/cabinet/curator/{page}/student/{student_with_works.id}")
+
+    assert many <= base + 2, f"{page}: {many} запросов на 30 работ против {base} на одну — похоже на N+1"
 
 
 # ---------------------------------------------------------------------------

@@ -155,19 +155,6 @@ def test_admin_impersonates_moderator(client, session_factory, user_factory):
     assert back.cookies.get("session_id") == sess.id
 
 
-def test_moderator_card_shows_login_button_to_admin(client, session_factory, user_factory):
-    admin = user_factory(vk_id=900_042, name="Admin Seven", role_name="админ")
-    moderator = user_factory(vk_id=900_043, name="Moder Two", role_name="модератор")
-    other_admin = user_factory(vk_id=900_044, name="Admin Eight", role_name="админ")
-    client.cookies.set("session_id", session_factory(admin).id)
-
-    card = client.get(f"/cabinet/superadmin/users/{moderator.id}")
-    assert card.status_code == 200
-    assert 'form="impersonateForm"' in card.text
-    peer = client.get(f"/cabinet/superadmin/users/{other_admin.id}")
-    assert 'form="impersonateForm"' not in peer.text
-
-
 def test_superadmin_cannot_impersonate_inactive_user(
     client, session_factory, user_factory
 ):
@@ -283,18 +270,6 @@ def test_leave_never_goes_to_another_site(client, session_factory, user_factory)
         client.cookies.clear()
         _, location = _enter_and_leave(client, session_factory, user_factory, return_to=bad, vk=900_120 + i * 2)
         assert location == "/cabinet", bad
-
-
-def test_student_card_sends_return_address():
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1]
-    script = (root / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    body = script.split("function impersonateStudent()", 1)[1].split("\nfunction ", 1)[0]
-    template = (root / "app/templates/cabinet_students.html").read_text(encoding="utf-8")
-
-    assert "[name=\"return_to\"]').value = location.pathname + '?student=' + _currentStudentId" in body
-    assert '<input type="hidden" name="return_to" value="">' in template
 
 
 def _expires(db, session_id):

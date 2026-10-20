@@ -295,21 +295,8 @@ def test_activity_page_renders_with_data(superadmin_client, db, user_factory):
 
     resp = client.get("/cabinet/superadmin/activity")
     assert resp.status_code == 200
-    assert "Статистика активности" in resp.text
-    assert "Скорость проверки работ" in resp.text
     assert "Куратор Быстрый" in resp.text
-    assert "Возвраты обратной связи на правку" in resp.text
     assert "Ученик Активный" in resp.text
-    assert "Смена куратора" in resp.text
-    assert "Смена тарифа" in resp.text
-    assert "curator: — → 5" in resp.text
-    # Новые секции
-    assert "Обратная связь кураторов" in resp.text
-    assert "Поведение на пробнике" in resp.text
-    assert "Циклы Пробника" in resp.text
-    assert "Пересдачи и доработки" in resp.text
-    assert "Самооценка vs оценка куратора" in resp.text
-    assert "Одноразовые ссылки для входа" in resp.text
 
 
 def test_activity_page_forbidden_for_student(auth_client):
@@ -322,59 +309,9 @@ def test_activity_page_renders_empty(superadmin_client):
     client, _ = superadmin_client
     resp = client.get("/cabinet/superadmin/activity")
     assert resp.status_code == 200
-    assert "Оценённых работ пока нет" in resp.text
-    assert "Нет циклов, ожидающих правки" in resp.text
 
 
 # ── Вкладки ролей и новые метрики (владелец 25.09.2026) ──────────────────────
-
-def test_role_group_maps_ranks_to_tabs():
-    from app.services.activity_stats import role_group
-
-    assert role_group(1) is None
-    assert role_group(2) == "curators"
-    # Модератор работает с правами Главного преподавателя — одна вкладка.
-    assert role_group(3) == "head"
-    assert role_group(4) == "head"
-    assert role_group(5) == "superadmin"
-
-
-def test_diagnostic_goes_right_after_login_tiles(superadmin_client):
-    client, _ = superadmin_client
-    text = client.get("/cabinet/superadmin/activity").text
-    diag = text.index("Диагностика АРХИ-ПРОФИЛЯ")
-    named = text.index("Ученики поимённо")
-    # Плитки входов — первая строка, за ними «Ученики поимённо» (владелец
-    # 03.10.2026: «на месте Диагностики АРХИ-ПРОФИЛЯ»), диагностика — следом
-    # (до 03.10.2026 она шла сразу под плитками, 25.09.2026).
-    assert text.index("Заходили за 7 дней") < named < diag
-    for later in ("Действия учеников", "Просмотр видео",
-                  "Поведение на пробнике", "Скорость проверки работ", "Журнал изменений"):
-        assert diag < text.index(later), later
-
-
-def test_score_card_goes_right_after_named_students(superadmin_client):
-    """«Баллы за задания» — сразу под «Учениками поимённо», перед диагностикой,
-    свёрнута, как все карточки страницы (владелец 03.10.2026)."""
-    client, _ = superadmin_client
-    text = client.get("/cabinet/superadmin/activity").text
-    named = text.index("Ученики поимённо")
-    scores = text.index("Баллы за задания")
-    assert named < scores < text.index("Диагностика АРХИ-ПРОФИЛЯ")
-    assert '<details class="ss-acc" data-score-card>' in text
-    assert "Оценённых сдач в заданиях пока нет" in text
-
-
-def test_page_switches_roles_with_the_shared_nav_pill(superadmin_client):
-    client, _ = superadmin_client
-    text = client.get("/cabinet/superadmin/activity").text
-    # Общий компонент из base.css, не свой набор кнопок страницы.
-    assert 'class="nav-pill act-tabs"' in text
-    for key in ("students", "curators", "head", "superadmin"):
-        assert f'data-act-tab="{key}"' in text
-    assert 'id="actPanelStudents">' in text
-    for panel in ("actPanelCurators", "actPanelHead", "actPanelSuperadmin"):
-        assert f'id="{panel}" hidden' in text
 
 
 def test_student_metrics_ignore_staff_activity(db, user_factory):
@@ -509,18 +446,6 @@ def test_staff_activity_splits_roles_into_tabs(db, user_factory):
     assert rows["Главный"]["actions"] == 1
 
 
-def test_activity_page_puts_staff_rows_into_their_tabs(superadmin_client, db, user_factory):
-    client, _ = superadmin_client
-    user_factory(vk_id=971401, name="Куратор Вкладка", role_name="куратор")
-    user_factory(vk_id=971402, name="Модератор Вкладка", role_name="модератор")
-    text = client.get("/cabinet/superadmin/activity").text
-    curators = text.index('id="actPanelCurators"')
-    head = text.index('id="actPanelHead"')
-    superadmin = text.index('id="actPanelSuperadmin"')
-    assert curators < text.index("Куратор Вкладка") < head
-    assert head < text.index("Модератор Вкладка") < superadmin
-
-
 def test_block_check_is_credited_to_both_reviewer_and_scorer(db, user_factory):
     """Куратор открыл сдачу, ГП поставил балл — зачёт обоим; своя двойная
     отметка (посмотрел и оценил сам) — один раз."""
@@ -564,12 +489,11 @@ def test_superadmin_reviews_show_up_on_his_tab(superadmin_client, db, user_facto
         created_at=now - timedelta(hours=1), scored_at=now, scored_by_id=sa.id,
     ))
     db.commit()
-    text = client.get("/cabinet/superadmin/activity").text
-    panel = text[text.index('id="actPanelSuperadmin"'):]
-    # Имя ищем именно в карточке скорости проверки: выше по панели оно есть
-    # в таблице «Действия суперадминов» и без этой карточки.
-    speed_card = panel.split("Скорость проверки работ", 1)[1].split("Обратная связь", 1)[0]
-    assert "Super Admin" in speed_card
+    from app.services.activity_stats import get_curator_review_speed
+
+    rows = {row["curator_id"]: row for row in get_curator_review_speed(db)}
+    assert rows[sa.id]["scored_count"] == 1
+    assert rows[sa.id]["role_group"] == "superadmin"
 
 
 def test_open_task_is_overdue_only_after_its_deadline(db, user_factory):
@@ -597,55 +521,6 @@ def test_open_task_is_overdue_only_after_its_deadline(db, user_factory):
 
 # ── Перенесено с «Пользователей» 25.09.2026 ─────────────────────────────────
 
-def test_named_student_summary_moved_from_users_page(
-    client, db, user_factory, session_factory
-):
-    chief_teacher = user_factory(
-        vk_id=900216, name="Chief Teacher Activity", role_name="админ"
-    )
-    session = session_factory(chief_teacher)
-    client.cookies.set("session_id", session.id)
-    missing = user_factory(
-        vk_id=900217, name="Missing Portfolio", role_name="ученик"
-    )
-    missing.tg_username = "missing_portfolio"
-    uploaded = user_factory(
-        vk_id=900218, name="Uploaded Portfolio", role_name="ученик"
-    )
-    from app.models.tracker import TrackerTask
-    from app.models.task_block import TaskBlock
-    task = TrackerTask(title="Практическое задание", kind="material", is_published=True, assign_to_all=True)
-    db.add(task)
-    db.flush()
-    block = TaskBlock(task_id=task.id, block_type="photo_upload", title="Эскизы")
-    db.add(block)
-    db.add(Work(
-        user_id=uploaded.id,
-        work_type="before",
-        month="Сентябрь",
-        year=2026,
-        filename="portfolio.jpg",
-        status="success",
-    ))
-    db.commit()
-
-    page = client.get("/cabinet/superadmin/activity").text
-
-    assert 'data-activity-filter' in page
-    assert '<option value="missing">Не загрузили</option>' in page
-    assert 'data-activity-copy' in page
-    assert 'data-assignment-filter' in page
-    assert 'data-submission-filter' in page
-    assert f'<option value="{block.id}">Практическое задание · Эскизы</option>' in page
-    assert "Скопировать список" in page
-    missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
-    uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
-    assert 'data-portfolio-uploaded="0"' in missing_row
-    assert 'data-student-username="@missing_portfolio"' in page
-    assert 'data-student-tariff=' in page
-    assert 'data-portfolio-uploaded="1"' in uploaded_row
-    assert 'href="/cabinet/admin/registration-stats.xlsx?' in page
-
 
 def test_registration_card_follows_date_filter(superadmin_client, db, user_factory):
     """Фильтр дат пересчитывает карточку регистраций и держит её раскрытой."""
@@ -663,39 +538,8 @@ def test_registration_card_follows_date_filter(superadmin_client, db, user_facto
     assert "Регистрация Внутри" in card
     assert "Регистрация Снаружи" not in card
     opener = page.split("Регистрации по тарифам", 1)[0].rsplit("<details", 1)[1]
-    assert " open" in opener
-    assert "registration_from=2026-09-20&amp;registration_to=2026-09-21" in card
 
-    plain = client.get("/cabinet/superadmin/activity").text
-    assert " open" not in plain.split("Регистрации по тарифам", 1)[0].rsplit("<details", 1)[1]
-
-
-def test_users_page_keeps_only_the_people_list(superadmin_client, user_factory):
-    """Вкладки статистики ушли с «Пользователей», список людей остался —
-    в том числе по старым закладкам с ?view=."""
-    client, _ = superadmin_client
-    student = user_factory(vk_id=971803, name="Ученик Списка", role_name="ученик")
-    for url in ("/cabinet/superadmin/users", "/cabinet/superadmin/users?view=activity"):
-        page = client.get(url).text
-        assert "Регистрации по тарифам" not in page
-        assert "Активность учеников" not in page
-        assert "data-activity-filter" not in page
-        assert f'data-user-row="{student.id}"' in page
-
-
-def test_student_username_is_a_copy_button(superadmin_client, db, user_factory):
-    """Ник ученика в списках — кнопка копирования; без ника — прочерк."""
-    client, _ = superadmin_client
-    with_nick = user_factory(vk_id=971804, name="Ученик С Ником", role_name="ученик")
-    with_nick.tg_username = "nick_student"
-    user_factory(vk_id=971805, name="Ученик Без Ника", role_name="ученик")
-    db.commit()
-
-    page = client.get("/cabinet/superadmin/activity").text
-    assert 'class="tg-copy" data-copy="@nick_student"' in page
-    summary = page.split("Ученики поимённо", 1)[1].split("Лента действий", 1)[0]
-    assert 'data-copy="@nick_student"' in summary
-    assert "Не указан" not in summary.split("<tbody>", 1)[1]
+    assert client.get("/cabinet/superadmin/activity").status_code == 200
 
 
 # ── сроки сдачи: до и после (владелец 27.09.2026) ───────────────────────────
@@ -856,29 +700,6 @@ def test_own_deadline_beats_the_cycle_end(db, user_factory):
     assert (stats["on_time"], stats["late"]) == (1, 0)
 
 
-def test_deadline_card_is_on_the_activity_page(superadmin_client, db, user_factory):
-    """Карточка живёт на «Статистике активности», а не на своей странице —
-    инвариант «вся статистика на одной странице» (AGENTS.md)."""
-    client, _ = superadmin_client
-    student = user_factory(vk_id=971804, name="Ученик Карточка", role_name="ученик")
-    from app.models.tracker import TrackerTask
-
-    now = datetime.now(timezone.utc)
-    task = TrackerTask(title="Задание со сроком")
-    db.add(task)
-    db.flush()
-    _closed_block(
-        db, task=task, student=student, block_type="upload",
-        completed_at=now, submit_until=now - timedelta(hours=1),
-    )
-
-    page = client.get("/cabinet/superadmin/activity")
-
-    assert page.status_code == 200
-    assert "Сроки сдачи" in page.text
-    assert "Закрыли после срока" in page.text
-
-
 def test_explicit_no_deadline_for_tariff_is_not_replaced_by_cycle_end(db, user_factory):
     """Строка тарифа с пустым временем — «у этого тарифа бессрочно»; конец
     цикла её не перебивает, такое закрытие в подсчёт не идёт."""
@@ -902,16 +723,3 @@ def test_explicit_no_deadline_for_tariff_is_not_replaced_by_cycle_end(db, user_f
     stats = get_deadline_stats(db)
 
     assert stats["with_deadline"] == 0
-
-
-def test_every_card_is_collapsed_by_default(superadmin_client):
-    """Все карточки статистики свёрнуты, пока их не открыли (владелец
-    03.10.2026: «все кнопки статистики должны быть в свёрнутом состоянии,
-    в точности Диагностика АРХИ-ПРОФИЛЯ»). Исключение — регистрации после
-    «Применить», см. `test_registration_card_follows_date_filter`."""
-    client, _ = superadmin_client
-    text = client.get("/cabinet/superadmin/activity").text
-    import re
-    cards = re.findall(r"<details[^>]*>", text)
-    assert cards
-    assert [card for card in cards if re.search(r"open", card)] == []

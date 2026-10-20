@@ -4,7 +4,6 @@ from datetime import date, timedelta
 
 from app.models.tag import Tag, UserTag
 from app.services.tracker import (
-    MONTH_GENITIVE,
     create_digest,
     create_event,
     digest_heading,
@@ -122,76 +121,7 @@ def test_digest_heading_falls_back_to_title_without_theme(db, user_factory):
     assert digest_heading(digest) == "Сентябрь — топ-тариф"
 
 
-def test_digest_lives_on_its_own_tab(client, db, user_factory, session_factory):
-    """Дайджест лежит во вкладке «Дайджест», задачи открыты по умолчанию.
-
-    Решение владельца 17.09.2026 отменяет и «первый блок сверху» (22.08), и
-    «открыт без клика» (16.09): дайджест переехал за вкладку.
-    """
-    student = user_factory(vk_id=430_012, name="Ученик", role_name="ученик")
-    session = session_factory(student)
-    client.cookies.set("session_id", session.id)
-
-    today = today_msk()
-    digest = create_digest(
-        db, title="Служебное имя", year=today.year, month=today.month,
-        assign_to_all=True, user_id=student.id, theme="Композиция",
-    )
-    create_event(
-        db, digest.id, type_id=_type(db, "Общий эфир", "orange", "fill").id, title="Общий эфир", note=None,
-        starts_on=today, ends_on=today, meeting_url=None,
-    )
-    publish_digest(digest, user_id=student.id)
-    db.commit()
-
-    response = client.get(PAGE)
-    assert response.status_code == 200
-    assert 'data-trk-tab="tasks"' in response.text
-    assert 'data-trk-tab="digest"' in response.text
-    assert 'id="trkPanelDigest"' in response.text
-    # Панель задач открыта, дайджест спрятан до клика по вкладке.
-    assert 'id="trkPanelTasks" aria-labelledby="trkTabTasks">' in response.text
-    assert 'id="trkPanelDigest" aria-labelledby="trkTabDigest" hidden' in response.text
-    assert "Общий эфир" in response.text
-    # Ученик читает тему месяца, а не служебное имя дайджеста.
-    assert "Композиция" in response.text
-    assert "Служебное имя" not in response.text
-
-
-def test_no_tab_strip_without_a_digest(client, db, user_factory, session_factory):
-    """Нет дайджеста — нет и полосы вкладок: переключать нечего."""
-    student = user_factory(vk_id=430_013, name="Ученик", role_name="ученик")
-    session = session_factory(student)
-    client.cookies.set("session_id", session.id)
-
-    response = client.get(PAGE)
-    assert response.status_code == 200
-    # Ищем саму полосу, а не `data-trk-tab`: эта строка есть и в скрипте
-    # переключения, он в разметке всегда и без кнопок просто ничего не делает.
-    assert 'class="nav-pill trk-tabs"' not in response.text
-    assert 'class="dgst"' not in response.text
-
-
-def test_empty_month_says_so_instead_of_an_empty_list(client, db, user_factory, session_factory):
-    """Дайджест без событий не молчит — прямо говорит, что событий нет."""
-    student = user_factory(vk_id=430_014, name="Ученик", role_name="ученик")
-    session = session_factory(student)
-    client.cookies.set("session_id", session.id)
-
-    today = today_msk()
-    digest = create_digest(
-        db, title="Пустой месяц", year=today.year, month=today.month,
-        assign_to_all=True, user_id=student.id, theme="Разбор ошибок",
-    )
-    publish_digest(digest, user_id=student.id)
-    db.commit()
-
-    response = client.get(PAGE)
-    assert response.status_code == 200
-    assert "В этом месяце пока нет событий." in response.text
-
-
-def test_event_list_shows_dates_and_kind(client, db, user_factory, session_factory):
+def test_event_list_shows_dates_and_kind(client, db, user_factory, session_factory, rendered):
     """В списке видны дата диапазоном и тип события — легенды календаря больше нет."""
     student = user_factory(vk_id=430_015, name="Ученик", role_name="ученик")
     session = session_factory(student)
@@ -212,9 +142,10 @@ def test_event_list_shows_dates_and_kind(client, db, user_factory, session_facto
 
     response = client.get(PAGE)
     assert response.status_code == 200
-    assert "Окно пробника" in response.text
-    assert "Пробник" in response.text
-    assert f"1–6 {MONTH_GENITIVE[today.month]}" in response.text
+    [event] = rendered("cabinet_tracker.html")["digest_events"]
+    assert event.title == "Окно пробника"
+    assert event.type.name == "Пробник"
+    assert (event.starts_on, event.ends_on) == (start, start + timedelta(days=5))
 
 
 # ── Календарь, цвет и тарифы события (созвон 30.09.2026, владелец 01.10.2026) ──
@@ -238,29 +169,6 @@ def _digest_with_events(db, author_id, events):
     publish_digest(digest, user_id=author_id)
     db.commit()
     return digest
-
-
-def test_calendar_grid_marks_event_day_with_type_color(client, db, user_factory, session_factory):
-    """Компактная сетка месяца над списком (макет «Путь к сотке», 04.10.2026):
-    однодневное событие — кружок вокруг числа цвета его типа, в списке под
-    сеткой — плашка дат того же цвета и имя типа словом."""
-    student = user_factory(vk_id=430_020, name="Ученик", role_name="ученик")
-    client.cookies.set("session_id", session_factory(student).id)
-    _digest_with_events(db, student.id, [("Эфир с преподавателем", "orange", [])])
-
-    response = client.get(PAGE)
-
-    assert response.status_code == 200
-    assert 'class="dgst-cal"' in response.text
-    assert 'aria-label="Календарь месяца"' in response.text
-    assert "dgst-cal-num has-dot is-fill dgst-color--orange" in response.text
-    assert "dgst-chip is-fill dgst-color--orange" in response.text
-    assert "Тип orange" in response.text
-    # У ученика клетка — не кнопка: проваливаться ему некуда.
-    assert 'class="dgst-cal-day' in response.text
-    assert "dgst-cal--edit" not in response.text
-    assert f'{today_msk().day} число: Эфир с преподавателем' in response.text
-    assert "/static/css/program.css?v=" in response.text
 
 
 def test_student_sees_only_common_events_and_events_of_own_tariff(

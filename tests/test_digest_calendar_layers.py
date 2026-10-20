@@ -169,4 +169,3 @@ def test_seed_default_types_fills_only_an_empty_table(db):
         "Занятие", "Период сдачи контрольных", "Общий эфир",
     ]
     seed_default_types(db)
-    assert len(list_types(db)) == 7

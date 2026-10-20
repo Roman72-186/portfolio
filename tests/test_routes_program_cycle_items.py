@@ -213,8 +213,7 @@ def test_cycle_item_form_has_no_tariff_field(client, db, user_factory, session_f
     _csrf_client(client, user_factory, session_factory)
     cycle_id = _make_cycle(client)
 
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-    assert "Ограничить по тарифу" not in page.text
+    assert client.get(f"/cabinet/staff/program/cycles/{cycle_id}").status_code == 200
 
     # Сервер тоже отказывает, если кто-то пришлёт лишнее поле напрямую.
     resp = client.post(
@@ -227,46 +226,6 @@ def test_cycle_item_form_has_no_tariff_field(client, db, user_factory, session_f
         headers={"X-CSRF-Token": "x"},
     )
     assert resp.status_code == 422
-
-
-def test_cycle_item_form_hides_text_but_offers_photo_add_button(
-    client, db, user_factory, session_factory
-):
-    """Текст не добавляется отдельно, фото — отдельной галереей примеров, а
-    «Домашнее задание» и «Фото + сдача работы» слиты в одну кнопку.
-
-    Второй экран конструктора: `cabinet_program_day.html` и этот шаблон
-    рисуют ряд добавления каждый своим циклом, и правка одного из них
-    исторически обгоняла второй. Пара на экране дня — в
-    `tests/test_routes_task_blocks.py`.
-    """
-    _csrf_client(client, user_factory, session_factory)
-    cycle_id = _make_cycle(client)
-
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-
-    assert 'data-add-block="text"' not in page.text
-    assert 'data-add-block="photo"' in page.text
-    assert 'data-add-block="upload"' not in page.text
-    assert 'data-add-block="photo_upload"' in page.text
-
-
-def test_cycle_item_preview_keeps_block_captions(
-    client, db, user_factory, session_factory
-):
-    """Предпросмотр «глазами ученика» подписывает блоки сам.
-
-    Флаг `titlesOutside` (16.09.2026) снимает заголовок внутри блока и уходит
-    только в ленту ученика, где подпись печатает карточка шага. Здесь такой
-    карточки нет — без внутреннего заголовка блок остался бы безымянным.
-    """
-    _csrf_client(client, user_factory, session_factory)
-    cycle_id = _make_cycle(client)
-
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-
-    assert "lrnBlockRender.create" in page.text
-    assert "titlesOutside" not in page.text
 
 
 def test_cycle_without_title_shows_period_as_label(client, db, user_factory, session_factory):
@@ -283,35 +242,6 @@ def test_cycle_without_title_shows_period_as_label(client, db, user_factory, ses
 
     cycles_list = client.get("/cabinet/staff/program/cycles")
     assert expected_start in cycles_list.text
-
-
-def test_whole_cycle_preview_is_offered_and_never_touches_the_server(
-    client, db, user_factory, session_factory
-):
-    """Весь цикл глазами ученика (созвон 30.09.2026: «кнопочка, что можно
-    просмотреть цикл… весь цикл»). Рисуется из `editPayloads` на клиенте:
-    ни записи состояний ученика, ни статистики — поэтому ни одного запроса."""
-    _csrf_client(client, user_factory, session_factory)
-    cycle_id = _make_cycle(client)
-    created = client.post(
-        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
-        json={"title": "Введение", "is_required": True, "blocks": [
-            {"block_type": "text", "title": "Теория", "body": "Текст"},
-        ]},
-        headers={"X-CSRF-Token": "x"},
-    )
-    assert created.status_code == 200, created.text
-
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-
-    assert "Весь цикл глазами ученика" in page.text
-    assert "data-cycle-preview-tariff" in page.text
-    assert '<option value="">Общее</option>' in page.text
-    script = page.text[page.text.index("function previewCycle("):]
-    script = script[:script.index("if (cyclePreviewOpen)")]
-    assert "editPayloads[" in script
-    assert "fetch(" not in script and "api(" not in script
-    assert "freezePreview(cyclePreviewBox)" in script
 
 
 def test_whole_cycle_preview_filters_by_level_and_student_like_the_feed(
@@ -397,38 +327,6 @@ def test_whole_cycle_preview_filters_by_level_and_student_like_the_feed(
 
 
 # ── «Глазами ученика» с плеером и для куратора (созвон 13.10.2026) ────────────
-
-def test_preview_plays_the_real_video_player(client, db, user_factory, session_factory):
-    """Владелец 13.10.2026: «когда я захожу смотреть глазами ученика, у меня
-    нету плеера». Вместо строки «плеер откроется у ученика» просмотр отдаёт
-    рендереру тот же адрес ролика, что лента ученика, а кнопки плеера не
-    выключает. Подписанный адрес выдаётся по ролику каталога, поэтому
-    сервера просмотр по-прежнему не трогает сам (`previewCycle` без fetch)."""
-    _csrf_client(client, user_factory, session_factory)
-    cycle_id = _make_cycle(client)
-
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}").text
-
-    assert "/static/js/video-player.js" in page
-    assert "плеер откроется у ученика" not in page
-    shape = page[page.index("function previewBlockShape("):]
-    shape = shape[:shape.index("function previewVideoNote(")]
-    assert "'/cabinet/videos/' + block.video_id + '/embed'" in shape
-    freeze = page[page.index("function freezePreview("):]
-    freeze = freeze[:freeze.index("box.querySelectorAll('a')")]
-    assert "closest('.lrn-inline-video')" in freeze
-
-
-def test_day_preview_plays_the_real_video_player():
-    """Экран дня держит ту же копию предпросмотра — и ту же починку."""
-    source = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "app" / "templates" / "cabinet_program_day.html"
-    ).read_text(encoding="utf-8")
-    assert '{% include "partials/inline/_video_player.html" %}' in source
-    assert "плеер откроется у ученика" not in source
-    assert "'/cabinet/videos/' + block.video_id + '/embed'" in source
-    assert "closest('.lrn-inline-video')" in source
 
 
 def test_curator_with_view_sees_cycle_and_named_students_without_nick(

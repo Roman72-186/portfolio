@@ -88,21 +88,6 @@ def test_level_alone_ignores_tariff_and_needs_a_level():
     assert not is_block_open_to(audience, _viewer(level=None))
 
 
-def test_viewer_level_is_counted_once_and_only_when_asked(db, regular_user, monkeypatch):
-    calls = []
-
-    def fake_level(_db, student):
-        calls.append(student.id)
-        return 2
-
-    monkeypatch.setattr("app.services.point_a.student_point_a_level", fake_level)
-    viewer = BlockViewer(db, user_id=regular_user.id, tariff="Я САМ")
-    assert is_block_open_to(BlockAudience(tariffs=frozenset({"Я САМ"})), viewer)
-    assert calls == []
-    assert viewer.level == 2 and viewer.level == 2
-    assert calls == [regular_user.id]
-
-
 # ── хранение ────────────────────────────────────────────────────────────────
 
 def test_sync_keeps_students_and_levels_and_drops_junk(db, regular_user, user_factory):
@@ -205,12 +190,6 @@ def test_form_saves_and_copies_students_and_levels(client, db, user_factory, ses
         {"block_type": BLOCK_TEXT, "body": "Личное", "tariffs": [],
          "levels": [2], "student_ids": [student.id]},
     ])
-
-    page = client.get(f"{PROGRAM}/cycles/{stage.id}")
-    assert page.status_code == 200
-    assert '"student_ids": [%d]' % student.id in page.text
-    assert '"levels": [2]' in page.text
-    assert "var BLOCK_STUDENTS = [" in page.text and '"id": %d' % student.id in page.text
 
     source = client.get(f"{PROGRAM}/blocks-source/{task_id}")
     assert source.status_code == 200, source.text

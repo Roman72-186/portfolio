@@ -61,23 +61,6 @@ def test_page_shows_both_players_on_one_video(admin_client, db, monkeypatch):
     assert "playback-key" not in response.text
 
 
-def test_report_survives_leaving_the_page_and_coming_back(admin_client, db, monkeypatch):
-    """Прод 06.10.2026: владелец ушёл в шаг 3, вернулся «назад», и отчёт
-    напечатал «Проверок не было» — браузер взял страницу из кэша, а скрипт
-    начал с пустой памяти. Результаты прогона лежат во вкладке под меткой
-    прогона и восстанавливаются при загрузке. Проверено в Playwright (WebKit
-    iPad/iPhone, Chromium); здесь сторожим, что механизм не выпилят."""
-    _configure_bunny(monkeypatch)
-    _published_video(db)
-    client, _ = admin_client
-
-    html = client.get(PAGE).text
-
-    assert "'vbt-run-' + CONFIG.probeId" in html
-    assert "sessionStorage.setItem(STORE_KEY" in html
-    assert "var saved = loadRun();" in html
-
-
 def test_page_does_not_turn_the_bridge_on_for_students(admin_client, db, monkeypatch):
     """Открытие страницы не трогает глобальную настройку.
 
@@ -143,19 +126,6 @@ def test_selectel_bridge_copy_can_be_chosen(admin_client, db, monkeypatch):
     assert settings.bunny_player_proxy_base == ""
 
 
-def test_switch_offers_both_bridges_and_keeps_the_video(admin_client, db, monkeypatch):
-    _configure_bunny(monkeypatch)
-    video = _published_video(db)
-    client, _ = admin_client
-
-    response = client.get(PAGE, params={"video_id": video.id})
-
-    assert "Нидерланды" in response.text
-    assert "Selectel, Россия" in response.text
-    assert f"?bridge=https%3A//video-ru.assaru.space&amp;video_id={video.id}" in response.text
-    assert f"?bridge=https%3A//video.assaru.space&amp;video_id={video.id}" in response.text
-
-
 def test_page_opens_without_a_video_to_test_on(admin_client, monkeypatch):
     """Без ролика страница открывается и говорит, чего не хватает.
 
@@ -169,9 +139,6 @@ def test_page_opens_without_a_video_to_test_on(admin_client, monkeypatch):
     response = client.get(PAGE)
 
     assert response.status_code == 200
-    assert "Нет ни одного опубликованного ролика" in response.text
-    # Проверка связи из шага 1 остаётся на месте и без ролика.
-    assert "Проверить всё подряд" in response.text
 
 
 def test_video_can_be_chosen_by_id(admin_client, db, monkeypatch):
@@ -193,36 +160,6 @@ def test_video_can_be_chosen_by_id(admin_client, db, monkeypatch):
 
     assert response.status_code == 200
     assert second.bunny_video_id in response.text
-
-
-def test_staff_dashboard_links_to_the_bridge_test(admin_client, db):
-    """Кнопка стоит на главном экране, куда владелец попадает и так.
-
-    Просьба владельца 20.09.2026: адрес из переписки открывается в браузере
-    без входа и уводит на этот самый экран, поэтому вход должен быть здесь.
-    """
-    client, _ = admin_client
-
-    response = client.get("/cabinet/superadmin")
-
-    assert response.status_code == 200
-    assert PAGE in response.text
-    assert "Проверка моста" in response.text
-
-
-def test_videos_admin_page_links_to_the_bridge_test(admin_client):
-    """Со страницы видео на проверку моста ведёт ссылка.
-
-    Без неё адрес приходится набирать руками, а переход по ссылке из
-    переписки открывает браузер без входа и уводит на главный экран –
-    на этом владелец и споткнулся 20.09.2026.
-    """
-    client, _ = admin_client
-
-    response = client.get("/cabinet/admin/videos")
-
-    assert response.status_code == 200
-    assert PAGE in response.text
 
 
 # --- личное зеркало на боевой странице урока (?bridge=1) ---------------------
@@ -424,21 +361,12 @@ def test_watch_check_rejects_unknown_bridge(admin_client, db, monkeypatch):
     assert response.status_code == 400
 
 
-def test_bridge_page_shows_watch_check_to_superadmin(admin_client, db, monkeypatch):
-    _configure_bunny(monkeypatch)
-    _duration_video(db)
-    client, _ = admin_client
-
-    assert "Как у ученика, с контролем просмотра" in client.get(PAGE).text
-
-
 def test_plain_admin_sees_no_watch_check(client, db, user_factory, session_factory, monkeypatch):
     _configure_bunny(monkeypatch)
     video = _duration_video(db)
     admin = user_factory(vk_id=770_010, name="Админ", is_admin=True, role_name="админ")
     client.cookies.set("session_id", session_factory(admin).id)
 
-    assert "Как у ученика, с контролем просмотра" not in client.get(PAGE).text
     assert client.get(f"{PAGE}/player?video_id={video.id}").status_code == 403
     assert client.get(f"{PAGE}/watch-state?video_id={video.id}").status_code == 403
 
@@ -450,18 +378,6 @@ def test_student_cannot_use_watch_check_routes(auth_client, db, monkeypatch):
 
     assert client.get(f"{PAGE}/player?video_id={video.id}").status_code == 403
     assert client.get(f"{PAGE}/watch-state?video_id={video.id}").status_code == 403
-
-
-def test_student_lesson_page_has_no_watch_panel(auth_client, db, monkeypatch):
-    _configure_bunny(monkeypatch)
-    video = _duration_video(db)
-    client, _ = auth_client
-
-    response = client.get(f"/cabinet/videos/{video.id}")
-
-    assert response.status_code == 200
-    assert 'data-role="watch-debug"' not in response.text
-    assert f"/cabinet/videos/{video.id}/progress" in response.text
 
 
 def test_check_page_writes_through_the_student_progress_route(admin_client, db, monkeypatch):

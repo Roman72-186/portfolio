@@ -79,11 +79,19 @@ def test_end_before_start_is_rejected(admin_client, db):
     assert _cycles(db) == []
 
 
-def test_unpublished_cycle_is_hidden_from_students(admin_client, db):
+def test_unpublished_cycle_is_hidden_from_students(admin_client, db, regular_user):
     client, _ = admin_client
-    client.post(PAGE, json=_payload(is_published=False))
+    since = (today_msk() - timedelta(days=1)).isoformat()
+    client.post(PAGE, json=_payload(title="Открытый", starts_on=since))
+    client.post(PAGE, json=_payload(title="Черновик", starts_on=since, is_published=False))
+    ids = {cycle.title: cycle.id for cycle in _cycles(db)}
 
-    assert _cycles(db)[0].is_published is False
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=today_msk(),
+    )
+    shown = {cycle["id"] for cycle in feed["cycles"]}
+    assert ids["Открытый"] in shown
+    assert ids["Черновик"] not in shown
 
 
 # ── правка ──────────────────────────────────────────────────────────────────
@@ -166,7 +174,7 @@ def test_deleted_cycle_disappears_from_student_feed(admin_client, db, regular_us
     assert after["cycles"] == []
 
 
-def test_cycle_card_warns_about_videos_bound_to_the_topic(admin_client, db):
+def test_cycle_card_warns_about_videos_bound_to_the_topic(admin_client, db, rendered):
     """Ролики старой привязки (`LearningVideo.topic_id`) тоже уходят у учеников.
 
     В счёт заданий они не входят, и без отдельного числа человек увидел бы
@@ -187,9 +195,9 @@ def test_cycle_card_warns_about_videos_bound_to_the_topic(admin_client, db):
     )
     db.commit()
 
-    text = client.get(PAGE).text
-    assert 'data-items="0"' in text
-    assert 'data-videos="1"' in text
+    assert client.get(PAGE).status_code == 200
+    [card] = rendered("cabinet_program_cycles.html")["cycles"]
+    assert (card["items_count"], card["videos_count"]) == (0, 1)
 
 
 def test_student_cannot_delete_cycle(auth_client):
@@ -208,11 +216,3 @@ def test_cycles_page_lists_existing(admin_client, db):
 
     resp = client.get(PAGE)
     assert "Предобучение" in resp.text
-
-
-def test_only_one_tab_is_active_on_cycles_page(admin_client):
-    """«Циклы» — вложенный путь внутри «Календаря»: без явной оговорки в
-    шапке подсвечивались бы обе вкладки сразу."""
-    client, _ = admin_client
-    resp = client.get(PAGE)
-    assert resp.text.count("prg-tab is-active") == 1

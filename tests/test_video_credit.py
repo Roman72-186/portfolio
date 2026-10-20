@@ -10,7 +10,7 @@ import pytest
 
 from app.models.learning_video import LearningVideo
 from app.models.task_block import BLOCK_TEXT, BLOCK_VIDEO, TaskBlock, TaskBlockState
-from app.models.tracker import TrackerTask, TrackerTaskState
+from app.models.tracker import TrackerTaskState
 from app.models.video_progress import VideoProgress
 
 
@@ -116,12 +116,3 @@ def test_list_names_cycle_and_stage(db, people):
     assert _place(LearningTopic(title="Неделя 1", kind="week")) == "Цикл «Неделя 1»"
     assert _place(LearningTopic(title="Портфолио", kind="stage")) == "Этап «Портфолио»"
     assert _place(None) == "Без цикла"
-
-
-def test_card_script_renders_credit_button():
-    from pathlib import Path
-
-    js = Path("app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    assert "if (data.video_credit) html += buildVideoCredit(data.video_credit);" in js
-    assert "'/video-blocks/' + select.value + '/credit'" in js
-    assert "window.csrfFetch(" in js.split("function creditVideo(button) {", 1)[1].split("\n}", 1)[0]

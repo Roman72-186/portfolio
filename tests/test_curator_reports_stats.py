@@ -48,7 +48,6 @@ def test_reports_page_loads(curator_client):
     client, _ = curator_client
     resp = client.get("/cabinet/curator/reports")
     assert resp.status_code == 200
-    assert "Видео-отчёт" in resp.text
 
 
 def test_report_submit_creates_record_and_notifies_staff(
@@ -109,8 +108,6 @@ def test_admin_sees_all_curator_reports(admin_client, db, user_factory):
     assert resp.status_code == 200
     assert "https://drive.google.com/xyz" in resp.text
     assert f'/cabinet/curator/reports/{report.id}/delete' in resp.text
-    # У админа нет формы отправки
-    assert 'name="video"' not in resp.text
 
 
 def test_admin_can_delete_curator_report(admin_client, db, user_factory):

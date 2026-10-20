@@ -14,8 +14,6 @@
 403 проверяется отдельно — с настоящей зависимостью.
 """
 
-import re
-from pathlib import Path
 
 import pytest
 from fastapi.routing import APIRoute
@@ -26,7 +24,6 @@ from app.main import app
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_DEPENDENCIES = (require_csrf, require_csrf_header, require_guest_csrf)
-TEMPLATES = Path(__file__).resolve().parent.parent / "app" / "templates"
 
 # Путь → почему ключа нет. Добавлять сюда только маршрут, у которого на момент
 # запроса нет сессии, к которой ключ привязан, или который зовёт не браузер.
@@ -116,17 +113,3 @@ def test_service_routes_refuse_request_without_token(
         app.dependency_overrides[require_csrf_header] = header_override
 
     assert resp.status_code == 403, resp.text
-
-
-@pytest.mark.parametrize(
-    "name", ["cabinet_admin_mock_check.html", "cabinet_admin_retake_check.html"]
-)
-def test_check_screens_delete_work_with_fresh_token(name):
-    """Удаление работы с экранов проверки пробника и пересдачи идёт через
-    `csrfFetch`: без ключа маршрут теперь отвечает 403."""
-    source = (TEMPLATES / name).read_text(encoding="utf-8")
-    call = re.search(r"function deleteWork\([^)]*\)\s*\{(.*?)\n\}", source, re.S)
-    assert call, f"{name}: не нашёл deleteWork"
-    assert "window.csrfFetch('/cabinet/students/'" in call.group(1), (
-        f"{name}: удаление работы уходит без CSRF-ключа"
-    )

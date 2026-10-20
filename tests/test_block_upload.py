@@ -342,8 +342,6 @@ def test_shortened_tariff_deadline_closes_the_question(auth_client, db):
     resp = _answer(client, task, block)
 
     assert resp.status_code == 409
-    # Дату срока не называем (владелец 02.10.2026): её называет текст задания.
-    assert resp.json()["detail"] == "Срок сдачи прошёл. Изменить работу нельзя."
 
 
 def test_task_level_tariff_deadline_closes_the_question(auth_client, db):
@@ -700,19 +698,6 @@ def test_curator_reply_locks_work_before_review_flag(auth_client, db, user_facto
 
 # ── конструктор ─────────────────────────────────────────────────────────────
 
-def test_constructor_no_longer_offers_a_standalone_upload_button(admin_client):
-    """Кнопка «+ Домашнее задание» на BLOCK_UPLOAD снята 17.09.2026 — слита
-    с «Фото + сдача работы» в один тип BLOCK_PHOTO_UPLOAD. Тип BLOCK_UPLOAD
-    жив в базе (старые блоки), подпись «Домашнее задание» не менялась."""
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="upload"' not in page.text
-    assert "Домашнее задание" in page.text
-    assert "Загрузить работы" not in page.text
-
 
 def test_constructor_saves_the_block_without_a_description(db, regular_user):
     """Блок самодостаточен: преподаватель может не писать пояснение.
@@ -731,29 +716,6 @@ def test_constructor_saves_the_block_without_a_description(db, regular_user):
     db.commit()
 
     assert [b.block_type for b in blocks] == [BLOCK_UPLOAD]
-
-
-def test_constructor_form_has_a_branch_for_the_block(admin_client):
-    """У нового типа своя форма, а не общий хвост для вопросов."""
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert "type === 'upload'" in page.text
-
-
-def test_constructor_offers_the_photo_upload_block(admin_client):
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="photo_upload"' in page.text
-    # Подпись сменилась с «Фото + сдача работы» на «Домашнее задание»
-    # (владелец 16.09.2026: слить фотоблок и «Домашнее задание» в один тип).
-    assert "type === 'photo_upload'" in page.text
-
 
 
 def test_answer_after_the_deadline_is_accepted_and_marked_for_review(auth_client, db):

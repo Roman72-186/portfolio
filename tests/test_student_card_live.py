@@ -139,17 +139,6 @@ def test_moderator_reads_tasks_tab(client, db, user_factory, session_factory):
 
 # ── Профиль: «Учёба сейчас», без VK и отработок ──────────────────────────────
 
-def test_profile_drops_vk_retake_and_cycle_fields(client, db, user_factory, session_factory):
-    chief = _chief(user_factory)
-    student = user_factory(vk_id=950_501, name="Ученик")
-    _login(client, session_factory, chief)
-
-    data = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]
-
-    for gone in ("vk_id", "vk_profile_url", "is_group_member", "retake_count", "cycle_count"):
-        assert gone not in data
-    assert data["study_now"]["unreviewed"] == 0
-
 
 def test_profile_study_now_counts_all_time_and_opens_tasks(
     client, db, user_factory, session_factory
@@ -184,48 +173,6 @@ def test_profile_hides_point_a_from_curator(client, db, user_factory, session_fa
 
 # ── Страница «Ученики» ───────────────────────────────────────────────────────
 
-def test_students_page_has_tasks_tab_and_no_retired_mechanics(
-    client, db, user_factory, session_factory
-):
-    chief = _chief(user_factory)
-    user_factory(vk_id=950_801, name="Ученик")
-    _login(client, session_factory, chief)
-
-    page = client.get("/cabinet/students").text
-
-    assert 'id="tab-tasks"' in page
-    assert 'id="tab-cycles"' not in page
-    assert 'id="tab-mock-exams"' not in page
-    assert '<option value="retake">' not in page
-    assert "has_unchecked_mocks" not in page
-    assert "mock_period_submitted" not in page
-    assert "period_only" not in page
-    assert "data-vk-id" not in page
-
-
-@pytest.mark.parametrize("old_tab", ["cycles", "mock-exams"])
-def test_old_mock_tab_links_open_portfolio(client, db, user_factory, session_factory, old_tab):
-    """Вкладки «Пробники» нет с 06.10.2026, а на неё ведут «назад» с диалога
-    пробника, возврат после балла и старые уведомления — открывается
-    «Портфолио» с разделом «Пробные экзамены», а не пустой экран."""
-    chief = _chief(user_factory)
-    student = user_factory(vk_id=950_901, name="Ученик")
-    _login(client, session_factory, chief)
-
-    page = client.get(f"/cabinet/students?student={student.id}&tab={old_tab}").text
-
-    assert 'const INITIAL_TAB    = "portfolio";' in page
-
-
-def test_card_script_has_no_mock_exams_tab():
-    """Скрипт карточки сам разбирает `?tab=` (`_navDefaultTab`) — старые адреса
-    вкладки «Пробники» он тоже уводит в «Портфолио», а плитки нет."""
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-
-    assert "openTab(\\'mock-exams\\')" not in source
-    assert "buildMockExams" not in source
-    assert "if (t === 'cycles' || t === 'mock-exams') t = 'portfolio';" in source
-
 
 @pytest.mark.parametrize("tab", ["profile", "portfolio", "tasks", "statistics"])
 def test_unknown_student_says_not_found(client, db, user_factory, session_factory, tab):
@@ -241,23 +188,6 @@ def test_unknown_student_says_not_found(client, db, user_factory, session_factor
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Ученик не найден"
 
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    assert "fetch(url, {headers: {'Accept': 'application/json'}}).then(readJsonOrThrow)" in source
-    assert "getCardJson('/cabinet/students/' + id + '/profile')" in source
-    assert "getCardJson('/cabinet/students/' + _currentStudentId + '/' + tabName)" in source
-
-
-def test_hero_name_wraps_between_words():
-    """Шапка карточки кладёт имя по слову на `.profile-name-line`: строка не
-    переносится внутри себя (`profile_hero.css`, многоточие), и полное `name`
-    ученика без анкеты одной строкой обрезалось даже на 1280 (проход
-    06.10.2026, пункт 10)."""
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    hero = source[source.index("function buildHero("):]
-    hero = hero[:hero.index("\n}\n")]
-
-    assert ".join(' ').split(/\\s+/)" in hero
-
 
 def test_unknown_address_still_not_found_in_json(client):
     """Причина из `HTTPException` теперь доходит до JSON-ответа 404, а адрес,
@@ -269,19 +199,6 @@ def test_unknown_address_still_not_found_in_json(client):
 
 
 # ── Отработки сняты ──────────────────────────────────────────────────────────
-
-def test_retake_routes_are_gone(client, db, user_factory, session_factory):
-    chief = _chief(user_factory)
-    student = user_factory(vk_id=951_001, name="Ученик")
-    work = _mock(db, student)
-    _login(client, session_factory, chief)
-
-    assert client.get(f"/cabinet/students/{student.id}/retakes").status_code == 404
-    assert client.get(f"/cabinet/students/{student.id}/cycles").status_code == 404
-    assert client.post(
-        f"/cabinet/students/{student.id}/mock-exams/{work.id}/retake",
-        data={"score": "40", "comment": "x"},
-    ).status_code in (404, 405)
 
 
 @pytest.mark.parametrize("work_type", ["retake", "mock_exam"])

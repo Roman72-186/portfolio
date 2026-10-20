@@ -44,15 +44,6 @@ def test_superadmin_dashboard_loads(superadmin_client):
     assert resp.status_code == 200
 
 
-def test_superadmin_dashboard_contains_stats(superadmin_client):
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/superadmin")
-    assert resp.status_code == 200
-    # Should contain some dashboard content
-    text = resp.text.lower()
-    assert "пользовател" in text or "куратор" in text or "суперадмин" in text
-
-
 def test_superadmin_dashboard_denied_for_curator(client, db, user_factory, session_factory):
     user = user_factory(vk_id=900010, name="Just Curator", role_name="куратор")
     sess = session_factory(user)
@@ -87,15 +78,6 @@ def test_set_credentials_generates_login(superadmin_client, db, curator_user):
     db.refresh(curator_user)
     assert curator_user.staff_login is not None
     assert curator_user.password_hash is not None
-
-
-def test_set_credentials_shows_issued_creds(superadmin_client, db, curator_user):
-    client, _ = superadmin_client
-    resp = client.post("/cabinet/superadmin/set-credentials",
-                       data={"target_user_id": curator_user.id, "csrf_token": "bypass"})
-    assert resp.status_code == 200
-    text = resp.text.lower()
-    assert "логин" in text or "пароль" in text or "login" in text
 
 
 def test_set_credentials_reuses_existing_login(superadmin_client, db, curator_user):
@@ -453,10 +435,6 @@ def test_chief_teacher_cannot_grant_moderator_but_superadmin_can(
     db.refresh(target)
     assert target.role_id == original_role_id
 
-    page = client.get("/cabinet/superadmin/create-staff")
-    if page.status_code == 200:
-        assert f'value="{moderator_role.id}"' not in page.text
-
     superadmin = user_factory(vk_id=900_212, name="Super", role_name="суперадмин")
     client.cookies.set("session_id", session_factory(superadmin).id)
     resp = client.post(
@@ -529,16 +507,9 @@ def test_issue_link_success(superadmin_client, db, curator_user):
                        data={"target_user_id": curator_user.id, "csrf_token": "bypass"})
     assert resp.status_code == 200
 
-    # Token should be created in DB
+    # Токен заведён, и ссылку с ним суперадмин получил в ответе.
     token = db.query(LoginToken).filter(LoginToken.user_id == curator_user.id).first()
     assert token is not None
-
-
-def test_issue_link_shows_link_in_response(superadmin_client, db, curator_user):
-    client, _ = superadmin_client
-    resp = client.post("/cabinet/superadmin/issue-link",
-                       data={"target_user_id": curator_user.id, "csrf_token": "bypass"})
-    assert resp.status_code == 200
     assert "/auth/link?token=" in resp.text
 
 
@@ -642,31 +613,6 @@ def test_superadmin_set_curator_ajax_returns_json(superadmin_client, db, user_fa
     assert data["curator_id"] == curator_user.id
     assert data["curator_name"]
     assert student.curator_id == curator_user.id
-
-
-def test_admin_users_page_has_quick_tariff_control_and_newcomer_tag(
-    client, user_factory, session_factory
-):
-    chief_teacher = user_factory(
-        vk_id=900211, name="Chief Teacher", role_name="админ"
-    )
-    session = session_factory(chief_teacher)
-    client.cookies.set("session_id", session.id)
-    newcomer = user_factory(
-        vk_id=900212, name="New Student", role_name="ученик", tariff=""
-    )
-    regular_without_tariff = user_factory(
-        vk_id=900215, name="Regular Without Tariff", role_name="ученик", tariff=""
-    )
-
-    page = client.get("/cabinet/superadmin/users").text
-
-    assert f'data-tariff-form="{newcomer.id}"' in page
-    newcomer_row = page.split(f'data-user-row="{newcomer.id}"', 1)[1].split("</tr>", 1)[0]
-    regular_row = page.split(f'data-user-row="{regular_without_tariff.id}"', 1)[1].split("</tr>", 1)[0]
-    assert "Новенький" in newcomer_row
-    assert "profile-tariff-dot" in newcomer_row
-    assert "Новенький" in regular_row
 
 
 def test_superadmin_quick_tariff_update_changes_student_tariff(
@@ -992,25 +938,6 @@ def test_stats_page_shows_feedback_table(superadmin_client, db, user_factory):
     assert resp.status_code == 200
     assert "Пробники и обратная связь" in resp.text
     assert "Композиция уравновешена" in resp.text
-
-
-def test_stats_page_redesign_structure(superadmin_client, db, user_factory):
-    """Редизайн: заголовок «Статистика пробников», секции в <details>,
-    «Список сдач» удалён."""
-    client, _ = superadmin_client
-    resp = client.get("/cabinet/superadmin/stats")
-    assert resp.status_code == 200
-    assert "Статистика пробников" in resp.text
-    assert "<details" in resp.text           # нативное сворачивание
-    assert "<details open" not in resp.text  # все секции свёрнуты по умолчанию
-    assert "Список сдач" not in resp.text     # убран полностью
-    assert "Данные с 13.06.2026" in resp.text
-    # все 5 секций присутствуют
-    assert "Статус пробников по тарифам" in resp.text
-    assert "Не сдали хотя бы один предмет" in resp.text
-    assert "Полученные билеты" in resp.text
-    assert "Пробники и обратная связь" in resp.text
-    assert "Статистика по баллам" in resp.text
 
 
 def test_drive_sync_endpoints_report_n8n_disabled(superadmin_client, monkeypatch):

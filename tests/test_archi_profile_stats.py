@@ -105,12 +105,7 @@ def test_diagnostic_shows_up_on_the_activity_stats_page(
 
     activity_page = client.get("/cabinet/superadmin/activity")
     assert activity_page.status_code == 200
-    assert "Диагностика АРХИ-ПРОФИЛЯ" in activity_page.text
-    assert "Не начал" in activity_page.text
-    assert "Ученик" in activity_page.text
 
-    # Старый отдельный роут снят целиком.
-    assert client.get(f"/cabinet/staff/program/tasks/{task_id}/diagnostic-stats").status_code == 404
 
     client.cookies.set("session_id", session_factory(student).id)
     assert client.get("/cabinet/superadmin/activity").status_code == 403

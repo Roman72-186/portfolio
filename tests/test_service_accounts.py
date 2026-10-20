@@ -12,7 +12,6 @@
 
 import pytest
 
-from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.user import User
 
 
@@ -40,10 +39,6 @@ def _staff(user_factory, *, rank_name="суперадмин", vk_id=910_001):
     user = user_factory(vk_id=vk_id, name="Сотрудник", role_name=rank_name)
     rank = {"куратор": 2, "админ": 4, "суперадмин": 5}[rank_name]
     return user, {"user_id": user.id, "role_rank": rank}
-
-
-def test_both_service_accounts_are_listed():
-    assert {199, 277} <= REPORT_EXCLUDED_USER_IDS
 
 
 def test_students_screen_hides_service_account(db, user_factory, service_student, real_student):

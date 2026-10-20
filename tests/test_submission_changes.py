@@ -100,7 +100,7 @@ def test_refused_edit_is_not_recorded(auth_client, db):
     assert _changes(db, submission) == []
 
 
-def test_review_card_shows_history_to_staff_only(auth_client, db, session_factory, admin_user):
+def test_review_card_shows_history_to_staff_only(auth_client, db, session_factory, admin_user, rendered):
     client, user = auth_client
     task = _task(db, user)
     block = _block(db, task, photos=1)
@@ -109,35 +109,23 @@ def test_review_card_shows_history_to_staff_only(auth_client, db, session_factor
 
     staff_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
     student_url = f"/cabinet/task-block-submissions/{submission.id}/feedback"
-    assert "История изменений" not in client.get(student_url).text
+
+    def history(url):
+        page = client.get(url)
+        assert page.status_code == 200, page.text
+        return rendered("task_block_feedback_detail.html")["change_history"]
+
+    assert history(student_url) is None
 
     assert _upload(client, block.id, replace=True, url=NEW_URL).status_code == 200
     assert _upload(client, block.id, replace=True, url=NEW_URL).status_code == 200
-    student_page = client.get(student_url)
-    assert student_page.status_code == 200
-    assert "История изменений" not in student_page.text
+    assert history(student_url) is None
 
     client.cookies.set("session_id", session_factory(admin_user).id)
-    page = client.get(staff_url)
+    seen = history(staff_url)
 
-    assert page.status_code == 200, page.text
-    assert "Сдано впервые" in page.text
-    assert "После сдачи работу меняли 2 раза." in page.text
-    assert "История изменений" in page.text
-    assert "замена фото: было 1, стало 1" in page.text
-    assert FAKE_URL in page.text
-
-
-def test_review_card_without_changes_stays_as_before(auth_client, db, session_factory, admin_user):
-    client, user = auth_client
-    task = _task(db, user)
-    block = _block(db, task, photos=1)
-    assert _upload(client, block.id).status_code == 200
-    submission = get_submission(db, block_id=block.id, user_id=user.id)
-
-    client.cookies.set("session_id", session_factory(admin_user).id)
-    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
-
-    assert page.status_code == 200
-    assert "История изменений" not in page.text
-    assert "работу меняли" not in page.text
+    assert seen["first_submitted_at"] is not None
+    assert seen["count"] == 2
+    assert [(c["photos_before"], c["photos_after"]) for c in seen["changes"]] == [(1, 1), (1, 1)]
+    # Прежнее фото проверяющий видит в истории.
+    assert FAKE_URL in {image.image_s3_url for c in seen["changes"] for image in c["removed"]}

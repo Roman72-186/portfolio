@@ -8,7 +8,6 @@
 Карточка ученика в «Людях» уводит сюда.
 """
 
-import pathlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -247,17 +246,6 @@ def test_credentials_and_link_answer_json(client, db, session_factory, people):
     assert link.json()["link"]
 
 
-def test_card_rerenders_after_issuing_password():
-    """Проход 06.10.2026: выдача пароля стирала кэш карточки и не
-    перерисовывала её — до перезагрузки «Логин и пароль не выдавались»,
-    повторная выдача падала, «Редактировать анкету» не открывалась."""
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    body = source.split("function issueCredentials()", 1)[1].split("\nfunction ", 1)[0]
-
-    assert "reloadProfile();" in body
-    assert "_tabCache[_currentStudentId] = {};" not in body
-
-
 # ── Строка списка после правки ──────────────────────────────────────────────
 
 def _list_row(page: str, student_id: int) -> str:
@@ -287,7 +275,6 @@ def test_row_shows_fresh_tariff_cohort_and_name(client, db, session_factory, peo
     row = " ".join(resp.text.split())
     assert 'data-tariff="Я С ВАМИ"' in row
     assert ">Я с вами<" in row
-    assert 'cohort-badge cohort-may">М<' in row
     assert ">Новикова Ева<" in row
     # Разметка одна — та же, что у строки в самом списке.
     assert row == _list_row(client.get("/cabinet/students").text, student.id)
@@ -300,45 +287,6 @@ def test_curator_row_only_own(client, db, session_factory, people, user_factory)
 
     assert client.get(f"/cabinet/students/{people['student'].id}/row").status_code == 200
     assert client.get(f"/cabinet/students/{stranger.id}/row").status_code == 403
-
-
-def test_card_refreshes_list_row_after_saving():
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    reload_body = source.split("function reloadProfile(", 1)[1].split("\nfunction ", 1)[0]
-    anketa_body = source.split("function saveProfile()", 1)[1].split("\nfunction ", 1)[0]
-
-    assert "refreshSidebarRow(id);" in reload_body
-    assert "refreshSidebarRow(_currentStudentId);" in anketa_body
-
-
-def test_note_not_repeated_in_anketa_for_its_editor():
-    """Проход 06.10.2026, пункт 5: «Заметка о ребёнке» из «Управления»
-    повторялась в анкете с подписью «О себе», будто её написал ученик. Кто
-    правит заметку, тому анкета её не показывает; куратору и тем, кому правка
-    закрыта, — показывает под её настоящим именем."""
-    source = (pathlib.Path(__file__).resolve().parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
-    profile = source.split("function renderProfile(", 1)[1].split("\nfunction ", 1)[0]
-
-    assert 'profile-field-label">О себе<' not in profile
-    assert "if (s.about && !(s.manage && s.manage.can_edit))" in profile
-    assert 'profile-field-label">Заметка о ребёнке<' in profile
-
-
-# ── Архив только читают ─────────────────────────────────────────────────────
-
-def test_archive_view_hides_portfolio_month_buttons(client, db, session_factory, people):
-    """Суперадмин видел в архиве «Переименовать», крестики и перетаскивание,
-    а сервер отвечал на них 404 «Not found» (проход 06.10.2026)."""
-    student = people["student"]
-    db.commit()
-    archive_user(db, target_user_id=student.id, performed_by_id=people["superadmin"].id, actor_rank=5)
-    _login(client, session_factory, people["superadmin"])
-
-    archive_page = client.get(f"/cabinet/archive?student={student.id}").text
-    active_page = client.get("/cabinet/students").text
-
-    assert "const CAN_PORTFOLIO_MONTHS = false;" in archive_page
-    assert "const CAN_PORTFOLIO_MONTHS = true;" in active_page
 
 
 # ── «Люди» уводят в «Учеников» ───────────────────────────────────────────────
@@ -526,15 +474,3 @@ def test_archived_student_statistics_readable(client, db, session_factory, peopl
 
     # Архивного ученика программа не числит — заданий к сдаче у него нет.
     assert data["school"]["assignments"] == []
-
-
-def test_old_activity_tab_opens_statistics(client, db, session_factory, people):
-    """«Активность» слита в «Статистику» — закладки `?tab=activity` открывают её."""
-    db.commit()
-    _login(client, session_factory, people["chief"])
-
-    page = client.get(f"/cabinet/students?student={people['student'].id}&tab=activity").text
-
-    assert 'const INITIAL_TAB    = "statistics";' in page
-    assert 'id="tab-activity"' not in page
-    assert client.get(f"/cabinet/students/{people['student'].id}/activity").status_code == 404

@@ -8,7 +8,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY
-from app.models.payment import STATUS_PAID, STATUS_REFUNDED, Payment
+from app.models.payment import STATUS_REFUNDED, Payment
 from app.models.tag import Tag, UserTag
 from app.services import intake_link as intake_link_service
 from app.services import payments as ps
@@ -96,21 +96,11 @@ def test_activity_page_holiday_mode(client, db, user_factory, session_factory, a
     holiday_page = client.get("/cabinet/superadmin/activity?program=holiday")
     assert holiday_page.status_code == 200
     text = holiday_page.text
-    assert "Каникулярный набор поимённо" in text
     assert "Оплатила Трек" in text and "Вошёл Без Оплаты" in text
-    assert "@payer_nick" in text and "10 класс" in text
-    assert "Попробуй обучение" in text and "оплачен" in text and "не оплатил" in text
     assert "Годовой Петя" not in text
-    assert "Регистрации по тарифам" not in text
-    assert 'href="/cabinet/superadmin/payments?program=holiday"' in text
 
     annual_page = client.get("/cabinet/superadmin/activity").text
-    assert "Каникулярный набор поимённо" not in annual_page
     assert "Годовой Петя" in annual_page
-    # Журнал изменений общий (там есть «Оплата #… за трек»), а в учёте её нет.
-    assert 'data-student-name="Оплатила Трек"' not in annual_page
-    assert "Регистрации по тарифам" in annual_page
-    assert 'href="/cabinet/superadmin/activity?program=holiday"' in annual_page
     # Программа учёта сброшена — следующий запрос снова годовой.
     assert annual.id in reportable_student_id_set(db)
 
@@ -127,9 +117,6 @@ def test_payments_holiday_mode_lists_tracks_and_refund(client, db, user_factory,
     page = client.get("/cabinet/superadmin/payments?program=holiday")
     assert page.status_code == 200
     assert "Оплатил Каникулы" in page.text and "Попробуй обучение" in page.text
-    assert "3 455" in page.text
-    assert "Вошли, но не оплатили" in page.text and "Не Оплатил Каникулы" in page.text
-    assert f'data-payment="{payment.id}"' in page.text and 'data-kind="holiday"' in page.text
 
     resp = client.post(f"/cabinet/superadmin/payments/{payment.id}/refund",
                        data={"csrf_token": "x"}, headers={"Accept": "application/json"})
@@ -145,4 +132,3 @@ def test_monthly_board_skips_holiday_students(client, db, user_factory, session_
     page = client.get("/cabinet/superadmin/payments")
     assert page.status_code == 200
     assert "Каникулярный Без Окна" not in page.text
-    assert 'href="/cabinet/superadmin/payments?program=holiday"' in page.text

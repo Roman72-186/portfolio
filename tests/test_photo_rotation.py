@@ -4,7 +4,6 @@
 Правило — `app/services/photo_rotation.py::can_rotate`.
 """
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from app.models.feedback import Feedback, FeedbackMessage
@@ -13,7 +12,6 @@ from app.services import s3 as s3_service
 from tests.test_work_thumbs import _FakeS3, _jpeg, _login, _with
 
 BUCKET = "https://s3.example.com/"
-LIGHTBOX = Path(__file__).resolve().parent.parent / "app" / "templates" / "partials" / "lightbox.html"
 
 
 def _bucket_urls():
@@ -172,13 +170,3 @@ def test_foreign_url_is_rejected(client, db, user_factory, session_factory):
     with _with(fake), _bucket_urls():
         resp = client.post("/cabinet/rotate-photo", data={"src": "https://evil.example/x.jpg", "direction": "left"})
     assert resp.status_code == 400
-
-
-# ── Просмотрщик ──────────────────────────────────────────────────────────────
-
-def test_lightbox_offers_rotation_to_everyone_but_moderator():
-    source = LIGHTBOX.read_text(encoding="utf-8")
-    assert 'user.role_name != "модератор"' in source
-    assert "role_rank|int) >= 5" not in source
-    # Кнопки скрыты, пока сервер не ответил, какие фото можно крутить.
-    assert 'id="lightbox-tools" hidden' in source

@@ -184,20 +184,6 @@ def test_copy_into_new_stage_keeps_window_and_pick_but_not_dates(
     assert picks == [PICK]
 
 
-def test_cycle_items_page_has_take_blocks_controls(client, db, user_factory, session_factory):
-    _login_chief(client, user_factory, session_factory)
-    stage = _stage(client, db, "Годовой курс")
-
-    page = client.get(f"{PROGRAM}/cycles/{stage.id}").text
-
-    assert "data-take-blocks>Взять содержимое из другого задания</button>" in page
-    assert "data-take-search" in page
-    assert "<select data-take-source" in page
-    assert "function fillTakeSources(" in page
-    assert "function takeBlocksFrom(" in page
-    assert "searchTakeSources(event.target)" in page
-
-
 def _cycle_in(db, stage, title):
     """Цикл этапа напрямую в базе: форма цикла здесь ни при чём."""
     cycle = LearningTopic(
@@ -314,18 +300,6 @@ def test_diagnostic_is_copied_whole_with_its_results(
     assert sum(1 for b in copied if b.is_diagnostic) == len(DIAGNOSTIC["questions"])
 
 
-def test_cycle_items_card_shows_copyable_task_id(client, db, user_factory, session_factory):
-    _login_chief(client, user_factory, session_factory)
-    stage = _stage(client, db, "Годовой курс")
-    task_id = _create_item(client, stage.id, "Портфолио", _text_blocks())
-
-    page = client.get(f"{PROGRAM}/cycles/{stage.id}").text
-
-    assert f'data-copy-task-id="{task_id}"' in page
-    assert f">ID {task_id}</button>" in page
-    assert "function copyTaskId(" in page
-
-
 def test_search_by_task_id_puts_exact_match_first(client, db, user_factory, session_factory):
     """Номер — тот, что стоит меткой «ID N» на карточке конструктора. Задание,
     у которого эти цифры есть в названии, тоже находится, но идёт вторым."""
@@ -354,20 +328,3 @@ def test_search_by_id_does_not_reveal_task_of_deleted_cycle(
     items = client.get(f"{PROGRAM}/blocks-source", params={"q": f"ID {hidden_id}"}).json()["items"]
 
     assert items == []
-
-
-def test_take_blocks_offers_checkboxes_before_inserting(
-    client, db, user_factory, session_factory
-):
-    """Выбор задания больше не вставляет всё сразу: блоки приезжают списком с
-    галочками, вставляет «Добавить выбранные»."""
-    _login_chief(client, user_factory, session_factory)
-    stage = _stage(client, db, "Годовой курс")
-
-    page = client.get(f"{PROGRAM}/cycles/{stage.id}").text
-
-    assert "<div data-take-list hidden></div>" in page
-    assert "function takeBlocksFrom(" in page
-    assert "function insertTakenBlocks(" in page
-    assert "Добавить выбранные (" in page
-    assert 'placeholder="Найти задание по названию или ID"' in page

@@ -655,8 +655,7 @@ def test_probnik_intermediate_reports_remaining_slots(auth_client, db):
 
 
 def test_deleting_probnik_final_removes_stage_dependents_and_quota_recounts(
-    client, session_factory, regular_user, admin_user, db
-):
+    client, session_factory, regular_user, admin_user, db, rendered):
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
 
@@ -684,28 +683,10 @@ def test_deleting_probnik_final_removes_stage_dependents_and_quota_recounts(
 
     client.cookies.set("session_id", student_sess.id)
     assert _intermediate(client, "Рисунок", n=6).json()["created"] == 6
-    resp = client.get("/upload/mock-exam")
+    assert client.get("/upload/mock-exam").status_code == 200
 
-    assert resp.status_code == 200
-    assert '"existing": 6' in resp.text
-    assert '"remaining": 4' in resp.text
-    assert '"limit": 10' in resp.text
-
-
-def test_mock_exam_page_exposes_existing_stage_slots(auth_client, db):
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-
-    assert _intermediate(client, "Рисунок", n=6).json()["created"] == 6
-
-    resp = client.get("/upload/mock-exam")
-
-    assert resp.status_code == 200
-    assert "STAGE_STATE_BY_SUBJECT" in resp.text
-    assert '"existing": 6' in resp.text
-    assert '"remaining": 4' in resp.text
-    assert '"limit": 10' in resp.text
+    quota = rendered("upload_mock.html")["stage_upload_state_by_subject"][cycle.subject]
+    assert (quota["existing"], quota["remaining"]) == (6, quota["limit"] - 6)
 
 
 def test_probnik_intermediate_requires_active_ticket(auth_client, db):

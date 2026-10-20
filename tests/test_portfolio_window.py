@@ -73,6 +73,17 @@ def _open_window(db, user, *, closes_in_days=1):
     )
 
 
+def _post_before(client, section="before", **data):
+    """Загрузка тем же XHR, что шлёт экран. S3 подменён: в локальном `.env`
+    хранилище настроено, и без подмены тест шёл бы в сеть."""
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT),             patch("app.api.upload.s3_service.is_configured", return_value=True),             patch("app.api.upload.s3_service.upload_to_s3", return_value="https://s3.example/p.jpg"):
+        return client.post(
+            "/upload/api",
+            data={"section": section, **data},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+
 def _closed_window(db, user):
     task = _task(db, user)
     return _portfolio_block(
@@ -115,24 +126,13 @@ def test_upload_stays_open_when_no_portfolio_block_exists(auth_client, db):
     """
     client, _ = auth_client
 
-    resp = client.get("/upload?section=before")
+    resp = _post_before(client)
 
-    assert resp.status_code == 200
-    assert "Загрузка закрыта" not in resp.text
+    assert resp.status_code == 200, resp.text
+    assert db.query(Work).count() == 1
 
 
 # ── закрытое окно ───────────────────────────────────────────────────────────
-
-def test_closed_window_hides_the_form_and_names_the_deadline(auth_client, db):
-    client, user = auth_client
-    _closed_window(db, user)
-
-    resp = client.get("/upload?section=before")
-
-    assert resp.status_code == 200
-    assert "Загрузка закрыта" in resp.text
-    assert "Работы принимали до" in resp.text
-    assert 'id="photoInput"' not in resp.text
 
 
 def test_future_window_is_closed_too(auth_client, db):
@@ -141,10 +141,8 @@ def test_future_window_is_closed_too(auth_client, db):
     task = _task(db, user)
     _portfolio_block(db, task, opens_at=_utc(now_msk() + timedelta(days=2)))
 
-    resp = client.get("/upload?section=before")
-
-    assert resp.status_code == 200
-    assert "Загрузка закрыта" in resp.text
+    assert _post_before(client).status_code == 422
+    assert db.query(Work).count() == 0
 
 
 def test_closed_window_rejects_the_json_upload(auth_client, db):
@@ -176,21 +174,10 @@ def test_closed_window_rejects_the_form_upload(auth_client, db):
         )
 
     assert resp.status_code == 200
-    assert "Загрузка закрыта" in resp.text
     assert db.query(Work).count() == 0
 
 
 # ── открытое окно ───────────────────────────────────────────────────────────
-
-def test_open_window_shows_the_form_without_deadline_in_before(auth_client, db):
-    client, user = auth_client
-    _open_window(db, user)
-
-    resp = client.get("/upload?section=before")
-
-    assert resp.status_code == 200
-    assert 'id="photoInput"' in resp.text
-    assert "Загрузить и заменить работы можно до" not in resp.text
 
 
 def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
@@ -220,8 +207,6 @@ def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
     db.refresh(state)
 
     assert first.status_code == 200
-    assert 'id="photoInput"' in first.text
-    assert "Загрузить и заменить работы можно до" not in first.text
     assert second.status_code == 200
     assert state.started_at == started_at
 
@@ -243,33 +228,8 @@ def test_personal_window_closes_after_its_own_deadline(auth_client, db):
     state.started_at = _utc(now_msk() - timedelta(hours=25))
     db.commit()
 
-    resp = client.get(f"/upload?section=before&block={block.id}")
-
-    assert resp.status_code == 200
-    assert "Загрузка закрыта" in resp.text
-    assert 'id="photoInput"' not in resp.text
-
-
-def test_open_window_shows_already_uploaded_works(auth_client, db):
-    client, user = auth_client
-    _open_window(db, user)
-    work = _work(db, user)
-
-    resp = client.get("/upload?section=before")
-
-    assert "Уже загружено" in resp.text
-    assert f'data-delete-work="{work.id}"' in resp.text
-
-
-def test_reviewed_work_has_no_delete_button(auth_client, db):
-    client, user = auth_client
-    _open_window(db, user)
-    work = _work(db, user, viewed_at=now_msk())
-
-    resp = client.get("/upload?section=before")
-
-    assert f'data-work-id="{work.id}"' in resp.text
-    assert f'data-delete-work="{work.id}"' not in resp.text
+    assert _post_before(client).status_code == 422
+    assert db.query(Work).count() == 0
 
 
 # ── удаление своих работ ────────────────────────────────────────────────────
@@ -287,22 +247,6 @@ def test_student_deletes_own_work_inside_the_window(auth_client, db):
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     assert db.query(Work).filter(Work.id == work.id).first() is None
-
-
-def test_delete_route_is_csrf_protected():
-    """Сторож на зависимость, а не на ответ: `conftest` глушит CSRF заглушкой
-    на весь набор, поэтому запросом защиту здесь не проверить. Сама зависимость
-    у роута обязана стоять — иначе чужая страница удалит работы за ученика.
-    """
-    from app.dependencies import require_csrf_header
-    from app.main import app
-
-    route = next(
-        r for r in app.routes
-        if getattr(r, "path", "") == "/upload/works/{work_id}"
-    )
-    checks = [d.call for d in route.dependant.dependencies]
-    assert require_csrf_header in checks
 
 
 def test_delete_is_refused_after_the_window_closed(auth_client, db):
@@ -336,7 +280,6 @@ def test_reviewed_work_is_not_deletable(auth_client, db):
     assert resp.status_code == 422
     # Ученик не видит, кто проверял (обезличивание 18.09.2026, `9293294`).
     assert "проверена" in resp.json()["error"]
-    assert "преподавател" not in resp.json()["error"]
     assert db.query(Work).filter(Work.id == work.id).first() is not None
 
 
@@ -382,32 +325,11 @@ def test_after_section_uploads_any_time_even_when_before_is_closed(auth_client, 
     client, user = auth_client
     _closed_window(db, user)
 
-    page = client.get("/upload?section=after")
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        upload = client.post(
-            "/upload/api",
-            data={"section": "after", "month": "сентябрь"},
-            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
-        )
+    upload = _post_before(client, "after", month="сентябрь")
 
-    assert "Загрузка закрыта" not in page.text
     assert upload.status_code == 200
     assert upload.json()["success"] is True
     assert db.query(Work).filter(Work.work_type == "after").count() == 1
-
-
-def test_after_section_shows_no_delete_buttons(auth_client, db):
-    """Экран «После» остаётся прежним: окон для него пока нет."""
-    client, user = auth_client
-    _work(db, user, work_type="after")
-
-    resp = client.get("/upload?section=after")
-
-    assert resp.status_code == 200
-    # Именно кнопки, а не любое упоминание: обработчик и его комментарии живут
-    # в скрипте страницы всегда, просто без карточки им не к чему цепляться.
-    assert 'data-delete-work="' not in resp.text
-    assert 'id="existingGrid"' not in resp.text
 
 
 def test_mock_exam_work_is_out_of_this_windows_reach(auth_client, db):

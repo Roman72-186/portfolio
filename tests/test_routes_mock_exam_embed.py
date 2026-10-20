@@ -177,9 +177,6 @@ def test_embed_locks_subject_after_final_submitted(auth_client, db):
     assert body["locked_reason"] == "waiting"
 
 
-# ── Мини-опрос после сдачи (владелец 30.08.2026) ─────────────────────────────
-
-
 # ── Вопросы Пробника переехали в блоки (владелец 31.08.2026) ────────────────
 #    Панель Пробника их больше не рисует и не сохраняет: тот же вопрос
 #    показывался бы дважды — здесь и в общей панели содержимого
@@ -206,12 +203,6 @@ def test_embed_never_exposes_quiz_even_with_questions_configured(auth_client, db
     assert body["quiz_questions"] == []
     assert body["quiz_answers"] is None
     assert body["quiz_submit_endpoint"] is None
-
-
-def test_old_mock_quiz_endpoint_is_gone(auth_client, db):
-    client, _ = auth_client
-    resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["x"]})
-    assert resp.status_code == 405 or resp.status_code == 404
 
 
 def test_mock_questions_are_served_by_the_blocks_endpoint(auth_client, db):

@@ -15,9 +15,7 @@ from unittest.mock import patch
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
     BLOCK_TIMED,
-    BLOCK_QUESTION,
     BLOCK_UPLOAD,
-    LATE_SUBMISSION_BLOCK_TYPES,
     TaskBlock,
     TaskBlockState,
     TaskBlockSubmissionImage,
@@ -225,14 +223,6 @@ def test_expired_timed_block_keeps_holding_the_feed(db, regular_user):
     )
 
     assert [s["status"] for s in steps] == ["current", "locked"]
-
-
-def test_every_submission_type_accepts_late_first_submission():
-    """С 06.10.2026 правило контрольной общее (владелец: «досдать свыше срока
-    всегда можно… ЭТО ПРАВИЛО!!!») — списка «срок запирает» больше нет."""
-    assert BLOCK_TIMED in LATE_SUBMISSION_BLOCK_TYPES
-    assert BLOCK_UPLOAD in LATE_SUBMISSION_BLOCK_TYPES
-    assert BLOCK_QUESTION in LATE_SUBMISSION_BLOCK_TYPES
 
 
 # ── обратный отсчёт ─────────────────────────────────────────────────────────

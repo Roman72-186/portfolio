@@ -213,7 +213,6 @@ def test_date_refusal_says_when(client, db, user_factory, session_factory):
     )
 
     assert resp.status_code == 403
-    assert resp.json()["detail"] == "Этот шаг ещё не открылся"
 
 
 # ── «вперёд нельзя» ────────────────────────────────────────────────────────

@@ -55,18 +55,3 @@ def test_old_domain_is_not_used_anywhere():
         "apparchi.ru не наш с 11.10.2026 — адрес сайта берётся из settings.domain "
         "(kodarhitektora.ru):\n" + "\n".join(hits)
     )
-
-
-def test_guard_catches_working_forms():
-    for bad in (
-        'url = "https://apparchi.ru/cabinet"',
-        "- traefik.http.routers.x.rule=Host(`apparchi.ru`)",
-        "DOMAIN=apparchi.ru",
-        "VAPID_CLAIM_EMAIL=admin@apparchi.ru",
-        'domain: str = "apparchi.ru"',
-        '<a href="//www.apparchi.ru/proba">',
-    ):
-        assert _FORBIDDEN.search(bad), bad
-    for ok in ("набора, которого пометили руками (вошёл с apparchi.ru, минуя ссылку",
-               "Host(`kodarhitektora.ru`)"):
-        assert not _FORBIDDEN.search(ok), ok

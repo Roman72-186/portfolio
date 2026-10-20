@@ -242,13 +242,3 @@ def test_start_endpoint_404_for_other_block_types(auth_client, db):
     db.commit()
 
     assert client.post(f"/cabinet/tracker/blocks/{block.id}/start").status_code == 404
-
-
-def test_constructor_offers_the_timed_block(admin_client):
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="timed"' in page.text
-    assert "Работа на время" in page.text

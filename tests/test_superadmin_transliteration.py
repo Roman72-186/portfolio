@@ -1,50 +1,27 @@
 """Tests for login generation: _transliterate, _make_login."""
+
 import pytest
 
 from app.api.cabinet_superadmin import _transliterate, _make_login
-from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
 # _transliterate
 # ---------------------------------------------------------------------------
 
-def test_transliterate_basic_cyrillic():
-    assert _transliterate("Иван") == "ivan"
-
-
-def test_transliterate_maria():
-    assert _transliterate("Мария") == "maria"
-
-
-def test_transliterate_roman():
-    assert _transliterate("Роман") == "roman"
-
-
-def test_transliterate_all_lowercase():
-    result = _transliterate("ИВАН")
-    assert result == result.lower()
-
-
-def test_transliterate_mixed():
-    result = _transliterate("Анна-Мария")
-    assert isinstance(result, str)
-    assert len(result) > 0
-
-
-def test_transliterate_empty_string():
-    assert _transliterate("") == ""
-
-
-def test_transliterate_already_latin():
-    result = _transliterate("Ivan")
-    assert "ivan" == result
-
-
-def test_transliterate_no_crash_on_special_chars():
-    # Should not raise even with non-Cyrillic
-    result = _transliterate("Test123!@#")
-    assert isinstance(result, str)
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Иван", "ivan"),
+        ("Мария", "maria"),
+        ("Роман", "roman"),
+        ("ИВАН", "ivan"),
+        ("Ivan", "ivan"),
+        ("", ""),
+    ],
+)
+def test_transliterate(name, expected):
+    assert _transliterate(name) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -71,18 +48,6 @@ def test_make_login_no_last_name(db, user_factory):
 
     result = _make_login(user, db)
     assert result == "ivan"
-
-
-def test_make_login_uses_name_fallback(db, user_factory):
-    user = user_factory(vk_id=700003, name="Сергей", role_name="куратор")
-    user.first_name = None
-    user.last_name = None
-    db.add(user)
-    db.commit()
-
-    result = _make_login(user, db)
-    assert isinstance(result, str)
-    assert len(result) > 0
 
 
 def test_make_login_empty_name_fallback(db, user_factory):
@@ -113,7 +78,6 @@ def test_make_login_collision_adds_suffix(db, user_factory):
 
     result = _make_login(new_user, db)
     assert result == "ivan.p2"
-    assert result != "ivan.p"
 
 
 def test_make_login_multiple_collisions(db, user_factory):

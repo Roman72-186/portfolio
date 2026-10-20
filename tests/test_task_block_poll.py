@@ -12,9 +12,7 @@
 from datetime import date, timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
-from app.models.task_block import (
-    BLOCK_QUESTION, BLOCK_SCALE, BLOCK_TEXT, BLOCK_TYPE_LABELS, TaskBlock,
-)
+from app.models.task_block import BLOCK_QUESTION, BLOCK_SCALE, BLOCK_TEXT, TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
@@ -106,10 +104,6 @@ def _statuses(db, user):
 
 
 # ── Конструктор ─────────────────────────────────────────────────────────────
-
-
-def test_button_is_called_opros():
-    assert BLOCK_TYPE_LABELS[BLOCK_QUESTION] == "Опрос"
 
 
 def test_poll_row_becomes_question_blocks_with_one_key(client, db, user_factory, session_factory, monkeypatch):

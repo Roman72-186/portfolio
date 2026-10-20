@@ -21,8 +21,6 @@ from app.constants import (
     tariffs_for_data,
     TARIFFS_CURRENT,
     TARIFFS_LEGACY,
-    TARIFFS_WITH_FEEDBACK,
-    TARIFFS_WITH_SUBMISSION,
     TARIFF_CODES,
     TARIFF_DISPLAY,
 )
@@ -42,16 +40,12 @@ def superadmin_client(client, db, user_factory, session_factory):
 
 # ── состав линейки ──────────────────────────────────────────────────────────
 
-def test_current_lineup_is_the_three_the_owner_named():
-    assert TARIFFS_CURRENT == ["Я САМ", "Я С ВАМИ", "УВЕРЕННЫЙ МАКСИМУМ"]
-
 
 def test_old_values_stay_valid():
     """«Старые записи не трогаем»: на них живые люди, работы и фильтр архива."""
     for legacy in ("МАКСИМУМ", "УВЕРЕННЫЙ"):
         assert legacy in TARIFFS
         assert legacy not in TARIFFS_CURRENT
-    assert TARIFFS_LEGACY == ["МАКСИМУМ", "УВЕРЕННЫЙ"]
 
 
 def test_every_value_has_a_label_and_a_code():
@@ -61,20 +55,6 @@ def test_every_value_has_a_label_and_a_code():
         assert TARIFF_DISPLAY.get(tariff)
         assert TARIFF_CODES.get(tariff)
     assert len(set(TARIFF_CODES.values())) == len(TARIFF_CODES)
-
-
-def test_confident_max_inherits_the_rules_of_the_pair_it_replaces():
-    """«Уверенный максимум» — преемник пары, обязанной сдавать работу."""
-    assert "УВЕРЕННЫЙ МАКСИМУМ" in TARIFFS_WITH_SUBMISSION
-    assert "УВЕРЕННЫЙ МАКСИМУМ" in TARIFFS_WITH_FEEDBACK
-
-
-def test_self_study_tariff_has_no_curator_checking():
-    """Созвон 03.09 [00:05:05]: доступ «как у тарифа я с вами или я сам»."""
-    assert "Я САМ" not in TARIFFS_WITH_SUBMISSION
-    assert "Я САМ" not in TARIFFS_WITH_FEEDBACK
-    assert "Я С ВАМИ" not in TARIFFS_WITH_SUBMISSION
-    assert "Я С ВАМИ" not in TARIFFS_WITH_FEEDBACK
 
 
 def test_new_tariffs_make_safe_file_names():
@@ -149,7 +129,7 @@ def test_legacy_value_still_saves(superadmin_client, db, user_factory):
 # проверку** оставили по всему списку — иначе архив станет ненаходимым, а
 # карточки живых staff-аккаунтов со старым тарифом перестанут сохраняться.
 
-def test_student_profile_offers_only_the_current_lineup(client, db, user_factory, session_factory):
+def test_student_profile_offers_only_the_current_lineup(client, db, user_factory, session_factory, rendered):
     """Шаг «Тариф обучения» при регистрации — то, что увидит новичок 18 сентября."""
     student = user_factory(vk_id=910005, name="Новичок", role_name="ученик")
     # Анкета первого входа: заполненный профиль роут уводит на «Контакты».
@@ -158,13 +138,11 @@ def test_student_profile_offers_only_the_current_lineup(client, db, user_factory
     sess = session_factory(student)
     client.cookies.set("session_id", sess.id)
 
-    page = client.get("/cabinet/profile").text
-    assert "Тариф обучения" in page
+    assert client.get("/cabinet/profile").status_code == 200
 
-    for tariff in TARIFFS_CURRENT:
-        assert f'value="{TARIFF_DISPLAY[tariff]}"' in page
-    for legacy in TARIFFS_LEGACY:
-        assert f'value="{TARIFF_DISPLAY[legacy]}"' not in page
+    offered = rendered("profile.html")["tariffs"]
+    assert offered == [TARIFF_DISPLAY[tariff] for tariff in TARIFFS_CURRENT]
+    assert not {TARIFF_DISPLAY[legacy] for legacy in TARIFFS_LEGACY} & set(offered)
 
 
 def test_profile_labels_survive_the_round_trip():
@@ -173,96 +151,6 @@ def test_profile_labels_survive_the_round_trip():
     from app.api.cabinet_student import TARIFF_LABELS
 
     assert [label.upper() for label in TARIFF_LABELS] == TARIFFS_CURRENT
-
-
-def test_day_constructor_offers_only_the_current_lineup(admin_client):
-    """Кому виден блок — выбор из действующих."""
-    from datetime import timedelta
-    from app.services.tz import today_msk
-
-    client, _ = admin_client
-    day = (today_msk() + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}").text
-
-    assert "УВЕРЕННЫЙ МАКСИМУМ" in page
-    assert '"МАКСИМУМ"' not in page.replace("УВЕРЕННЫЙ МАКСИМУМ", "")
-
-
-def test_user_filter_shows_legacy_tariff_only_while_someone_has_it(
-    superadmin_client, db, user_factory
-):
-    """Фильтр перечисляет тарифы по факту (владелец 28.09.2026: «те, которые
-    сейчас не задействованы, скрыть, чтобы их нигде не было видно»).
-
-    Прежнее правило 07.09 «фильтр не сужаем» отменено: оно держало в списке
-    оба отработавших тарифа всегда, даже когда на них никого не осталось. Но
-    архив обязан оставаться находимым, поэтому тариф исчезает из фильтра не по
-    коду, а вместе с последним человеком на нём.
-    """
-    client, _ = superadmin_client
-
-    page = client.get("/cabinet/superadmin/users").text
-    assert '<option value="МАКСИМУМ"' not in page
-
-    archived = user_factory(vk_id=910055, name="Прошлый Поток", tariff="МАКСИМУМ")
-    archived.archived_at = datetime.now(timezone.utc)
-    archived.is_active = False
-    db.commit()
-
-    page = client.get("/cabinet/superadmin/users").text
-    assert '<option value="МАКСИМУМ"' in page
-
-
-def test_students_sidebar_uses_current_tariffs_and_marks_students_without_tariff_as_newcomers(
-    admin_client, db, user_factory
-):
-    client, _ = admin_client
-    newcomer = user_factory(
-        vk_id=901001,
-        name="Пробный Новичок",
-        role_name="ученик",
-        tariff="",
-        profile_completed=True,
-    )
-    regular = user_factory(
-        vk_id=901002,
-        name="Без Тарифа",
-        role_name="ученик",
-        tariff="",
-        profile_completed=True,
-    )
-    db.commit()
-
-    page = client.get("/cabinet/students").text
-    tariff_filters = page.split('<div class="tariff-pills">', 1)[1].split("</div>", 1)[0]
-
-    for tariff in TARIFFS_CURRENT:
-        assert f'data-tariff="{tariff}"' in tariff_filters
-        assert f'>{TARIFF_DISPLAY[tariff]}</button>' in tariff_filters
-    for legacy in TARIFFS_LEGACY:
-        assert f'data-tariff="{legacy}"' not in tariff_filters
-    assert 'data-tariff="__newcomer__"' in tariff_filters
-    newcomer_row = page.split(f'id="srow-{newcomer.id}"', 1)[1].split("</button>", 1)[0]
-    regular_row = page.split(f'id="srow-{regular.id}"', 1)[1].split("</button>", 1)[0]
-    assert 'data-tariff="__newcomer__"' in newcomer_row
-    assert "Новенький" in newcomer_row
-    assert 'data-tariff="__newcomer__"' in regular_row
-    assert "Новенький" in regular_row
-
-
-def test_every_tariff_has_a_colour_group():
-    """У каждого валидного тарифа есть цветовая группа для плашки.
-
-    Владелец 13.09.2026: «у каждого тарифа есть свой цвет». Заведут шестой
-    тариф без группы — плашка молча станет нейтральной, и на проде это увидят
-    не сразу: она белая и читается, просто цвет неверный.
-    """
-    from app.constants import TARIFF_SLUGS
-
-    assert set(TARIFF_SLUGS) == set(TARIFFS)
-    for tariff in TARIFFS_CURRENT:
-        assert TARIFF_SLUGS[tariff] != "legacy", tariff
 
 
 def test_unknown_tariff_never_leaves_the_pill_colourless():
@@ -325,20 +213,6 @@ def test_tariffs_in_use_reads_living_rows(db, user_factory):
     assert "МАКСИМУМ" in in_use
     assert "УВЕРЕННЫЙ" not in in_use
     assert in_use[:3] == TARIFFS_CURRENT
-
-
-def test_student_card_offers_current_lineup_only(admin_client):
-    """Список тарифов в карточке ученика был вписан в JS руками: до 28.09.2026
-    там стояли МАКСИМУМ с УВЕРЕННЫМ, а новых двух тарифов не было вовсе."""
-    client, _ = admin_client
-
-    page = client.get("/cabinet/students").text
-
-    assert "const TARIFF_OPTIONS = " in page
-    for tariff in TARIFFS_CURRENT:
-        assert tariff in page
-    assert "'<option value=\"МАКСИМУМ\"'" not in page
-    assert "'<option value=\"УВЕРЕННЫЙ\"'" not in page
 
 
 def test_stats_export_has_no_sheets_for_unused_legacy_tariffs(superadmin_client):

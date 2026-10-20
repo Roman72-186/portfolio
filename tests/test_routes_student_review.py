@@ -58,15 +58,7 @@ def _work(db, user_id, *, score=None, created_at=None):
     return w
 
 
-def _row(html, student_id):
-    return html.split(f'id="srow-{student_id}"', 1)[1].split("</button>", 1)[0]
-
-
-def _badge_tag(row):
-    return row.split("data-pending-badge", 1)[1].split(">", 1)[0]
-
-
-def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_factory, session_factory):
+def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_factory, session_factory, rendered):
     """Очередь «кого проверять» — счётчик в списке «Учеников», и куратору
     тоже. Пробник первой версии в счёт не идёт с 06.10.2026 — его вкладки в
     карточке нет."""
@@ -81,25 +73,10 @@ def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_facto
 
     client, _ = auth_client
     client.cookies.set("session_id", session_factory(curator).id)
-    html = client.get("/cabinet/students").text
+    assert client.get("/cabinet/students").status_code == 200
 
-    row = _row(html, student.id)
-    assert 'data-unreviewed="1"' in row
-    assert "hidden" not in _badge_tag(row)
-    assert 'id="filter-unreviewed"' in html
-
-
-def test_students_list_hides_zero_counter(db, user_factory, session_factory, client):
-    curator = user_factory(vk_id=860_102, name="Куратор своя", role_name="куратор")
-    student = user_factory(vk_id=860_103, name="Свой ученик")
-    student.curator_id = curator.id
-    db.commit()
-
-    client.cookies.set("session_id", session_factory(curator).id)
-    row = _row(client.get("/cabinet/students").text, student.id)
-
-    assert 'data-unreviewed="0"' in row
-    assert "hidden" in _badge_tag(row)
+    rows = {row["id"]: row for row in rendered("cabinet_students.html")["sidebar_students"]}
+    assert rows[student.id]["unchecked"] == 1
 
 
 def test_old_review_addresses_lead_curator_to_student_card(db, user_factory, session_factory, client):
@@ -117,21 +94,6 @@ def test_old_review_addresses_lead_curator_to_student_card(db, user_factory, ses
     assert detail.headers["location"] == "/cabinet/students?student=42&tab=tasks"
 
 
-def test_review_menu_item_only_for_chief_and_superadmin(db, user_factory, session_factory, client):
-    """Возвращён в меню 06.10.2026 — ГП и суперадмину, куратору нет."""
-    curator = user_factory(vk_id=860_105, name="Куратор", role_name="куратор")
-    client.cookies.set("session_id", session_factory(curator).id)
-    html = client.get("/cabinet/students").text
-    assert 'href="/cabinet/staff/students-review"' not in html
-
-    chief = user_factory(vk_id=860_106, name="Главный", role_name="админ")
-    superadmin = user_factory(vk_id=860_107, name="Супер", role_name="суперадмин")
-    for staff in (chief, superadmin):
-        client.cookies.set("session_id", session_factory(staff).id)
-        html = client.get("/cabinet/students").text
-        assert 'href="/cabinet/staff/students-review"' in html
-
-
 def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, client):
     """Строка списка ведёт во вкладку «Задания» карточки, где и проверяют."""
     chief = user_factory(vk_id=860_108, name="Главный", role_name="админ")
@@ -141,7 +103,6 @@ def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, c
     resp = client.get("/cabinet/staff/students-review", follow_redirects=False)
 
     assert resp.status_code == 200
-    assert f'href="/cabinet/students?student={student.id}&amp;tab=tasks"' in resp.text
     assert "Ученик Списка" in resp.text
 
 

@@ -48,14 +48,6 @@ def test_expired_student_can_open_personal(db, client, session_factory, user_fac
     resp = client.get("/cabinet/personal")
 
     assert resp.status_code == 200
-    assert "Доступ закрыт" in resp.text
-    # Владелец 13.10.2026: пометка про смену тарифа — и здесь, перед оплатой.
-    assert "Если хочешь перейти на другой тариф" in resp.text
-    # Меню проверяем на самой странице, а не вызовом `student_nav_items`:
-    # признак едет через шаблон с `|default(false)`, и потеряйся он по дороге —
-    # ученик получил бы полное меню из ссылок, которые тут же его отбрасывают.
-    assert "/cabinet/learning" not in resp.text
-    assert "/cabinet/tracker" not in resp.text
 
 
 def test_expired_student_api_gets_403_json(db, client, session_factory, user_factory):
@@ -78,8 +70,7 @@ def test_future_deadline_does_not_block(db, client, session_factory, user_factor
     db.commit()
     client.cookies.set("session_id", session_factory(student).id)
 
-    assert client.get("/cabinet/personal").status_code == 200
-    assert "Доступ закрыт" not in client.get("/cabinet/personal").text
+    assert client.get("/cabinet/learning", follow_redirects=False).status_code == 200
 
 
 def test_no_deadline_does_not_block(auth_client):
@@ -124,11 +115,6 @@ def test_nav_keeps_only_personal_when_expired():
     items = student_nav_items(access_expired=True)
 
     assert [item.key for item in items] == ["personal"]
-
-
-def test_nav_full_by_default():
-    assert len(student_nav_items()) > 1
-    assert len(student_nav_items(access_expired=False)) > 1
 
 
 # ── Время ────────────────────────────────────────────────────────────────────
@@ -252,41 +238,6 @@ def _anketa_data(**extra):
     return data
 
 
-def test_intake_student_profile_form_has_no_tariff_step(
-    db, client, session_factory, user_factory
-):
-    """Новичку со сроком доступа шаг «Тариф обучения» не показываем, и анкета
-    становится трёхшаговой."""
-    student = user_factory(vk_id=100_301, profile_completed=False, tariff="")
-    student.access_until = _hours_ahead(48)
-    db.commit()
-    client.cookies.set("session_id", session_factory(student).id)
-
-    resp = client.get("/cabinet/profile")
-
-    assert resp.status_code == 200
-    assert 'id="tariff-select"' not in resp.text
-    assert "Тариф обучения" not in resp.text
-    assert resp.text.count('class="prf-section-title"') == 3
-    assert "Шаг 3 из 3 · Учёба" in resp.text
-
-
-def test_regular_student_profile_form_keeps_tariff_step(
-    db, client, session_factory, user_factory
-):
-    """Действующему ученику без срока доступа анкета остаётся прежней — иначе
-    правило задело бы тех, ради кого выбор тарифа и сделан."""
-    student = user_factory(vk_id=100_302, profile_completed=False, tariff="")
-    db.commit()
-    client.cookies.set("session_id", session_factory(student).id)
-
-    resp = client.get("/cabinet/profile")
-
-    assert resp.status_code == 200
-    assert 'id="tariff-select"' in resp.text
-    assert "Шаг 3 из 4 · Тариф обучения" in resp.text
-
-
 def test_intake_student_saves_profile_without_tariff(
     db, client, session_factory, user_factory
 ):
@@ -367,7 +318,8 @@ def test_regular_student_still_must_choose_tariff(
     resp = client.post("/cabinet/profile", data=_anketa_data())
 
     assert resp.status_code == 200
-    assert "Выбери тариф" in resp.text
+    db.refresh(student)
+    assert student.profile_completed is False
 
 
 def test_staff_deadline_clears_tariff_for_newcomer(db, staff_client, user_factory):

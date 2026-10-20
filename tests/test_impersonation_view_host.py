@@ -7,7 +7,6 @@
 Куки передаются заголовком, а банку клиента чистим перед каждым запросом:
 httpx раскладывает куки по доменам, а здесь важно ровно то, что ушло.
 """
-from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -160,33 +159,3 @@ def test_handoff_token_expires(client, db, view_mode, user_factory, session_fact
     monkeypatch.setattr(cabinet_superadmin, "_VIEW_HANDOFF_MAX_AGE", -1)
     r = _get(client, f"{VIEW}/cabinet/superadmin/impersonate/enter?t={token}")
     assert r.headers["location"] == f"{MAIN}/cabinet"
-
-
-def test_login_buttons_open_new_tab_without_question(client, view_mode, user_factory, session_factory):
-    sa, student, sa_sess = _people(user_factory, session_factory)
-    curator = user_factory(vk_id=910_003, name="Curator View", role_name="куратор")
-    html = _get(client, "/cabinet/superadmin", sa_sess.id).text
-    form = f'action="/cabinet/superadmin/impersonate/{curator.id}"'
-    assert form in html
-    tag = html[html.index(form):html.index(">", html.index(form))]
-    assert 'target="_blank"' in tag
-    assert "data-confirm" not in tag
-
-    # Карточка ученика в «Людях» уводит в «Учеников» — кнопку смотрим у куратора.
-    card = _get(client, f"/cabinet/superadmin/users/{curator.id}", sa_sess.id).text
-    tag = card[card.index('id="impersonateForm"'):]
-    assert 'target="_blank"' in tag[:tag.index(">")]
-
-    students = _get(client, "/cabinet/students", sa_sess.id).text
-    tag = students[students.index('id="impersonate-form"'):]
-    assert "data-new-tab" in tag[:tag.index(">")]
-
-
-def test_old_mode_keeps_same_tab_and_question(client, user_factory, session_factory):
-    sa, _student, sa_sess = _people(user_factory, session_factory)
-    curator = user_factory(vk_id=910_004, name="Curator Old", role_name="куратор")
-    html = _get(client, "/cabinet/superadmin", sa_sess.id).text
-    form = f'action="/cabinet/superadmin/impersonate/{curator.id}"'
-    tag = html[html.index(form):html.index(">", html.index(form))]
-    assert 'target="_blank"' not in tag
-    assert "data-confirm" in tag

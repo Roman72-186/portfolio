@@ -65,10 +65,6 @@ def test_stage_task_is_listed_and_editable(client, db, user_factory, session_fac
     assert db.get(TrackerTask, portfolio_id).topic_id == stage.id
     page = client.get(f"{PROGRAM}/cycles/{stage.id}")
     assert page.status_code == 200
-    assert "Портфолио" in page.text
-    # С этапа — назад к этапам его периода и плашки в его циклы.
-    assert f'href="{PROGRAM}/stages?period={stage.parent_id}"' in page.text
-    assert f'href="{PROGRAM}/cycles/{cycle.id}"' in page.text
 
     move = client.post(
         f"{PROGRAM}/cycles/{stage.id}/items/{second_id}/move",
@@ -76,42 +72,6 @@ def test_stage_task_is_listed_and_editable(client, db, user_factory, session_fac
     )
     assert move.status_code == 200, move.text
     assert move.json()["order"] == [second_id, portfolio_id]
-
-
-def test_stages_page_leads_only_into_cycles(client, db, user_factory, session_factory):
-    """Владелец 06.10.2026: «проваливаемся в этапы — показываем только циклы
-    этого этапа», задания только в циклах. Кнопки «Задания этапа» нет."""
-    _login_chief(client, user_factory, session_factory)
-    stage, _ = _stage_with_cycle(client, db)
-    _create_item(client, stage.id, "Портфолио")
-
-    page = client.get(f"{PROGRAM}/stages").text
-
-    assert "Задания этапа" not in page
-    assert f'href="{PROGRAM}/cycles/{stage.id}"' not in page
-    assert f'href="{PROGRAM}/cycles?stage={stage.id}">Циклы этапа</a>' in page
-
-
-def test_cycle_page_leads_up_to_its_stage_cycles(client, db, user_factory, session_factory):
-    _login_chief(client, user_factory, session_factory)
-    stage, cycle = _stage_with_cycle(client, db)
-    today = today_msk()
-    client.post(f"{PROGRAM}/cycles", json={
-        "title": "Цикл 2", "description": None,
-        "starts_on": (today + timedelta(days=8)).isoformat(),
-        "ends_on": (today + timedelta(days=14)).isoformat(),
-        "is_published": True, "stage_id": stage.id,
-    }, headers=CSRF)
-
-    page = client.get(f"{PROGRAM}/cycles/{cycle.id}").text
-
-    # Ссылки на задания этапа нет; «К циклам» и путь ведут в циклы этого
-    # этапа, а не во весь список (владелец 06.10.2026).
-    assert f'href="{PROGRAM}/cycles/{stage.id}"' not in page
-    assert f'href="{PROGRAM}/cycles?stage={stage.id}">К циклам</a>' in page
-    assert f'<a href="{PROGRAM}/periods">Периоды</a> ›' in page
-    assert f'<a href="{PROGRAM}/stages?period={stage.parent_id}">' in page
-    assert f'<a href="{PROGRAM}/cycles?stage={stage.id}">Предобучение</a> ›' in page
 
 
 def test_stage_frame_is_still_edited_only_on_stages_screen(

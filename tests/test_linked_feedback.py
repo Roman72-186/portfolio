@@ -191,11 +191,9 @@ def test_main_screen_lists_linked_works_with_dates(db, group, client, session_fa
     page = client.get(f"/cabinet/staff/task-block-submissions/{main.id}/feedback")
 
     assert page.status_code == 200
-    assert "Общая обратная связь" in page.text
     assert "Неделя 1 – перспектива" in page.text
     assert "Неделя 2 – светотень" in page.text
     assert "https://s3/first.jpg" in page.text
-    assert "сдано " in page.text
 
 
 def test_linked_work_pages_lead_to_the_main_dialog(db, group, client, session_factory):

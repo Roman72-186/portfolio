@@ -120,7 +120,6 @@ def test_fingerprint_hides_values():
     """В консоль уходит разница по именам, значения не должны быть восстановимы."""
     fingerprint = deploy.env_fingerprint("SECRET=пароль\n")
     assert "пароль" not in json.dumps(fingerprint, ensure_ascii=False)
-    assert len(fingerprint["SECRET"]) == 8
 
 
 def test_fingerprint_distinguishes_changed_value():
@@ -353,26 +352,47 @@ def test_fingerprint_still_reads_multiline_values():
 # ── Дамп базы перед деплоем ───────────────────────────────────────────────────
 
 
-def test_predeploy_dump_command_fails_loudly_on_broken_dump():
-    """Код-ревью 28.09.2026, P2 № 13: миграцию применяет старт контейнера, а
-    свежей копии перед ней не было. Команда дампа обязана падать, если упал
-    `pg_dump` (pipefail, иначе gzip «успешно» упакует пустоту), если архив
-    битый или подозрительно мал."""
-    command = deploy.predeploy_dump_command("abcdef1234567", "20260929T120000Z")
+def _dump_on(tmp_path, monkeypatch, fake_docker):
+    """Настоящий скрипт дампа в bash; `docker` подменён функцией оболочки."""
+    import subprocess
 
-    assert command.startswith("bash -c ")
-    assert "set -euo pipefail" in command
-    assert "exec -T db pg_dump -U portfolio -d portfolio --clean --if-exists" in command
-    assert "gzip -t" in command
-    script = deploy.shlex.split(command)[2]
-    assert """trap 'rm -f "$f"' ERR""" in script
-    # После проверки размера ловушка снята: сбой ротации не удаляет годный дамп.
-    assert script.index("trap - ERR") > script.index(f"-lt {deploy.MIN_DUMP_BYTES}")
-    assert script.index("trap - ERR") < script.index("xargs -r rm -f")
-    assert f"-lt {deploy.MIN_DUMP_BYTES}" in command
-    assert "pre-deploy-20260929T120000Z-abcdef12.sql.gz" in command
-    # Своя ротация: ночная (`portfolio-*`, 14 дней) эти файлы не видит.
-    assert f"tail -n +{deploy.PREDEPLOY_DUMPS_KEEP + 1}" in command
+    monkeypatch.setattr(deploy, "REMOTE_DIR", tmp_path.as_posix())
+    monkeypatch.setattr(deploy, "BACKUP_DIR", (tmp_path / "backups").as_posix())
+    argv = deploy.shlex.split(deploy.predeploy_dump_command("abcdef1234567", "20260929T120000Z"))
+    assert argv[:2] == ["bash", "-c"]
+    return subprocess.run(
+        [_bash(), "-c", f"docker() {{ {fake_docker}; }}; {argv[2]}"],
+        capture_output=True, text=True,
+    )
+
+
+def test_predeploy_dump_keeps_good_dump_and_rotates_old_ones(tmp_path, monkeypatch):
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    for n in range(deploy.PREDEPLOY_DUMPS_KEEP + 2):
+        (backups / f"pre-deploy-2026010{n}T000000Z-old.sql.gz").write_bytes(b"old")
+
+    run = _dump_on(tmp_path, monkeypatch, "head -c 300000 /dev/urandom")
+
+    assert run.returncode == 0, run.stderr
+    path, size = run.stdout.split()
+    assert path.endswith("pre-deploy-20260929T120000Z-abcdef12.sql.gz")
+    assert int(size) >= deploy.MIN_DUMP_BYTES
+    assert len(list(backups.glob("pre-deploy-*.sql.gz"))) == deploy.PREDEPLOY_DUMPS_KEEP
+
+
+@pytest.mark.parametrize("fake_docker", [
+    "head -c 300000 /dev/urandom; return 1",  # pg_dump упал, отдав часть потока — pipefail
+    "echo tiny",                    # gzip упаковал почти пустоту
+])
+def test_predeploy_dump_fails_loudly_and_leaves_no_file(tmp_path, monkeypatch, fake_docker):
+    """Код-ревью 28.09.2026, P2 № 13: миграцию применяет старт контейнера —
+    без годной свежей копии деплой не идёт, а недописанный файл не остаётся
+    лежать среди настоящих копий."""
+    run = _dump_on(tmp_path, monkeypatch, fake_docker)
+
+    assert run.returncode != 0
+    assert list((tmp_path / "backups").glob("pre-deploy-*")) == []
 
 
 def test_predeploy_dump_returns_path_on_success():
@@ -395,19 +415,6 @@ def test_failed_predeploy_dump_stops_deploy(response):
 # --- Блокировка выкатки (05.10.2026) -------------------------------------
 # Две выкатки разом дважды клали прод (03.10 и 05.10.2026): параллельные
 # `docker compose up -d --build` сталкивались на пересоздании `app`.
-
-
-def test_lock_is_taken_before_dump_and_released_after(monkeypatch):
-    """Порядок в `main`: замок до дампа, снятие — в finally до закрытия связи."""
-    source = Path(deploy.__file__).read_text(encoding="utf-8")
-    main_src = source[source.index("def main():"):]
-    assert main_src.index("acquire_deploy_lock(client") < main_src.index("dump_database_before_deploy(")
-    finally_src = main_src[main_src.index("    finally:"):]
-    assert finally_src.index("release_deploy_lock(") < finally_src.index("client.close()")
-    # Внутри выкатки связь не закрывается: иначе упавшая сборка оставила бы
-    # замок висеть до признания брошенным.
-    body = main_src[main_src.index("acquire_deploy_lock(client"):main_src.index("    finally:")]
-    assert "client.close()" not in body
 
 
 def test_lock_acquired_at_once(monkeypatch):

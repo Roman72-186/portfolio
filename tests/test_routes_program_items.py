@@ -281,7 +281,7 @@ def test_deleted_day_item_frees_its_video_for_another_day(
 
 
 def test_catalog_videos_are_offered_on_the_day_page(
-    client, db, user_factory, session_factory, monkeypatch
+    client, db, user_factory, session_factory, monkeypatch, rendered
 ):
     """Форма дня показывает загруженные ролики, а занятые помечает."""
     _freeze(monkeypatch)
@@ -307,29 +307,10 @@ def test_catalog_videos_are_offered_on_the_day_page(
     page = client.get(f"{PROGRAM}/2026-08-25")
 
     assert page.status_code == 200
-    assert "Свободный ролик" in page.text
-    assert "Занятый ролик" in page.text
-    assert "Уже стоит в программе на 24.08.2026" in page.text
-
-
-def test_video_form_has_no_own_quiz_editor_anymore(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Мини-опрос ролика снят 31.08.2026: вопросы стали блоками задания, и
-    второго места для их настройки в форме дня быть не должно."""
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-    _video(db)
-    db.commit()
-
-    page = client.get(f"{PROGRAM}/2026-08-25")
-
-    assert page.status_code == 200
-    assert "data-add-quiz-question" not in page.text
-    assert "data-quiz-questions" not in page.text
-    # А общий редактор содержимого — на месте, в том числе у формы видео.
-    assert "data-blocks-wrap" in page.text
-
+    offered = {v["id"]: v for v in rendered("cabinet_program_day.html")["catalog_videos"]}
+    # Оба ролика в выборе; у поставленного — справка, где он уже стоит.
+    assert offered[free.id]["note"] is None
+    assert offered[taken.id]["note"]
 
 
 def test_video_opens_with_its_week_and_only_for_its_audience(

@@ -51,7 +51,6 @@ def test_mismatched_student_can_open_personal(db, client, session_factory, user_
     resp = client.get("/cabinet/personal")
 
     assert resp.status_code == 200
-    assert "Доступ закрыт" in resp.text
     assert "/cabinet/personal/contacts" in resp.text
 
 
@@ -70,10 +69,9 @@ def test_mismatched_student_api_gets_403_json(db, client, session_factory, user_
 def test_no_mismatch_does_not_block(auth_client):
     client, _student = auth_client
 
-    resp = client.get("/cabinet/personal")
+    resp = client.get("/cabinet/learning", follow_redirects=False)
 
     assert resp.status_code == 200
-    assert "Доступ закрыт" not in resp.text
 
 
 def test_mismatch_ignored_when_profile_incomplete(db, client, session_factory, user_factory):

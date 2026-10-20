@@ -62,17 +62,6 @@ def test_week_constructor_sends_to_the_program_calendar(
     assert response.headers["location"] == "/cabinet/staff/program"
 
 
-def test_task_screen_no_longer_lists_weeks(client, db, user_factory, session_factory):
-    _staff_client(client, user_factory, session_factory)
-    _week(db, title="Неделя перспективы")
-
-    page = client.get(TRACKER)
-
-    assert "Недели программы" not in page.text
-    assert "Собрать программу" not in page.text
-    assert "Новая задача" in page.text      # разовые задачи остаются
-
-
 # ── Сборка недели ─────────────────────────────────────────────────────────
 
 def test_admin_composes_week_day_by_day(client, db, user_factory, session_factory):

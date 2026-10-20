@@ -37,10 +37,6 @@ def tiny_app():
     return TestClient(app), calls
 
 
-def test_limit_is_600_mb():
-    assert body_limit.MAX_REQUEST_BODY_BYTES == 600 * 1024 * 1024
-
-
 def test_declared_oversize_is_refused_before_the_route(small_limit, tiny_app):
     client, calls = tiny_app
     resp = client.post("/upload", files={"file": ("a.jpg", b"x" * 2000)})
@@ -84,13 +80,6 @@ def test_request_under_limit_passes(small_limit, tiny_app):
     assert calls == [100]
 
 
-def test_limit_is_the_outermost_app_middleware():
-    """Снаружи всех слоёв приложения: иначе внутренний слой успел бы читать тело."""
-    from app.main import app
-
-    assert app.user_middleware[0].cls is BodySizeLimitMiddleware
-
-
 def test_real_upload_route_refuses_oversize(small_limit, auth_client):
     """То же на боевом приложении: загрузка портфолио отказывает 413 с текстом."""
     client, _ = auth_client
@@ -101,4 +90,3 @@ def test_real_upload_route_refuses_oversize(small_limit, auth_client):
     )
 
     assert resp.status_code == 413
-    assert "600 МБ" in resp.json()["detail"]

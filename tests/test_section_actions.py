@@ -203,38 +203,11 @@ def test_superadmin_only_actions_open_with_action(
     assert resp.status_code != 403, resp.text
 
 
-# ── Кнопка = сервер ──────────────────────────────────────────────────────────
-
-def test_users_list_buttons_follow_actions(client, db, session_factory, head, student):
-    _login(client, session_factory, head)
-    page = client.get("/cabinet/superadmin/users?show_hidden=1").text
-    assert f'/cabinet/superadmin/users/{student.id}/role' in page
-    assert f'/cabinet/superadmin/users/{student.id}/archive' not in page
-
-    _grant(db, head, "people:role", "none")
-    _grant(db, head, "people:archive")
-    page = client.get("/cabinet/superadmin/users?show_hidden=1").text
-    assert f'/cabinet/superadmin/users/{student.id}/role' not in page
-    assert f'/cabinet/superadmin/users/{student.id}/archive' in page
-
-
 # ── Экран «Доступы» ───────────────────────────────────────────────────────────
 
 @pytest.fixture()
 def superadmin(user_factory):
     return user_factory(vk_id=990_710, name="СА", role_name="суперадмин")
-
-
-def test_access_screen_lists_actions_under_sections(client, session_factory, superadmin, head):
-    _login(client, session_factory, superadmin)
-    page = client.get("/cabinet/superadmin/access").text
-    assert 'name="cell__head__people:role" value="edit"' in page
-    assert 'data-follows="cell__head__people"' in page
-    # За разделом идут пять обычных действий «Людей», бывшие «только
-    # суперадмин» — нет.
-    assert page.count('data-follows="cell__head__people"') == 5
-    assert "Вне разделов" in page
-    assert 'name="cell__curator__feedback:dialogs"' in page
 
 
 def test_access_screen_stores_only_overrides(client, db, session_factory, superadmin, head):

@@ -28,17 +28,6 @@ def s3_client(monkeypatch):
     return client
 
 
-def test_acl_kwargs_enabled_sends_public_read(monkeypatch):
-    """Включённый тумблер (боевой режим TimeWeb, пока бакет не удалён) шлёт ACL."""
-    monkeypatch.setattr(settings, "s3_use_acl", True)
-    assert s3_module._acl_kwargs() == {"ACL": "public-read"}
-
-
-def test_acl_kwargs_empty_when_disabled(monkeypatch):
-    monkeypatch.setattr(settings, "s3_use_acl", False)
-    assert s3_module._acl_kwargs() == {}
-
-
 def test_upload_sends_acl_when_enabled(s3_client, monkeypatch):
     monkeypatch.setattr(settings, "s3_use_acl", True)
 

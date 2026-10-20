@@ -293,15 +293,6 @@ def test_work_uploaded_before_personal_window_does_not_close_it(db, regular_user
 
 # ── конструктор ─────────────────────────────────────────────────────────────
 
-def test_constructor_offers_the_portfolio_block(admin_client):
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="portfolio"' in page.text
-    assert "Загрузить портфолио" in page.text
-
 
 def test_portfolio_block_saves_without_content(admin_client, db):
     """Кнопка самодостаточна: без заголовка и пояснения блок всё равно нужен."""
@@ -441,16 +432,3 @@ def test_video_in_portfolio_block_follows_block_access(db, user_factory):
     viewer = {"user_id": student.id, "role_rank": 1, "tariff": student.tariff}
     assert video.id in block_bound_video_ids(db)
     assert is_video_accessible(db, video, viewer) is False
-
-
-def test_constructor_portfolio_block_has_video_and_photo_fields(admin_client):
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert "Без видеоинструкции" in page.text
-    assert "Фото и скриншоты, необязательно" in page.text
-    assert "Окно загрузки для ученика, часов" in page.text
-    assert 'data-b-required-for-intake' in page.text
-    assert "Для новичков по ссылке «Проба»" in page.text

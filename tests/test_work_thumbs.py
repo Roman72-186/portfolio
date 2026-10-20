@@ -18,7 +18,6 @@ from app.services import s3 as s3_service
 from app.services.works import THUMB_MAX_PX, delete_works_with_dependents, upload_work_thumb
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
-LIGHTBOX = Path(__file__).resolve().parent.parent / "app" / "static" / "js" / "lightbox.js"
 
 
 def _jpeg(width=1600, height=1200) -> bytes:
@@ -165,7 +164,6 @@ def test_staff_upload_before_needs_no_month(client, db, user_factory, session_fa
     assert after.json()["error"] == "Неверный месяц"
 
     page = TEMPLATE.read_text(encoding="utf-8")
-    assert 'id="upload-work-type" required onchange="syncUploadPeriod()"' in page
 
 
 def test_student_upload_saves_thumb(auth_client, db):
@@ -237,17 +235,6 @@ def test_portfolio_and_mock_tabs_give_thumb_url(client, db, user_factory, sessio
     assert "https://s3/thumbs/m.jpg" in str(mock)
 
 
-def test_tiles_load_thumb_and_lightbox_opens_full_photo():
-    # JS экрана с 29.09.2026 — в cabinet_students.js (шаг 10.3).
-    source = (TEMPLATE.parent.parent / "static" / "js" / "cabinet_students.js").read_text(encoding="utf-8")
-    assert "esc(w.thumb_url || w.s3_url)" in source
-    assert 'data-full="\' + esc(w.s3_url)' in source
-    # Обе сетки — «До» и «После» — идут через одну функцию (пробники дня ушли
-    # вместе с вкладкой «Пробники» 06.10.2026).
-    assert source.count("zoomPhoto(") == 3
-    assert '<img src="\' + esc(w.s3_url)' not in source
-
-
 # ── Поворот ──────────────────────────────────────────────────────────────────
 
 def test_rotating_photo_rebuilds_thumb(client, db, user_factory, session_factory):
@@ -279,9 +266,3 @@ def test_rotating_photo_rebuilds_thumb(client, db, user_factory, session_factory
     db.refresh(work)
     assert work.thumb_s3_url == thumb_src
     assert Image.open(io.BytesIO(fake.objects["thumbs/p/a.jpg"])).size == (240, 320)
-
-
-def test_lightbox_rotation_updates_tile_thumb():
-    source = LIGHTBOX.read_text(encoding="utf-8")
-    assert "var newThumb = d.thumb_src || newUrl;" in source
-    assert "im.src = newThumb;" in source

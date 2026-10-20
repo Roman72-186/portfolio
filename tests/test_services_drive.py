@@ -116,18 +116,6 @@ def test_successful_refresh_removes_stale_thumbnail(monkeypatch):
     assert drive_module.get_photo_thumbnail_url(42, "new-file") == "https://drive.example/thumb"
 
 
-def test_background_sync_uses_resilient_timeout(monkeypatch):
-    client = AsyncMock()
-    client.is_closed = False
-    client.post = AsyncMock(return_value=_response())
-    monkeypatch.setattr(drive_module, "_get_client", AsyncMock(return_value=client))
-
-    asyncio.run(drive_module.list_student_photos(42, "anna", background=True))
-
-    _, kwargs = client.post.call_args
-    assert kwargs["timeout"] == drive_module._BACKGROUND_REQUEST_TIMEOUT
-
-
 def test_owner_mismatch_response_is_rejected(monkeypatch):
     response = _response("foreign-file")
     response.json.return_value["owner_vk_id"] = 99

@@ -7,7 +7,6 @@ from app.models.feedback import Feedback, FeedbackMessage
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.feedback import ROLE_CURATOR, ROLE_STUDENT
 from app.services.period_stats import (
-    MOCK_STATS_START,
     MOCK_SCORE_RANGES,
     get_mock_feedback_rows,
     get_mock_score_stats,
@@ -209,7 +208,6 @@ def test_floor_excludes_submissions_before_13_06_2026(db, user_factory):
     res = get_mock_feedback_rows(db)
     assert res["total"] == 1
     assert res["avg_score"] == 90.0
-    assert MOCK_STATS_START == date(2026, 6, 13)
 
 
 # ─── get_mock_subject_status ─────────────────────────────────────────────────

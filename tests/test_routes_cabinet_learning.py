@@ -9,24 +9,23 @@
 
 План — plans/2026-09-06-apparchi-block-feed-replaces-week-tabs.md, этап 2.
 """
-import pathlib
-import re
 from datetime import timedelta, timezone
 
-import pytest
 
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
-from app.models.learning_video import LearningVideo
 from app.models.task_block import BLOCK_TEXT, TaskBlock
+from app.models.tracker import STATUS_DONE
+from app.services.cycle_feed import (
+    LOCK_BY_CLOSED,
+    LOCK_BY_DATE,
+    LOCK_BY_SEQUENCE,
+    STATUS_CURRENT,
+    STATUS_LOCKED,
+)
 from app.services.program import day_bounds, week_start
 from app.services.task_blocks import close_block_for_user
 from app.services.tracker import create_task
 from app.services.tz import now_msk, today_msk
-
-TRACKER_CSS = (
-    pathlib.Path(__file__).parent.parent / "app" / "static" / "css" / "tracker.css"
-).read_text(encoding="utf-8")
-
 
 def _topic(db, owner, *, assign_to_all=True, opens_in_days=-1, is_published=True,
            title="Неделя 1", meeting_url=None, kind=TOPIC_KIND_WEEK, ends_in_days=None):
@@ -70,6 +69,20 @@ def _block(db, task, *, title, order=0, is_required=True, block_type=BLOCK_TEXT)
     return block
 
 
+def _feed(client, rendered, url="/cabinet/learning"):
+    """Данные ленты, которые роут отдал в шаблон."""
+    assert client.get(url).status_code == 200
+    return rendered("cabinet_learning.html")
+
+
+def _steps(page):
+    """Шаги ленты по подписи: блок — своим заголовком, задание без блоков — своим."""
+    return {
+        (step["block"].title if step["block"] else step["task"].title): step
+        for step in page["feed"]["steps"]
+    }
+
+
 # ── доступ ──────────────────────────────────────────────────────────────────
 
 def test_learning_without_auth_redirects(client):
@@ -90,40 +103,6 @@ def test_learning_redirects_to_profile_when_incomplete(client, user_factory, ses
 
 # ── каркас экрана ───────────────────────────────────────────────────────────
 
-def test_learning_never_shows_the_old_no_week_banner(auth_client):
-    """Решение владельца 25.08.2026: баннер вводил в заблуждение, когда задачи
-    у ученика есть, а рамка вокруг них не заведена. Лента, как и вкладки до
-    неё, строится без цикла — на дефолтном заголовке."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/learning")
-    assert resp.status_code == 200
-    assert "Пока нет ни одной доступной вам недели" not in resp.text
-    assert "Актуальное образовательное пространство" in resp.text
-
-
-def test_learning_welcome_query_opens_onboarding_guide(auth_client):
-    client, _ = auth_client
-
-    regular = client.get("/cabinet/learning")
-    welcome = client.get("/cabinet/learning?welcome=1")
-
-    assert 'id="studentOnboardingGuide"' in welcome.text
-    assert 'class="obg-modal is-open"' in welcome.text
-    assert 'aria-hidden="false"' in welcome.text
-    assert 'class="obg-modal is-open"' not in regular.text
-    assert "Как проходить задания" in welcome.text
-
-
-def test_learning_has_no_week_tabs_anymore(auth_client, db):
-    """Восемь вкладок сняты решением владельца 06.09.2026 — «никаких вкладок,
-    только конструктор с фильтрами»."""
-    client, user = auth_client
-    _task(db, user, title="Задание")
-
-    resp = client.get("/cabinet/learning")
-    assert 'class="lrn-tabs nav-pill"' not in resp.text
-    assert 'data-tab="homework"' not in resp.text
-
 
 def test_learning_shows_cycle_title(auth_client, db):
     """Период задан явно: без `ends_at` тема считается прежней неделей
@@ -138,16 +117,6 @@ def test_learning_shows_cycle_title(auth_client, db):
     assert "Цикл про композицию" in resp.text
 
 
-def test_learning_bottom_nav_highlights_learning_tab(auth_client, db):
-    client, user = auth_client
-    _topic(db, user)
-
-    resp = client.get("/cabinet/learning")
-    assert resp.status_code == 200
-    assert 'href="/cabinet/learning"' in resp.text
-    assert 'class="bottom-nav"' in resp.text
-
-
 # ── лента ───────────────────────────────────────────────────────────────────
 
 def test_learning_shows_task_of_the_current_period(auth_client, db):
@@ -157,24 +126,6 @@ def test_learning_shows_task_of_the_current_period(auth_client, db):
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
     assert "Сдать эскиз" in resp.text
-    assert 'class="lrn-feed"' in resp.text
-
-
-def test_learning_hides_item_kind_from_student(auth_client, db):
-    """Тип элемента — поле преподавателя, ученику его не показывают (решение
-    владельца 13.09.2026: в ленте шли «Материал, Материал, Материал» вместо
-    названий). Название и описание остаются."""
-    client, user = auth_client
-    _task(db, user, title="Архитектурное эскизирование", kind="material")
-
-    resp = client.get("/cabinet/learning")
-    assert resp.status_code == 200
-    assert "Архитектурное эскизирование" in resp.text
-    # Проверяем ярлык целиком (`>Материал<`), а не подстроку: на этой же
-    # странице живёт `partials/task_action.html` со словами «Материалы
-    # задания», и голая подстрока падала бы из-за него, а не из-за бейджа.
-    assert ">Материал<" not in resp.text
-    assert ">Видеоматериал<" not in resp.text
 
 
 def test_learning_task_outside_the_period_not_shown(auth_client, db):
@@ -195,7 +146,7 @@ def test_learning_blocks_follow_the_teacher_order(auth_client, db):
     assert resp.text.index("Первый шаг") < resp.text.index("Второй шаг")
 
 
-def test_learning_locks_the_step_after_an_unfinished_one(auth_client, db):
+def test_learning_locks_the_step_after_an_unfinished_one(auth_client, db, rendered):
     """То, что раньше держала блокировка вкладок: следующий шаг закрыт, пока
     не сделан предыдущий."""
     client, user = auth_client
@@ -205,35 +156,35 @@ def test_learning_locks_the_step_after_an_unfinished_one(auth_client, db):
     _block(db, task, title="Первый шаг", order=1, block_type="upload")
     _block(db, task, title="Второй шаг", order=2)
 
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--current" in resp.text
-    assert "lrn-step--locked" in resp.text
-    assert "Откроется, когда будет сделано предыдущее" in resp.text
+    steps = _steps(_feed(client, rendered))
+    assert steps["Первый шаг"]["status"] == STATUS_CURRENT
+    assert steps["Второй шаг"]["status"] == STATUS_LOCKED
+    assert steps["Второй шаг"]["lock_reason"] == LOCK_BY_SEQUENCE
 
 
-def test_learning_tells_the_hour_a_step_opens(auth_client, db):
-    """«Откроется 23.09.2026 в 10:00» — с временем, а не только датой.
+def test_learning_tells_the_hour_a_step_opens(auth_client, db, rendered):
+    """Шаг ждёт даты — и дата открытия сохраняет час, а не только день.
 
-    До 27.09.2026 открытие всегда приходилось на полночь, шаблон печатал
-    `strftime('%d.%m.%Y')`, и время суток терять было нечего. Теперь
+    До 27.09.2026 открытие всегда приходилось на полночь. Теперь
     преподаватель ставит час, и ученик должен видеть именно его.
     """
     client, user = auth_client
     task = _task(db, user, title="Задание")
     block = _block(db, task, title="Теория", order=1)
-    # 10:00 МСК = 07:00 UTC.
-    block.opens_at = (now_msk() + timedelta(days=2)).replace(
-        hour=10, minute=0, second=0, microsecond=0
-    ).astimezone(timezone.utc)
+    opens_at = (now_msk() + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+    block.opens_at = opens_at.astimezone(timezone.utc)
     db.commit()
 
-    resp = client.get("/cabinet/learning")
+    step = _steps(_feed(client, rendered))["Теория"]
+    assert step["status"] == STATUS_LOCKED
+    assert step["lock_reason"] == LOCK_BY_DATE
+    shown = step["opens_on"]
+    if shown.tzinfo is None:
+        shown = shown.replace(tzinfo=timezone.utc)
+    assert shown.astimezone(opens_at.tzinfo) == opens_at
 
-    expected = block.opens_at.astimezone(now_msk().tzinfo).strftime("%d.%m.%Y в %H:%M")
-    assert f"Откроется {expected}" in resp.text
 
-
-def test_learning_done_step_opens_the_next(auth_client, db):
+def test_learning_done_step_opens_the_next(auth_client, db, rendered):
     client, user = auth_client
     task = _task(db, user, title="Задание")
     first = _block(db, task, title="Первый шаг", order=1)
@@ -241,38 +192,12 @@ def test_learning_done_step_opens_the_next(auth_client, db):
     close_block_for_user(db, block=first, user_id=user.id, source="manual")
     db.commit()
 
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--done" in resp.text
-    assert "lrn-step--locked" not in resp.text
+    steps = _steps(_feed(client, rendered))
+    assert steps["Первый шаг"]["status"] == STATUS_DONE
+    assert steps["Второй шаг"]["status"] == STATUS_CURRENT
 
 
-
-def test_done_step_has_a_show_button_and_the_page_handles_it(auth_client, db):
-    """Выполненный шаг свёрнут и раскрывается кнопкой, а не наведением
-    (аудит 30.09.2026, находка 5): у кнопки `aria-expanded` и `aria-controls`
-    на тело своего шага; у невыполненного шага кнопки нет — там нечего
-    раскрывать."""
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    first = _block(db, task, title="Первый шаг", order=1)
-    second = _block(db, task, title="Второй шаг", order=2)
-    close_block_for_user(db, block=first, user_id=user.id, source="manual")
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-
-    assert re.search(
-        r'<button type="button" class="lrn-step-toggle"[^>]*'
-        rf'aria-expanded="false"[^>]*aria-controls="lrn-body-{first.id}"',
-        resp.text,
-    )
-    assert f'id="lrn-body-{first.id}"' in resp.text
-    assert f'aria-controls="lrn-body-{second.id}"' not in resp.text
-    assert resp.text.count('class="lrn-step-toggle"') == 1
-    assert "function lrnToggleStep(" in resp.text
-
-
-def test_learning_shows_progress_counter(auth_client, db):
+def test_learning_shows_progress_counter(auth_client, db, rendered):
     client, user = auth_client
     task = _task(db, user, title="Задание")
     first = _block(db, task, title="Первый шаг", order=1)
@@ -280,66 +205,21 @@ def test_learning_shows_progress_counter(auth_client, db):
     close_block_for_user(db, block=first, user_id=user.id, source="manual")
     db.commit()
 
-    resp = client.get("/cabinet/learning")
-    assert "Сделано 1 из 2" in resp.text
+    feed = _feed(client, rendered)["feed"]
+    assert (feed["done_count"], feed["total_count"]) == (1, 2)
 
 
-def test_learning_closed_block_shows_curator_message(auth_client, db):
-    """«27 сентября в 23:30 закрывается доступ» с текстом куратора вместо
-    стандартной фразы — свой текст должен перекрыть шаблонную «Доступ закрыт»."""
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    block = _block(db, task, title="Модуль", order=1, is_required=False)
-    block.closes_at = now_msk().astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
-    block.locked_message = "Пока проверь чат-комьюнити в телеграмме."
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--locked" in resp.text
-    assert "Пока проверь чат-комьюнити в телеграмме." in resp.text
-
-
-def test_learning_closed_block_without_message_shows_default(auth_client, db):
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    block = _block(db, task, title="Модуль", order=1, is_required=False)
-    block.closes_at = now_msk().astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    assert "Доступ закрыт." in resp.text
-
-
-def test_learning_optional_block_does_not_lock_the_tail(auth_client, db):
+def test_learning_optional_block_does_not_lock_the_tail(auth_client, db, rendered):
     client, user = auth_client
     task = _task(db, user, title="Задание")
     _block(db, task, title="Необязательный", order=1, is_required=False)
     _block(db, task, title="Следующий", order=2)
 
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--locked" not in resp.text
+    steps = _steps(_feed(client, rendered))
+    assert steps["Следующий"]["status"] == STATUS_CURRENT
 
 
 # ── задачи без блоков ───────────────────────────────────────────────────────
-
-def test_learning_video_task_expands_inline_instead_of_linking_away(auth_client, db):
-    """Инлайн-показ ролика (владелец 29.08) в ленте сохраняется: карточка
-    задачи без блоков раскрывается на месте, а не уводит на отдельный экран."""
-    client, user = auth_client
-    video = LearningVideo(
-        bunny_library_id=1, bunny_video_id="vid-1", title="Урок",
-        is_published=True, status="ready",
-    )
-    db.add(video)
-    db.flush()
-    task = _task(db, user, title="Посмотреть урок", kind="video")
-    task.source_kind = "learning_video"
-    task.source_id = video.id
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    assert "Посмотреть урок" in resp.text
-    assert 'href="/cabinet/videos/' not in resp.text
 
 
 def test_learning_video_task_closes_only_by_watch(auth_client, db):
@@ -353,7 +233,7 @@ def test_learning_video_task_closes_only_by_watch(auth_client, db):
     assert f'data-toggle-task="{task.id}"' not in resp.text
 
 
-def test_learning_task_without_blocks_locks_the_tail(auth_client, db):
+def test_learning_task_without_blocks_locks_the_tail(auth_client, db, rendered):
     client, user = auth_client
     _task(db, user, title="Видео", kind="video",
           day=week_start(today_msk()) + timedelta(days=1))
@@ -361,11 +241,12 @@ def test_learning_task_without_blocks_locks_the_tail(auth_client, db):
                   day=week_start(today_msk()) + timedelta(days=3))
     _block(db, later, title="Шаг материала", order=1)
 
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--locked" in resp.text
+    steps = _steps(_feed(client, rendered))
+    assert steps["Видео"]["status"] == STATUS_CURRENT
+    assert steps["Шаг материала"]["lock_reason"] == LOCK_BY_SEQUENCE
 
 
-def test_learning_mock_exam_does_not_lock_the_tail(auth_client, db):
+def test_learning_mock_exam_does_not_lock_the_tail(auth_client, db, rendered):
     """Билет Пробника блокирует месяц, а не цикл (решение владельца 23.08)."""
     client, user = auth_client
     _task(db, user, title="Пробник", kind="mock_exam",
@@ -374,8 +255,8 @@ def test_learning_mock_exam_does_not_lock_the_tail(auth_client, db):
                   day=week_start(today_msk()) + timedelta(days=3))
     _block(db, later, title="Шаг материала", order=1)
 
-    resp = client.get("/cabinet/learning")
-    assert "lrn-step--locked" not in resp.text
+    steps = _steps(_feed(client, rendered))
+    assert steps["Шаг материала"]["status"] == STATUS_CURRENT
 
 
 # ── адресация и предмет ─────────────────────────────────────────────────────
@@ -390,53 +271,10 @@ def test_learning_ignores_program_item_topics(auth_client, db):
     assert "Служебная тема" not in resp.text
 
 
-def test_learning_marks_task_subject_for_the_switch(auth_client, db):
-    client, user = auth_client
-    task = _task(db, user, title="Работа по рисунку")
-    task.subject = "Рисунок"
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    assert 'data-subject="Рисунок"' in resp.text
-    assert 'class="lrn-subject-toggle"' in resp.text
-
-
-def test_task_query_focuses_task_and_activates_its_subject(auth_client, db):
-    client, user = auth_client
-    first = _task(db, user, title="Рисунок", kind="material", order=0)
-    first.subject = "Рисунок"
-    _block(db, first, title="Шаг рисунка")
-    target = _task(db, user, title="Композиция", kind="material", order=1)
-    target.subject = "Композиция"
-    _block(db, target, title="Шаг композиции")
-    db.commit()
-
-    resp = client.get(f"/cabinet/learning?task={target.id}")
-
-    assert f'id="learning-task-{target.id}" tabindex="-1"' in resp.text
-    assert re.search(
-        r'class="lrn-subject-btn active"[^>]*data-subject="Композиция"',
-        resp.text,
-    )
-    assert f"var focusTaskId = {target.id};" in resp.text
-
-
-def test_regular_task_completion_is_only_in_learning(auth_client, db):
-    client, user = auth_client
-    task = _task(db, user, title="Материал", kind="material")
-    _block(db, task, title="Последний шаг")
-
-    resp = client.get("/cabinet/learning")
-
-    assert resp.text.count(f'data-toggle-task="{task.id}"') == 1
-    assert "Завершить задание" in resp.text
-    assert "task-completion.js?v=" in resp.text
-
-
-def test_completion_button_is_off_with_reason_until_questions_answered(auth_client, db):
+def test_completion_button_is_off_with_reason_until_questions_answered(auth_client, db, rendered):
     """Аудит АОП 30.09.2026, находка 2: до ответа на вопросы «Завершить задание»
     была активной, сервер отвечал 409, а ученик читал «Не получилось» и жал снова.
-    Теперь кнопка выключена, причина подписана — по тому же правилу, что у сервера."""
+    Теперь кнопка выключена с причиной — по тому же правилу, что у сервера."""
     from app.models.task_block import BLOCK_QUESTION, BLOCK_UPLOAD, QUESTION_TEXT
 
     client, user = auth_client
@@ -449,35 +287,27 @@ def test_completion_button_is_off_with_reason_until_questions_answered(auth_clie
         body="Как прошло?", sort_order=0, is_required=False,
     )
     # Второй невыполненный шаг — иначе ответ на единственный вопрос закрыл бы
-    # задание сам («закрывается само», 30.09.2026) и кнопка стала бы «выполнено».
+    # задание сам («закрывается само», 30.09.2026).
     db.add_all([question, TaskBlock(
         task_id=task.id, block_type=BLOCK_UPLOAD, body="Сдай работу",
         sort_order=1, is_required=False,
     )])
     db.commit()
 
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
-    assert "disabled" in button
-    assert f'aria-describedby="task-completion-note-{task.id}"' in button
-    assert (
-        f'<p class="lrn-card-note" id="task-completion-note-{task.id}">'
-        "Сначала ответь на вопросы задания</p>"
-    ) in html
-    # Тот же текст отдаёт и сама кнопка — одно правило на оба места.
+    reason = _feed(client, rendered)["completion_blockers"][task.id]
+    assert reason
+    # Экран и сервер отказывают по одному правилу.
     blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
-    assert blocked.json()["detail"] == "Сначала ответь на вопросы задания"
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == reason
 
     answered = client.post(
         f"/cabinet/tracker/tasks/{task.id}/blocks",
         json={"answers": [{"block_id": question.id, "text": "Хорошо"}]},
     )
     assert answered.status_code == 200, answered.text
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
-    assert "disabled" not in button
-    assert f"task-completion-note-{task.id}" not in html
-
+    assert not _feed(client, rendered)["completion_blockers"].get(task.id)
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
 
 
 def _task_with_upload(db, user, *, title, upload_required):
@@ -498,40 +328,36 @@ def _task_with_upload(db, user, *, title, upload_required):
     return task, upload
 
 
-def test_completion_button_hidden_where_the_task_closes_itself(auth_client, db):
+def test_completion_button_hidden_where_the_task_closes_itself(auth_client, db, rendered):
     """Владелец 01.10.2026 (аудит АОП, находка 8): «убираем лишнюю». Все шаги
-    задания обязательные — оно закроется само, кнопки нет; закрылось — видна
-    отметка «Задание выполнено»."""
+    задания обязательные — оно закроется само, кнопки нет."""
     client, user = auth_client
     task, upload = _task_with_upload(db, user, title="Перспектива", upload_required=True)
 
-    html = client.get("/cabinet/learning").text
-    assert f'data-toggle-task="{task.id}"' not in html
-    # Сервер по-прежнему принимает ручное закрытие: прятать — не запрещать.
+    assert task.id in _feed(client, rendered)["completion_hidden"]
     close_block_for_user(db, upload, user.id, source="upload")
     db.commit()
 
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
-    assert button and button.group(1) == "Задание выполнено"
+    step = next(s for s in _feed(client, rendered)["feed"]["steps"] if s["task"].id == task.id)
+    assert step["entry"]["status"] == STATUS_DONE
 
 
-def test_completion_button_stays_for_an_optional_step(auth_client, db):
+def test_completion_button_stays_for_an_optional_step(auth_client, db, rendered):
     """Необязательный шаг автозакрытие тоже ждёт: без кнопки ученику пришлось бы
     делать необязательное, чтобы закрыть задание."""
     client, user = auth_client
     task, _ = _task_with_upload(db, user, title="Перспектива", upload_required=False)
 
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
-    assert button and button.group(1) == "Завершить задание"
+    page = _feed(client, rendered)
+    assert task.id not in page["completion_hidden"]
+    assert not page["completion_blockers"].get(task.id)
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
 
 
-def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db):
+def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db, rendered):
     """Страховка от тупика: шаги отмечены, а задание открыто (отметки до
     автозакрытия 30.09.2026) — кнопка возвращается."""
     from app.models.task_block import TaskBlockState
-    from app.models.tracker import STATUS_DONE
 
     client, user = auth_client
     task, upload = _task_with_upload(db, user, title="Перспектива", upload_required=True)
@@ -539,9 +365,10 @@ def test_completion_button_returns_when_steps_done_but_task_open(auth_client, db
     db.add(TaskBlockState(block_id=upload.id, user_id=user.id, status=STATUS_DONE))
     db.commit()
 
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>([^<]*)<', html)
-    assert button and button.group(1) == "Завершить задание"
+    page = _feed(client, rendered)
+    assert task.id not in page["completion_hidden"]
+    assert not page["completion_blockers"].get(task.id)
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
 
 
 def _task_with_required_and_optional_step(db, user):
@@ -567,35 +394,23 @@ def _task_with_required_and_optional_step(db, user):
 
 def test_completion_button_waits_for_required_steps(auth_client, db):
     """Владелец 01.10.2026: «Завершить задание закрывает, даже когда задания не
-    выполнены». Кнопка смотрела только на вопросы — ученик закрывал задание с
-    несданной обязательной работой и снимал этим долг цикла. Теперь она выключена
-    с названием шага, сервер отказывает тем же текстом; необязательный ролик
-    по-прежнему можно пропустить. С 11.10.2026 пропускать его кнопкой не
-    нужно: сданное обязательное закрывает задание само (необязательное проход
-    не держит), и кнопка пропадает."""
+    выполнены». Ученик закрывал задание с несданной обязательной работой и
+    снимал этим долг цикла. Теперь сервер отказывает, пока она не сдана;
+    необязательный ролик проход не держит, и сданная работа закрывает задание
+    сама (11.10.2026)."""
     from app.models.tracker import TrackerTaskState
 
     client, user = auth_client
     task, upload = _task_with_required_and_optional_step(db, user)
-    reason = "Сначала сделай обязательный шаг: Домашнее задание"
 
-    # Кнопки нет: задание закроется само, как только сдана работа
-    # (`completion_button_needed`). Ручной запрос сервер отвергает с причиной.
-    html = client.get("/cabinet/learning").text
-    assert f'data-toggle-task="{task.id}"' not in html
     blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
     assert blocked.status_code == 409
-    assert blocked.json()["detail"] == reason
 
     close_block_for_user(db, upload, user.id, source="upload")
     db.commit()
 
     state = db.query(TrackerTaskState).filter_by(task_id=task.id, user_id=user.id).one()
     assert state.status == "done" and state.completion_source == "required_done"
-    # Закрытое задание — та же кнопка в нажатом виде: «Задание выполнено».
-    html = client.get("/cabinet/learning").text
-    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
-    assert 'aria-pressed="true"' in button
 
 
 def test_completion_button_ignores_a_required_step_that_closed_for_good(auth_client, db):
@@ -610,11 +425,10 @@ def test_completion_button_ignores_a_required_step_that_closed_for_good(auth_cli
     assert toggle.status_code == 200, toggle.text
 
 
-def test_closed_task_counts_its_text_and_link_as_done(auth_client, db):
+def test_closed_task_counts_its_text_and_link_as_done(auth_client, db, rendered):
     """Аудит АОП ученика, находка 3 (владелец 01.10.2026, вариант «а»): текст и
     ссылку отметить нечем, поэтому они «сделаны», когда закрыто задание. До этого
-    задание из текста и ссылки, закрытое кнопкой, давало «Сделано 0 из 2», а его
-    шаги не сворачивались и были без отметки."""
+    задание из текста и ссылки, закрытое кнопкой, давало «Сделано 0 из 2»."""
     from app.models.task_block import BLOCK_LINK
 
     client, user = auth_client
@@ -627,114 +441,14 @@ def test_closed_task_counts_its_text_and_link_as_done(auth_client, db):
     ))
     db.commit()
 
-    html = client.get("/cabinet/learning").text
-    assert "Сделано 0 из 2" in html
-    assert "lrn-step--done" not in html
+    feed = _feed(client, rendered)["feed"]
+    assert (feed["done_count"], feed["total_count"]) == (0, 2)
 
     closed = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
     assert closed.status_code == 200, closed.text
-    html = client.get("/cabinet/learning").text
-    assert "Сделано 2 из 2" in html
-    assert html.count('class="lrn-step lrn-step--done"') == 2
-    assert html.count("trk-badge--done") == 2
-    assert html.count('class="lrn-step-toggle"') == 2
-
-def test_completion_script_shows_the_server_reason():
-    """Запасной путь: если сервер всё же откажет, ученик видит его причину, а не
-    «Не получилось. Попробовать ещё раз»."""
-    script = (
-        pathlib.Path(__file__).parent.parent / "app" / "static" / "js" / "task-completion.js"
-    ).read_text(encoding="utf-8")
-    assert "data.detail" in script
-    assert "Не получилось. Попробовать ещё раз" not in script
-
-
-def test_learning_hides_the_switch_without_subjects(auth_client, db):
-    """Владелец 03.09.2026: «в предыдущих циклах эти кнопки не нужны — мы
-    просто не будем ставить разделение, и кнопок в принципе не будет».
-    В предобучении до 29 сентября деления на предметы нет вовсе."""
-    client, user = auth_client
-    _task(db, user, title="Общее задание")
-
-    resp = client.get("/cabinet/learning")
-    assert 'class="lrn-subject-toggle"' not in resp.text
-
-
-def test_learning_shows_three_tabs_once_any_step_has_a_subject(auth_client, db):
-    """Созвон 30.09.2026, владелец 01.10.2026: если хоть у одного задания есть
-    предмет — три вкладки «Общее», «Композиция», «Рисунок», в этом порядке,
-    даже если в цикле есть только рисунок."""
-    client, user = auth_client
-    task = _task(db, user, title="Только рисунок")
-    task.subject = "Рисунок"
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    buttons = re.findall(r'class="lrn-subject-btn[^"]*"[^>]*data-subject="([^"]*)"[^>]*>([^<]+)<', resp.text)
-    assert buttons == [("", "Общее"), ("Композиция", "Композиция"), ("Рисунок", "Рисунок")]
-
-
-def test_default_tab_is_where_the_first_unfinished_step_is(auth_client, db):
-    client, user = auth_client
-    general = _task(db, user, title="Введение в экзамен", kind="material", order=0)
-    _block(db, general, title="Введение", is_required=False)
-    drawing = _task(db, user, title="Рисунок", kind="material", order=1)
-    drawing.subject = "Рисунок"
-    _block(db, drawing, title="Шаг рисунка")
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-
-    # Первый невыполненный шаг — общее введение: открыта «Общее».
-    assert re.search(r'class="lrn-subject-btn active"[^>]*data-subject=""', resp.text)
-    assert 'aria-pressed="true"' in resp.text
-
-
-def test_locked_step_names_its_holder_and_the_holders_tab(auth_client, db):
-    """Очередь одна на весь цикл (владелец 01.10.2026): запертый шаг рисунка
-    держит общий шаг — подпись называет его и вкладку «Общее»."""
-    client, user = auth_client
-    general = _task(db, user, title="Общий блок", kind="material", order=0)
-    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
-    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
-    _block(db, general, title="Введение в экзамен", is_required=True, block_type="upload")
-    drawing = _task(db, user, title="Рисунок", kind="material", order=1)
-    drawing.subject = "Рисунок"
-    _block(db, drawing, title="Шаг рисунка")
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-
-    assert "Откроется после «Введение в экзамен» во вкладке «Общее»." in resp.text
-
-
-def test_locked_step_in_the_same_tab_names_holder_without_a_tab(auth_client, db):
-    client, user = auth_client
-    first = _task(db, user, title="Рисунок 1", kind="material", order=0)
-    first.subject = "Рисунок"
-    # Держит очередь сдача работы, а не текст: текст и ссылка обязательными
-    # не бывают (владелец 01.10.2026, `is_block_required_for_user`).
-    _block(db, first, title="Набросок", is_required=True, block_type="upload")
-    second = _task(db, user, title="Рисунок 2", kind="material", order=1)
-    second.subject = "Рисунок"
-    _block(db, second, title="Тон")
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-
-    assert "Откроется после «Набросок»." in resp.text
-    assert "во вкладке" not in resp.text
-
-
-def test_subject_filter_hides_with_its_own_attribute_not_hidden():
-    """`hidden` у карточек держат опрос и диагностика — фильтр вкладки его не
-    трогает, иначе снимал бы и раскрывал их вопросы пустыми."""
-    template = pathlib.Path("app/templates/cabinet_learning.html").read_text(encoding="utf-8")
-    script = template[template.index("function lrnApplySubjectFilter"):]
-    script = script[:script.index("function lrnRestoreSubject")]
-    assert "data-subject-off" in script
-    assert "node.hidden" not in script
-    assert ".lrn-step[data-subject-off] { display: none; }" in TRACKER_CSS
+    feed = _feed(client, rendered)["feed"]
+    assert (feed["done_count"], feed["total_count"]) == (2, 2)
+    assert [step["status"] for step in feed["steps"]] == [STATUS_DONE, STATUS_DONE]
 
 
 def test_learning_cycle_period_widens_the_window(auth_client, db):
@@ -746,20 +460,6 @@ def test_learning_cycle_period_widens_the_window(auth_client, db):
 
     resp = client.get("/cabinet/learning")
     assert "Через десять дней" in resp.text
-
-
-# ── статика ─────────────────────────────────────────────────────────────────
-
-def test_trk_row_and_lrn_step_respect_the_hidden_attribute():
-    """Фильтр предмета прячет шаги атрибутом `hidden` — CSS c `display: flex`
-    его перебивал бы, и «скрытая» карточка осталась бы на экране."""
-    assert ".lrn-step[hidden] { display: none; }" in TRACKER_CSS
-
-
-def test_tracker_css_has_no_stray_jinja_comment_terminator():
-    """`#}` внутри CSS означает, что комментарий шаблона уехал в статику."""
-    assert "#}" not in TRACKER_CSS
-
 
 # ── возврат в пройденные циклы (владелец 03.09.2026) ────────────────────────
 
@@ -773,119 +473,25 @@ def test_learning_lists_past_cycles(auth_client, db):
 
     assert "Первый цикл" in resp.text
     assert "Второй цикл" in resp.text
-    assert 'class="lrn-cycles"' in resp.text
 
 
-def test_learning_opens_a_past_cycle_read_only(auth_client, db):
+def test_learning_opens_a_past_cycle_read_only(auth_client, db, rendered):
     client, user = auth_client
     past = _topic(db, user, title="Первый цикл", opens_in_days=-20, ends_in_days=-10)
     _topic(db, user, title="Второй цикл", opens_in_days=-3, ends_in_days=10)
 
-    resp = client.get(f"/cabinet/learning?cycle={past.id}")
-
-    assert resp.status_code == 200
-    assert "Пройденный цикл" in resp.text
+    assert _feed(client, rendered, f"/cabinet/learning?cycle={past.id}")["feed"]["is_archive"] is True
 
 
-def test_learning_ignores_a_future_cycle_in_the_link(auth_client, db):
+def test_learning_ignores_a_future_cycle_in_the_link(auth_client, db, rendered):
     """Не начавшийся цикл вперёд не выдаётся, даже если номер подобрали руками."""
     client, user = auth_client
     future = _topic(db, user, title="Будущий цикл", opens_in_days=5, ends_in_days=15)
 
-    resp = client.get(f"/cabinet/learning?cycle={future.id}")
-
-    assert resp.status_code == 200
-    assert "Пройденный цикл" not in resp.text
-
-
-def test_learning_hides_cycle_chips_when_there_is_one_cycle(auth_client, db):
-    client, user = auth_client
-    _topic(db, user, title="Единственный", opens_in_days=-3, ends_in_days=10)
-
-    resp = client.get("/cabinet/learning")
-
-    assert 'class="lrn-cycles"' not in resp.text
+    assert not _feed(client, rendered, f"/cabinet/learning?cycle={future.id}")["feed"]["is_archive"]
 
 
 # ── подпись шага: ровно одна (16.09.2026) ───────────────────────────────────
-
-def test_feed_lets_the_page_print_the_block_caption(auth_client, db, served):
-    """Подпись блока печатает карточка шага, рендерер внутри блока молчит.
-
-    До 16.09.2026 её печатали оба, и ученик читал заголовок дважды подряд —
-    видно на проде в цикле «Ранний старт». Флаг `titlesOutside` уходит только
-    в ленту, JS под TestClient не исполняется, поэтому проверяем шов.
-    """
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    _block(db, task, title="Оцени себя")
-
-    resp = client.get("/cabinet/learning")
-
-    assert "titlesOutside: true" in served(resp)
-    # Сторож от «убрали дубль, убрав не ту подпись»: внешняя остаётся.
-    assert 'class="lrn-step-title"' in resp.text
-    assert "Оцени себя" in resp.text
-
-
-def test_step_titles_are_h2_right_under_the_page_h1(auth_client, db):
-    """Находка 12 аудита 30.09.2026: после H1 шапки цикла сразу шли H3 шагов —
-    читалка экрана теряла уровень. Шаг — `<h2 class="lrn-step-title">`, вид
-    держит класс, а не тег."""
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    _block(db, task, title="Оцени себя")
-
-    resp = client.get("/cabinet/learning")
-
-    assert '<h2 class="lrn-step-title">Оцени себя</h2>' in resp.text
-    assert '<h3 class="lrn-step-title">' not in resp.text
-
-
-def test_tracker_does_not_embed_task_blocks(auth_client, db):
-    """Трекер показывает превью и переход, содержимое остаётся в ленте."""
-    client, user = auth_client
-    task = _task(db, user, title="Задание")
-    _block(db, task, title="Оцени себя")
-
-    resp = client.get("/cabinet/tracker")
-
-    assert resp.status_code == 200
-    assert "lrnBlockRender.create" not in resp.text
-    assert "titlesOutside" not in resp.text
-    assert "Материалы задания" not in resp.text
-
-
-@pytest.mark.parametrize("asset", ["task-blocks-render.js?v=", "tracker.css?v="])
-def test_block_assets_are_included_at_one_version(asset):
-    """Версия файла одна на все включения.
-
-    Лента и панель задания живут на одной странице: разъезд версий — два
-    разных файла в одной вкладке. Отдельно важна версия `tracker.css` — в нём
-    правило, которое держит кружок отметки справа у блока без заголовка;
-    вернувшийся ученик со старым файлом увидит кружок слева.
-    """
-    templates = pathlib.Path(__file__).parent.parent / "app" / "templates"
-    versions = set()
-    for path in templates.rglob("*.html"):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if asset in line:
-                versions.add(line.split(asset)[1].split('"')[0])
-    assert len(versions) == 1, versions
-
-
-def test_feed_prints_the_task_name_once_for_untitled_blocks(auth_client, db):
-    """Имя задания — только над первым блоком (владелец 16.09.2026): раньше
-    его получал каждый блок без своего заголовка, и два видео подряд были
-    подписаны одинаково."""
-    client, user = auth_client
-    task = _task(db, user, title="Архитектурное эскизирование")
-    _block(db, task, title=None, order=1)
-    _block(db, task, title=None, order=2)
-
-    resp = client.get("/cabinet/learning")
-
-    assert resp.text.count("Архитектурное эскизирование") == 1
 
 
 def test_feed_still_names_a_task_without_blocks(auth_client, db):
@@ -896,3 +502,17 @@ def test_feed_still_names_a_task_without_blocks(auth_client, db):
     resp = client.get("/cabinet/learning")
 
     assert "Сдать композицию" in resp.text
+
+
+def test_learning_closed_block_is_locked_as_closed(auth_client, db, rendered):
+    """Блок, доступ к которому закрыт по календарю, ждёт не очереди и не даты:
+    подпись у него своя — текст куратора или «Доступ закрыт»."""
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    block = _block(db, task, title="Модуль", order=1, is_required=False)
+    block.closes_at = now_msk().astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    db.commit()
+
+    step = _steps(_feed(client, rendered))["Модуль"]
+    assert step["status"] == STATUS_LOCKED
+    assert step["lock_reason"] == LOCK_BY_CLOSED

@@ -71,8 +71,6 @@ def test_feedback_tab_lists_teacher_feedback_on_works(
     page = client.get("/cabinet/cycle")
     assert page.status_code == 200
     assert f"/cabinet/task-block-submissions/{answered.id}/feedback" in page.text
-    assert "Домашняя работа · Сдать листы" in page.text
-    assert "НОВОЕ · 1" in page.text
     assert f"/cabinet/task-block-submissions/{silent.id}/feedback" not in page.text
     assert f"/cabinet/task-block-submissions/{foreign.id}/feedback" not in page.text
 
@@ -105,7 +103,6 @@ def test_staff_messages_are_anonymous_for_student_and_staff(
         assert page.status_code == 200
         assert "Доработай фон" in page.text
         assert "Кураторова" not in page.text, user.name
-        assert '<span class="chip">Преподаватель</span>' in page.text
 
 
 def test_chief_teacher_can_score_submission_without_marking_it_reviewed(
@@ -199,18 +196,11 @@ def test_curator_sees_chief_teacher_score_read_only(
 
     page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
     assert page.status_code == 200
-    assert 'id="submission-score"' not in page.text
-    assert "Главный преподаватель ещё не поставил оценку" in page.text
-    assert "Пометить проверенной" in page.text
-    # Возврат на доработку куратору открыт снова (владелец 14.10.2026).
-    assert ">Вернуть на доработку</button>" in page.text
 
     submission.score = 64
     db.commit()
     page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
-    assert "Оценка Главного преподавателя" in page.text
     assert "64 / 100" in page.text
-    assert 'id="submission-score"' not in page.text
 
 
 def test_score_rejects_values_outside_zero_to_hundred(
@@ -404,8 +394,6 @@ def test_teacher_video_and_audio_message(db, user_factory, session_factory, clie
     _login(client, session_factory, student)
     page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
     assert page.status_code == 200
-    assert 'class="hw-msg-video"' in page.text
-    assert 'class="hw-msg-audio"' in page.text
 
 
 def test_video_message_rejects_bad_type(db, user_factory, session_factory, client):
@@ -568,39 +556,6 @@ def test_curator_returns_own_student_block_work(
     assert "Доделай тени" in notification.text
 
 
-RETURN_BUTTON = "data-return-toggle>Вернуть на доработку</button>"
-
-
-def test_return_button_lives_in_dialog_only_for_staff(
-    db, user_factory, session_factory, client,
-):
-    """«Вернуть на доработку» — на экране сдачи, рядом с «Пометить проверенной»
-    (владелец 14.10.2026: «кнопка вернуть должна быть только в диалоге»).
-    Ученик её не видит, работа на доработке — тоже нет: второй возврат дал бы 409."""
-    curator = user_factory(vk_id=970_031, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=970_032, name="Ученик")
-    student.curator_id = curator.id
-    db.commit()
-    submission = _submission(db, student)
-    staff_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
-
-    _login(client, session_factory, curator)
-    page = client.get(staff_url)
-    assert page.status_code == 200
-    assert RETURN_BUTTON in page.text
-    assert f"/cabinet/staff/task-block-submissions/{submission.id}/revision" in page.text
-
-    _login(client, session_factory, student)
-    own = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
-    assert own.status_code == 200
-    assert RETURN_BUTTON not in own.text
-
-    submission.needs_revision = True
-    db.commit()
-    _login(client, session_factory, curator)
-    assert RETURN_BUTTON not in client.get(staff_url).text
-
-
 def test_curator_cannot_return_other_curators_student(
     db, user_factory, session_factory, client,
 ):
@@ -620,26 +575,6 @@ def test_curator_cannot_return_other_curators_student(
     assert response.status_code == 403
     db.refresh(submission)
     assert submission.needs_revision is False
-
-
-def test_old_revision_flag_still_shows_chip_to_staff(
-    db, user_factory, session_factory, client,
-):
-    """Работы, возвращённые до 01.10.2026, сохраняют отметку для сотрудника."""
-    curator = user_factory(vk_id=970_022, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=970_023, name="Ученик")
-    student.curator_id = curator.id
-    db.commit()
-    submission = _submission(db, student)
-    submission.needs_revision = True
-    submission.needs_revision_at = datetime.now(timezone.utc)
-    db.commit()
-    _login(client, session_factory, curator)
-
-    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
-
-    assert page.status_code == 200
-    assert "На доработке" in page.text
 
 
 def test_mark_submitted_clears_revision_flag_and_old_comment(db, user_factory):

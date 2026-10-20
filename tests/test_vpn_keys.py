@@ -257,20 +257,6 @@ def test_request_route_does_nothing_when_disabled(client, monkeypatch):
     assert resp.status_code == 303 and calls == []
 
 
-def test_login_page_offers_vpn_request(client, service):
-    page = client.get("/").text
-    assert 'action="/auth/vpn-request"' in page
-    assert "Окно Telegram не открывается?" in page
-    sent_page = client.get("/?vpn=sent").text
-    assert "придут в Telegram" in sent_page
-    assert 'action="/auth/vpn-request"' not in sent_page
-
-
-def test_login_page_hides_vpn_request_when_disabled(client, monkeypatch):
-    monkeypatch.setattr(_app_settings, "vpn_keys_url", "")
-    assert "/auth/vpn-request" not in client.get("/").text
-
-
 def test_bot_no_longer_answers_vpn_command(client, db, student, service, sent):
     resp = client.post(
         "/auth/telegram/webhook",

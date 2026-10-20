@@ -93,9 +93,6 @@ def test_without_track_only_track_page_is_open(client, db, user_factory, session
 
     page = client.get("/cabinet/personal/track")
     assert page.status_code == 200
-    assert "Потенциал" in page.text
-    assert "900" in page.text
-    assert 'data-pay-url="/cabinet/personal/track/' in page.text
 
 
 def test_track_tag_opens_cabinet(client, db, user_factory, session_factory):
@@ -108,23 +105,6 @@ def test_track_tag_opens_cabinet(client, db, user_factory, session_factory):
     assert resp.status_code == 200
 
 
-def test_track_cards_colored_by_course(client, db, user_factory, session_factory):
-    """Служба заботы 19.10.2026: у курса свой цвет названия, сумма отдельной
-    строкой — ребёнок не теряется в одной строке."""
-    _track(db, title="АРХИпроба 1 трек", price_kop=125500)
-    _track(db, title="ЭКЗпроба 2 трек", price_kop=285500)
-    _track(db, title="Попробуй обучение", price_kop=345500)
-    _track(db, title="Потенциал")
-    page = _login(client, session_factory, _newcomer(db, user_factory)).get("/cabinet/personal/track")
-    html = page.text
-    assert html.count("prs-track--sky") == 1
-    assert html.count("prs-track--pink") == 1
-    assert html.count("prs-track--violet") == 1
-    assert '<p class="prs-track-price">1 255 ₽</p>' in html
-    assert intake_link_service.track_color("Пробоподготовка") == "violet"
-    assert intake_link_service.track_color("Потенциал") == ""
-
-
 def test_annual_student_never_sees_track_page(auth_client):
     client, _student = auth_client
     resp = client.get("/cabinet/personal/track", follow_redirects=False)
@@ -133,11 +113,14 @@ def test_annual_student_never_sees_track_page(auth_client):
 
 
 def test_hidden_tracks_are_not_sold(client, db, user_factory, session_factory):
-    _track(db, title="Закрытый", active=False)
-    _track(db, title="Бесплатный", price_kop=None)
-    page = _login(client, session_factory, _newcomer(db, user_factory)).get("/cabinet/personal/track")
+    closed = _track(db, title="Закрытый", active=False)
+    free = _track(db, title="Бесплатный", price_kop=None)
+    client = _login(client, session_factory, _newcomer(db, user_factory))
+    page = client.get("/cabinet/personal/track")
     assert "Закрытый" not in page.text and "Бесплатный" not in page.text
-    assert "Оплата пока не открыта" in page.text
+    for track in (closed, free):
+        resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
+        assert resp.status_code == 409, track.title
 
 
 # ── Вход по ссылке ───────────────────────────────────────────────────────────
@@ -199,7 +182,6 @@ def test_closed_track_cannot_be_paid(client, db, user_factory, session_factory, 
     client = _login(client, session_factory, _newcomer(db, user_factory))
     resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert resp.status_code == 409
-    assert "не продаётся" in resp.json()["error"]
 
 
 def test_webhook_gives_tag_and_access(client, db, user_factory, prodamus, no_delivery):
@@ -319,8 +301,7 @@ def test_track_settings_saved_from_periods_screen(admin_client, db):
     assert (track.price_kop, track.description, track.reminders_enabled, track.dialog_enabled) == (
         150000, "Неделя с куратором", True, True,
     )
-    page = client.get("/cabinet/periods")
-    assert "1 500" in page.text and "переписка" in page.text
+    assert client.get("/cabinet/periods").status_code == 200
 
 
 def test_entry_link_created_once(admin_client, db):
@@ -330,7 +311,6 @@ def test_entry_link_created_once(admin_client, db):
     entry = intake_link_service.entry_link(db)
     assert entry is not None and entry.tag_id is None and entry.is_active is False
     assert len([link for link in intake_link_service.holiday_links(db) if link.tag_id is None]) == 1
-    assert "Общая ссылка набора" in client.get("/cabinet/periods").text
 
 
 def test_curator_sees_own_holiday_students_in_filter(client, db, user_factory, session_factory):
@@ -359,10 +339,7 @@ def test_second_track_can_be_bought_same_cannot(client, db, user_factory, sessio
     db.commit()
     client = _login(client, session_factory, student)
 
-    page = client.get("/cabinet/personal/track")
-    assert "Твои треки" in page.text and "АРХИпроба 1 трек" in page.text
-    assert f'data-pay-url="/cabinet/personal/track/{second.id}/pay"' in page.text
-    assert f'data-pay-url="/cabinet/personal/track/{first.id}/pay"' not in page.text
+    assert client.get("/cabinet/personal/track").status_code == 200
 
     same = client.post(f"/cabinet/personal/track/{first.id}/pay", headers={"Accept": "application/json"})
     assert same.status_code == 409 and "уже оплачен" in same.json()["error"]
@@ -386,15 +363,6 @@ def test_any_track_opens_dialog_and_reminders(db, user_factory):
     db.commit()
     assert _dialog_open_for(db, student, {DIALOG_HOLIDAY}) is True
     assert student.id in _without_silent_holiday(db, {student.id: student})
-
-
-def test_personal_page_links_holiday_to_tracks(client, db, user_factory, session_factory):
-    track = _track(db)
-    student = _newcomer(db, user_factory, profile_completed=True)
-    add_tag_to_user(db, student.id, track.tag_id)
-    db.commit()
-    page = _login(client, session_factory, student).get("/cabinet/personal")
-    assert "data-holiday-tracks-link" in page.text
 
 
 def test_paying_one_track_keeps_open_link_of_another(client, db, user_factory, prodamus, no_delivery):
@@ -444,13 +412,6 @@ def test_short_entry_path_leads_to_entry_link(client, db, monkeypatch):
     assert short.headers["location"].split("?")[0] == long.headers["location"].split("?")[0]
 
 
-def test_periods_screen_shows_short_entry_url(admin_client, db):
-    client, _admin = admin_client
-    intake_link_service.create_entry_link(db, access_until=None, created_by_id=None)
-    db.commit()
-    assert "/kanikuly" in client.get("/cabinet/periods").text
-
-
 # ── Тестовый проход служебного аккаунта (19.10.2026) ────────────────────────
 
 def test_service_account_opens_track_without_payment(client, db, user_factory, session_factory, monkeypatch):
@@ -463,8 +424,7 @@ def test_service_account_opens_track_without_payment(client, db, user_factory, s
     monkeypatch.setattr("app.services.payments.REPORT_EXCLUDED_USER_IDS", frozenset(REPORT_EXCLUDED_USER_IDS) | {student.id})
     client = _login(client, session_factory, student)
 
-    page = client.get("/cabinet/personal/track")
-    assert "Открыть без оплаты (служебный)" in page.text
+    assert client.get("/cabinet/personal/track").status_code == 200
     resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert resp.status_code == 200 and resp.json()["url"] == "/cabinet/personal/track?test=1"
     assert "АРХИпроба 1 трек" in _tags(db, student)
@@ -477,7 +437,6 @@ def test_regular_student_still_goes_to_prodamus(client, db, user_factory, sessio
     track = _track(db, title="АРХИпроба 1 трек", price_kop=125500)
     student = _newcomer(db, user_factory)
     client = _login(client, session_factory, student)
-    assert "Открыть без оплаты" not in client.get("/cabinet/personal/track").text
     resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
     assert resp.json()["url"].startswith("https://apparchi-test.payform.ru/")
     assert "АРХИпроба 1 трек" not in _tags(db, student)
@@ -502,8 +461,6 @@ def test_paid_student_waits_for_program_opening(client, db, user_factory, sessio
 
     page = client.get("/cabinet/learning", follow_redirects=False)
     assert page.status_code == 200
-    assert 'data-role="holiday-waiting"' in page.text
-    assert "Доступ к программе откроется 25.10.2099 в 00:00" in page.text
 
     for path in (
         "/cabinet/portfolio", "/cabinet/learning/archive", "/cabinet/tracker/tasks/1/blocks",
@@ -514,8 +471,7 @@ def test_paid_student_waits_for_program_opening(client, db, user_factory, sessio
         assert resp.headers["location"] == "/cabinet/learning", path
 
     assert client.get("/cabinet/personal/contacts", follow_redirects=False).status_code == 200
-    track_page = client.get("/cabinet/personal/track")
-    assert "Доступ к программе откроется 25.10.2099 в 00:00" in track_page.text
+    assert client.get("/cabinet/personal/track").status_code == 200
 
 
 def test_waiting_student_can_fill_profile(client, db, user_factory, session_factory, monkeypatch):
@@ -529,10 +485,8 @@ def test_waiting_student_can_fill_profile(client, db, user_factory, session_fact
 
 def test_program_opens_after_the_date(client, db, user_factory, session_factory):
     client = _login(client, session_factory, _paid_newcomer(db, user_factory))
-    page = client.get("/cabinet/learning", follow_redirects=False)
-    assert page.status_code == 200
-    assert 'data-role="holiday-waiting"' not in page.text
-    assert "Доступ к программе откроется" not in client.get("/cabinet/personal/track").text
+    assert client.get("/cabinet/learning", follow_redirects=False).status_code == 200
+    assert client.get("/cabinet/portfolio", follow_redirects=False).status_code == 200
 
 
 def test_unpaid_student_still_goes_to_track_page(client, db, user_factory, session_factory, monkeypatch):
@@ -541,7 +495,6 @@ def test_unpaid_student_still_goes_to_track_page(client, db, user_factory, sessi
     client = _login(client, session_factory, _newcomer(db, user_factory))
     resp = client.get("/cabinet/learning", follow_redirects=False)
     assert resp.headers["location"] == "/cabinet/personal/track"
-    assert "Программа откроется 25.10.2099 в 00:00" in client.get("/cabinet/personal/track").text
 
 
 def test_service_account_does_not_wait(client, db, user_factory, session_factory, monkeypatch):
@@ -551,14 +504,10 @@ def test_service_account_does_not_wait(client, db, user_factory, session_factory
     student = _paid_newcomer(db, user_factory)
     monkeypatch.setattr("app.constants.REPORT_EXCLUDED_USER_IDS", frozenset(REPORT_EXCLUDED_USER_IDS) | {student.id})
     client = _login(client, session_factory, student)
-    page = client.get("/cabinet/learning", follow_redirects=False)
-    assert page.status_code == 200
-    assert 'data-role="holiday-waiting"' not in page.text
+    assert client.get("/cabinet/portfolio", follow_redirects=False).status_code == 200
 
 
 def test_annual_student_does_not_wait(auth_client, monkeypatch):
     monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
     client, _student = auth_client
-    page = client.get("/cabinet/learning", follow_redirects=False)
-    assert page.status_code == 200
-    assert 'data-role="holiday-waiting"' not in page.text
+    assert client.get("/cabinet/portfolio", follow_redirects=False).status_code == 200

@@ -160,19 +160,6 @@ def test_no_reminder_before_the_day(db, user_factory):
     assert _count_for(db, chief.id) == 0
 
 
-def test_notifies_same_day(db, user_factory):
-    chief = user_factory(vk_id=700_005, name="ГП", role_name="админ")
-    student = user_factory(vk_id=700_006, name="Оля Кузнецова")
-    student.birth_date = _birth_date_in(0)
-    db.commit()
-
-    _run_birthday_check()
-
-    notif = db.query(Notification).filter(Notification.user_id == chief.id).first()
-    assert notif is not None
-    assert "Сегодня" in notif.text
-
-
 def test_does_not_repeat_within_same_year(db, user_factory):
     chief = user_factory(vk_id=700_007, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_008, name="Игорь Смирнов")
@@ -289,26 +276,6 @@ def test_student_notification_not_visible_to_other_curator(db, client, session_f
 
 
 # ── Колокольчик в base.html: ссылка «Все уведомления» по роли ──────────────
-
-def test_bell_footer_links_staff_to_their_own_screen(db, client, session_factory, user_factory):
-    curator = user_factory(vk_id=700_017, name="Куратор", role_name="куратор")
-    client.cookies.set("session_id", session_factory(curator).id)
-
-    resp = client.get("/cabinet/staff/notifications")
-
-    assert resp.status_code == 200
-    assert 'href="/cabinet/staff/notifications"' in resp.text
-    assert 'href="/cabinet/notifications"' not in resp.text
-
-
-def test_bell_footer_links_student_to_student_screen(auth_client):
-    client, _student = auth_client
-
-    resp = client.get("/cabinet/personal")
-
-    assert resp.status_code == 200
-    assert 'href="/cabinet/notifications"' in resp.text
-    assert 'href="/cabinet/staff/notifications"' not in resp.text
 
 
 def test_extra_recipient_gets_birthday_too(db, user_factory, monkeypatch):

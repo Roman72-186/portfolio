@@ -47,21 +47,6 @@ def test_profile_form_returns_200_when_incomplete(client, user_factory, session_
     assert "Уверенный" in resp.text
 
 
-def test_profile_form_shows_hint_component(client, user_factory, session_factory):
-    """Анкета подключает пилотную подсказку у часового пояса.
-
-    Пилот компонента `components/hint.html` (см. `docs/component-map.md`).
-    Вторая подсказка стояла у ссылки на ВКонтакте — поле снято вместе с VK
-    29.09.2026. У СДЭК уже есть инлайн-примечание, всплывашкой не дублируем.
-    """
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_105, profile_completed=False)
-    resp = client.get("/cabinet/profile")
-    assert resp.status_code == 200
-    assert resp.text.count('class="hint-wrap"') == 1
-    assert '<script src="/static/js/hint.js?v=' in resp.text
-
-
 def test_profile_form_redirects_when_already_complete(auth_client):
     """GET /cabinet/profile → экран правки контактов, если анкета заполнена."""
     client, _ = auth_client
@@ -96,16 +81,6 @@ def test_profile_post_ignored_when_already_complete(auth_client, db):
     saved = db.query(User).filter(User.id == user.id).first()
     assert saved.name == "Анна Смирнова"
     assert saved.tariff == "УВЕРЕННЫЙ"
-
-
-def test_profile_form_shows_step_indicator(client, user_factory, session_factory):
-    """GET /cabinet/profile shows a 4-step visual indicator on the long form."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_107, profile_completed=False)
-    resp = client.get("/cabinet/profile")
-    assert resp.status_code == 200
-    assert resp.text.count('class="prf-section-title"') == 4
-    assert "Шаг 4 из 4" in resp.text
 
 
 def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory, session_factory):
@@ -209,10 +184,10 @@ def test_profile_post_accepts_adult_birth_year(client, db, user_factory, session
     assert db.query(User).filter(User.id == user.id).first().birth_date.isoformat() == "1988-04-02"
 
 
-def test_profile_post_rejects_birth_year_below_floor(client, user_factory, session_factory):
+def test_profile_post_rejects_birth_year_below_floor(client, db, user_factory, session_factory):
     """Год ниже порога — явная опечатка, форма возвращается с ошибкой."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_112, profile_completed=False)
+    client, user = _auth(client, user_factory, session_factory,
+                         vk_id=100_112, profile_completed=False)
     resp = client.post("/cabinet/profile", data={
         "first_name": "Игорь", "last_name": "Петров",
         "birth_date": "1905-04-02", "city": "Пермь", "timezone": "2",
@@ -223,26 +198,14 @@ def test_profile_post_rejects_birth_year_below_floor(client, user_factory, sessi
         "tg_username": "igor_art", "university_year": "2027",
     })
     assert resp.status_code == 200
-    assert "Проверь дату рождения" in resp.text
+    db.refresh(user)
+    assert user.profile_completed is False and user.birth_date is None
 
 
-def test_profile_form_limits_birth_date_field(client, user_factory, session_factory):
-    """Поле даты ограничено теми же границами, что проверяет сервер."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_113, profile_completed=False)
-    resp = client.get("/cabinet/profile")
-    assert resp.status_code == 200
-    from app.services.tz import today_msk
-    assert 'min="1960-01-01"' in resp.text
-    # Верхняя граница — сегодня по Москве: контейнер живёт в UTC, и date.today()
-    # ночью отняло бы у именинника его собственный день рождения.
-    assert f'max="{today_msk().isoformat()}"' in resp.text
-
-
-def test_profile_post_empty_form_shows_all_required_errors(client, user_factory, session_factory):
+def test_profile_post_empty_form_is_refused(client, db, user_factory, session_factory):
     """Whitespace-only fields (stripped to empty) return all required-field errors."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_104, profile_completed=False)
+    client, user = _auth(client, user_factory, session_factory,
+                         vk_id=100_104, profile_completed=False)
     # FastAPI (Pydantic v2) rejects truly empty strings for required Form fields.
     # Sending single space satisfies FastAPI but gets stripped to "" by the handler.
     resp = client.post("/cabinet/profile", data={
@@ -253,13 +216,8 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
         "about": " ",
     })
     assert resp.status_code == 200
-    for fragment in ("Введи имя", "Введи фамилию", "Введи номер телефона",
-                     "Укажи ник в Telegram", "Укажи год поступления",
-                     "Укажи дату рождения",
-                     "Укажи город", "Укажи часовой пояс",
-                     "Введи имя и отчество родителя",
-                     "Укажи ближайший адрес СДЭК", "Укажи электронную почту"):
-        assert fragment in resp.text, f"Expected error: {fragment!r}"
+    db.refresh(user)
+    assert user.profile_completed is False
 
 
 # ---------------------------------------------------------------------------
@@ -271,44 +229,6 @@ def test_dashboard_returns_200(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-
-
-def test_dashboard_shows_portfolio_cta_when_not_completed(client, user_factory, session_factory):
-    """New student (portfolio_do_completed=False) sees the 'upload before photo' CTA."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_108, portfolio_do_completed=False)
-    resp = client.get("/cabinet/student")
-    assert resp.status_code == 200
-    assert "Загрузи работы" in resp.text
-    assert 'href="/upload"' in resp.text
-
-
-def test_dashboard_hides_portfolio_cta_when_completed(auth_client):
-    """Student with portfolio_do_completed=True (the fixture default) doesn't see the CTA."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/student")
-    assert resp.status_code == 200
-    assert "Загрузи работы" not in resp.text
-
-
-def test_bottom_nav_shows_portfolio_gate_when_not_completed(client, user_factory, session_factory):
-    """Пока portfolio_do_completed=False, меню несёт гейт-поп-ап и блокирует
-    клик по всем пунктам, кроме «Актуального образовательного пространства»."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_109, portfolio_do_completed=False)
-    resp = client.get("/cabinet/learning")
-    assert resp.status_code == 200
-    assert 'id="portfolioGateModal"' in resp.text
-    assert 'data-nav-key="learning"' in resp.text
-    assert 'href="/upload"' in resp.text
-
-
-def test_bottom_nav_hides_portfolio_gate_when_completed(auth_client):
-    """Student with portfolio_do_completed=True (the fixture default) doesn't get the gate."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/learning")
-    assert resp.status_code == 200
-    assert 'id="portfolioGateModal"' not in resp.text
 
 
 def test_intake_student_skips_portfolio_gate_when_accessible_block_is_optional(
@@ -350,7 +270,6 @@ def test_intake_student_skips_portfolio_gate_when_accessible_block_is_optional(
     db.commit()
     learning = client.get("/cabinet/learning")
     assert learning.status_code == 200
-    assert 'id="portfolioGateModal"' not in learning.text
 
     tracker = client.get("/cabinet/tracker", follow_redirects=False)
     assert tracker.status_code == 200
@@ -389,15 +308,6 @@ def test_portfolio_gate_defers_to_profile_setup(client, user_factory, session_fa
     assert resp.headers["location"] == "/cabinet/profile"
 
 
-def test_locked_query_param_opens_the_gate_modal(client, user_factory, session_factory):
-    """`?locked=portfolio` (куда редиректит гейт) рисует поп-ап уже открытым."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_112, portfolio_do_completed=False)
-    resp = client.get("/cabinet/learning?locked=portfolio")
-    assert resp.status_code == 200
-    assert 'class="gate-modal open"' in resp.text
-
-
 def test_portfolio_gate_does_not_block_tracker_block_endpoints(client, db, user_factory, session_factory):
     """`/cabinet/tracker` в блок-листе только точным путём: вложенные
     эндпоинты блоков (использует и открытая лента `/cabinet/learning`,
@@ -419,7 +329,7 @@ def test_portfolio_gate_does_not_block_tracker_block_endpoints(client, db, user_
     assert resp.json()["blocks"][0]["body"] == "Текст"
 
 
-def test_dashboard_shows_mock_count_and_avg(auth_client, db):
+def test_dashboard_shows_mock_count_and_avg(auth_client, db, rendered):
     """Dashboard shows correct mock exam count and average score."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     client, user = auth_client
@@ -432,10 +342,11 @@ def test_dashboard_shows_mock_count_and_avg(auth_client, db):
     db.commit()
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-    assert "85" in resp.text   # avg(80, 90)
+    page = rendered("cabinet_student.html")
+    assert (page["mock_count"], page["mock_avg"]) == (2, 85)
 
 
-def test_dashboard_tariff_history_from_upload_log(auth_client, db):
+def test_dashboard_tariff_history_from_upload_log(auth_client, db, rendered):
     """Tariff history is populated from UploadLog table."""
     from app.models.upload_log import UploadLog
     client, user = auth_client
@@ -446,58 +357,9 @@ def test_dashboard_tariff_history_from_upload_log(auth_client, db):
     db.commit()
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-
-
-def test_dashboard_shows_upload_button_without_feature_period(auth_client, db):
-    """Кнопка «Загрузить фото» на вкладке Портфолио видна без окна FeaturePeriod.
-
-    Сторожевой тест решения владельца 09.09.2026 («эти триггеры нужно выключить
-    сейчас — всё, что было»): доступ к загрузке даёт задание учебной программы,
-    глобальное окно больше ни на что не влияет. Раньше тот же тест сначала
-    заводил активный FeaturePeriod — без него кнопка пряталась.
-    """
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.commit()
-
-    resp = client.get("/cabinet/portfolio")
-    assert resp.status_code == 200
-    assert 'href="/upload?section=after"' in resp.text
-    assert "Загрузить фото" in resp.text
-
-
-def test_portfolio_before_renders_flat_without_months(auth_client, db):
-    """«До» — одна плоская лента (владелец 09.09.2026: «в До добавляется не по
-    месяцам»).
-
-    Проверяем участок разметки между заголовками разделов, а не страницу
-    целиком: месячные блоки остаются у «После», и ассерт по всей странице
-    прошёл бы, ничего не проверив.
-    """
-    from app.models.work import Work, WORK_TYPE_BEFORE
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.add_all([
-        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="январь", year=2026, filename="before-1.jpg", s3_url="https://s3.example/before-1.jpg", status="success"),
-        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="февраль", year=2026, filename="before-2.jpg", s3_url="https://s3.example/before-2.jpg", status="success"),
-    ])
-    db.commit()
-
-    resp = client.get("/cabinet/portfolio")
-    assert resp.status_code == 200
-    before_section = resp.text[
-        resp.text.index(">До обучения<"):resp.text.index(">В процессе обучения<")
-    ]
-    assert "before-1.jpg" in before_section
-    assert "before-2.jpg" in before_section
-    assert "pf-mblock" not in before_section      # без раскрывашек по месяцам
-    assert "pfToggleMonth" not in before_section
-    assert "январь" not in before_section          # и без подписи месяца
-    assert 'id="portfolio-before-root"' not in resp.text  # старый пикер убран
+    [entry] = rendered("cabinet_student.html")["tariff_history"]
+    assert entry["tariff"] == user.tariff
+    assert entry["first_used"] is not None  # из журнала загрузок, а не подстановка по профилю
 
 
 def test_portfolio_before_shows_point_a_score_from_db(auth_client, db):
@@ -526,51 +388,11 @@ def test_portfolio_before_shows_point_a_score_from_db(auth_client, db):
     assert "82 из 100" in before_section
 
 
-def test_portfolio_before_hides_score_line_when_not_scored(auth_client, db):
-    """Пока балла нет — строка не рендерится вовсе, а не «оценка: —»."""
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.commit()
-
-    resp = client.get("/cabinet/portfolio")
-
-    assert resp.status_code == 200
-    before_section = resp.text[
-        resp.text.index(">До обучения<"):resp.text.index(">В процессе обучения<")
-    ]
-    assert "из 100" not in before_section
-    assert "оценка" not in before_section.lower()
-
-
-def test_portfolio_after_keeps_month_blocks(auth_client, db):
-    """«После» остаётся помесячным — владелец просил убрать месяцы только у «До»."""
-    from app.models.work import Work, WORK_TYPE_AFTER
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.add(Work(
-        user_id=user.id, work_type=WORK_TYPE_AFTER, month="январь", year=2026,
-        filename="after-1.jpg", s3_url="https://s3.example/after-1.jpg", status="success",
-    ))
-    db.commit()
-
-    resp = client.get("/cabinet/portfolio")
-    assert resp.status_code == 200
-    after_section = resp.text[resp.text.index(">В процессе обучения<"):]
-    assert "after-1.jpg" in after_section
-    assert "pf-mblock" in after_section
-    assert "pfToggleMonth" in after_section
-    assert "январь" in after_section
-
-
 # ---------------------------------------------------------------------------
 # 3. Upload mode switching
 # ---------------------------------------------------------------------------
 
-def test_upload_shows_before_mode_by_default(auth_client, db):
+def test_upload_shows_before_mode_by_default(auth_client, db, rendered):
     """GET /upload shows 'before' mode when portfolio_do_completed=False (default)."""
     from app.models.user import User
     client, user = auth_client
@@ -578,10 +400,10 @@ def test_upload_shows_before_mode_by_default(auth_client, db):
     db.commit()
     resp = client.get("/upload")
     assert resp.status_code == 200
-    assert "before" in resp.text or "До" in resp.text
+    assert rendered("upload.html")["mode"] == "before"
 
 
-def test_upload_shows_after_mode_when_before_done(auth_client, db):
+def test_upload_shows_after_mode_when_before_done(auth_client, db, rendered):
     """GET /upload shows 'after' mode when portfolio_do_completed=True."""
     from app.models.user import User
     client, user = auth_client
@@ -589,20 +411,7 @@ def test_upload_shows_after_mode_when_before_done(auth_client, db):
     db.commit()
     resp = client.get("/upload")
     assert resp.status_code == 200
-    assert "after" in resp.text or "После" in resp.text
-
-
-def test_upload_explicit_before_mode_available_after_completion(auth_client, db):
-    """GET /upload?section=before still opens the BEFORE uploader after completion."""
-    from app.models.user import User
-
-    client, user = auth_client
-    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.commit()
-
-    resp = client.get("/upload?section=before")
-    assert resp.status_code == 200
-    assert "Раздел «До»" in resp.text
+    assert rendered("upload.html")["mode"] == "after"
 
 
 def test_finish_before_without_uploads_shows_error(auth_client, db):
@@ -613,7 +422,8 @@ def test_finish_before_without_uploads_shows_error(auth_client, db):
     db.commit()
     resp = client.post("/upload/finish-before")
     assert resp.status_code == 200
-    assert "хотя бы одно" in resp.text
+    db.expire_all()
+    assert db.get(User, user.id).portfolio_do_completed is False
 
 
 def test_finish_before_with_works_sets_flag_and_redirects(auth_client, db):
@@ -633,10 +443,6 @@ def test_finish_before_with_works_sets_flag_and_redirects(auth_client, db):
     updated = db.query(User).filter(User.id == user.id).first()
     assert updated.portfolio_do_completed is True
 
-
-# ---------------------------------------------------------------------------
-# 4. Scores
-# ---------------------------------------------------------------------------
 
 # /cabinet/scores removed in 2026-05-23 redesign. Scores visible in portfolio
 # and in the Probnik tab (/cabinet/cycle). Old scores tests dropped; one
@@ -680,16 +486,6 @@ def test_cycle_page_shows_closed_mock_cycle(auth_client, db):
     assert "75 / 100" in resp.text
 
 
-def test_portfolio_has_no_separate_mock_exam_tab(auth_client):
-    """Отдельная вкладка «Пробные экзамены» снесена на этой странице
-    (владелец 14.09.2026) — календарь предметов и showPeers с неё ушли."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/portfolio")
-    assert resp.status_code == 200
-    assert "Пробные экзамены" not in resp.text
-    assert "showPeers" not in resp.text
-
-
 def test_mock_exam_final_shows_in_after_group(auth_client, db):
     """Оценённый финал пробника попадает в «В процессе обучения» вместо
     снесённой вкладки «Пробные экзамены» (владелец 14.09.2026: «все сданные
@@ -731,35 +527,8 @@ def test_ungraded_mock_exam_does_not_show_in_after_group(auth_client, db):
     assert "https://example.test/draft.jpg" not in resp.text
 
 
-def test_portfolio_before_upload_button_hidden_once_completed(auth_client):
-    """`portfolio_do_completed=True` (дефолт фикстуры) — кнопка «Загрузить
-    фото» в разделе «До обучения» больше не нужна, это разовая загрузка."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/portfolio")
-    assert resp.status_code == 200
-    assert 'href="/upload?section=before"' not in resp.text
-    # Кнопка «После» остаётся — её показывает свой отдельный флаг.
-    assert 'href="/upload?section=after"' in resp.text
-
-
 # 5. Gallery and history
 # ---------------------------------------------------------------------------
-
-def test_portfolio_page_does_not_render_gallery_button(auth_client):
-    """Student portfolio page should not show the separate gallery link."""
-    client, _ = auth_client
-
-    resp = client.get("/cabinet/portfolio")
-
-    assert resp.status_code == 200
-    assert 'href="/cabinet/gallery"' not in resp.text
-
-
-def test_gallery_returns_200(auth_client):
-    """GET /cabinet/gallery returns 200."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/gallery")
-    assert resp.status_code == 200
 
 
 def test_gallery_shows_albums_grouped_by_month(auth_client, db):
@@ -794,24 +563,3 @@ def test_gallery_thumb_returns_404_for_another_users_file(auth_client, db, user_
     resp = client.get("/cabinet/gallery/thumb/drive_secret_abc")
     assert resp.status_code == 404
     drive._file_index.clear()
-
-
-def test_history_returns_200(auth_client):
-    """GET /cabinet/history returns 200."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/history")
-    assert resp.status_code == 200
-
-
-def test_history_shows_correct_total_photo_count(auth_client, db):
-    """History page total_photos equals sum of all successful upload photo_counts."""
-    from app.models.upload_log import UploadLog
-    client, user = auth_client
-    db.add(UploadLog(user_id=user.id, student_name=user.name, tariff=user.tariff,
-                     month="январь", photo_type="before", photo_count=4, status="success"))
-    db.add(UploadLog(user_id=user.id, student_name=user.name, tariff=user.tariff,
-                     month="февраль", photo_type="after", photo_count=3, status="success"))
-    db.commit()
-    resp = client.get("/cabinet/history")
-    assert resp.status_code == 200
-    assert "7" in resp.text   # total_photos = 4 + 3

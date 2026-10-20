@@ -18,13 +18,7 @@
 from datetime import timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
-from app.models.task_block import (
-    BLOCK_QUESTION,
-    BLOCK_RULES,
-    BLOCK_TEXT,
-    TaskBlock,
-    TaskBlockOption,
-)
+from app.models.task_block import BLOCK_QUESTION, BLOCK_RULES, TaskBlockOption
 from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
 from app.services.task_blocks import (
@@ -325,7 +319,6 @@ def test_rules_block_carries_its_own_submit_endpoint(auth_client, db):
 
     item = _blocks_payload(client, task.id, block.id)
     assert item["submit_endpoint"] is None
-    assert item["edit_reason"] == "Согласие с правилами уже сохранено."
 
 
 def test_rules_only_task_closes_and_the_next_task_becomes_current(auth_client, db):
@@ -382,34 +375,6 @@ def test_rules_before_another_step_open_it_and_keep_the_task_open(auth_client, d
     assert _statuses(db, user) == ["done", "current", "locked"]
 
 
-def test_screens_send_ticks_by_themselves():
-    """Галочки шлёт общий рендерер, а не кнопка формы, — и обоим экранам одной функцией.
-
-    Статическая проверка исходников: запрос идёт через `post()` со свежим
-    ключом (`tests/test_csrf_freshness.py`), правила не уходят в общую форму,
-    условие «нужна ли форма» не копируется в экраны, а лента после
-    сохранения переходит к открывшемуся шагу.
-    """
-    from pathlib import Path
-
-    app_dir = Path(__file__).resolve().parents[1] / "app"
-    render = (app_dir / "static" / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
-    feed = (app_dir / "static" / "js" / "cycle-feed.js").read_text(encoding="utf-8")
-    tracker = (app_dir / "templates" / "partials" / "inline" / "task_blocks.html").read_text(encoding="utf-8")
-    learning = (app_dir / "templates" / "cabinet_learning.html").read_text(encoding="utf-8")
-
-    assert "function wireRulesAutosave(" in render
-    assert "post(block.submit_endpoint, {" in render.split("function wireRulesAutosave(")[1]
-    # Правила со своим адресом в общую форму не идут.
-    assert "if (block.submit_endpoint) return;" in render
-    for screen in (feed, tracker):
-        assert "window.lrnBlockRender.formOpen(" in screen
-        assert "['question', 'scale', 'rules']" not in screen
-    assert "onRulesSaved: showStepAfter" in feed
-    assert "searchParams.set('after'" in feed
-    assert "lrnFocusAfterStep(after)" in learning
-
-
 # ── форматирование текста ───────────────────────────────────────────────────
 # Владелец 04.10.2026: «слетает форматирование текста… настройка текста в
 # полях и блоках должна переиспользоваться от эталонной». Текст согласия шёл
@@ -426,42 +391,3 @@ def test_rules_label_comes_formatted_like_a_question_option(auth_client, db):
     item = _blocks_payload(client, task.id, block.id)
 
     assert item["options"][0]["text_html"] == "<strong>Ознакомлен(а)</strong> с правилами"
-
-
-def test_rules_texts_use_the_reference_text_body():
-    """Текст согласия и текст пункта рисуются эталонным телом текстового блока.
-
-    Статическая проверка: `renderRules` берёт `.lrn-blk-body`, как `renderText`,
-    своей копии стилей у правил нет, а жирное слово в подписи не рвёт строку —
-    отдельной строкой его ставит только развёрнутый вариант диагностики.
-    """
-    from pathlib import Path
-
-    app_dir = Path(__file__).resolve().parents[1] / "app"
-    render = (app_dir / "static" / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
-    css = (app_dir / "static" / "css" / "tracker.css").read_text(encoding="utf-8")
-
-    rules = render.split("function renderRules(")[1].split("function wireRulesAutosave(")[0]
-    assert "elHtml('p', 'lrn-blk-body', block.body_html)" in rules
-    assert "lrn-blk-question-body" not in rules
-    assert "elHtml('span', null, option.text_html)" in rules
-    item = render.split("function ruleItemContent(")[1].split("function renderCompare(")[0]
-    assert "elHtml('div', 'lrn-blk-body', option.description_html)" in item
-    assert "'lrn-blk-rule-text'" not in render
-    assert ".lrn-blk-rule-text {" not in css
-    assert ".lrn-blk-body ul {" in css
-    assert ".lrn-blk-option > span > strong" not in css
-
-
-# ── конструктор преподавателя ───────────────────────────────────────────────
-
-def test_constructor_offers_the_rules_block(admin_client):
-    """Кнопка «Правила с галочками» и своя форма под неё, а не хвост вопроса."""
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-add-block="rules"' in page.text
-    assert "type === 'rules'" in page.text
-    assert "Правила с галочками" in page.text

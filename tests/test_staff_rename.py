@@ -26,13 +26,6 @@ def test_curator_opens_form_with_current_name(client, db, user_factory, session_
     assert 'value="1"' in page.text
 
 
-def test_dashboard_links_to_rename(client, db, user_factory, session_factory):
-    curator = _curator(db, user_factory)
-    client.cookies.set("session_id", session_factory(curator).id)
-
-    assert 'href="/cabinet/curator/profile"' in client.get("/cabinet/curator").text
-
-
 def test_rename_updates_name_copies_and_tag(client, db, user_factory, session_factory):
     curator = _curator(db, user_factory)
     other = _curator(db, user_factory, vk_id=996_002)

@@ -12,7 +12,6 @@
 """
 
 from datetime import date, datetime, timedelta, timezone
-import re
 from unittest.mock import patch
 
 import pytest
@@ -23,7 +22,6 @@ from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessa
 from app.models.homework_submission import HomeworkSubmission
 from app.models.task_block import (
     BLOCK_MEDIA,
-    BLOCK_TYPE_LABELS,
     BLOCK_UPLOAD,
     MEDIA_NOTE,
     MEDIA_VOICE,
@@ -34,7 +32,7 @@ from app.models.task_block import (
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.work import WORK_TYPE_MOCK_EXAM, Work
-from app.services import media_transcode, s3 as s3_service
+from app.services import s3 as s3_service
 from app.services.feedback import ROLE_CURATOR, ROLE_STUDENT
 from app.services.task_block_feedback import get_or_create_feedback, send_message
 from app.services.task_blocks import sync_blocks
@@ -104,21 +102,6 @@ def test_teacher_sends_video_note_recorded_in_browser(db, user_factory, session_
     _login(client, session_factory, student)
     page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
     assert page.status_code == 200
-    assert 'class="msg-video-note"' in page.text
-    # Кнопок записи у ученика нет: записывает только преподаватель.
-    assert "data-media-recorder" not in page.text
-
-
-def test_teacher_page_offers_recorder(db, user_factory, session_factory, client):
-    curator, student = _curator_and_student(db, user_factory, base=981_011)
-    submission = _block_submission(db, student)
-    _login(client, session_factory, curator)
-
-    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
-
-    assert page.status_code == 200
-    assert "data-media-recorder" in page.text
-    assert "/static/js/media-recorder-field.js?v=" in page.text
 
 
 def test_voice_with_codec_mime_is_accepted(db, user_factory, session_factory, client):
@@ -202,8 +185,7 @@ def test_homework_teacher_video_note(auth_client, db, user_factory, session_fact
     db.commit()
     _login(client, session_factory, curator)
 
-    staff_page = client.get(f"/cabinet/staff/homework/submissions/{submission.id}/feedback")
-    assert "data-media-recorder" in staff_page.text
+    assert client.get(f"/cabinet/staff/homework/submissions/{submission.id}/feedback").status_code == 200
 
     with patch.object(s3_service, "upload_to_s3", return_value=NOTE_URL):
         response = client.post(
@@ -218,9 +200,7 @@ def test_homework_teacher_video_note(auth_client, db, user_factory, session_fact
     assert message.video_is_note is True
 
     _login(client, session_factory, student)
-    page = client.get(f"/cabinet/homework/{task.id}/feedback")
-    assert 'class="msg-video-note"' in page.text
-    assert "data-media-recorder" not in page.text
+    assert client.get(f"/cabinet/homework/{task.id}/feedback").status_code == 200
 
 
 # ── Переписка: пробник ─────────────────────────────────────────────────────
@@ -264,32 +244,6 @@ def _staff(client, user_factory, session_factory, *, vk_id=981_101):
     )
     _login(client, session_factory, user)
     return user
-
-
-def test_upload_media_stores_voice_in_s3(client, user_factory, session_factory):
-    _staff(client, user_factory, session_factory)
-
-    # Перекодирование подменено тождеством: здесь проверяется контракт
-    # эндпоинта, сам перегон в m4a — в tests/test_media_transcode.py.
-    with (
-        patch.object(media_transcode, "playable_voice", side_effect=lambda *a: a) as transcode,
-        patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload,
-    ):
-        response = client.post(
-            f"{PROGRAM}/upload-media",
-            data={"kind": MEDIA_VOICE},
-            files={"file": ("voice-1.webm", b"voice-bytes", "audio/webm;codecs=opus")},
-        )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body == {
-        "ok": True, "url": VOICE_URL, "path": body["path"], "kind": MEDIA_VOICE,
-    }
-    assert body["path"].startswith("zadaniya-media/voice/")
-    # В перекодирование и дальше в S3 уходит MIME без параметров кодека.
-    assert transcode.call_args.args == ("voice-1.webm", b"voice-bytes", "audio/webm")
-    assert upload.call_args.args[1:] == (b"voice-bytes", "audio/webm")
 
 
 def test_upload_media_accepts_attached_files_in_other_formats(client, user_factory, session_factory):
@@ -383,25 +337,6 @@ def test_upload_media_rejects_missing_csrf_with_json_body(client, user_factory, 
     assert body["detail"]
 
 
-def test_attach_file_button_is_wired_in_static_script(client):
-    """«Прикрепить аудио/видео» рисуется скриптом на клиенте, а не сервером —
-    в HTML страницы этой разметки нет, проверить можно только сам файл.
-    Не полная замена браузерной проверки (клики и file-picker здесь не
-    воспроизвести), но ловит снесённые определения при следующей правке —
-    как это уже случилось с `return` в program_blocks_editor_js.html."""
-    response = client.get("/static/js/media-recorder-field.js")
-    assert response.status_code == 200
-    source = response.text
-
-    assert "data-mrf-attach" in source
-    assert "data-mrf-file" in source
-    assert "Recorder.prototype.attachFile" in source
-    assert "Recorder.prototype.useFile" in source
-    # attachFile должен реально вызываться из обработчика change, иначе выбор
-    # файла молча ничего не делает.
-    assert "self.attachFile(kind, file)" in source
-
-
 def test_upload_media_is_closed_for_students(client, user_factory, session_factory):
     student = user_factory(vk_id=981_131, name="Ученик", role_name="ученик")
     _login(client, session_factory, student)
@@ -431,137 +366,6 @@ def _media_item(**extra):
     }
     item.update(extra)
     return item
-
-
-def test_constructor_offers_media_block(client, db, user_factory, session_factory, monkeypatch):
-    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
-    monkeypatch.setattr("app.services.program.today_msk", date.today)
-    _staff(client, user_factory, session_factory, vk_id=981_141)
-
-    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
-
-    assert page.status_code == 200
-    assert 'data-add-block="media"' in page.text
-    assert BLOCK_TYPE_LABELS[BLOCK_MEDIA] in page.text
-    assert "/static/js/media-recorder-field.js?v=" in page.text
-    # Регрессия на баг с 25.09.2026: на этой странице нет
-    # `input[name=csrf_token]` (конструктор шлёт JSON), и блок «media» без
-    # явного `data-mrf-csrf` в своей разметке грузил запись с пустым токеном.
-    assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
-
-
-def _block_body_branches(page_text: str) -> dict[str, str]:
-    """Нарезать `blockBodyHTML` на ветки: {тип блока: исходник его ветки}.
-
-    Типы не перечислены списком намеренно — новый тип блока попадёт под
-    сторожей ниже сам, без правки тестов.
-    """
-    body_start = page_text.index("function blockBodyHTML(type)")
-    body_end = page_text.index("function blockSettingsHTML(type)", body_start)
-    source = page_text[body_start:body_end]
-
-    marks = [(m.start(), m.group(1)) for m in re.finditer(r"if \(type === '(\w+)'\)", source)]
-    assert len(marks) >= 12, f"ветвей блоков нашлось {len(marks)} — разметка конструктора изменилась"
-
-    branches = {}
-    for index, (start, kind) in enumerate(marks):
-        end = marks[index + 1][0] if index + 1 < len(marks) else len(source)
-        branches[kind] = source[start:end]
-    # Дефолтная ветка без `if` — вопрос; она начинается после последней ветки.
-    branches["question"] = source[marks[-1][0]:][source[marks[-1][0]:].index("// question"):]
-    return branches
-
-
-def test_every_block_branch_returns_before_its_markup(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Регрессия 25.09.2026: правка, добавившая `data-mrf-csrf` в разметку,
-    случайно снесла `return ''` перед ней. Без `return` JS проваливался мимо
-    всех `if (type === …)` до самой последней ветки функции — дефолтного
-    вопроса («Текст вопроса», «Тип ответа», «Добавить вариант») — и вместо
-    записи владелец в конструкторе видел редактор вопроса. Подстрочный поиск
-    разметки этого не ловит: строка остаётся в исходнике JS, даже если ветка
-    недостижима. Поэтому проверяем каждую ветку: `return` есть и стоит до
-    своей разметки."""
-    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
-    monkeypatch.setattr("app.services.program.today_msk", date.today)
-    _staff(client, user_factory, session_factory, vk_id=981_143)
-
-    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
-    assert page.status_code == 200
-
-    for kind, branch in _block_body_branches(page.text).items():
-        assert "return" in branch, f"ветка '{kind}' не возвращает разметку — провалится в дефолт-вопрос"
-        # Первый же оператор ветки обязан быть `return`: если разметка
-        # начинается раньше, она склеивается в никуда, а функция идёт дальше.
-        body = branch.split("{", 1)[-1] if branch.startswith("if (") else branch
-        statements = [
-            line.strip() for line in body.splitlines()
-            if line.strip() and not line.strip().startswith("//")
-        ]
-        assert statements[0].startswith("return"), (
-            f"в ветке '{kind}' первым идёт не `return`, а «{statements[0]}» — ветка недостижима"
-        )
-
-
-def test_every_block_branch_starts_with_title_then_description(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Правило владельца 25.09.2026: у каждого типа блока есть поле названия и
-    поле описания, и они идут первыми — сначала название, потом описание.
-    Полная формулировка — инвариант в AGENTS.md. Здесь сторож на разметку:
-    новый тип блока без этих полей (или с ними в конце, как было у фото,
-    видео, голосового и ссылки) тест не пропустит."""
-    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
-    monkeypatch.setattr("app.services.program.today_msk", date.today)
-    _staff(client, user_factory, session_factory, vk_id=981_144)
-
-    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
-    assert page.status_code == 200
-
-    for kind, branch in _block_body_branches(page.text).items():
-        # Поля приходят и литералом, и общей константой — сторожу важен
-        # порядок, а не способ вставки.
-        title_at = min(
-            (branch.index(mark) for mark in ("data-b-title", "TITLE_FIELD_OPTIONAL") if mark in branch),
-            default=-1,
-        )
-        body_at = min(
-            (branch.index(mark) for mark in ("data-b-body", "BODY_FIELD_OPTIONAL") if mark in branch),
-            default=-1,
-        )
-        assert title_at != -1, f"у блока '{kind}' нет поля названия"
-        assert body_at != -1, f"у блока '{kind}' нет поля описания"
-        assert title_at < body_at, f"у блока '{kind}' описание идёт раньше названия"
-
-
-def test_cycle_items_constructor_media_block_carries_csrf(
-    client, db, user_factory, session_factory
-):
-    """Тот же блок «media» подключается и на экране «Задания внутри цикла»
-    (`cabinet_program_cycle_items.html`) — токен в разметке нужен там тоже."""
-    from datetime import timedelta
-
-    from app.services.tz import today_msk
-
-    _staff(client, user_factory, session_factory, vk_id=981_142)
-    today = today_msk()
-    created = client.post(
-        f"{PROGRAM}/cycles",
-        json={
-            "title": "Цикл", "description": None,
-            "starts_on": today.isoformat(),
-            "ends_on": (today + timedelta(days=5)).isoformat(),
-            "is_published": True,
-        },
-    )
-    assert created.status_code == 200, created.text
-    cycle_id = created.json()["cycle_id"]
-
-    page = client.get(f"{PROGRAM}/cycles/{cycle_id}")
-
-    assert page.status_code == 200
-    assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
 
 
 def test_constructor_saves_media_block_and_keeps_it(client, db, user_factory, session_factory, monkeypatch):

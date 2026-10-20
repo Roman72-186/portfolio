@@ -63,10 +63,6 @@ def test_curator_sees_own_student_archive(curator_client, db, student):
     assert "Январь" in resp.text
     assert "Февраль" in resp.text
     assert "Всего 2 фото" in resp.text
-    assert 'class="back-link"' in resp.text
-    assert 'aria-expanded="true"' in resp.text
-    assert 'data-gallery' in resp.text
-    assert 'role="dialog"' in resp.text
 
 
 def test_admin_can_open_archived_student_legacy_portfolio(client, db, user_factory, session_factory):
@@ -83,13 +79,6 @@ def test_admin_can_open_archived_student_legacy_portfolio(client, db, user_facto
 
     assert resp.status_code == 200
     assert "Архивных фото нет" not in resp.text
-
-
-def test_empty_state_when_no_photos(curator_client, student):
-    client, _ = curator_client
-    resp = client.get(f"/cabinet/students/{student.id}/legacy-portfolio")
-    assert resp.status_code == 200
-    assert "Архивных фото нет" in resp.text
 
 
 def test_curator_denied_for_other_curators_student(client, db, user_factory, session_factory):

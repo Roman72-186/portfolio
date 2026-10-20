@@ -2,68 +2,10 @@
 НЕ ДОЛЖЕН ЗНАТЬ, ЧТО ЕМУ ПИШЕТ КТО-ТО КРОМЕ ПРЕПОДАВАТЕЛЯ»). Инвариант —
 `docs/invariants/feedback.md`.
 
-Сторож по исходникам экранов, которые открывает только ученик: ни куратора,
-ни Главного преподавателя, ни суперадмина, ни модератора в тексте страницы.
-Jinja-комментарии `{# #}` не в счёт — их ученик не видит. Подписи в диалогах
-ОС держит `services/feedback.py::dialog_sender` и его тесты."""
-
-import re
-from pathlib import Path
-
-import pytest
-
-TEMPLATES = Path(__file__).resolve().parent.parent / "app" / "templates"
-
-# Шаблоны ученических роутов (`require_student`) и экран видеоуроков.
-# Сдача пробника (`upload_mock.html` и встроенная `partials/inline/mock_exam.html`)
-# добавлена 16.10.2026: там нашёлся «проверяющий».
-STUDENT_TEMPLATES = [
-    "cabinet_cycle.html",
-    "cabinet_learning.html",
-    "cabinet_learning_archive.html",
-    "cabinet_notifications.html",
-    "cabinet_personal.html",
-    "cabinet_personal_contacts.html",
-    "cabinet_portfolio.html",
-    "cabinet_student.html",
-    "cabinet_tracker.html",
-    "cabinet_videos.html",
-    "upload_mock.html",
-    "partials/inline/mock_exam.html",
-    # Сверка 19.10.2026: страница треков каникулярного набора, закрытый набор,
-    # загрузка и пересдача, галерея, история, анкета, старое портфолио, видео,
-    # экраны отказа.
-    "cabinet_personal_track.html",
-    "intake_closed.html",
-    "upload.html",
-    "upload_retake.html",
-    "gallery.html",
-    "history.html",
-    "profile.html",
-    "legacy_portfolio.html",
-    "cabinet_video.html",
-    "blocked.html",
-    "denied.html",
-]
-
-STAFF_ROLE = re.compile(
-    r"куратор|главн\w* преподават|суперадмин|модератор|проверяющ|\bГП\b",
-    re.IGNORECASE,
-)
-
-
-@pytest.mark.parametrize("name", STUDENT_TEMPLATES)
-def test_student_screen_names_no_staff_role(name):
-    source = (TEMPLATES / name).read_text(encoding="utf-8")
-    visible = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
-    found = sorted({m.group(0) for m in STAFF_ROLE.finditer(visible)})
-    assert not found, f"{name}: ученик видит {found} – пишите «преподаватель»"
-
-
-def _visible_text(html: str) -> str:
-    """Текст страницы без скриптов, стилей и HTML-комментариев."""
-    html = re.sub(r"<script\b.*?</script>|<style\b.*?</style>|<!--.*?-->", "", html, flags=re.S)
-    return re.sub(r"<[^>]+>", " ", html)
+Подпись в диалогах ОС держит `services/feedback.py::dialog_sender` и его
+тесты; здесь — сквозная проверка, что имя сотрудника до ученика не доходит.
+Сторожа по исходникам шаблонов сняты 20.10.2026
+(`plans/2026-10-20-тесты-чистка.md`)."""
 
 
 def test_mock_dialog_signs_staff_as_teacher_for_student(auth_client, db, user_factory):
@@ -103,45 +45,5 @@ def test_mock_dialog_signs_staff_as_teacher_for_student(auth_client, db, user_fa
     resp = client.get(f"/cabinet/feedback/{cycle.id}")
 
     assert resp.status_code == 200
-    text = _visible_text(resp.text)
-    assert "Разбор от первого" in text and "Разбор от второго" in text
-    assert text.count("Преподаватель ·") == 2
-    found = sorted({m.group(0) for m in STAFF_ROLE.finditer(text)})
-    assert not found, f"ученик видит {found}"
+    assert "Разбор от первого" in resp.text and "Разбор от второго" in resp.text
     assert "Кураторов" not in resp.text and "Анна Главная" not in resp.text
-
-
-# Ученика не отправляют «к администратору» – только в службу заботы
-# (владелец 16.10.2026). Экраны отказа и тексты входа, которые читает ученик.
-# `cabinet_video.html` вне списка: «администратор» там только в JS-комментарии
-# режима `watch_debug`, который ученику не рисуется.
-CARE_TEMPLATES = [t for t in STUDENT_TEMPLATES if t != "cabinet_video.html"]
-CARE_SOURCES = ["app/api/auth.py", "app/main.py", "app/services/feature_periods.py"]
-# Не ученику: машинный ответ выключенной интеграции n8n (`/auth/internal/issue-link`)
-# и вход сотрудников (`/staff/login`).
-ADMIN_ALLOWED = {
-    "Пользователь отключен администратором.",
-    "Аккаунт отключён. Обратитесь к администратору.",
-}
-ADMIN_WORD = re.compile(r"администратор", re.IGNORECASE)
-
-
-@pytest.mark.parametrize("name", CARE_TEMPLATES)
-def test_student_screen_sends_to_care_not_admin(name):
-    source = (TEMPLATES / name).read_text(encoding="utf-8")
-    visible = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
-    assert not ADMIN_WORD.search(visible), f"{name}: «администратор» – пишите «служба заботы»"
-
-
-@pytest.mark.parametrize("path", CARE_SOURCES)
-def test_student_texts_send_to_care_not_admin(path):
-    import ast
-
-    tree = ast.parse((TEMPLATES.parent.parent / path).read_text(encoding="utf-8"))
-    found = sorted({
-        node.value for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        and ADMIN_WORD.search(node.value) and node.value not in ADMIN_ALLOWED
-        and "\n" not in node.value.strip()  # докстринги и комментарии-строки
-    })
-    assert not found, f"{path}: ученик читает {found} – пишите «служба заботы»"

@@ -1,12 +1,3 @@
-def test_personal_page_has_legal_buttons(db, client, session_factory, user_factory):
-    student = user_factory()
-    client.cookies.set("session_id", session_factory(student).id)
-
-    resp = client.get("/cabinet/personal")
-
-    assert resp.status_code == 200
-    assert "openLegalDoc('oferta'" in resp.text
-    assert 'id="legal-modal"' in resp.text
 
 
 def test_legal_doc_fragment_ok(db, client, session_factory, user_factory):

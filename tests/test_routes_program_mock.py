@@ -117,7 +117,7 @@ def test_one_subject_is_enough(client, db, user_factory, session_factory, monkey
 
 
 def test_item_appears_in_the_day_and_in_the_calendar(
-    client, db, user_factory, session_factory, monkeypatch
+    client, db, user_factory, session_factory, monkeypatch, rendered
 ):
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
@@ -128,10 +128,11 @@ def test_item_appears_in_the_day_and_in_the_calendar(
         json=_payload([{"subject": "Рисунок", "tickets": [_ticket()]}], tag_ids=[tag.id]),
     )
 
-    day_page = client.get(f"{PROGRAM}/{MONDAY}").text
-    assert "Пробник по предмету «Рисунок»" in day_page
-    month_page = client.get(f"{PROGRAM}?month=2026-08").text
-    assert 'title="Пробник: Рисунок"' in month_page
+    assert client.get(f"{PROGRAM}/{MONDAY}").status_code == 200
+    [item] = rendered("cabinet_program_day.html")["items"]
+    assert (item.kind, item.subject) == ("mock_exam", "Рисунок")
+    assert client.get(f"{PROGRAM}?month=2026-08").status_code == 200
+    assert rendered("cabinet_program.html")["marks"][MONDAY]["mock"] == ["Рисунок"]
 
 
 def test_service_topic_carries_the_audience(

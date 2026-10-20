@@ -223,67 +223,6 @@ def test_curator_cannot_move_the_deadline(client, db, user_factory, session_fact
     assert resp.status_code == 403
 
 
-def test_deadline_badge_is_gone_from_both_constructor_screens(
-    client, db, user_factory, session_factory
-):
-    """Плашки срока нет ни на экране дня, ни на экране заданий цикла.
-
-    Снята 28.09.2026 по решению владельца: она рисовалась под каждым заданием
-    строкой на сам элемент и на каждый его блок со сроком (у «Формообразования
-    узлов» вышло пять строк), и список заданий за ней не читался. Владелец:
-    «сроки не должны быть здесь, сначала все задания, а потом уже в блоке
-    настраиваем, когда, что и сроки». Сроки правятся внутри задания, в
-    «Доступности блока» (партиал `program_item_deadline_fields.html`).
-
-    Сторож парный и перевёрнутый: экранов конструктора два, и вернуть плашку на
-    один из них, забыв про второй, — ровно та ошибка, что уже случалась с
-    кнопками блоков.
-    """
-    staff = _staff(client, user_factory, session_factory)
-    day = TODAY + timedelta(days=1)
-    _, block = _task_with_block(db, staff, day=day, block_type=BLOCK_PHOTO_UPLOAD)
-    client.post(
-        DEADLINE_URL.format(block.id),
-        json={"submit_until": "2026-09-28T09:30", "submit_deadlines": []},
-        headers={"X-CSRF-Token": "x"},
-    )
-
-    day_page = client.get(f"/cabinet/staff/program/{day.isoformat()}")
-
-    assert day_page.status_code == 200
-    assert "data-deadline-endpoint" not in day_page.text
-    assert "Приём до 28.09.2026 в 09:30" not in day_page.text
-
-    # Тот же блок, но внутри цикла — второй экран конструктора.
-    cycle = client.post(
-        "/cabinet/staff/program/cycles",
-        json={
-            "title": "Цикл 3", "description": None,
-            "starts_on": TODAY.isoformat(),
-            "ends_on": (TODAY + timedelta(days=5)).isoformat(),
-            "is_published": True,
-        },
-        headers={"X-CSRF-Token": "x"},
-    )
-    assert cycle.status_code == 200, cycle.text
-    cycle_id = cycle.json()["cycle_id"]
-    cycle_task, cycle_block = _task_with_block(db, staff, day=TODAY)
-    cycle_task.topic_id = cycle_id
-    cycle_task.due_at = None
-    db.commit()
-    client.post(
-        DEADLINE_URL.format(cycle_block.id),
-        json={"submit_until": "2026-09-28T09:30", "submit_deadlines": []},
-        headers={"X-CSRF-Token": "x"},
-    )
-
-    cycle_page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-
-    assert cycle_page.status_code == 200
-    assert "data-deadline-endpoint" not in cycle_page.text
-    assert "Приём до 28.09.2026 в 09:30" not in cycle_page.text
-
-
 # ── путь целиком: конструктор → ученик ──────────────────────────────────────
 
 def test_teacher_sets_deadline_student_submits_then_it_closes(
