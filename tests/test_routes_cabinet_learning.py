@@ -224,13 +224,34 @@ def test_learning_optional_block_does_not_lock_the_tail(auth_client, db, rendere
 
 def test_learning_video_task_closes_only_by_watch(auth_client, db):
     """Контроль просмотра включён снова 05.10.2026 (с 19.09 был выключен): у
-    видео-задания нет кнопки «Завершить задание», его закрывает досмотр."""
+    видео-задания без блоков нет кнопки «Завершить задание», его закрывает
+    досмотр. С 20.10.2026 ручную отметку отклоняет и сервер — до этого прятал
+    кнопку только экран, а запрос засчитывал ролик без просмотра."""
+    from app.models.tracker import TrackerTaskState
+
     client, user = auth_client
     task = _task(db, user, title="Видео с контролем", kind="video")
-    db.commit()
 
-    resp = client.get("/cabinet/learning")
-    assert f'data-toggle-task="{task.id}"' not in resp.text
+    resp = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+
+    assert resp.status_code == 403
+    state = db.query(TrackerTaskState).filter_by(task_id=task.id, user_id=user.id).one_or_none()
+    assert state is None or state.status != STATUS_DONE
+
+
+def test_learning_video_task_with_blocks_keeps_its_completion_button(auth_client, db):
+    """Видео, собранное из блоков, закрывается кнопкой «Завершить задание», как
+    любое задание с блоками: запрет выше его не касается."""
+    client, user = auth_client
+    task = _task(db, user, title="Видео с текстом", kind="video", day=today_msk())
+    task.due_at = day_bounds(today_msk())[1] - timedelta(minutes=1)
+    _block(db, task, title="Перед просмотром", order=0, is_required=False)
+
+    resp = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == STATUS_DONE
+
 
 
 def test_learning_task_without_blocks_locks_the_tail(auth_client, db, rendered):

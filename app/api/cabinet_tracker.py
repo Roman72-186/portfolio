@@ -51,6 +51,7 @@ from app.models.task_block import (
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
+    ITEM_VIDEO,
     STATUS_DONE,
     STATUS_OPEN,
     TrackerTask,
@@ -403,6 +404,20 @@ def cabinet_tracker_toggle(
     # обходом гейта в одно нажатие.
     if task.kind in (ITEM_HOMEWORK, ITEM_MOCK_EXAM):
         raise HTTPException(status_code=403, detail="Эта задача закрывается автоматически")
+
+    # Видео без блоков закрывает только досмотр (`video.py::_close_video_task_once`),
+    # кнопки у него нет (`partials/task_action.html`, `autocloses`). До 20.10.2026
+    # прятал её только экран, а запрос сюда засчитывал ролик без просмотра.
+    # Видео с блоками закрывается кнопкой «Завершить задание», просмотр у его
+    # видео-блоков проверяет `_video_block_requires_completion`.
+    if (
+        task.kind == ITEM_VIDEO
+        and VIDEO_WATCH_CONTROL_ENABLED
+        and not get_task_blocks(db, task.id)
+    ):
+        raise HTTPException(
+            status_code=403, detail="Задание закроется само, когда досмотришь видео"
+        )
 
     # Доступ и запрет «вперёд нельзя» — общей функцией, без своей копии
     # условия (до 30.09.2026 здесь была копия, и запрет её не накрыл бы).

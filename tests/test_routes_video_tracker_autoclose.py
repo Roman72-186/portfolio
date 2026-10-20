@@ -12,7 +12,7 @@ from app.models.tracker import ITEM_VIDEO, STATUS_DONE, TrackerTaskState
 from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.services.program import ensure_item_topic, set_item_audience
-from app.services.tracker import create_task
+from app.services.tracker import close_task_for_user, create_task
 from app.services.tz import today_msk
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
@@ -103,14 +103,14 @@ def test_optional_video_completion_does_not_close_tracker_task(
 
 
 def test_manual_close_is_not_reopened_by_later_heartbeat(auth_client, db, monkeypatch):
-    """Ручная отметка «сделано» не должна откатываться авто-событием позже."""
+    """Уже закрытое задание авто-событие позже не переписывает. Ученик видео
+    вручную не закрывает (с 20.10.2026 сервер отказывает), поэтому задание
+    закрыто другим источником — напрямую сервисом."""
     client, user = auth_client
     _configure_bunny(monkeypatch)
     task, video = _video_with_task(db, user.id)
-
-    manual = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
-    assert manual.status_code == 200
-    assert manual.json()["status"] == "done"
+    close_task_for_user(db, task, user.id, source="manual")
+    db.commit()
 
     client.post(
         f"/cabinet/videos/{video.id}/progress",
@@ -123,7 +123,7 @@ def test_manual_close_is_not_reopened_by_later_heartbeat(auth_client, db, monkey
         .one()
     )
     assert state.status == STATUS_DONE
-    assert state.completion_source is None  # закрыто вручную, авто не тронуло
+    assert state.completion_source == "manual"  # авто не переписало
 
 
 def test_repeated_heartbeat_after_completion_does_not_error(auth_client, db, monkeypatch):
