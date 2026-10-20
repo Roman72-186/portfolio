@@ -2057,6 +2057,7 @@ def digest_day_events(days: list[dict]) -> dict[str, list[dict]]:
             continue
         payload[day["iso"]] = [
             {
+                "id": event.id,
                 "title": event.title,
                 "type": event.type.name,
                 "color": event.type.color,

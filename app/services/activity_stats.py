@@ -40,6 +40,12 @@ from app.models.video_watch_event import VideoWatchEvent
 from app.models.video_watch_segment import VideoWatchSegment
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
+from app.services.meeting_joins import (
+    EVENT_MEETING_JOIN,
+    event_id_from_details,
+    event_titles,
+    student_meeting_joins,
+)
 from app.services.program import day_bounds, week_start
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import accessible_task_entries, effective_week_start
@@ -742,7 +748,12 @@ _EVENT_LABELS = {
     "login": "Входы в кабинет",
     "portfolio_upload": "Загрузки портфолио",
     "work_upload": "Загрузки работ",
+    EVENT_MEETING_JOIN: "Нажатия «Подключиться» у занятий",
 }
+
+# Что сводка «Действия учеников» считает загрузкой. Остальное (подключения
+# к занятиям с 20.10.2026) — отдельная строка по типам, не загрузки.
+_UPLOAD_EVENT_TYPES = ("portfolio_upload", "work_upload")
 
 
 def _names_by_id(db: DBSession, ids) -> dict[int, str]:
@@ -805,7 +816,10 @@ def get_student_event_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
         .all()
     ):
         agg = per_user[uid]
-        agg["logins" if et == "login" else "uploads"] += n
+        if et == "login":
+            agg["logins"] += n
+        elif et in _UPLOAD_EVENT_TYPES:
+            agg["uploads"] += n
         last_at = _utc(last_at)
         if agg["last_at"] is None or last_at > agg["last_at"]:
             agg["last_at"] = last_at
@@ -1680,6 +1694,7 @@ _STUDENT_EVENT_FEED_LABELS = {
     "login": "Вошёл в кабинет",
     "portfolio_upload": "Загрузил работы в портфолио",
     "work_upload": "Загрузил работы",
+    EVENT_MEETING_JOIN: "Нажал «Подключиться»",
 }
 
 # Действия сотрудников над учеником, которые попадают в его ленту. Остальные
@@ -1769,20 +1784,34 @@ def student_activity(
         by_status[entry["status"]] += 1
 
     # Лента: последние события ученика и, для старших, действия над ним.
+    student_events = (
+        db.query(StudentActivityEvent)
+        .filter(StudentActivityEvent.user_id == student.id)
+        .order_by(StudentActivityEvent.created_at.desc())
+        .limit(FEED_LIMIT)
+        .all()
+    )
+    # У подключения в журнале номер события — в ленту идёт его название.
+    meeting_titles = event_titles(db, (
+        event_id_from_details(e.details)
+        for e in student_events if e.event_type == EVENT_MEETING_JOIN
+    ))
+
+    def _feed_details(e: StudentActivityEvent) -> str | None:
+        if e.event_type == "login":
+            return None
+        if e.event_type == EVENT_MEETING_JOIN:
+            return meeting_titles.get(event_id_from_details(e.details))
+        return e.details
+
     feed: list[dict] = [
         {
             "at": _utc(e.created_at),
             "kind": "student",
             "label": _STUDENT_EVENT_FEED_LABELS.get(e.event_type, e.event_type),
-            "details": e.details if e.event_type != "login" else None,
+            "details": _feed_details(e),
         }
-        for e in (
-            db.query(StudentActivityEvent)
-            .filter(StudentActivityEvent.user_id == student.id)
-            .order_by(StudentActivityEvent.created_at.desc())
-            .limit(FEED_LIMIT)
-            .all()
-        )
+        for e in student_events
     ]
     if with_staff_actions:
         audit_rows = (
@@ -1830,6 +1859,15 @@ def student_activity(
         "last_login": _when(student.last_login_at),
         "logins": counts.get("login", 0),
         "uploads": counts.get("portfolio_upload", 0) + counts.get("work_upload", 0),
+        # Нажатия «Подключиться» у событий дайджеста (владелец 20.10.2026):
+        # открыл ссылку занятия, а не «просидел занятие».
+        "meetings": {
+            "recent": counts.get(EVENT_MEETING_JOIN, 0),
+            "joins": [
+                {"event": j["event"], "joined_at": _when(j["joined_at"])}
+                for j in student_meeting_joins(db, student.id)
+            ],
+        },
         "video": {
             "started": started or 0,
             "completed": completed or 0,

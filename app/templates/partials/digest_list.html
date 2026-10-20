@@ -31,6 +31,10 @@
   base.css, данные — `digest_day_events`, скрипт — static/js/digest-day-pop.js.
   В редакторе вместо окна — панель дня.
 
+  «Подключиться» у ученика помечено `data-meeting-join` — нажатие пишется
+  в статистику его карточки (static/js/meeting-join.js,
+  services/meeting_joins.py, владелец 20.10.2026). В редакторе пометки нет.
+
   Ждёт в контексте: digest, digest_heading, digest_events, digest_days,
   digest_weekday_labels, format_event_dates, format_event_time;
   необязательно digest_editable, digest_neighbors ({id: дайджест}) и
@@ -70,7 +74,7 @@
         <ul class="dgst-pop-list"></ul>
     </div>
     <script type="application/json" id="digestDayEvents">{{ digest_day_events|tojson }}</script>
-    <script src="/static/js/digest-day-pop.js?v=1" defer></script>
+    <script src="/static/js/digest-day-pop.js?v=2" defer></script>
     {% endif %}
     {% endif %}
     {% if editable %}{% include "partials/digest_day_panel.html" %}{% endif %}
@@ -94,7 +98,7 @@
             {% if event.note %}<p class="dgst-event-note">{{ event.note }}</p>{% endif %}
             {% if event.meeting_url %}
             <a class="btn-outline dgst-event-link" href="{{ event.meeting_url }}"
-               target="_blank" rel="noopener">Подключиться</a>
+               target="_blank" rel="noopener"{% if not editable %} data-meeting-join="{{ event.id }}"{% endif %}>Подключиться</a>
             {% endif %}
             {% if editable and event.digest_id != digest.id %}
             <a class="btn-outline dgst-event-edit" href="/cabinet/staff/digest/{{ event.digest_id }}/events?day={{ event.starts_on.isoformat() }}">Изменить в «{{ digest_neighbors[event.digest_id].title }}»</a>
@@ -109,4 +113,5 @@
     <h3 class="dgst-list-title">События месяца</h3>
     <p class="dgst-empty">В этом месяце пока нет событий.</p>
     {% endif %}
+    {% if not editable %}<script src="/static/js/meeting-join.js?v=1" defer></script>{% endif %}
 </section>

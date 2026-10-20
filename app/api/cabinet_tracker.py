@@ -160,6 +160,7 @@ from app.services.tracker import (
     task_done_for_user,
     task_status,
 )
+from app.services.meeting_joins import record_meeting_join, visible_meeting_event
 from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
@@ -444,6 +445,31 @@ def cabinet_tracker_toggle(
         db.commit()
 
     return JSONResponse({"status": task_status(task, state, now=now_msk())})
+
+
+@router.post("/tracker/digest/events/{event_id}/join", response_class=JSONResponse)
+def cabinet_tracker_meeting_join(
+    event_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Ученик нажал «Подключиться» у события дайджеста (владелец 20.10.2026).
+    Ссылку браузер открывает сам, этот запрос только записывает нажатие, —
+    правило и смысл записи в `services/meeting_joins.py`.
+
+    Сотрудник под собой и вход «глазами» не пишутся: в статистике ученика
+    было бы подключение, которого он не делал."""
+    if user.get("role_rank", 0) > STUDENT_ROLE_RANK or user.get("impersonated_by_id"):
+        return JSONResponse({"ok": True, "recorded": False})
+    event = visible_meeting_event(
+        db, user_id=user["user_id"], tariff=user.get("tariff"), event_id=event_id,
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    recorded = record_meeting_join(db, user_id=user["user_id"], event=event)
+    db.commit()
+    return JSONResponse({"ok": True, "recorded": recorded})
 
 
 def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerTask:

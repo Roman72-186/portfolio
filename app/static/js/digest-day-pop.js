@@ -66,6 +66,7 @@
             link.href = event.url;
             link.target = '_blank';
             link.rel = 'noopener';
+            link.setAttribute('data-meeting-join', String(event.id));
             link.textContent = 'Подключиться';
             li.appendChild(link);
         }
