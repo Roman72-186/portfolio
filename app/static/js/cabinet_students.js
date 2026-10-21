@@ -416,7 +416,15 @@ function buildTasks(data) {
         + pill('pending', 'На проверку: ' + pending.length, !showAll)
         + pill('all', 'Все: ' + items.length, showAll)
         + '</div>';
-    var list = showAll ? items : pending;
+    // «Все» — по дате сдачи, свежие сверху, без деления на проверенное
+    // (владелец 21.10.2026): проверенная вчера работа уходила в конец списка,
+    // под сентябрьские, и школа решала, что её нет. «На проверку» держит
+    // порядок сервера. Сравнение строк ISO корректно: формат у всех один.
+    var list = showAll
+        ? items.slice().sort(function(a, b) {
+            return (b.submitted_at || '').localeCompare(a.submitted_at || '');
+        })
+        : pending;
     if (!list.length) {
         return html + '<div class="no-works">Всё проверено. Прошлые сдачи — во вкладке «Все».</div>';
     }

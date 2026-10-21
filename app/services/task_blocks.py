@@ -3213,6 +3213,17 @@ def submission_review_queue(
     group_of = absorbed_for_mains(db, [submission for submission, _, _, _ in rows])
     ids = [submission.id for submission, _, _, _ in rows]
     ids += [linked.id for group in group_of.values() for linked in group]
+    # Какие задания вошли в общую ОС — в подпись строки (владелец 21.10.2026):
+    # без них школа искала работы по композиции отдельной строкой и не находила.
+    linked_task_titles: dict[int, str] = {}
+    linked_blocks = {linked.block_id for group in group_of.values() for linked in group}
+    if linked_blocks:
+        linked_task_titles = dict(
+            db.query(TaskBlock.id, TrackerTask.title)
+            .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+            .filter(TaskBlock.id.in_(linked_blocks))
+            .all()
+        )
     image_map: dict[int, list[TaskBlockSubmissionImage]] = {}
     if ids:
         for image in (
@@ -3268,6 +3279,11 @@ def submission_review_queue(
                 for i in image_map.get(work.id, [])
             ],
             "linked_count": len(linked),
+            # Названия прошлых заданий общей ОС, без повторов и без своего.
+            "linked_task_titles": list(dict.fromkeys(
+                title for work in sorted(linked, key=lambda w: w.submitted_at)
+                if (title := linked_task_titles.get(work.block_id)) and title != task.title
+            )),
             "group_period": (
                 (min(group_dates), max(group_dates)) if linked else None
             ),

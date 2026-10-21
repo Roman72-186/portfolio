@@ -864,6 +864,8 @@ def _task_item_json(item) -> dict:
         "title": item.title,
         "subject": item.subject,
         "submitted_label": msk_text(submitted) if submitted else "",
+        # Для порядка во «Все» по дате сдачи (`cabinet_students.js::buildTasks`).
+        "submitted_at": submitted.isoformat() if submitted else None,
         "is_reviewed": item.is_reviewed,
         "needs_revision": item.needs_revision,
         "question": item.question,

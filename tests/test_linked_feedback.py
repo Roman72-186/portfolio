@@ -166,6 +166,23 @@ def test_queue_shows_one_row_with_all_works(db, group):
     assert counts[group["student"].id] == 1
 
 
+def test_group_row_names_tasks_it_includes(db, group, user_factory, client, session_factory):
+    """Строка общей ОС называет прошлые задания (владелец 21.10.2026): их
+    работы отдельной строкой не идут, и школа искала композицию в списке и не
+    находила. Во «Все» экран сортирует по дате — для этого `submitted_at`."""
+    main = group["submit_main"]()
+    head = user_factory(vk_id=995_009, name="ГП Список", role_name="админ")
+
+    queue = submission_review_queue(db, student_id=group["student"].id)
+    assert queue[0]["linked_task_titles"] == ["Неделя 1 – перспектива", "Неделя 2 – светотень"]
+
+    _login(client, session_factory, head)
+    items = client.get(f"/cabinet/students/{group['student'].id}/tasks").json()["items"]
+    row = next(item for item in items if item["id"] == main.id)
+    assert "общая ОС вместе с «Неделя 1 – перспектива», «Неделя 2 – светотень»: работы" in row["title"]
+    assert row["submitted_at"] == main.submitted_at.isoformat()
+
+
 def test_work_answered_before_linking_keeps_its_own_dialog(db, group, client, session_factory):
     """Связка задним числом не отбирает у работы уже данный ей ответ."""
     second = group["works"]["second"]

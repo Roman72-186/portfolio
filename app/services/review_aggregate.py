@@ -345,7 +345,11 @@ def _block_work_items(
             # Общая ОС (13.10.2026): одна строка на все связанные работы.
             first, last = (msk_date_text(value) for value in row["group_period"])
             span = f"с {first} по {last}" if first != last else f"за {first}"
-            title = f"{title} · общая ОС: работы {span} ({row['linked_count'] + 1})"
+            # Вместе с какими заданиями (21.10.2026): работы прошлых заданий
+            # отдельной строкой не идут, и без названий их не найти.
+            with_tasks = ", ".join(f"«{t}»" for t in row["linked_task_titles"])
+            together = f" вместе с {with_tasks}" if with_tasks else ""
+            title = f"{title} · общая ОС{together}: работы {span} ({row['linked_count'] + 1})"
         items.append(ReviewItem(
             domain=DOMAIN_BLOCK_WORK,
             item_id=row["submission_id"],
