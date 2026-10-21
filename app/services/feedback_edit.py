@@ -18,6 +18,9 @@
 (`Feedback.curator_id`) — раньше её мог править любой сотрудник со своим
 сообщением в цикле.
 
+Удаление ОС по сдаче целиком (21.10.2026) — `task_block_delete_refusal`: ГП
+или суперадмин, пока ОС не завершена, не оценена и ученик не ответил.
+
 Общее для обоих: после оценки ученика правка закрыта — оценка поставлена за
 конкретный текст, переписать его значило бы подменить, что оценили. Каждая
 правка ставит `edited_at`, экран пишет «изменено».
@@ -25,11 +28,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
+from app.models.audit_log import AuditLog
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.feedback_rating import DIALOG_MOCK_EXAM, DIALOG_TASK_BLOCK
 from app.models.notification import Notification
@@ -103,6 +108,67 @@ def task_block_return_refusal(db: DBSession, feedback) -> str | None:
     if feedback.is_on_revision:
         return "Обратная связь уже возвращена на правку."
     return None
+
+
+# Удаление ошибочной ОС (владелец 21.10.2026): кураторы отправляли ОС не
+# тем ученикам и не на те работы, школа трижды за два дня просила убрать её
+# вручную (`docs/ops-history.md`, 20–21.10.2026). Удаляет ГП или суперадмин —
+# ранг проверяет роут, как у возврата на правку.
+
+# Уведомления ученику, которые рождает незавершённый диалог: по одному на
+# каждое сообщение сотрудника (`task_block_feedback.notify_counterpart`).
+# «Преподаватель оценил работу» — про балл, а не про диалог, и остаётся.
+DELETED_FEEDBACK_NOTIFICATION_TITLES = (
+    "Преподаватель оставил обратную связь по работе",
+    "Преподаватель оставил обратную связь по работам",
+)
+
+
+def task_block_delete_refusal(db: DBSession, feedback) -> str | None:
+    """Почему ОС по сдаче нельзя удалить целиком, или None — можно."""
+    if not has_staff_message(feedback):
+        return "В диалоге нет обратной связи – удалять нечего."
+    if is_closed(feedback):
+        return ("Обратная связь завершена – удалить её нельзя. "
+                "Если в ней ошибка, верни её автору на правку.")
+    if get_rating(db, DIALOG_TASK_BLOCK, feedback.id) is not None:
+        return RATED_REFUSAL
+    if any(message.sender_role == ROLE_STUDENT for message in feedback.messages):
+        return "Ученик уже ответил в диалоге – удалить обратную связь нельзя."
+    return None
+
+
+def delete_task_block_feedback(db: DBSession, feedback, submission, *, user_id: int) -> None:
+    """Удалить диалог целиком, как ручная чистка 20–21.10.2026: уведомления
+    ученику о нём, сам диалог (сообщения уходят каскадом) и отметку
+    «проверено» у сдачи — работа возвращается в очередь. Балл не трогаем
+    (владелец 21.10.2026): его ставят отдельно от диалога. Файлы в S3 остаются,
+    как при правке. Проверку `task_block_delete_refusal` делает вызывающий."""
+    messages = feedback.messages
+    first_text = next((m.text for m in messages if m.text), None) or ""
+    db.add(AuditLog(
+        action="task_block_feedback_delete",
+        performed_by_id=user_id,
+        target_user_id=submission.user_id,
+        details=json.dumps({
+            "feedback_id": feedback.id,
+            "submission_id": submission.id,
+            "author_id": feedback.curator_id,
+            "created_at": feedback.created_at.isoformat() if feedback.created_at else None,
+            "messages": len(messages),
+            "text_start": first_text[:300],
+        }, ensure_ascii=False),
+    ))
+    db.query(Notification).filter(
+        Notification.user_id == submission.user_id,
+        Notification.task_block_submission_id == submission.id,
+        Notification.title.in_(DELETED_FEEDBACK_NOTIFICATION_TITLES),
+    ).delete(synchronize_session=False)
+    db.delete(feedback)
+    submission.reviewed_at = None
+    submission.reviewed_by_id = None
+    db.flush()
+    invalidate_unread(submission.user_id)
 
 
 def request_task_block_revision(feedback) -> None:
@@ -237,9 +303,10 @@ def apply_edit(message, *, text: str, remove: set[str] = frozenset()) -> bool:
 
 
 __all__ = [
-    "EditError", "REMOVABLE_ATTACHMENTS", "apply_edit", "edited_feedback_notification",
+    "DELETED_FEEDBACK_NOTIFICATION_TITLES", "EditError", "REMOVABLE_ATTACHMENTS", "apply_edit",
+    "delete_task_block_feedback", "edited_feedback_notification",
     "editable_mock_exam_message_ids", "editable_task_block_message_ids",
     "finish_task_block_revision", "mock_exam_cycle_fully_rated", "mock_exam_edit_refusal",
     "request_task_block_revision", "revision_request_notification",
-    "task_block_edit_refusal", "task_block_return_refusal",
+    "task_block_delete_refusal", "task_block_edit_refusal", "task_block_return_refusal",
 ]

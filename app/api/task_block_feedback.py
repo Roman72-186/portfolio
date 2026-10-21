@@ -50,11 +50,13 @@ from app.services.linked_feedback import (
 from app.services.feedback_edit import (
     EditError,
     apply_edit,
+    delete_task_block_feedback,
     edited_feedback_notification,
     editable_task_block_message_ids,
     finish_task_block_revision,
     request_task_block_revision,
     revision_request_notification,
+    task_block_delete_refusal,
     task_block_edit_refusal,
     task_block_return_refusal,
 )
@@ -128,13 +130,15 @@ def _revision_state(db: DBSession, feedback: TaskBlockFeedback | None, user: dic
     """Возврат завершённой ОС автору на правку: что показать сотруднику.
     Вернуть могут ГП и суперадмин, завершить правку — автор или они же."""
     if feedback is None:
-        return {"on": False, "can_return": False, "can_finish": False}
+        return {"on": False, "can_return": False, "can_finish": False, "can_delete": False}
     on = feedback.is_on_revision
     is_head = user.get("role_rank", 1) >= 4
     return {
         "on": on,
         "can_return": is_head and task_block_return_refusal(db, feedback) is None,
         "can_finish": on and (is_head or feedback.curator_id == user["user_id"]),
+        # Удалить ошибочную ОС целиком (21.10.2026) — те же ГП и суперадмин.
+        "can_delete": is_head and task_block_delete_refusal(db, feedback) is None,
     }
 
 
@@ -570,6 +574,35 @@ def return_feedback_to_author(
     db.commit()
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
+
+
+@router.post(
+    "/staff/task-block-submissions/{submission_id}/delete-feedback",
+    response_class=JSONResponse,
+)
+def delete_feedback(
+    submission_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """ГП или суперадмин удаляет ошибочную ОС целиком (владелец 21.10.2026):
+    диалог, уведомления о нём, отметку «проверено». Только пока ОС не
+    завершена, не оценена и ученик не ответил — `task_block_delete_refusal`.
+    Ученику ничего не сообщается."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    feedback = db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).with_for_update().first()
+    if feedback is None:
+        return _error(404, "Обратная связь не найдена.")
+    refusal = task_block_delete_refusal(db, feedback)
+    if refusal:
+        return _error(409, refusal)
+    delete_task_block_feedback(db, feedback, submission, user_id=user["user_id"])
+    db.commit()
     return JSONResponse({"ok": True})
 
 

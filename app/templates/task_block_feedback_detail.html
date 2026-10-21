@@ -271,6 +271,18 @@
         <p class="prg-message" data-revision-status aria-live="polite"></p>
     </section>
     {% endif %}
+
+    {# Удаление ошибочной ОС целиком (21.10.2026): ГП и суперадмин, пока ОС
+       не завершена, не оценена и ученик не ответил —
+       `services/feedback_edit.py::task_block_delete_refusal`. Ученик блока не видит. #}
+    {% if revision and revision.can_delete %}
+    <section class="card">
+        <h2 class="section-label">Удалить обратную связь</h2>
+        <p class="card-desc">Если обратная связь ушла не тому ученику или не на ту работу, удали её. Ученик перестанет её видеть, а работа вернётся в очередь непроверенной. Балл останется. Сообщение, которое бот уже прислал в Telegram, отозвать нельзя.</p>
+        <div class="prg-actions hw-hint"><button type="button" class="btn-outline" data-delete-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/delete-feedback">Удалить обратную связь</button></div>
+        <p class="prg-message" data-delete-status aria-live="polite"></p>
+    </section>
+    {% endif %}
 </div>
 
 {% include "partials/lightbox.html" %}
@@ -408,6 +420,28 @@
             }).then(function () { window.location.reload(); }).catch(function (error) {
                 button.disabled = false;
                 showError(status, error.message);
+            });
+        });
+    });
+
+    // Свежий ключ через `csrfFetch` (правило про CSRF в AGENTS.md); кнопка
+    // рисуется только когда удалить можно, поэтому отказ — это ОС, которую
+    // завершили или на которую ответили после открытия страницы.
+    document.querySelectorAll('[data-delete-feedback]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (!window.confirm('Удалить обратную связь по этой работе? Вернуть её не получится.')) return;
+            var status = document.querySelector('[data-delete-status]');
+            var fallback = 'Не получилось удалить. Обнови страницу: возможно, ученик уже ответил или обратную связь завершили.';
+            button.disabled = true;
+            window.csrfFetch(button.dataset.deleteFeedback, {method: 'POST'}).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(window.csrfFailure(response.status, data, fallback));
+                    }
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                showError(status, error.message || fallback);
             });
         });
     });
