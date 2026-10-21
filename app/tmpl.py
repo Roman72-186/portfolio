@@ -143,10 +143,21 @@ def format_rich_text(text: str | None, links: bool = True) -> str:
     `links=False` — для мест, где вывод уже сам лежит внутри `<a>` (например
     строка списка видео, целиком обёрнутая в ссылку на карточку): вложенный
     `<a>` внутри `<a>` невалиден и ломает кликабельность строки.
+
+    Список — блочные `<span class="rt-list">`, а не `<ul>` (21.10.2026, жалоба
+    ГП на «разъехавшееся» форматирование длинных ОС). Вывод вставляют внутрь
+    `<p>` в десятках мест (шаблоны, `elHtml('p', …)` в JS), а `<ul>` внутри
+    `<p>` HTML-парсер не терпит: закрывает абзац на первом списке, и весь
+    текст ниже выпадает из стилей сообщения. Отступ маркерам — `.rt-list`
+    в base.css: общий сброс `* { padding: 0 }` выносил их за край пузыря.
+
+    Переводы строк `\\r\\n` из отправленных форм (браузер шлёт textarea
+    так) сводятся к `\\n` — иначе абзацы не распознаются и пустые строки
+    не схлопываются.
     """
     if not text:
         return ""
-    escaped = html.escape(text)
+    escaped = html.escape(text.replace("\r\n", "\n").replace("\r", "\n"))
 
     # Списки: последовательные строки, начинающиеся с "- " или "• "
     lines = escaped.split("\n")
@@ -155,8 +166,10 @@ def format_rich_text(text: str | None, links: bool = True) -> str:
 
     def flush():
         if buf:
-            items = "".join(f"<li>{item}</li>" for item in buf)
-            out_lines.append(f"<ul>{items}</ul>")
+            items = "".join(
+                f'<span class="rt-li" role="listitem">{item}</span>' for item in buf
+            )
+            out_lines.append(f'<span class="rt-list" role="list">{items}</span>')
             buf.clear()
 
     for line in lines:
@@ -178,7 +191,10 @@ def format_rich_text(text: str | None, links: bool = True) -> str:
     # Абзацы и переносы
     parts = re.split(r"\n{2,}", result)
     parts = [p.replace("\n", "<br>") for p in parts]
-    return "<br><br>".join(parts)
+    # Список — блок и сам начинается с новой строки, а `<br>` сразу после
+    # него рисует лишнюю пустую строку. Перед списком `<br>` не мешает:
+    # перевод в конце строки пустой строки не добавляет.
+    return "<br><br>".join(parts).replace("</span><br>", "</span>")
 
 
 # Историческое имя оставлено алиасом — уже используется в шаблонах билетов

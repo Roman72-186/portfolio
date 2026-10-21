@@ -27,19 +27,27 @@
         return div.innerHTML;
     }
 
-    // ---- markdown -> html, для показа в contenteditable (зеркало format_rich_text) ----
-    function markdownToHtml(text) {
+    // ---- markdown -> html (зеркало format_rich_text) ----
+    // forEditor: список настоящим <ul> — только contenteditable умеет его
+    // редактировать (Enter в пункте даёт новый пункт). Для показа читателю,
+    // как и сервер, — блочные span: <ul> внутри <p> парсер разрывает
+    // (21.10.2026, комментарий у format_rich_text).
+    function markdownToHtml(text, forEditor) {
         if (!text) return '';
-        var escaped = escapeHtml(text);
+        var escaped = escapeHtml(String(text).replace(/\r\n?/g, '\n'));
         var lines = escaped.split('\n');
         var outLines = [];
         var buf = [];
+        var listOpen = forEditor ? '<ul>' : '<span class="rt-list" role="list">';
+        var listClose = forEditor ? '</ul>' : '</span>';
+        var itemOpen = forEditor ? '<li>' : '<span class="rt-li" role="listitem">';
+        var itemClose = forEditor ? '</li>' : '</span>';
 
         function flush() {
             if (buf.length) {
-                outLines.push('<ul>' + buf.map(function (item) {
-                    return '<li>' + item + '</li>';
-                }).join('') + '</ul>');
+                outLines.push(listOpen + buf.map(function (item) {
+                    return itemOpen + item + itemClose;
+                }).join('') + listClose);
                 buf = [];
             }
         }
@@ -67,7 +75,9 @@
         var parts = result.split(/\n{2,}/).map(function (part) {
             return part.replace(/\n/g, '<br>');
         });
-        return parts.join('<br><br>');
+        // <br> сразу после списка — лишняя пустая строка (список уже блок),
+        // а в редакторе она к тому же дописывалась в текст при каждой правке.
+        return parts.join('<br><br>').split(listClose + '<br>').join(listClose);
     }
 
     // ---- html (contenteditable) -> markdown, пишется в textarea.value ----
@@ -127,16 +137,9 @@
         return out;
     }
 
-    function blockLines(el, out) {
-        var tag = el.tagName ? el.tagName.toLowerCase() : '';
-        if (tag === 'ul' || tag === 'ol') {
-            Array.prototype.forEach.call(el.children, function (li) {
-                out.push('- ' + walkInline(li).trim());
-            });
-            return;
-        }
-        walkInline(el).split('\n').forEach(function (line) {
-            out.push(line);
+    function listLines(el, out) {
+        Array.prototype.forEach.call(el.children, function (li) {
+            out.push('- ' + walkInline(li).trim());
         });
     }
 
@@ -145,8 +148,17 @@
     // обёртки распадались бы на две строки "hello" и "world" вместо одной
     // "hello **world**". Строка закрывается только настоящей границей блока:
     // <div>/<p>/<ul>/<ol> или <br>.
+    //
+    // Блок разбирается тем же способом рекурсивно (21.10.2026): браузер кладёт
+    // блоки внутрь блоков — кнопка «Список» на строке даёт <div><ul>…</ul></div>,
+    // вставка посреди строки — <div><div>…</div></div>. Разбор блока как
+    // инлайна склеивал такие строки в одну и терял маркеры списка.
     function htmlToMarkdown(root) {
-        var lines = [];
+        var lines = collectLines(root, []);
+        return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+    }
+
+    function collectLines(root, lines) {
         var current = '';
 
         function flushCurrent() {
@@ -165,9 +177,12 @@
             }
             if (node.nodeType !== Node.ELEMENT_NODE) return;
             var tag = node.tagName.toLowerCase();
-            if (tag === 'div' || tag === 'p' || tag === 'ul' || tag === 'ol') {
+            if (tag === 'ul' || tag === 'ol') {
                 flushCurrent();
-                blockLines(node, lines);
+                listLines(node, lines);
+            } else if (tag === 'div' || tag === 'p') {
+                flushCurrent();
+                collectLines(node, lines);
             } else if (tag === 'br') {
                 // <br> — явный разрыв строки от пользователя, в отличие от
                 // границы блока: пустой "current" здесь всё равно значащий
@@ -179,8 +194,7 @@
             }
         });
         if (current) lines.push(current);
-
-        return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+        return lines;
     }
 
     function placeCaretAtEnd(el) {
@@ -201,7 +215,7 @@
         if (max && value.length > Number(max)) {
             value = value.slice(0, Number(max));
             textarea.value = value;
-            editable.innerHTML = markdownToHtml(value);
+            editable.innerHTML = markdownToHtml(value, true);
             placeCaretAtEnd(editable);
         } else {
             textarea.value = value;
@@ -264,7 +278,7 @@
 
         textarea._rtEditable = editable;
         editable._rtSource = textarea;
-        editable.innerHTML = markdownToHtml(textarea.value);
+        editable.innerHTML = markdownToHtml(textarea.value, true);
 
         if (singleLine) {
             editable.addEventListener('keydown', function (e) {
@@ -305,7 +319,9 @@
         editable.addEventListener('paste', function (e) {
             e.preventDefault();
             var text = (e.clipboardData || window.clipboardData).getData('text/plain');
-            document.execCommand('insertText', false, text);
+            // Буфер Windows отдаёт строки с \r\n, и Firefox вставлял \r
+            // невидимым пробелом в конец каждой строки (проверено 21.10.2026).
+            document.execCommand('insertText', false, text.replace(/\r\n?/g, '\n'));
         });
 
         toolbar.addEventListener('mousedown', function (e) {
@@ -334,7 +350,7 @@
     function refresh(textarea) {
         var editable = textarea && textarea._rtEditable;
         if (!editable) return;
-        editable.innerHTML = markdownToHtml(textarea.value);
+        editable.innerHTML = markdownToHtml(textarea.value, true);
     }
 
     window.RichTextField = {
@@ -347,8 +363,9 @@
         // обычно даёт сервер (`app/tmpl.py::format_rich_text`). До сюда
         // конвертация была только внутри этого IIFE — предпросмотр показывал
         // пустой текст у любого блока с телом (см. докстринг файла: это то
-        // самое зеркало серверной разметки).
-        markdownToHtml: markdownToHtml
+        // самое зеркало серверной разметки). Наружу — вариант для читателя,
+        // со списками как у сервера.
+        markdownToHtml: function (text) { return markdownToHtml(text, false); }
     };
 
     document.addEventListener('DOMContentLoaded', function () {

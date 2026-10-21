@@ -47,10 +47,10 @@
             {% endfor %}
         </div>
         {% for work in group.works if work.submission.comment %}
-        <p><strong>{{ work.task_title }}:</strong> {{ work.submission.comment }}</p>
+        <p><strong>{{ work.task_title }}:</strong> {{ work.submission.comment | rich_text | safe }}</p>
         {% endfor %}
         {% else %}
-        {% if submission.comment %}<p>{{ submission.comment }}</p>{% endif %}
+        {% if submission.comment %}<p>{{ submission.comment | rich_text | safe }}</p>{% endif %}
         {% endif %}
         {% if submission_images and not group %}
         <div class="photo-grid" data-gallery="submission-{{ submission.id }}">
@@ -286,7 +286,7 @@
 </div>
 
 {% include "partials/lightbox.html" %}
-<script src="/static/js/rich-text-field.js?v=3"></script>
+<script src="/static/js/rich-text-field.js?v=4"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
 <script src="/static/js/feedback-rating.js?v=1"></script>
 <script>
