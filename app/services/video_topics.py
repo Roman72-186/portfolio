@@ -632,9 +632,29 @@ def unpublish_topic(topic: LearningTopic) -> None:
     topic.published_by_id = None
 
 
-def delete_topic(topic: LearningTopic) -> None:
+_TOPIC_NOUNS = {"week": "цикл", "stage": "этап", "period": "период"}
+
+
+def delete_topic(db: Session, topic: LearningTopic) -> None:
     """Мягкое удаление. Уроки темы остаются, их topic_id обнулит FK ON DELETE
     только при физическом удалении — здесь связь сохраняется, но тема пропадает
-    из выдачи, потому что accessible_topic_ids фильтрует по deleted_at."""
+    из выдачи, потому что accessible_topic_ids фильтрует по deleted_at.
+
+    Тему, в заданиях которой (своих и вложенных рамок) есть сданные работы, не
+    удаляем (владелец 20.10.2026, вслед за заданиями — `tracker.delete_task`):
+    удалённый цикл прячет у учеников и кураторов все свои задания с работами.
+    Проверка здесь, а не в роуте: удалить цикл можно и с экрана программы, и
+    с экрана видеоуроков — тот берёт тему любого вида.
+    """
+    from app.services.tracker import TopicHasSubmissionsError, submitted_works_in_topic
+
+    count = submitted_works_in_topic(db, topic.id)
+    if count:
+        noun = _TOPIC_NOUNS.get(topic.kind, "тему")
+        whose = "её" if noun == "тему" else "его"
+        raise TopicHasSubmissionsError(
+            f"Нельзя удалить {noun} «{topic.title or 'без названия'}»: в {whose} заданиях уже есть "
+            f"сданные работы учеников ({count}). После удаления они пропали бы у учеников и кураторов."
+        )
     topic.deleted_at = datetime.now(timezone.utc)
     topic.is_published = False

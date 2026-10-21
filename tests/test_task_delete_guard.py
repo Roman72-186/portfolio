@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from app.models.audit_log import AuditLog
+from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_PHOTO_UPLOAD, TaskBlock, TaskBlockSubmission
 from app.models.tracker import TrackerTask
 from app.services.activity_stats import audit_label, get_audit_feed
@@ -128,3 +129,82 @@ def test_journal_reads_task_actions_in_russian(client, db, user_factory, session
     _cycle_with_task(client)
     labels = {row["action_label"] for row in get_audit_feed(db)}
     assert "Задание: добавлено" in labels
+
+
+# --- циклы, этапы, периоды (владелец 21.10.2026: «ту же защиту для периодов,
+# этапов, циклов») ---------------------------------------------------------------
+
+def _frame(db, kind, title, parent_id=None):
+    topic = LearningTopic(
+        kind=kind, title=title, parent_id=parent_id, is_published=True, assign_to_all=True,
+        opens_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db.add(topic)
+    db.commit()
+    return topic
+
+
+def test_cycle_with_submitted_works_is_not_deleted(client, db, user_factory, session_factory):
+    _staff(client, user_factory, session_factory)
+    task_id = _cycle_with_task(client)
+    _submit_work(db, task_id, user_factory(vk_id=720_010, name="Ученик"))
+    cycle_id = db.get(TrackerTask, task_id).topic_id
+
+    refused = client.post(f"/cabinet/staff/program/cycles/{cycle_id}/delete", headers=CSRF)
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"].startswith("Нельзя удалить цикл «1 неделя»")
+    db.expire_all()
+    assert db.get(LearningTopic, cycle_id).deleted_at is None
+    assert _actions(db, "program_cycle_delete") == []
+
+
+def test_cycle_without_submitted_works_is_deleted(client, db, user_factory, session_factory):
+    _staff(client, user_factory, session_factory)
+    task_id = _cycle_with_task(client)
+    _submit_work(db, task_id, user_factory(vk_id=720_011, name="Ученик"), submitted=False)
+    cycle_id = db.get(TrackerTask, task_id).topic_id
+
+    assert client.post(f"/cabinet/staff/program/cycles/{cycle_id}/delete", headers=CSRF).status_code == 200
+    db.expire_all()
+    assert db.get(LearningTopic, cycle_id).deleted_at is not None
+
+
+def test_works_of_an_already_deleted_task_do_not_hold_the_cycle(client, db, user_factory, session_factory):
+    """Работы удалённого задания и так скрыты — удаление цикла у учеников
+    ничего не отнимает."""
+    _staff(client, user_factory, session_factory)
+    task_id = _cycle_with_task(client)
+    _submit_work(db, task_id, user_factory(vk_id=720_012, name="Ученик"))
+    task = db.get(TrackerTask, task_id)
+    task.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    assert client.post(f"/cabinet/staff/program/cycles/{task.topic_id}/delete", headers=CSRF).status_code == 200
+
+
+def test_stage_and_period_with_works_inside_are_not_deleted_by_any_route(
+    client, db, user_factory, session_factory
+):
+    """Этап и период со своего экрана удаляются только пустыми (`_frame_blockers`),
+    а экран видеоуроков удаляет тему любого вида — запрет в `delete_topic`
+    держит и его, считая работы во вложенных циклах."""
+    _staff(client, user_factory, session_factory)
+    task_id = _cycle_with_task(client)
+    _submit_work(db, task_id, user_factory(vk_id=720_013, name="Ученик"))
+    period = _frame(db, "period", "1 семестр")
+    stage = _frame(db, "stage", "Октябрь", parent_id=period.id)
+    cycle = db.get(LearningTopic, db.get(TrackerTask, task_id).topic_id)
+    cycle.parent_id = stage.id
+    db.commit()
+
+    for topic, noun, path in ((stage, "этап", "stages"), (period, "период", "periods")):
+        own = client.post(f"/cabinet/staff/program/{path}/{topic.id}/delete", headers=CSRF)
+        assert own.status_code == 409
+        via_videos = client.post(f"/cabinet/admin/videos/topics/{topic.id}/delete", headers=CSRF)
+        assert via_videos.status_code == 409
+        assert via_videos.json()["detail"].startswith(f"Нельзя удалить {noun}")
+    via_videos = client.post(f"/cabinet/admin/videos/topics/{cycle.id}/delete", headers=CSRF)
+    assert via_videos.status_code == 409
+    db.expire_all()
+    assert all(db.get(LearningTopic, t.id).deleted_at is None for t in (period, stage, cycle))

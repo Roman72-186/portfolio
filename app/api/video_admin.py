@@ -32,6 +32,7 @@ from app.services.bunny_stream import (
     is_bunny_upload_available,
 )
 from app.services.tags import parse_usernames
+from app.services.tracker import TopicHasSubmissionsError
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, sync_status_from_bunny, unpublish_video
 from app.services.video_topics import (
@@ -692,7 +693,10 @@ def delete_video_topic(
             {"ok": False, "error": "topic_has_videos", "videos": attached},
             status_code=409,
         )
-    delete_topic(topic)
+    try:
+        delete_topic(db, topic)
+    except TopicHasSubmissionsError as exc:
+        return JSONResponse({"ok": False, "detail": str(exc)}, status_code=409)
     _audit_topic(db, action="video_topic_delete", user_id=user["user_id"], topic=topic)
     db.commit()
     return JSONResponse({"ok": True})

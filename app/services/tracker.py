@@ -13,7 +13,7 @@ import calendar
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import case, or_
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from app.constants import MOCK_SUBJECTS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, TARIFFS
@@ -1255,26 +1255,60 @@ class TaskHasSubmissionsError(Exception):
     """
 
 
-def submitted_works_count(db: Session, task_id: int) -> int:
-    """Сданные работы задания: в его блоках и в старой «Домашке»."""
+class TopicHasSubmissionsError(TaskHasSubmissionsError):
+    """Удаляют цикл, этап или период, в заданиях которого есть сданные работы."""
+
+
+def _submitted_works_in_tasks(db: Session, task_ids) -> int:
+    """Сданные работы заданий: в их блоках и в старой «Домашке»."""
     from app.models.homework_submission import HomeworkSubmission
     from app.models.task_block import TaskBlock, TaskBlockSubmission
 
     in_blocks = (
         db.query(TaskBlockSubmission.id)
         .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
-        .filter(TaskBlock.task_id == task_id, TaskBlockSubmission.submitted_at.isnot(None))
+        .filter(TaskBlock.task_id.in_(task_ids), TaskBlockSubmission.submitted_at.isnot(None))
         .count()
     )
     homework = (
         db.query(HomeworkSubmission.id)
         .filter(
-            HomeworkSubmission.tracker_task_id == task_id,
+            HomeworkSubmission.tracker_task_id.in_(task_ids),
             HomeworkSubmission.submitted_at.isnot(None),
         )
         .count()
     )
     return in_blocks + homework
+
+
+def submitted_works_count(db: Session, task_id: int) -> int:
+    """Сданные работы задания: в его блоках и в старой «Домашке»."""
+    return _submitted_works_in_tasks(db, [task_id])
+
+
+def submitted_works_in_topic(db: Session, topic_id: int) -> int:
+    """Сданные работы в живых заданиях темы и всего, что в неё вложено.
+
+    Цикл держит задания сам, этап — через циклы, период — через этапы и их
+    циклы. Удалённые вложенные рамки и задания не считаются: их работы уже
+    скрыты, и удаление рамки над ними ничего у учеников не отнимает.
+    """
+    topic_ids = {topic_id}
+    level = [topic_id]
+    while level:
+        level = [
+            row.id
+            for row in db.query(LearningTopic.id).filter(
+                LearningTopic.parent_id.in_(level),
+                LearningTopic.deleted_at.is_(None),
+            )
+            if row.id not in topic_ids
+        ]
+        topic_ids.update(level)
+    task_ids = select(TrackerTask.id).where(
+        TrackerTask.topic_id.in_(topic_ids), TrackerTask.deleted_at.is_(None)
+    )
+    return _submitted_works_in_tasks(db, task_ids)
 
 
 def delete_task(db: Session, task: TrackerTask) -> None:

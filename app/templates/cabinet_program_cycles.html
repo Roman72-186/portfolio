@@ -397,11 +397,15 @@
             window.csrfFetch('/cabinet/staff/program/cycles/' + card.getAttribute('data-cycle-id') + '/delete', {
                 method: 'POST'
             }).then(function (resp) {
-                if (!resp.ok) throw new Error('');
-                window.location.reload();
-            }).catch(function () {
+                if (resp.ok) { window.location.reload(); return; }
+                // 409 — в заданиях цикла есть сданные работы (20.10.2026): причину пишет сервер.
+                return resp.json().catch(function () { return {}; }).then(function (data) {
+                    var error = new Error(resp.status === 409 && typeof data.detail === 'string' ? data.detail : '');
+                    throw error;
+                });
+            }).catch(function (error) {
                 button.disabled = false;
-                window.alert('Не удалось удалить цикл.');
+                window.alert(error && error.message ? error.message : 'Не удалось удалить цикл.');
             });
         });
     });

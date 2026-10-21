@@ -163,6 +163,7 @@ from app.services.tracker import (
     cycle_label,
     delete_task,
     TaskHasSubmissionsError,
+    TopicHasSubmissionsError,
     get_homework,
     get_task,
     homework_images,
@@ -1652,7 +1653,10 @@ def delete_program_cycle(
     # единственный след того, к чему именно закрылся доступ.
     items_count = count_week_items(db, topic.id)
     videos_count = _cycle_video_count(db, topic.id)
-    delete_topic(topic)
+    try:
+        delete_topic(db, topic)
+    except TopicHasSubmissionsError as exc:
+        return JSONResponse({"ok": False, "detail": str(exc)}, status_code=409)
     db.add(
         AuditLog(
             action="program_cycle_delete",

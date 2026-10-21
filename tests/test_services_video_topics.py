@@ -114,7 +114,7 @@ def test_past_topic_stays_open_as_archive(db, regular_user, admin_user):
 def test_draft_and_deleted_topics_are_closed(db, regular_user, admin_user):
     _topic(db, admin_user, assign_to_all=True, is_published=False, title="Черновик")
     deleted = _topic(db, admin_user, assign_to_all=True, title="Удалённая")
-    delete_topic(deleted)
+    delete_topic(db, deleted)
     db.commit()
 
     assert accessible_topic_ids(db, regular_user.id) == set()
@@ -264,7 +264,7 @@ def test_deleted_topic_disappears_from_listing_and_lookup(db, admin_user):
     topic = _topic(db, admin_user, assign_to_all=True)
     assert get_topic(db, topic.id) is topic
 
-    delete_topic(topic)
+    delete_topic(db, topic)
     db.commit()
 
     assert get_topic(db, topic.id) is None
