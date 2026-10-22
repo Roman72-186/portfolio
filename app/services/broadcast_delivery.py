@@ -229,13 +229,9 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
             return "Ни у вас, ни у служебных аккаунтов нет Telegram — проверку некуда прислать"
         users = bc.audience_users(db, audience)
         summary = bc.summarize(users)
-        names = {
-            user.id: " ".join(p for p in (user.first_name, user.last_name) if p) or f"ученик {user.id}"
-            for user in db.query(User).filter(User.id.in_(audience.user_ids))
-        } if audience.user_ids else {}
         lines = [
             "☝️ Так сообщение увидят ученики.",
-            f"Кому: {bc.audience_text(audience, names)}.",
+            f"Кому: {bc.audience_text(audience, bc.audience_names(db, audience))}.",
             f"Получат: {summary.reachable} из {summary.total}.",
         ]
         if summary.no_telegram:

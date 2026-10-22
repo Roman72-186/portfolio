@@ -14,6 +14,12 @@
   попадают, поимённо — попадают: так преподаватель проверяет рассылку на
   «службе заботы», как тестовые недели (`docs/инструкция-конструктор-недели.md`).
 
+**Исключённые** (владелец 22.10.2026: «исключать по юзернейму») — четвёртый
+список рядом с тройкой блока, `BroadcastAudience.excluded_ids`. Сильнее
+любого выбора: исключённый не получит ни по тарифу, ни поимённо. Живёт в том
+же объекте выбора, поэтому счётчик, проверка, отпечаток, журнал и
+запланированный старт видят его без отдельных вызовов.
+
 Не получают никак: заблокированные, архив, удалённые и ученики с закрытым по
 сроку кабинетом (`access_state.access_expired` — то же правило, что у входа и
 напоминаний).
@@ -64,6 +70,7 @@ from app.models.broadcast import (
     STATUS_SENDING,
     STATUS_SENT,
     Broadcast,
+    BroadcastExcludedStudent,
     BroadcastLevel,
     BroadcastRecipient,
     BroadcastStudent,
@@ -77,6 +84,15 @@ from app.services.task_blocks import BlockAudience, BlockViewer, is_block_open_t
 from app.services.tz import MSK_TZ, msk_text
 
 LEVELS = (1, 2)
+
+
+@dataclass(frozen=True)
+class BroadcastAudience(BlockAudience):
+    """Выбор получателей рассылки: тройка блока плюс исключённые поимённо.
+    Сами исключённые выбором не считаются — «никого не выбрано, кроме @x»
+    по-прежнему никого (`is_everyone`)."""
+
+    excluded_ids: frozenset[int] = frozenset()
 
 # Лимиты Telegram: текст сообщения и подпись к фото или голосовому. Считает
 # Telegram в UTF-16 и без разметки — так же считает `visible_length`. У
@@ -307,7 +323,7 @@ def text_problem(broadcast: Broadcast) -> str | None:
 # ── Выбор получателей ───────────────────────────────────────────────────────
 
 
-def get_audience(db: DBSession, broadcast_id: int) -> BlockAudience:
+def get_audience(db: DBSession, broadcast_id: int) -> BroadcastAudience:
     tariffs = {
         row[0] for row in
         db.query(BroadcastTariff.tariff).filter(BroadcastTariff.broadcast_id == broadcast_id)
@@ -320,16 +336,39 @@ def get_audience(db: DBSession, broadcast_id: int) -> BlockAudience:
         row[0] for row in
         db.query(BroadcastStudent.user_id).filter(BroadcastStudent.broadcast_id == broadcast_id)
     }
-    return BlockAudience(
+    excluded = {
+        row[0] for row in
+        db.query(BroadcastExcludedStudent.user_id)
+        .filter(BroadcastExcludedStudent.broadcast_id == broadcast_id)
+    }
+    return BroadcastAudience(
         tariffs=frozenset(tariffs), levels=frozenset(levels), user_ids=frozenset(user_ids),
+        excluded_ids=frozenset(excluded),
+    )
+
+
+def _student_ids(db: DBSession, raw) -> frozenset[int]:
+    """id с формы → только действующие ученики."""
+    wanted: set[int] = set()
+    for user_id in raw:
+        try:
+            wanted.add(int(user_id))
+        except (TypeError, ValueError):
+            continue
+    if not wanted:
+        return frozenset()
+    return frozenset(
+        row[0] for row in _students(db).with_entities(User.id).filter(User.id.in_(wanted))
     )
 
 
 def normalize_audience(
     db: DBSession, *, tariffs: list[str], levels: list, user_ids: list,
-) -> BlockAudience:
+    excluded_ids: list = (),
+) -> BroadcastAudience:
     """Выбор с формы → проверенные значения. Чужое отбрасывается молча: тариф
-    не из `TARIFFS`, уровень не 1/2, id не действующего ученика."""
+    не из `TARIFFS`, уровень не 1/2, id не действующего ученика. Ученик и в
+    «поимённо», и в «кроме» — остаётся только исключённым."""
     clean_tariffs = frozenset(t for t in tariffs if t in TARIFFS)
     clean_levels: set[int] = set()
     for level in levels:
@@ -339,22 +378,15 @@ def normalize_audience(
             continue
         if value in LEVELS:
             clean_levels.add(value)
-    wanted: set[int] = set()
-    for user_id in user_ids:
-        try:
-            wanted.add(int(user_id))
-        except (TypeError, ValueError):
-            continue
-    clean_users: frozenset[int] = frozenset()
-    if wanted:
-        clean_users = frozenset(
-            row[0] for row in _students(db).with_entities(User.id).filter(User.id.in_(wanted))
-        )
-    return BlockAudience(tariffs=clean_tariffs, levels=frozenset(clean_levels), user_ids=clean_users)
+    excluded = _student_ids(db, excluded_ids)
+    return BroadcastAudience(
+        tariffs=clean_tariffs, levels=frozenset(clean_levels),
+        user_ids=_student_ids(db, user_ids) - excluded, excluded_ids=excluded,
+    )
 
 
-def save_audience(db: DBSession, broadcast: Broadcast, audience: BlockAudience) -> None:
-    for model in (BroadcastTariff, BroadcastLevel, BroadcastStudent):
+def save_audience(db: DBSession, broadcast: Broadcast, audience: BroadcastAudience) -> None:
+    for model in (BroadcastTariff, BroadcastLevel, BroadcastStudent, BroadcastExcludedStudent):
         db.query(model).filter(model.broadcast_id == broadcast.id).delete(synchronize_session=False)
     for tariff in sorted(audience.tariffs):
         db.add(BroadcastTariff(broadcast_id=broadcast.id, tariff=tariff))
@@ -362,6 +394,8 @@ def save_audience(db: DBSession, broadcast: Broadcast, audience: BlockAudience) 
         db.add(BroadcastLevel(broadcast_id=broadcast.id, level=level))
     for user_id in sorted(audience.user_ids):
         db.add(BroadcastStudent(broadcast_id=broadcast.id, user_id=user_id))
+    for user_id in sorted(audience.excluded_ids):
+        db.add(BroadcastExcludedStudent(broadcast_id=broadcast.id, user_id=user_id))
 
 
 def _students(db: DBSession):
@@ -378,14 +412,14 @@ def _students(db: DBSession):
     )
 
 
-def audience_users(db: DBSession, audience: BlockAudience) -> list[User]:
+def audience_users(db: DBSession, audience: BroadcastAudience) -> list[User]:
     """Кто получит рассылку при таком выборе. Пустой выбор — никто."""
     if audience.is_everyone:
         return []
     now = datetime.now(timezone.utc)
     chosen: list[User] = []
     for user in _students(db).order_by(User.last_name, User.first_name, User.id):
-        if access_expired(user, now):
+        if user.id in audience.excluded_ids or access_expired(user, now):
             continue
         named = user.id in audience.user_ids
         if not named and user.id in REPORT_EXCLUDED_USER_IDS:
@@ -483,8 +517,36 @@ def summarize(users: list[User]) -> AudienceSummary:
     )
 
 
-def audience_text(audience: BlockAudience, names: dict[int, str] | None = None) -> str:
+def audience_names(db: DBSession, audience: BroadcastAudience) -> dict[int, str]:
+    """Имена выбранных и исключённых поимённо — для `audience_text`. Ник
+    рядом: исключают по нему, по одному имени не узнать."""
+    ids = audience.user_ids | audience.excluded_ids
+    if not ids:
+        return {}
+    names = {}
+    for user in db.query(User).filter(User.id.in_(list(ids))):
+        name = " ".join(p for p in (user.first_name, user.last_name) if p) or f"ученик {user.id}"
+        nick = (user.tg_username or "").strip().lstrip("@")
+        names[user.id] = f"{name} @{nick}" if nick else name
+    return names
+
+
+def _listed(ids: frozenset[int], names: dict[int, str] | None) -> str:
+    if not names:
+        return ""
+    shown = [names[uid] for uid in sorted(ids) if uid in names][:5]
+    return ": " + ", ".join(shown) + ("…" if len(ids) > len(shown) else "")
+
+
+def audience_text(audience: BroadcastAudience, names: dict[int, str] | None = None) -> str:
     """Выбор словами — для проверки у преподавателя и журнала."""
+    text = _chosen_text(audience, names)
+    if audience.excluded_ids:
+        text += f"; кроме {len(audience.excluded_ids)}{_listed(audience.excluded_ids, names)}"
+    return text
+
+
+def _chosen_text(audience: BroadcastAudience, names: dict[int, str] | None) -> str:
     parts: list[str] = []
     if audience.tariffs:
         parts.append("тариф " + ", ".join(sorted(audience.tariffs)))
@@ -492,12 +554,7 @@ def audience_text(audience: BlockAudience, names: dict[int, str] | None = None) 
         parts.append("уровень " + ", ".join(str(level) for level in sorted(audience.levels)))
     narrowed = " и ".join(parts)
     if audience.user_ids:
-        count = len(audience.user_ids)
-        listed = ""
-        if names:
-            shown = [names[uid] for uid in sorted(audience.user_ids) if uid in names][:5]
-            listed = ": " + ", ".join(shown) + ("…" if count > len(shown) else "")
-        named = f"поимённо {count}{listed}"
+        named = f"поимённо {len(audience.user_ids)}{_listed(audience.user_ids, names)}"
         return f"{narrowed}; плюс {named}" if narrowed else named
     return narrowed or "никого"
 
@@ -524,7 +581,7 @@ def student_choices(db: DBSession) -> list[dict]:
 # ── Проверка у преподавателя ────────────────────────────────────────────────
 
 
-def fingerprint(broadcast: Broadcast, audience: BlockAudience) -> str:
+def fingerprint(broadcast: Broadcast, audience: BroadcastAudience) -> str:
     """Отпечаток версии: текст, вложение, выбор получателей и когда отправить.
     Время — тоже часть проверенного: кнопка под проверкой в Telegram
     «Отправить … 10.10 в 10:00» должна значить ровно это."""
@@ -538,6 +595,10 @@ def fingerprint(broadcast: Broadcast, audience: BlockAudience) -> str:
         broadcast.schedule_mode or "",
         _aware(broadcast.scheduled_at).isoformat() if broadcast.scheduled_at else "",
     ]
+    # Только непустой: проверки, сделанные до появления исключений, остаются
+    # в силе после выкатки.
+    if audience.excluded_ids:
+        parts.append("-" + ",".join(str(uid) for uid in sorted(audience.excluded_ids)))
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 

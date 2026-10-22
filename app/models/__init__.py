@@ -69,6 +69,7 @@ from app.models.feedback_rating import FeedbackRating, FeedbackRatingImage
 from app.models.point_a_level_audio import PointALevelAudio
 from app.models.broadcast import (
     Broadcast,
+    BroadcastExcludedStudent,
     BroadcastLevel,
     BroadcastRecipient,
     BroadcastStudent,

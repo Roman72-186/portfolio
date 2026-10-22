@@ -165,6 +165,21 @@ class BroadcastStudent(Base):
     )
 
 
+class BroadcastExcludedStudent(Base):
+    """Ученик, исключённый из рассылки (владелец 22.10.2026: «исключать по
+    юзернейму»). Сильнее любого выбора: не получит, даже если подходит по
+    тарифу и уровню или выбран поимённо."""
+
+    __tablename__ = "broadcast_excluded_students"
+
+    broadcast_id: Mapped[int] = mapped_column(
+        ForeignKey("broadcasts.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class BroadcastRecipient(Base):
     """Журнал отправки: одна строка на ученика, заводится в момент нажатия
     «Отправить» — список получателей с этой секунды не меняется."""

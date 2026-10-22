@@ -10,6 +10,7 @@
 //    в шаблон конструктора и привязан к его строкам блоков, поэтому свой.
 //    Вставленный список ников разбирается по одному с кнопкой «Добавить
 //    найденных» (владелец 14.10.2026).
+//    То же поле второй раз — «Кроме»: кого исключить (владелец 22.10.2026).
 // 3. Живой счётчик «Получат N из M» — `GET /cabinet/staff/broadcasts/audience`.
 // 4. Отправка форм со свежим ключом CSRF (`static/js/csrf.js`, правило в
 //    AGENTS.md) и подтверждением, где оно нужно.
@@ -246,35 +247,17 @@
     });
     updateCounter();
 
-    // ── 2. Ученики поимённо ────────────────────────────────────────────────
+    // ── 2. Ученики поимённо и «Кроме» ──────────────────────────────────────
+    // Два поля с одним поиском: кого добавить поимённо и кого исключить
+    // (владелец 22.10.2026: «исключать по юзернейму»). Ученик не стоит в
+    // обоих сразу: выбрали в одном — пропал из другого (сервер держит то же,
+    // `broadcasts.normalize_audience`).
     var studentsData = [];
     var dataNode = document.getElementById('bc-students');
     if (dataNode) {
         try { studentsData = JSON.parse(dataNode.textContent || '[]'); } catch (e) { studentsData = []; }
     }
-    var box = form.querySelector('[data-bc-students]');
-    var search = box.querySelector('[data-bc-student-search]');
-    var results = box.querySelector('[data-bc-student-results]');
-    var chips = box.querySelector('[data-bc-student-chips]');
-    var idsField = box.querySelector('[data-bc-student-ids]');
     var RESULTS_MAX = 8;
-
-    function chosenIds() {
-        return (idsField.value || '').split(',').filter(Boolean).map(Number);
-    }
-
-    function renderChips() {
-        var byId = {};
-        studentsData.forEach(function (s) { byId[s.id] = s; });
-        chips.innerHTML = chosenIds().map(function (id) {
-            var s = byId[id] || {id: id, name: 'Ученик ' + id, username: ''};
-            var nick = s.username ? ' @' + s.username : '';
-            return '<span class="chip" data-id="' + Number(s.id) + '">'
-                + escapeHTML(s.name + nick)
-                + '<button type="button" class="chip-x" data-bc-student-remove="' + Number(s.id) + '"'
-                + ' aria-label="Убрать ' + escapeHTML(s.name) + '">×</button></span>';
-        }).join('');
-    }
 
     // Вставили список ников (владелец 14.10.2026: 14 ников через пробел давали
     // «Никого не нашли» — вся строка искалась как один ученик). Список — это
@@ -304,105 +287,155 @@
         return null;
     }
 
-    function renderListResults(tokens) {
-        var chosen = {};
-        chosenIds().forEach(function (id) { chosen[id] = true; });
-        var toAdd = [];
-        var already = 0;
-        var missing = [];
-        tokens.forEach(function (token) {
-            var s = matchToken(token);
-            if (!s) missing.push(token);
-            else if (chosen[s.id]) already += 1;
-            else if (toAdd.indexOf(Number(s.id)) < 0) toAdd.push(Number(s.id));
-        });
-        var html = '<p class="prg-hint">В списке ' + tokens.length + '. Нашли: ' + toAdd.length
-            + (already ? ', уже выбраны: ' + already : '') + '.</p>';
-        if (toAdd.length) {
-            html += '<button type="button" class="btn-outline" data-bc-student-pick-all="' + toAdd.join(',') + '">'
-                + 'Добавить найденных: ' + toAdd.length + '</button>';
-        }
-        if (missing.length) {
-            html += '<p class="prg-hint">Не нашли: ' + escapeHTML(missing.join(' '))
-                + '. Ник в анкете может отличаться, или доступ у ученика закрыт — найдите их по фамилии.</p>';
-        }
-        results.innerHTML = html;
-        results.hidden = false;
-    }
+    var pickers = [];
 
-    function renderResults() {
-        var tokens = listTokens(search.value);
-        if (tokens) {
-            renderListResults(tokens);
-            return;
-        }
-        var needle = (search.value || '').trim().toLowerCase().replace(/^@/, '');
-        if (!needle) {
-            results.hidden = true;
-            results.innerHTML = '';
-            return;
-        }
-        var chosen = {};
-        chosenIds().forEach(function (id) { chosen[id] = true; });
-        var queryId = studentIdFromQuery(needle);
-        var found = studentsData.filter(function (s) {
-            if (chosen[s.id]) return false;
-            if (queryId !== null) return Number(s.id) === queryId;
-            return s.name.toLowerCase().indexOf(needle) >= 0
-                || (s.username || '').toLowerCase().indexOf(needle) >= 0;
-        }).slice(0, RESULTS_MAX);
-        results.innerHTML = found.length
-            ? found.map(function (s) {
-                var extra = [s.username ? '@' + s.username : '', s.tariff].filter(Boolean).join(' · ');
-                return '<button type="button" class="prg-blk-student-option" data-bc-student-pick="' + Number(s.id) + '">'
-                    + escapeHTML(s.name)
-                    + (extra ? '<span class="prg-hint">' + escapeHTML(extra) + '</span>' : '')
-                    + '</button>';
-            }).join('')
-            : '<p class="prg-hint">Никого не нашли.</p>';
-        results.hidden = false;
-    }
+    function makePicker(box) {
+        var search = box.querySelector('[data-bc-student-search]');
+        var results = box.querySelector('[data-bc-student-results]');
+        var chips = box.querySelector('[data-bc-student-chips]');
+        var idsField = box.querySelector('[data-bc-student-ids]');
+        var picker = {idsField: idsField};
 
-    function setIds(ids) {
-        idsField.value = ids.join(',');
-        renderChips();
-        scheduleSummary();
-    }
+        function chosenIds() {
+            return (idsField.value || '').split(',').filter(Boolean).map(Number);
+        }
 
-    search.addEventListener('input', renderResults);
-    // Enter в поиске не должен отправлять форму.
-    search.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') event.preventDefault();
-    });
-    box.addEventListener('click', function (event) {
-        var pick = event.target.closest('[data-bc-student-pick]');
-        var remove = event.target.closest('[data-bc-student-remove]');
-        var pickAll = event.target.closest('[data-bc-student-pick-all]');
-        if (pickAll) {
-            var all = chosenIds();
-            pickAll.getAttribute('data-bc-student-pick-all').split(',').map(Number).forEach(function (id) {
-                if (all.indexOf(id) < 0) all.push(id);
+        function renderChips() {
+            var byId = {};
+            studentsData.forEach(function (s) { byId[s.id] = s; });
+            chips.innerHTML = chosenIds().map(function (id) {
+                var s = byId[id] || {id: id, name: 'Ученик ' + id, username: ''};
+                var nick = s.username ? ' @' + s.username : '';
+                return '<span class="chip" data-id="' + Number(s.id) + '">'
+                    + escapeHTML(s.name + nick)
+                    + '<button type="button" class="chip-x" data-bc-student-remove="' + Number(s.id) + '"'
+                    + ' aria-label="Убрать ' + escapeHTML(s.name) + '">×</button></span>';
+            }).join('');
+        }
+
+        function renderListResults(tokens) {
+            var chosen = {};
+            chosenIds().forEach(function (id) { chosen[id] = true; });
+            var toAdd = [];
+            var already = 0;
+            var missing = [];
+            tokens.forEach(function (token) {
+                var s = matchToken(token);
+                if (!s) missing.push(token);
+                else if (chosen[s.id]) already += 1;
+                else if (toAdd.indexOf(Number(s.id)) < 0) toAdd.push(Number(s.id));
             });
-            // В поле остаются только ненайденные — видно, кого искать руками.
-            var tokens = listTokens(search.value) || [];
-            search.value = tokens.filter(function (t) { return !matchToken(t); }).join(' ');
-            setIds(all);
-            renderResults();
-            search.focus();
-        } else if (pick) {
-            var id = Number(pick.getAttribute('data-bc-student-pick'));
-            var ids = chosenIds();
-            if (ids.indexOf(id) < 0) ids.push(id);
-            search.value = '';
-            setIds(ids);
-            renderResults();
-            search.focus();
-        } else if (remove) {
-            var gone = Number(remove.getAttribute('data-bc-student-remove'));
-            setIds(chosenIds().filter(function (id) { return id !== gone; }));
+            var html = '<p class="prg-hint">В списке ' + tokens.length + '. Нашли: ' + toAdd.length
+                + (already ? ', уже выбраны: ' + already : '') + '.</p>';
+            if (toAdd.length) {
+                html += '<button type="button" class="btn-outline" data-bc-student-pick-all="' + toAdd.join(',') + '">'
+                    + 'Добавить найденных: ' + toAdd.length + '</button>';
+            }
+            if (missing.length) {
+                html += '<p class="prg-hint">Не нашли: ' + escapeHTML(missing.join(' '))
+                    + '. Ник в анкете может отличаться, или доступ у ученика закрыт — найдите их по фамилии.</p>';
+            }
+            results.innerHTML = html;
+            results.hidden = false;
         }
+
+        function renderResults() {
+            var tokens = listTokens(search.value);
+            if (tokens) {
+                renderListResults(tokens);
+                return;
+            }
+            var needle = (search.value || '').trim().toLowerCase().replace(/^@/, '');
+            if (!needle) {
+                results.hidden = true;
+                results.innerHTML = '';
+                return;
+            }
+            var chosen = {};
+            chosenIds().forEach(function (id) { chosen[id] = true; });
+            var queryId = studentIdFromQuery(needle);
+            var found = studentsData.filter(function (s) {
+                if (chosen[s.id]) return false;
+                if (queryId !== null) return Number(s.id) === queryId;
+                return s.name.toLowerCase().indexOf(needle) >= 0
+                    || (s.username || '').toLowerCase().indexOf(needle) >= 0;
+            }).slice(0, RESULTS_MAX);
+            results.innerHTML = found.length
+                ? found.map(function (s) {
+                    var extra = [s.username ? '@' + s.username : '', s.tariff].filter(Boolean).join(' · ');
+                    return '<button type="button" class="prg-blk-student-option" data-bc-student-pick="' + Number(s.id) + '">'
+                        + escapeHTML(s.name)
+                        + (extra ? '<span class="prg-hint">' + escapeHTML(extra) + '</span>' : '')
+                        + '</button>';
+                }).join('')
+                : '<p class="prg-hint">Никого не нашли.</p>';
+            results.hidden = false;
+        }
+
+        function setIds(ids) {
+            idsField.value = ids.join(',');
+            renderChips();
+            scheduleSummary();
+        }
+
+        // Выбранного здесь убрать из другого поля.
+        function claim(ids) {
+            pickers.forEach(function (other) {
+                if (other !== picker) other.drop(ids);
+            });
+        }
+
+        picker.drop = function (ids) {
+            var left = chosenIds().filter(function (id) { return ids.indexOf(id) < 0; });
+            if (left.length !== chosenIds().length) setIds(left);
+        };
+
+        search.addEventListener('input', renderResults);
+        // Enter в поиске не должен отправлять форму.
+        search.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') event.preventDefault();
+        });
+        box.addEventListener('click', function (event) {
+            var pick = event.target.closest('[data-bc-student-pick]');
+            var remove = event.target.closest('[data-bc-student-remove]');
+            var pickAll = event.target.closest('[data-bc-student-pick-all]');
+            if (pickAll) {
+                var all = chosenIds();
+                var added = pickAll.getAttribute('data-bc-student-pick-all').split(',').map(Number);
+                added.forEach(function (id) {
+                    if (all.indexOf(id) < 0) all.push(id);
+                });
+                // В поле остаются только ненайденные — видно, кого искать руками.
+                var tokens = listTokens(search.value) || [];
+                search.value = tokens.filter(function (t) { return !matchToken(t); }).join(' ');
+                claim(added);
+                setIds(all);
+                renderResults();
+                search.focus();
+            } else if (pick) {
+                var id = Number(pick.getAttribute('data-bc-student-pick'));
+                var ids = chosenIds();
+                if (ids.indexOf(id) < 0) ids.push(id);
+                search.value = '';
+                claim([id]);
+                setIds(ids);
+                renderResults();
+                search.focus();
+            } else if (remove) {
+                var gone = Number(remove.getAttribute('data-bc-student-remove'));
+                setIds(chosenIds().filter(function (id) { return id !== gone; }));
+            }
+        });
+        renderChips();
+        return picker;
+    }
+
+    form.querySelectorAll('[data-bc-students]').forEach(function (box) {
+        pickers.push(makePicker(box));
     });
-    renderChips();
+    // Поимённо — первое поле, «Кроме» — второе (`data-bc-excluded`).
+    var idsField = form.querySelector('[data-bc-students]:not([data-bc-excluded]) [data-bc-student-ids]');
+    var excludedField = form.querySelector('[data-bc-excluded] [data-bc-student-ids]');
 
     // ── 3. Живой счётчик ───────────────────────────────────────────────────
     var summary = form.querySelector('[data-bc-summary]');
@@ -421,6 +454,7 @@
         form.querySelectorAll('input[name="tariffs"]:checked').forEach(function (el) { params.append('tariffs', el.value); });
         form.querySelectorAll('input[name="levels"]:checked').forEach(function (el) { params.append('levels', el.value); });
         params.set('students', idsField.value || '');
+        if (excludedField) params.set('excluded', excludedField.value || '');
         var seq = ++summarySeq;
         summary.textContent = 'Считаю…';
         fetch(audienceUrl + '?' + params.toString(), {

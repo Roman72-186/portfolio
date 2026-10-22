@@ -25,7 +25,7 @@ from app.models.broadcast import (
 from app.services import broadcast_delivery as delivery
 from app.services import broadcasts as bc
 from app.services import telegram as telegram_service
-from app.services.task_blocks import BlockAudience
+from app.services.broadcasts import BroadcastAudience
 
 ADMIN_CHAT = 500_000
 
@@ -184,7 +184,7 @@ def test_audience_by_tariff_level_and_name(db, student, monkeypatch):
     )
 
     def ids(**kw):
-        return {u.id for u in bc.audience_users(db, BlockAudience(**kw))}
+        return {u.id for u in bc.audience_users(db, BroadcastAudience(**kw))}
 
     assert ids(tariffs=frozenset({"Я С ВАМИ"})) == {with_you_l2.id, with_you_l1.id}
     assert ids(tariffs=frozenset({"Я С ВАМИ"}), levels=frozenset({2})) == {with_you_l2.id}
@@ -205,11 +205,63 @@ def test_audience_skips_closed_accounts_and_service_by_tariff(db, student, user_
     service = user_factory(vk_id=next(_vk), tariff="Я С ВАМИ")
     service.id = service_id
     db.commit()
-    by_tariff = {u.id for u in bc.audience_users(db, BlockAudience(tariffs=frozenset({"Я С ВАМИ"})))}
+    by_tariff = {u.id for u in bc.audience_users(db, BroadcastAudience(tariffs=frozenset({"Я С ВАМИ"})))}
     assert by_tariff == {active.id}
     assert blocked.id not in by_tariff and archived.id not in by_tariff and expired.id not in by_tariff
-    named = {u.id for u in bc.audience_users(db, BlockAudience(user_ids=frozenset({service_id})))}
+    named = {u.id for u in bc.audience_users(db, BroadcastAudience(user_ids=frozenset({service_id})))}
     assert named == {service_id}  # служебный — только поимённо, для проверки
+
+
+def test_excluded_beats_tariff_and_name(db, student):
+    """Владелец 22.10.2026: «исключать по юзернейму» — исключённый не получит
+    ни по тарифу, ни поимённо; одних исключённых выбором не считаем."""
+    stays = student(chat=1)
+    out = student(chat=2)
+    named_out = student(tariff="Я САМ", chat=3)
+
+    def ids(**kw):
+        return {u.id for u in bc.audience_users(db, BroadcastAudience(**kw))}
+
+    assert ids(tariffs=frozenset({"Я С ВАМИ"}), excluded_ids=frozenset({out.id})) == {stays.id}
+    assert ids(user_ids=frozenset({named_out.id}), excluded_ids=frozenset({named_out.id})) == set()
+    assert ids(excluded_ids=frozenset({out.id})) == set()
+
+
+def test_excluded_saved_counted_and_never_sent(gp_client, db, student, fake_tg):
+    client, _ = gp_client
+    stays = student(chat=101)
+    out = student(chat=102, tg_username="out_nick")
+    bid = _create(client)
+
+    counter = client.get("/cabinet/staff/broadcasts/audience", params={
+        "tariffs": "Я С ВАМИ", "excluded": str(out.id),
+    }).json()
+    assert (counter["total"], counter["reachable"]) == (1, 1)
+
+    # И в «поимённо», и в «кроме» — остаётся только исключённым.
+    _save(client, bid, excluded_ids=str(out.id), student_ids=str(out.id))
+    db.expire_all()
+    audience = bc.get_audience(db, bid)
+    assert audience.excluded_ids == {out.id} and audience.user_ids == frozenset()
+    page = client.get(f"/cabinet/staff/broadcasts/{bid}").text
+    assert f'name="excluded_ids" value="{out.id}"' in page
+
+    resp = _save(client, bid, excluded_ids=str(out.id), action="preview")
+    assert resp.headers["location"].endswith("ok=preview")
+    assert "кроме 1: Имя " in fake_tg.to(ADMIN_CHAT)[1][1]["text"]
+    assert "@out_nick" in fake_tg.to(ADMIN_CHAT)[1][1]["text"]
+    # Снять исключение — новая версия, нужна новая проверка.
+    _save(client, bid)
+    db.expire_all()
+    assert not bc.preview_is_current(db, db.get(Broadcast, bid))
+
+    _save(client, bid, excluded_ids=str(out.id), action="preview")
+    resp = client.post(f"/cabinet/staff/broadcasts/{bid}/send", follow_redirects=False)
+    assert resp.headers["location"].endswith("ok=sending")
+    db.expire_all()
+    journal = {r.user_id for r in db.query(BroadcastRecipient).filter_by(broadcast_id=bid)}
+    assert journal == {stays.id}
+    assert fake_tg.to(102) == [] and len(fake_tg.to(101)) == 1
 
 
 def test_summary_counts_unreachable(db, student):

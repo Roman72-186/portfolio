@@ -2,7 +2,8 @@
 (владелец 07.10.2026, план `plans/2026-10-07-apparchi-сообщения-лизы-я-с-вами.md`).
 
 Порядок для человека: собрать сообщение (текст в оформлении Telegram, фото,
-голосовое или кружок) → выбрать, кому (тарифы, уровень точки А, поимённо) и
+голосовое или кружок) → выбрать, кому (тарифы, уровень точки А, поимённо,
+кроме кого — с 22.10.2026) и
 когда (сразу, к часу по Москве или к часу у каждого ученика) → «Прислать мне
 на проверку»: бот присылает сообщение ровно таким, каким его получат ученики,
 под ним — кому уйдёт и ссылку сюда → отправить (или запланировать) здесь;
@@ -76,15 +77,6 @@ def _get_broadcast(db: DBSession, broadcast_id: int) -> Broadcast:
     return broadcast
 
 
-def _student_names(db: DBSession, user_ids) -> dict[int, str]:
-    if not user_ids:
-        return {}
-    return {
-        user.id: " ".join(p for p in (user.first_name, user.last_name) if p) or f"ученик {user.id}"
-        for user in db.query(User).filter(User.id.in_(list(user_ids)))
-    }
-
-
 def _east_offset(users) -> int:
     """Самое большое смещение от Москвы среди учеников, в часах."""
     return max((bc.tz_offset(user) for user in users), default=0)
@@ -151,10 +143,12 @@ def broadcast_audience(
     tariffs: Annotated[list[str], Query()] = [],
     levels: Annotated[list[str], Query()] = [],
     students: str = "",
+    excluded: str = "",
 ):
     """Живой счётчик под выбором: сколько получат и сколько не дойдёт."""
     audience = bc.normalize_audience(
         db, tariffs=tariffs, levels=levels, user_ids=[s for s in students.split(",") if s],
+        excluded_ids=[s for s in excluded.split(",") if s],
     )
     users = bc.audience_users(db, audience)
     summary = bc.summarize(users)
@@ -184,7 +178,7 @@ def broadcast_screen(
         "broadcast": broadcast,
         "text_html": bc.telegram_html_for_page(broadcast.text),
         "audience": audience,
-        "audience_text": bc.audience_text(audience, _student_names(db, audience.user_ids)),
+        "audience_text": bc.audience_text(audience, bc.audience_names(db, audience)),
         "media_labels": bc.MEDIA_LABELS,
         "schedule_text": bc.schedule_text(broadcast),
         "nav_active": "broadcasts",
@@ -234,6 +228,7 @@ def broadcast_screen(
         "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
         "students": bc.student_choices(db),
         "chosen_student_ids": sorted(audience.user_ids),
+        "excluded_student_ids": sorted(audience.excluded_ids),
         "summary": summary,
         "preview_current": bc.preview_is_current(db, broadcast),
         "text_limit": bc.text_limit(broadcast.media_kind),
@@ -296,6 +291,7 @@ async def broadcast_save(
     tariffs: Annotated[list[str], Form()] = [],
     levels: Annotated[list[str], Form()] = [],
     student_ids: Annotated[str, Form()] = "",
+    excluded_ids: Annotated[str, Form()] = "",
     remove_media: Annotated[str, Form()] = "",
     action: Annotated[str, Form()] = "save",
     preview_to: Annotated[str, Form()] = "",
@@ -374,6 +370,7 @@ async def broadcast_save(
     audience = bc.normalize_audience(
         db, tariffs=tariffs, levels=levels,
         user_ids=[s for s in student_ids.split(",") if s.strip()],
+        excluded_ids=[s for s in excluded_ids.split(",") if s.strip()],
     )
     bc.save_audience(db, broadcast, audience)
     db.flush()

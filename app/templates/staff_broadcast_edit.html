@@ -188,6 +188,18 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                         <input type="hidden" name="student_ids" value="{{ chosen_student_ids|join(',') }}" data-bc-student-ids>
                     </div>
                 </div>
+                <div class="prg-setting-item">
+                    <p class="prg-settings-title">Кроме</p>
+                    <p class="prg-hint">Не получат, даже если подходят по тарифу и уровню или выбраны поимённо.
+                        Найдите по @нику или вставьте список: @ivanov @petrova.</p>
+                    <div class="prg-blk-students" data-bc-students data-bc-excluded>
+                        <input type="search" data-bc-student-search autocomplete="off"
+                               placeholder="@ник, имя, фамилия или номер" aria-label="Исключить ученика: найти по нику, имени, фамилии или номеру">
+                        <div class="prg-blk-student-results" data-bc-student-results hidden></div>
+                        <div class="prg-blk-student-chips" data-bc-student-chips></div>
+                        <input type="hidden" name="excluded_ids" value="{{ excluded_student_ids|join(',') }}" data-bc-student-ids>
+                    </div>
+                </div>
             </fieldset>
             <p class="bc-summary" data-bc-summary aria-live="polite">
                 {% if summary.total %}
@@ -296,5 +308,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=10"></script>
-<script src="/static/js/broadcasts.js?v=7"></script>
+<script src="/static/js/broadcasts.js?v=8"></script>
 {% endblock %}
