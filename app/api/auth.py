@@ -1271,14 +1271,11 @@ def staff_login_form(request: Request):
     return _render_staff_login(request)
 
 
-@router.post("/login", response_class=HTMLResponse)
-@limiter.limit("10/minute")
-def staff_login_submit(
-    request: Request,
-    db: Annotated[DBSession, Depends(get_db)],
-    login: str = Form(...),
-    password: str = Form(...),
-):
+def _check_staff_credentials(
+    db: DBSession, login: str, password: str,
+) -> tuple[User | None, str | None]:
+    """Логин и пароль: (пользователь, None) или (None, текст отказа).
+    Одна проверка на вход `/login` и подключение Telegram `/telegram-staff`."""
     login_clean = login.strip().lower()
     user = db.query(User).filter(
         func.lower(User.staff_login) == login_clean,
@@ -1292,16 +1289,108 @@ def staff_login_submit(
         # password_hash is not a valid bcrypt hash — treat as wrong password
         pw_ok = False
     if not has_password or not pw_ok:
-        return _render_staff_login(request, "Неверный логин или пароль")
+        return None, "Неверный логин или пароль"
 
     if not user.is_active:
-        return _render_staff_login(request, "Аккаунт отключён. Обратитесь к администратору.")
+        return None, "Аккаунт отключён. Обратитесь к администратору."
 
     role_rank = user.role.rank if user.role else 0
     if role_rank < 1:
-        return _render_staff_login(request, "Для этого аккаунта не назначена роль.")
+        return None, "Для этого аккаунта не назначена роль."
+    return user, None
 
+
+@router.post("/login", response_class=HTMLResponse)
+@limiter.limit("10/minute")
+def staff_login_submit(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+    login: str = Form(...),
+    password: str = Form(...),
+):
+    user, error = _check_staff_credentials(db, login, password)
+    if error:
+        return _render_staff_login(request, error)
     return _create_session_response(db, user, request)
+
+
+# Одна ссылка на всех сотрудников — подключить Telegram для уведомлений
+# (владелец 22.10.2026: «единую ссылку только для кураторов, чтобы в
+# сообщении сразу они перешли и запустили»). Ссылка бота `?start=` личная —
+# по ней бот узнаёт аккаунт, — поэтому общая ссылка ведёт на сайт: он узнаёт
+# сотрудника по входу и выдаёт ему личную ссылку. Вход здесь же, своей
+# формой: Telegram открывает ссылку во встроенном браузере, где сессии
+# кабинета обычно нет, а `/login` после входа увёл бы в кабинет. Сессию
+# форма не создаёт — нужен только Telegram.
+STAFF_TELEGRAM_PATH = "/telegram-staff"
+
+
+def _staff_telegram_form(request: Request, error: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(request, "staff_login.html", {
+        "request": request,
+        "error": error,
+        "form_action": STAFF_TELEGRAM_PATH,
+        "page_title": "Подключить Telegram",
+        "page_sub": "Для преподавателей школы: войдите, и откроется бот уведомлений",
+    })
+
+
+def _staff_telegram_redirect(db: DBSession, user: User) -> RedirectResponse:
+    raw_token, _link_token = issue_telegram_link_token(
+        db, user=user, issued_by="self:telegram-staff",
+    )
+    return RedirectResponse(
+        f"https://t.me/{settings.telegram_bot_username}?start={raw_token}", status_code=302,
+    )
+
+
+def _session_user(request: Request, db: DBSession) -> User | None:
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        return None
+    row = db.query(Session, User).join(User, Session.user_id == User.id).filter(
+        Session.id == session_id, Session.is_active == True,  # noqa: E712
+    ).first()
+    if row is None or _as_utc(row[0].expires_at) <= _now():
+        return None
+    return row[1]
+
+
+def _is_staff(user: User) -> bool:
+    return user.is_active and user.deleted_at is None and bool(user.role and user.role.rank >= 2)
+
+
+@router.get(STAFF_TELEGRAM_PATH, response_class=HTMLResponse)
+def staff_telegram_start(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    if not settings.telegram_bot_username:
+        return _staff_telegram_form(request, "Telegram-бот ещё не настроен.")
+    user = _session_user(request, db)
+    if user is not None and _is_staff(user):
+        return _staff_telegram_redirect(db, user)
+    return _staff_telegram_form(request)
+
+
+@router.post(STAFF_TELEGRAM_PATH, response_class=HTMLResponse)
+@limiter.limit("10/minute")
+def staff_telegram_submit(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+    login: str = Form(...),
+    password: str = Form(...),
+):
+    if not settings.telegram_bot_username:
+        return _staff_telegram_form(request, "Telegram-бот ещё не настроен.")
+    user, error = _check_staff_credentials(db, login, password)
+    if error:
+        return _staff_telegram_form(request, error)
+    if not _is_staff(user):
+        return _staff_telegram_form(
+            request, "Эта ссылка только для преподавателей школы.",
+        )
+    return _staff_telegram_redirect(db, user)
 
 
 # Обратная совместимость — старая ссылка перенаправляет на /login
