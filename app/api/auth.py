@@ -30,6 +30,7 @@ from app.tmpl import templates
 from app.models.session import Session
 from app.models.user import User
 from app.models.activity_event import StudentActivityEvent
+from app.models.audit_log import AuditLog
 from app.services.auth_links import (
     PURPOSE_SSO, consume_one_time_login_token, consume_telegram_link_token,
     issue_one_time_login_link, issue_sso_token, issue_telegram_link_token,
@@ -1033,6 +1034,13 @@ async def _finish_membership_check_and_confirm(db: DBSession, user: User, chat_i
     await _confirm_telegram_connection(chat_id)
 
 
+def _is_former_account(user: User) -> bool:
+    """Аккаунт прошлого потока: удалён, в архиве или отключён."""
+    return (
+        user.deleted_at is not None or user.archived_at is not None or not user.is_active
+    )
+
+
 async def _handle_telegram_link_start(
     db: DBSession, *, chat_id: int, raw_token: str, tg_from: _TgFrom | None,
 ) -> None:
@@ -1052,12 +1060,27 @@ async def _handle_telegram_link_start(
     already_linked = db.query(User).filter(
         User.telegram_chat_id == chat_id, User.id != target_user.id,
     ).first()
-    if already_linked:
+    if already_linked and not _is_former_account(already_linked):
         await telegram_service.send_message(
             chat_id,
             "Этот Telegram-аккаунт уже привязан к другому ученику. Напиши в поддержку.",
         )
         return
+    if already_linked:
+        # Аккаунт прошлого потока (удалён, в архиве, отключён) держит Telegram
+        # человека, который пришёл с новым аккаунтом, — переносим (владелец
+        # 22.10.2026: «кто учился на прошлом потоке, не будем проверять»;
+        # куратор Софа не могла подключить бота из-за своего старого
+        # ученического аккаунта). Действующий аккаунт не трогаем: оборвали бы
+        # ему уведомления. Ссылку по токену владелец Telegram открыл сам.
+        db.add(AuditLog(
+            action="telegram_relink",
+            performed_by_id=target_user.id,
+            target_user_id=already_linked.id,
+            details=f"Telegram перенесён с аккаунта #{already_linked.id} на #{target_user.id}",
+        ))
+        already_linked.telegram_chat_id = None
+        db.flush()
 
     target_user.telegram_chat_id = chat_id
     if tg_from and tg_from.username:

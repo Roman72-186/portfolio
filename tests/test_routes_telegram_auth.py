@@ -252,6 +252,43 @@ def test_link_start_chat_already_linked_to_another_user_is_rejected(client, db, 
     assert "уже привязан" in sent_messages[-1]["text"].lower()
 
 
+@pytest.mark.parametrize("former", ["deleted", "archived", "inactive"])
+def test_link_start_moves_chat_from_former_account(
+    client, db, sent_messages, user_factory, monkeypatch, former,
+):
+    """Владелец 22.10.2026: Telegram, который держит аккаунт прошлого потока,
+    переносится на новый — куратор Софа не могла подключить бота из-за своего
+    удалённого ученического аккаунта. Перенос пишется в audit_logs."""
+    from app.models.audit_log import AuditLog
+
+    old = user_factory(vk_id=42_014, role_name="ученик")
+    old.telegram_chat_id = CHAT_ID
+    if former == "deleted":
+        old.deleted_at = datetime.now(timezone.utc)
+    elif former == "archived":
+        old.archived_at = datetime.now(timezone.utc)
+    else:
+        old.is_active = False
+    db.commit()
+
+    curator = user_factory(vk_id=42_015, role_name="куратор")
+    raw_token, _link = issue_telegram_link_token(db, user=curator, issued_by="test")
+    _mock_membership(monkeypatch, True)
+    resp = client.post(
+        "/auth/telegram/webhook",
+        json=_start_update(CHAT_ID, text=f"/start {raw_token}"),
+        headers=_headers(),
+    )
+    assert resp.status_code == 200
+    db.refresh(curator)
+    db.refresh(old)
+    assert curator.telegram_chat_id == CHAT_ID
+    assert old.telegram_chat_id is None
+    assert "подключён" in sent_messages[-1]["text"]
+    log = db.query(AuditLog).filter_by(action="telegram_relink").one()
+    assert (log.performed_by_id, log.target_user_id) == (curator.id, old.id)
+
+
 # ---------------------------------------------------------------------------
 # Fail-closed gate on re-login: student loses channel membership
 # ---------------------------------------------------------------------------
