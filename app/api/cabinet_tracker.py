@@ -752,7 +752,7 @@ def _submission_payload(
     images = (
         list_task_block_submission_images(db, submission.id) if submission else []
     )
-    from app.models.task_block_feedback import TaskBlockFeedback
+    from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
     from app.services.linked_feedback import main_submission_for
 
     # Работа в общей ОС (13.10.2026): ответ лежит в диалоге главной, ссылка
@@ -761,9 +761,15 @@ def _submission_payload(
     dialog_ids = [submission.id] if submission else []
     if group_main is not None:
         dialog_ids.append(group_main.id)
+    # ОС есть, когда преподаватель её отправил: черновик ученику не виден
+    # (владелец 22.10.2026).
     has_feedback = bool(
-        dialog_ids and db.query(TaskBlockFeedback.id).filter(
-            TaskBlockFeedback.submission_id.in_(dialog_ids)
+        dialog_ids and db.query(TaskBlockFeedbackMessage.id)
+        .join(TaskBlockFeedback, TaskBlockFeedback.id == TaskBlockFeedbackMessage.feedback_id)
+        .filter(
+            TaskBlockFeedback.submission_id.in_(dialog_ids),
+            TaskBlockFeedbackMessage.sender_role != "student",
+            TaskBlockFeedbackMessage.is_draft.is_(False),
         ).first()
     )
     submit_until = submit_deadline_for(

@@ -88,10 +88,14 @@ def group(db, user_factory):
 def _staff_says(client, session_factory, curator, submission, text="Разбор всех работ"):
     _login(client, session_factory, curator)
     with patch("app.api.task_block_feedback.notify"):
-        return client.post(
+        response = client.post(
             f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
             data={"text": text},
         )
+        # Черновик ученику открывает «Отправить ОС» (22.10.2026).
+        if response.status_code == 200:
+            client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback")
+        return response
 
 
 # --- связка в конструкторе ----------------------------------------------------

@@ -93,11 +93,21 @@ def _setup_block(db, user_factory, *, base, block_type=BLOCK_PHOTO_UPLOAD, dialo
     return curator, student, task, submission
 
 
-def _staff_says(client, session_factory, curator, submission, text="Разбор работы"):
+def _staff_says(client, session_factory, curator, submission, text="Разбор работы", *, send=True):
+    """Сообщение сотрудника и, по умолчанию, «Отправить ОС»: без неё
+    сообщение остаётся черновиком (22.10.2026)."""
     _login(client, session_factory, curator)
-    return client.post(
+    response = client.post(
         f"/cabinet/staff/task-block-submissions/{submission.id}/messages", data={"text": text},
     )
+    if send and response.status_code == 200:
+        sent = _send(client, submission)
+        assert sent.status_code == 200, sent.text
+    return response
+
+
+def _send(client, submission):
+    return client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback")
 
 
 def _close(client, session_factory, staff, submission):
@@ -139,6 +149,14 @@ def test_close_locks_dialog_for_both_and_notifies_once(db, user_factory, session
         db, user_factory, base=991_011, dialog_tariffs=[TARIFF_WITH_YOU],
     )
     assert _staff_says(client, session_factory, curator, submission).status_code == 200
+    # Тариф с ответом: завершить можно, когда ученик потратил лимит (два
+    # сообщения) и на последний вопрос ответили (22.10.2026).
+    _login(client, session_factory, student)
+    for question in ("Вопрос 1", "Вопрос 2"):
+        assert client.post(
+            f"/cabinet/task-block-submissions/{submission.id}/messages", data={"text": question},
+        ).status_code == 200
+    _staff_says(client, session_factory, curator, submission, "Ответ на вопросы")
 
     first = _close(client, session_factory, curator, submission)
     second = _close(client, session_factory, curator, submission)

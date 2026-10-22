@@ -62,7 +62,11 @@ def _staff_says(client, session_factory, curator, submission, text="Разбор
             f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
             data={"text": text},
         )
-    assert response.status_code == 200, response.text
+        assert response.status_code == 200, response.text
+        # Сообщение сотрудника — черновик, ученику его открывает «Отправить
+        # ОС» (22.10.2026).
+        sent = client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback")
+    assert sent.status_code == 200, sent.text
 
 
 def _student_says(client, session_factory, student, submission, text="Вопрос"):

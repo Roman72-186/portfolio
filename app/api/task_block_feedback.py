@@ -65,8 +65,11 @@ from app.services.rbac import can_score, can_send_work_to_revision
 from app.services.section_access import can
 from app.services.student_access import get_student_for_staff_access
 from app.services.task_block_feedback import (
+    close_refusal,
+    draft_messages,
     get_or_create_feedback,
     notify_counterpart,
+    send_drafts,
     role_from_rank,
     send_message,
     serialize_messages,
@@ -149,6 +152,10 @@ def _render(
     block, task = _context(db, submission)
     feedback = _feedback(db, submission.id)
     messages = feedback.messages if feedback else []
+    if viewer_role == "student":
+        # Черновик ОС ученику не виден, пока не нажата «Отправить ОС»
+        # (владелец 22.10.2026).
+        messages = [message for message in messages if not message.is_draft]
     sender_ids = {message.sender_id for message in messages}
     names = {
         row.id: row.name for row in db.query(User).filter(User.id.in_(sender_ids)).all()
@@ -198,11 +205,15 @@ def _render(
         "revision": _revision_state(db, feedback, user) if viewer_role != "student" else None,
         # Может ли ученик ответить — одно правило на роут и экран (01.10.2026).
         "reply": student_can_reply(db, submission, feedback),
-        # ОС, фаза 2: «Завершить ОС» и оценка ученика (О10–О26).
+        # Сколько сообщений ждут «Отправить ОС» (владелец 22.10.2026).
+        "draft_count": len(draft_messages(feedback)) if viewer_role != "student" else 0,
+        # ОС, фаза 2: «Завершить ОС» и оценка ученика (О10–О26). Когда
+        # завершать — `close_refusal` (22.10.2026), одно правило с роутом.
         "rating_panel": rating_panel(
             db, dialog_kind=DIALOG_TASK_BLOCK, dialog=feedback, viewer_role=viewer_role,
             close_url=f"/cabinet/staff/task-block-submissions/{submission.id}/close-feedback",
             rating_url=f"/cabinet/task-block-submissions/{submission.id}/rating",
+            close_refusal=close_refusal(db, submission, feedback),
         ),
         "back_url": back_url,
     })
@@ -370,11 +381,14 @@ async def _post_message(
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
 
     sender_role = role_from_rank(user.get("role_rank", 1))
-    recipient_id = submission.user_id if sender_role != "student" else feedback.curator_id
     notification = None
-    if recipient_id != user["user_id"]:
+    # Сообщение сотрудника — черновик: ученику его открывает и одним
+    # уведомлением сообщает «Отправить ОС» (владелец 22.10.2026; до этого
+    # уведомление уходило на каждое сообщение, по 5–15 на одну ОС).
+    if sender_role == "student" and feedback.curator_id != user["user_id"]:
         notification = notify_counterpart(
-            db, submission=submission, recipient_id=recipient_id, sender_role=sender_role,
+            db, submission=submission, recipient_id=feedback.curator_id,
+            sender_role=sender_role,
         )
     db.commit()
     if notification is not None:
@@ -458,6 +472,36 @@ def _student_link(submission_id: int) -> str:
     return f"/cabinet/task-block-submissions/{submission_id}/feedback"
 
 
+@router.post("/staff/task-block-submissions/{submission_id}/send-feedback", response_class=JSONResponse)
+def send_feedback(
+    submission_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Отправить ОС» (владелец 22.10.2026): все черновики сотрудников в
+    диалоге становятся видны ученику, ему уходит одно уведомление."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    # Блокировка строки: два одновременных нажатия иначе прислали бы два
+    # уведомления на одни и те же черновики.
+    feedback = db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission.id
+    ).with_for_update().first()
+    if is_closed(feedback):
+        return _error(403, "Обратная связь завершена – диалог закрыт.")
+    if not send_drafts(feedback):
+        return _error(409, "Новых сообщений нет – отправлять нечего.")
+    notification = notify_counterpart(
+        db, submission=submission, recipient_id=submission.user_id,
+        sender_role=role_from_rank(user.get("role_rank", 1)),
+    )
+    db.commit()
+    background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
+
+
 @router.post("/staff/task-block-submissions/{submission_id}/close-feedback", response_class=JSONResponse)
 def close_feedback(
     submission_id: int,
@@ -476,6 +520,11 @@ def close_feedback(
     feedback = db.query(TaskBlockFeedback).filter(
         TaskBlockFeedback.submission_id == submission.id
     ).with_for_update().first()
+    if not is_closed(feedback):
+        # Завершают, когда ученику больше нечего спросить (22.10.2026).
+        refusal = close_refusal(db, submission, feedback)
+        if refusal:
+            return _error(409, refusal)
     try:
         closed_now = close_dialog(feedback, user["user_id"])
     except RatingError as exc:

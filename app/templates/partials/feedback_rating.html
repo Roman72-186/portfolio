@@ -12,6 +12,13 @@
     <button type="button" class="btn-outline">Завершить ОС</button>
     <p class="card-desc" data-feedback-close-status role="status" aria-live="polite"></p>
 </section>
+{% elif p.close_hint %}
+{# Сдача в задании (22.10.2026): завершают, когда ученику больше нечего
+   спросить, — `task_block_feedback.close_refusal`. #}
+<section class="card">
+    <h2 class="section-label">Завершить обратную связь</h2>
+    <p class="card-desc">{{ p.close_hint }}</p>
+</section>
 {% elif p.closed %}
 <section class="card">
     <h2 class="section-label">{{ 'Оценка ученика' if p.is_staff else 'Оценка обратной связи' }}</h2>

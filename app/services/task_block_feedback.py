@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
@@ -87,6 +88,27 @@ def _dialog_open_for(db: DBSession, student: User, tariffs: set[str]) -> bool:
     return bool(student.tariff) and student.tariff in tariffs
 
 
+def _is_sent_staff(message: TaskBlockFeedbackMessage) -> bool:
+    return message.sender_role != ROLE_STUDENT and not message.is_draft
+
+
+def reply_limit(db: DBSession, submission: TaskBlockSubmission) -> int | None:
+    """Сколько сообщений ученик может написать в диалоге по этой сдаче;
+    None — ответ ему закрыт: тип блока без сдачи или тариф **сейчас** (О6)
+    не отмечен в «Настройке диалога» (пусто = закрыто всем, О9)."""
+    # Импорт здесь: `task_blocks` тянет за собой половину доменных сервисов.
+    from app.services.task_blocks import get_dialog_tariffs
+
+    block = db.get(TaskBlock, submission.block_id)
+    if block is None or block.block_type not in DIALOG_BLOCK_TYPES:
+        return None
+    student = db.get(User, submission.user_id)
+    tariffs = get_dialog_tariffs(db, [block.id]).get(block.id, set())
+    if student is None or not _dialog_open_for(db, student, tariffs):
+        return None
+    return block.dialog_reply_limit or 1
+
+
 def student_can_reply(
     db: DBSession, submission: TaskBlockSubmission,
     feedback: TaskBlockFeedback | None,
@@ -104,14 +126,12 @@ def student_can_reply(
        сдачи, у которого настройки ещё нет.
     2. Тариф ученика **сейчас** (О6, а не на момент сдачи) не отмечен в
        «Настройке диалога» блока — ответа нет. Пусто = закрыто всем (О9).
-    3. Преподаватель ещё не написал — ждать первого сообщения.
+    3. Преподаватель ещё не отправил ОС — ждать. Черновик не считается:
+       ученик его не видит (владелец 22.10.2026).
     4. Ученик уже отправил `dialog_reply_limit` сообщений — лимит исчерпан.
        Считаются только его сообщения, одна отправка — одно (О3); куратор
        пишет без ограничений (О4), срока у диалога нет (О5).
     """
-    # Импорт здесь: `task_blocks` тянет за собой половину доменных сервисов.
-    from app.services.task_blocks import get_dialog_tariffs
-
     closed = ReplyState(
         False,
         "На эту обратную связь ответить нельзя.",
@@ -123,16 +143,11 @@ def student_can_reply(
             "Преподаватель завершил обратную связь – диалог закрыт.",
             "Обратная связь завершена – диалог закрыт.",
         )
-    block = db.get(TaskBlock, submission.block_id)
-    if block is None or block.block_type not in DIALOG_BLOCK_TYPES:
+    limit = reply_limit(db, submission)
+    if limit is None:
         return closed
-    student = db.get(User, submission.user_id)
-    tariffs = get_dialog_tariffs(db, [block.id]).get(block.id, set())
-    if student is None or not _dialog_open_for(db, student, tariffs):
-        return closed
-    limit = block.dialog_reply_limit or 1
     messages = feedback.messages if feedback is not None else []
-    if not any(message.sender_role != ROLE_STUDENT for message in messages):
+    if not any(_is_sent_staff(message) for message in messages):
         return ReplyState(
             False,
             "Задать вопрос можно после первого сообщения преподавателя.",
@@ -151,6 +166,55 @@ def student_can_reply(
         f"Можно отправить ещё {left} {_messages_word(left)}.",
         f"Ученик может отправить ещё {left} {_messages_word(left)}.",
     )
+
+
+def draft_messages(
+    feedback: TaskBlockFeedback | None,
+) -> list[TaskBlockFeedbackMessage]:
+    if feedback is None:
+        return []
+    return [message for message in feedback.messages if message.is_draft]
+
+
+def close_refusal(
+    db: DBSession, submission: TaskBlockSubmission,
+    feedback: TaskBlockFeedback | None,
+) -> str | None:
+    """**Единственное место правила «можно ли нажать «Завершить ОС»»**
+    (владелец 22.10.2026). Читают роут `close_feedback` и экран диалога.
+
+    Кнопка появляется, когда ученику больше нечего спросить: ОС отправлена,
+    черновиков нет, и либо ответ ему закрыт «Настройкой диалога», либо он
+    потратил свой лимит и на последний вопрос уже ответили. До 22.10.2026
+    завершить можно было сразу после первого сообщения — и ученик, узнав об
+    ОС, уже не мог задать вопрос. None — завершить можно."""
+    messages = feedback.messages if feedback is not None else []
+    if not any(_is_sent_staff(message) for message in messages):
+        return "Завершить можно после того, как ОС отправлена ученику."
+    if any(message.is_draft for message in messages):
+        return "Сначала отправь ученику новые сообщения – кнопка «Отправить ОС»."
+    limit = reply_limit(db, submission)
+    if limit is None:
+        return None
+    sent = sum(1 for message in messages if message.sender_role == ROLE_STUDENT)
+    if sent < limit:
+        left = limit - sent
+        return (
+            f"Ученик ещё может задать вопрос: осталось {left} {_messages_word(left)}. "
+            "«Завершить ОС» появится, когда он их потратит."
+        )
+    if messages[-1].sender_role == ROLE_STUDENT:
+        return "Ответь на последний вопрос ученика – потом можно завершить."
+    return None
+
+
+def send_drafts(feedback: TaskBlockFeedback) -> int:
+    """«Отправить ОС»: открыть ученику все черновики сотрудников разом.
+    Возвращает их число; уведомление шлёт роут — одно на отправку."""
+    drafts = draft_messages(feedback)
+    for message in drafts:
+        message.is_draft = False
+    return len(drafts)
 
 async def _upload_photo(
     submission_id: int, filename: str, data: bytes,
@@ -289,6 +353,9 @@ async def send_message(
         video_is_note=bool(
             video_is_note and video_url is not None and sender_role != ROLE_STUDENT
         ),
+        # Сотрудник пишет черновиком, ученику его открывает «Отправить ОС»
+        # (владелец 22.10.2026). Ученик пишет сразу — его ждут.
+        is_draft=sender_role != ROLE_STUDENT,
     )
     db.add(message)
     db.flush()
@@ -394,6 +461,7 @@ def serialize_messages(
             "video_is_note": bool(message.video_is_note),
             "created_at": message.created_at.isoformat() if message.created_at else None,
             "edited": message.edited_at is not None,
+            "draft": bool(message.is_draft),
         })
     return result
 
@@ -414,7 +482,12 @@ def list_student_feedback_cards(
             TaskBlockFeedbackMessage.feedback_id,
             func.max(TaskBlockFeedbackMessage.created_at).label("last_at"),
         )
-        .filter(TaskBlockFeedbackMessage.sender_role != ROLE_STUDENT)
+        .filter(
+            TaskBlockFeedbackMessage.sender_role != ROLE_STUDENT,
+            # Черновик ученику не виден (22.10.2026): диалог без отправленной
+            # ОС в список не попадает.
+            TaskBlockFeedbackMessage.is_draft.is_(False),
+        )
         .group_by(TaskBlockFeedbackMessage.feedback_id)
         .subquery()
     )
@@ -464,8 +537,89 @@ def list_student_feedback_cards(
     return open_cards, closed_cards
 
 
+UNSENT_FIRST_AFTER = timedelta(hours=1)
+UNSENT_REPEAT_EVERY = timedelta(days=1)
+
+
+def run_unsent_feedback_reminders(db: DBSession, now: datetime | None = None) -> list[int]:
+    """Напомнить сотруднику, что ОС написана, а ученику не отправлена
+    (владелец 22.10.2026). Первое — через час после последнего черновика
+    (куратор, скорее всего, закончил), дальше раз в сутки, пока черновик
+    лежит. Получает каждый, чей черновик в диалоге. Повторы держит
+    `StudentReminder` (вид `feedback_unsent`). Коммитит сам; возвращает id
+    уведомлений — рассылку делает планировщик после коммита."""
+    from app.models.student_reminder import KIND_FEEDBACK_UNSENT, StudentReminder
+    from app.services.feedback_rating import _absolute
+
+    now = now or datetime.now(timezone.utc)
+    rows = (
+        db.query(
+            TaskBlockFeedbackMessage.feedback_id,
+            func.min(TaskBlockFeedbackMessage.id),
+            func.max(TaskBlockFeedbackMessage.created_at),
+        )
+        .join(TaskBlockFeedback, TaskBlockFeedback.id == TaskBlockFeedbackMessage.feedback_id)
+        .filter(
+            TaskBlockFeedbackMessage.is_draft.is_(True),
+            TaskBlockFeedback.feedback_closed_at.is_(None),
+        )
+        .group_by(TaskBlockFeedbackMessage.feedback_id)
+        .all()
+    )
+    created: list[Notification] = []
+    for feedback_id, first_draft_id, last_at in rows:
+        if last_at.tzinfo is None:
+            last_at = last_at.replace(tzinfo=timezone.utc)
+        quiet = now - last_at
+        if quiet < UNSENT_FIRST_AFTER:
+            continue
+        day = int((quiet - UNSENT_FIRST_AFTER) / UNSENT_REPEAT_EVERY)
+        ref = f"{feedback_id}:{first_draft_id}:{day}"
+        feedback = db.get(TaskBlockFeedback, feedback_id)
+        submission = db.get(TaskBlockSubmission, feedback.submission_id)
+        student = db.get(User, submission.user_id)
+        block = db.get(TaskBlock, submission.block_id)
+        task = db.get(TrackerTask, block.task_id) if block is not None else None
+        who = (
+            f"{student.last_name or ''} {student.first_name or student.name}".strip()
+            if student is not None else "Ученик"
+        )
+        where = f", «{task.title}»" if task is not None else ""
+        link = _absolute(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
+        authors = {message.sender_id for message in draft_messages(feedback)}
+        for author_id in sorted(authors):
+            author = db.get(User, author_id)
+            if author is None or not author.is_active or author.deleted_at is not None:
+                continue
+            if db.query(StudentReminder.id).filter(
+                StudentReminder.user_id == author_id,
+                StudentReminder.kind == KIND_FEEDBACK_UNSENT,
+                StudentReminder.ref == ref,
+            ).first():
+                continue
+            notification = Notification(
+                user_id=author_id,
+                title="Обратная связь не отправлена",
+                text=(
+                    f"{who}{where}: ученик не видит твои сообщения, пока ты не нажмёшь "
+                    f"«Отправить ОС». Открыть диалог: {link}"
+                ),
+                task_block_submission_id=submission.id,
+            )
+            db.add(notification)
+            db.add(StudentReminder(user_id=author_id, kind=KIND_FEEDBACK_UNSENT, ref=ref))
+            created.append(notification)
+    db.commit()
+    for notification in created:
+        invalidate_unread(notification.user_id)
+    if created:
+        logger.info("Неотправленная ОС: %d напоминаний сотрудникам", len(created))
+    return [notification.id for notification in created]
+
+
 __all__ = [
     "ReplyState", "get_or_create_feedback", "list_student_feedback_cards",
     "notify_counterpart", "resubmission_notification", "role_from_rank", "send_message",
-    "serialize_messages", "student_can_reply",
+    "serialize_messages", "student_can_reply", "close_refusal", "draft_messages",
+    "send_drafts", "reply_limit", "run_unsent_feedback_reminders",
 ]

@@ -120,16 +120,23 @@ def serialize_rating(rating: FeedbackRating | None) -> dict | None:
 
 def rating_panel(
     db: DBSession, *, dialog_kind: str, dialog, viewer_role: str,
-    close_url: str, rating_url: str,
+    close_url: str, rating_url: str, close_refusal: str | None = None,
 ) -> dict:
     """Данные общего блока «Завершить ОС / оценка»
-    (`partials/feedback_rating.html`) — одни на оба экрана диалога."""
+    (`partials/feedback_rating.html`) — одни на оба экрана диалога.
+
+    `close_refusal` — почему завершать рано (сдача в задании, 22.10.2026:
+    `task_block_feedback.close_refusal`); сотрудник видит причину вместо
+    кнопки. У пробника его нет — там правило прежнее."""
     closed = is_closed(dialog)
     is_staff = viewer_role != "student"
     return {
         "is_staff": is_staff,
         "closed": closed,
-        "can_close": is_staff and not closed and has_staff_message(dialog),
+        "can_close": (
+            is_staff and not closed and has_staff_message(dialog) and close_refusal is None
+        ),
+        "close_hint": close_refusal if is_staff and not closed else None,
         "close_url": close_url,
         "rating": serialize_rating(get_rating(db, dialog_kind, dialog.id if dialog else None)),
         "rating_url": rating_url,

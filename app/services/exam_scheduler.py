@@ -622,6 +622,24 @@ def _run_student_reminders() -> None:
     if notification_ids:
         notify_many_sync(notification_ids)
 
+def _run_unsent_feedback_reminders() -> None:
+    """Сотруднику — ОС написана черновиком, а «Отправить ОС» не нажата
+    (владелец 22.10.2026). Логика — `services/task_block_feedback.py`."""
+    from app.services.task_block_feedback import run_unsent_feedback_reminders
+
+    db = SessionLocal()
+    try:
+        notification_ids = run_unsent_feedback_reminders(db)
+    except Exception:
+        logger.exception("Ошибка в напоминаниях о неотправленной ОС")
+        db.rollback()
+        return
+    finally:
+        db.close()
+    if notification_ids:
+        notify_many_sync(notification_ids)
+
+
 def _run_payment_debt_report() -> None:
     """Утром дня отсечки — службе заботы, кто из закрывшегося окна не
     оплатил (владелец 15.10.2026). Логика — `services/payment_debtors.py`."""
@@ -797,6 +815,16 @@ def start_scheduler() -> None:
         id="student_reminders",
         replace_existing=True,
         max_instances=1,
+    )
+    _scheduler.add_job(
+        _run_unsent_feedback_reminders,
+        trigger="interval",
+        minutes=10,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=6),
+        id="unsent_feedback_reminders",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=600,
     )
     _scheduler.add_job(
         _run_payment_debt_report,

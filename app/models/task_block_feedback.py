@@ -95,6 +95,13 @@ class TaskBlockFeedbackMessage(Base):
     )
     # Сотрудник поправил сообщение (`services/feedback_edit.py`, 05.10.2026).
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Черновик ОС (владелец 22.10.2026): сообщение сотрудника ученик не видит,
+    # пока не нажата «Отправить ОС» — она открывает все черновики разом и
+    # шлёт одно уведомление вместо одного на каждое сообщение. У ученика
+    # сообщение сразу отправлено.
+    is_draft: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     feedback: Mapped["TaskBlockFeedback"] = relationship(
         "TaskBlockFeedback", back_populates="messages"

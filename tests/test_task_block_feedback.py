@@ -66,6 +66,8 @@ def test_feedback_tab_lists_teacher_feedback_on_works(
                 f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
                 data={"text": "Разбор работы"},
             ).status_code == 200
+            # Черновик ученику открывает «Отправить ОС» (22.10.2026).
+            assert client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback").status_code == 200
 
     _login(client, session_factory, student)
     page = client.get("/cabinet/cycle")
@@ -92,7 +94,8 @@ def test_staff_messages_are_anonymous_for_student_and_staff(
             f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
             data={"text": "Доработай фон"},
         )
-    assert sent.status_code == 200
+        assert sent.status_code == 200
+        assert client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback").status_code == 200
 
     for user, url in (
         (student, f"/cabinet/task-block-submissions/{submission.id}/feedback"),
@@ -343,8 +346,11 @@ def test_teacher_photo_message_opens_dialog_and_notifies_student(
             data={"text": "Исправь перспективу"},
             files={"photo": ("note.jpg", b"image", "image/jpeg")},
         )
+        assert response.status_code == 200, response.text
+        # Уведомление ученику — по «Отправить ОС», а не по сообщению (22.10.2026).
+        assert db.query(Notification).filter_by(user_id=student.id).count() == 0
+        assert client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback").status_code == 200
 
-    assert response.status_code == 200, response.text
     feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
     message = db.query(TaskBlockFeedbackMessage).filter_by(feedback_id=feedback.id).one()
     assert message.text == "Исправь перспективу"
@@ -456,7 +462,8 @@ def test_student_can_reply_after_teacher_started_dialog(
             f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
             data={"text": "Доработай фон"},
         )
-    assert first.status_code == 200
+        assert first.status_code == 200
+        assert client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/send-feedback").status_code == 200
 
     _login(client, session_factory, student)
     with patch("app.api.task_block_feedback.notify"):

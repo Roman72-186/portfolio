@@ -185,7 +185,7 @@
                     {% if message.video_s3_url %}<video class="{{ 'msg-video-note' if message.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
                     {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
                     {% if message.audio_s3_url %}<audio class="hw-msg-audio" controls preload="metadata" src="{{ message.audio_s3_url }}"></audio>{% endif %}
-                    <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}{% if message.edited %} · изменено{% endif %}</div>
+                    <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}{% if message.edited %} · изменено{% endif %}{% if message.draft %} · не отправлено ученику{% endif %}</div>
                     {# Правка своей ОС — `services/feedback_edit.py::task_block_edit_refusal`
                        (05.10.2026): текст и «убрать вложение», новое вложение — новым сообщением. #}
                     {% if message.id in editable_message_ids %}
@@ -244,11 +244,22 @@
             <input id="feedback-video" type="file" class="field-input" name="video" accept="video/*">
             <label class="form-label hw-label-gap" for="feedback-audio">Голосовое, необязательно (до 25 МБ)</label>
             <input id="feedback-audio" type="file" class="field-input" name="audio" accept="audio/*">
-            <button type="submit" class="btn-blue hw-submit">Отправить</button>
+            <button type="submit" class="{{ 'btn-blue' if viewer_role == 'student' else 'btn-outline' }} hw-submit">{{ 'Отправить' if viewer_role == 'student' else 'Добавить сообщение' }}</button>
             <p class="prg-message" aria-live="polite"></p>
         </form>
         {% elif viewer_role == 'student' %}
         <p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>
+        {% endif %}
+        {# Сообщения сотрудника — черновик, пока не нажата «Отправить ОС»: она
+           открывает их ученику и шлёт одно уведомление (владелец 22.10.2026). #}
+        {% if viewer_role != 'student' and draft_count %}
+        <div class="hw-hint">
+            <p class="card-desc">Ученик пока не видит {{ draft_count }} {{ draft_count | plural('сообщение', 'сообщения', 'сообщений') }}. Напиши всё, что хотел, и нажми «Отправить ОС» – ученик получит одно уведомление.</p>
+            <div class="prg-actions">
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback">Отправить ОС</button>
+            </div>
+            <p class="prg-message" data-send-status aria-live="polite"></p>
+        </div>
         {% endif %}
     </section>
 
@@ -434,6 +445,25 @@
             var fallback = 'Не получилось удалить. Обнови страницу: возможно, ученик уже ответил или обратную связь завершили.';
             button.disabled = true;
             window.csrfFetch(button.dataset.deleteFeedback, {method: 'POST'}).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(window.csrfFailure(response.status, data, fallback));
+                    }
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                showError(status, error.message || fallback);
+            });
+        });
+    });
+
+    // «Отправить ОС» (22.10.2026): свежий ключ через `csrfFetch`, как у удаления.
+    document.querySelectorAll('[data-send-feedback]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var status = document.querySelector('[data-send-status]');
+            var fallback = 'Не получилось отправить. Обнови страницу и попробуй ещё раз.';
+            button.disabled = true;
+            window.csrfFetch(button.dataset.sendFeedback, {method: 'POST'}).then(function (response) {
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) {
                         throw new Error(window.csrfFailure(response.status, data, fallback));
