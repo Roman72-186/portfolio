@@ -289,6 +289,30 @@ def test_link_start_moves_chat_from_former_account(
     assert (log.performed_by_id, log.target_user_id) == (curator.id, old.id)
 
 
+@pytest.mark.parametrize("holder_role, moved", [("ученик", True), ("куратор", False)])
+def test_staff_takes_chat_from_active_student_but_not_from_staff(
+    client, db, sent_messages, user_factory, monkeypatch, holder_role, moved,
+):
+    """Владелец 22.10.2026: «все кураторы — бывшие ученики с привязанным тг».
+    Сотрудник забирает Telegram и у действующего ученического аккаунта
+    (куратор Лера), но не у другого сотрудника."""
+    holder = user_factory(vk_id=42_024, role_name=holder_role)
+    holder.telegram_chat_id = CHAT_ID
+    db.commit()
+    curator = user_factory(vk_id=42_025, role_name="куратор")
+    raw_token, _link = issue_telegram_link_token(db, user=curator, issued_by="test")
+    _mock_membership(monkeypatch, True)
+    client.post(
+        "/auth/telegram/webhook",
+        json=_start_update(CHAT_ID, text=f"/start {raw_token}"),
+        headers=_headers(),
+    )
+    db.refresh(curator)
+    db.refresh(holder)
+    assert (curator.telegram_chat_id == CHAT_ID) is moved
+    assert (holder.telegram_chat_id is None) is moved
+
+
 # ---------------------------------------------------------------------------
 # Fail-closed gate on re-login: student loses channel membership
 # ---------------------------------------------------------------------------

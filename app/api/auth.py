@@ -1041,6 +1041,20 @@ def _is_former_account(user: User) -> bool:
     )
 
 
+def _may_take_telegram(target: User, holder: User) -> bool:
+    """Можно ли перенести Telegram с аккаунта `holder` на `target` (владелец
+    22.10.2026). Аккаунт прошлого потока — удалённый, архивный, отключённый —
+    отдаёт его всегда: «кто учился на прошлом потоке, не будем проверять».
+    Сотруднику отдаёт и действующий ученический: «все кураторы — бывшие
+    ученики с привязанным тг», а их старые аккаунты не все удалены (куратор
+    Лера). Другой сотрудник не отдаёт: оборвали бы ему уведомления."""
+    if _is_former_account(holder):
+        return True
+    target_rank = target.role.rank if target.role else 0
+    holder_rank = holder.role.rank if holder.role else 0
+    return target_rank >= 2 and holder_rank < 2
+
+
 async def _handle_telegram_link_start(
     db: DBSession, *, chat_id: int, raw_token: str, tg_from: _TgFrom | None,
 ) -> None:
@@ -1060,19 +1074,19 @@ async def _handle_telegram_link_start(
     already_linked = db.query(User).filter(
         User.telegram_chat_id == chat_id, User.id != target_user.id,
     ).first()
-    if already_linked and not _is_former_account(already_linked):
+    if already_linked and not _may_take_telegram(target_user, already_linked):
+        logger.warning(
+            "Telegram link: чат занят действующим аккаунтом #%s, цель #%s",
+            already_linked.id, target_user.id,
+        )
         await telegram_service.send_message(
             chat_id,
             "Этот Telegram-аккаунт уже привязан к другому ученику. Напиши в поддержку.",
         )
         return
     if already_linked:
-        # Аккаунт прошлого потока (удалён, в архиве, отключён) держит Telegram
-        # человека, который пришёл с новым аккаунтом, — переносим (владелец
-        # 22.10.2026: «кто учился на прошлом потоке, не будем проверять»;
-        # куратор Софа не могла подключить бота из-за своего старого
-        # ученического аккаунта). Действующий аккаунт не трогаем: оборвали бы
-        # ему уведомления. Ссылку по токену владелец Telegram открыл сам.
+        # Переносим Telegram на новый аккаунт — правило `_may_take_telegram`.
+        # Ссылку по токену владелец Telegram открыл сам.
         db.add(AuditLog(
             action="telegram_relink",
             performed_by_id=target_user.id,
