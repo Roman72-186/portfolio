@@ -511,3 +511,174 @@ def test_annual_student_does_not_wait(auth_client, monkeypatch):
     monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
     client, _student = auth_client
     assert client.get("/cabinet/portfolio", follow_redirects=False).status_code == 200
+
+
+# ── Проверка перед запуском (23.10.2026) ─────────────────────────────────────
+
+def test_waiting_student_gets_no_learning_reminders(db, user_factory, monkeypatch):
+    """Пока программа закрыта, «Новое задание» звало бы на карточку ожидания."""
+    from app.services.student_reminders import _without_waiting_holiday
+
+    student = _paid_newcomer(db, user_factory)
+    annual = user_factory(vk_id=310_061)
+    learners = {student.id: student, annual.id: annual}
+    now = datetime.now(timezone.utc)
+
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", OPENS_LATER)
+    assert set(_without_waiting_holiday(learners, now)) == {annual.id}
+    monkeypatch.setattr("app.constants.HOLIDAY_PROGRAM_OPENS_AT", now - timedelta(minutes=1))
+    assert set(_without_waiting_holiday(learners, now)) == {student.id, annual.id}
+
+
+def test_holiday_access_reminder_does_not_ask_to_pay(db, user_factory):
+    """Срок набора оплатой не продлить — «оплати обучение» ему не пишем."""
+    from app.models.student_reminder import KIND_ACCESS_1D, KIND_ACCESS_3D
+    from app.services.student_reminders import _access_message, _collect_access
+
+    now = datetime.now(timezone.utc)
+    student = _paid_newcomer(db, user_factory)
+    student.access_until = now + timedelta(hours=20)
+    annual = user_factory(vk_id=310_062)
+    annual.access_until = now + timedelta(hours=20)
+    db.commit()
+
+    from collections import defaultdict
+
+    items = defaultdict(list)
+    _collect_access({student.id: student, annual.id: annual}, now, items)
+    holiday_title, holiday_text = _access_message(items[student.id][0])
+    _, annual_text = _access_message(items[annual.id][0])
+    assert items[student.id][0].kind == KIND_ACCESS_1D
+    assert "Оплати" not in holiday_text
+    assert "Оплати" in annual_text
+    assert holiday_title.startswith("Доступ к урокам закроется")
+
+    items[student.id][0].kind = KIND_ACCESS_3D
+    assert "Оплати" not in _access_message(items[student.id][0])[1]
+
+
+def test_track_after_its_date_is_not_sold(client, db, user_factory, session_factory, prodamus):
+    """После даты трека оплата дала бы тег, но не доступ — кабинет закрыт сроком."""
+    track = _track(db, days=-1)
+    assert track not in intake_link_service.tracks_on_sale(db)
+    client = _login(client, session_factory, _newcomer(db, user_factory))
+    resp = client.post(f"/cabinet/personal/track/{track.id}/pay", headers={"Accept": "application/json"})
+    assert resp.status_code == 409
+
+
+def test_holiday_link_after_its_date_lets_nobody_in(client, db, monkeypatch):
+    """Школа могла забыть выключить ссылку — после её даты вход закрыт сам."""
+    from tests.test_holiday_intake import _enable_telegram_login
+
+    _enable_telegram_login(monkeypatch)
+    link = intake_link_service.create_entry_link(
+        db, access_until=datetime.now(timezone.utc) - timedelta(hours=1), created_by_id=None,
+    )
+    link.is_active = True
+    db.commit()
+
+    assert not intake_link_service.is_open(link)
+    resp = client.get(f"/join/{link.slug}", follow_redirects=False)
+    assert resp.status_code == 200
+    assert "закрыта" in resp.text
+
+    link.access_until = datetime.now(timezone.utc) + timedelta(days=1)
+    db.commit()
+    assert intake_link_service.is_open(link)
+    assert client.get(f"/join/{link.slug}", follow_redirects=False).status_code == 302
+
+
+def _care(db, user_factory, monkeypatch):
+    care = user_factory(vk_id=310_077, name="Служба заботы")
+    monkeypatch.setattr(ps, "PAYMENT_NOTIFY_RECIPIENT_IDS", frozenset({care.id}))
+    return care
+
+
+def _care_titles(db, care):
+    return [n.title for n in db.query(Notification).filter(Notification.user_id == care.id)]
+
+
+def test_second_payment_of_owned_track_asks_for_refund(
+    client, db, user_factory, prodamus, no_delivery, monkeypatch,
+):
+    """Ссылку открыли, а трек тем временем поставили руками — вторая оплата."""
+    care = _care(db, user_factory, monkeypatch)
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    add_tag_to_user(db, student.id, track.tag_id)
+    db.commit()
+
+    assert _post_webhook(client, payment).status_code == 200
+    db.refresh(payment)
+    assert payment.status == STATUS_PAID
+    assert "Оплата трека: нужен возврат" in _care_titles(db, care)
+
+
+def test_ordinary_track_payment_has_no_refund_alert(
+    client, db, user_factory, prodamus, no_delivery, monkeypatch,
+):
+    care = _care(db, user_factory, monkeypatch)
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    db.commit()
+
+    _post_webhook(client, payment)
+    titles = _care_titles(db, care)
+    assert "Оплата трека: нужен возврат" not in titles
+    assert any(t.startswith("Оплата:") for t in titles)
+
+
+def test_payment_after_track_date_asks_for_refund(
+    client, db, user_factory, prodamus, no_delivery, monkeypatch,
+):
+    """Ссылку открыли до конца набора, заплатили после — доступа это не даёт."""
+    care = _care(db, user_factory, monkeypatch)
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    track.access_until = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+
+    _post_webhook(client, payment)
+    assert "Оплата трека: нужен возврат" in _care_titles(db, care)
+
+
+def test_duplicate_track_payment_does_not_offer_next_month(
+    client, db, user_factory, prodamus, no_delivery, monkeypatch,
+):
+    care = _care(db, user_factory, monkeypatch)
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    db.commit()
+    _post_webhook(client, payment, order_id="500001")
+    _post_webhook(client, payment, order_id="500002")
+
+    texts = [n.text for n in db.query(Notification).filter(
+        Notification.user_id == care.id, Notification.title == "Двойная оплата")]
+    assert texts and "следующий месяц" not in texts[0]
+    assert "возврат" in texts[0]
+
+
+def test_webhook_db_failure_on_unpaid_order_asks_prodamus_to_retry(
+    client, db, user_factory, prodamus, no_delivery, monkeypatch,
+):
+    """Сбой записи — не повтор, пока платёж не оплачен: 500, Продамус повторит."""
+    from sqlalchemy.exc import IntegrityError
+
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    db.commit()
+
+    def _boom(*args, **kwargs):
+        raise IntegrityError("insert", {}, Exception("другое ограничение"))
+
+    monkeypatch.setattr(ps, "process_webhook", _boom)
+    assert _post_webhook(client, payment).status_code == 500
+
+    payment.status = STATUS_PAID
+    db.commit()
+    assert _post_webhook(client, payment).status_code == 200

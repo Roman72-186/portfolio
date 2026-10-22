@@ -73,7 +73,14 @@ async def prodamus_webhook(
         db.commit()
     except IntegrityError:
         # Тот же заказ Продамуса пришёл параллельно и уже записан — повтор.
+        # Но только если платёж и правда оплачен: иначе сбой был другой, и 200
+        # без зачисления оставил бы деньги без доступа — Продамус не повторил
+        # бы уведомление (23.10.2026). Не 200 — Продамус повторит.
         db.rollback()
+        if not payment_service.webhook_order_paid(db, signed):
+            logger.error("Prodamus: заказ %s не зачислен из-за ошибки базы — ждём повтора",
+                         signed.get("order_num"))
+            return PlainTextResponse("retry later", status_code=500)
         logger.info("Prodamus: повтор заказа %s", signed.get("order_id"))
         return PlainTextResponse("already processed")
 

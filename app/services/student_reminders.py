@@ -66,6 +66,7 @@ from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
 from app.config import settings
+from app.constants import PROGRAM_HOLIDAY
 from app.models.homework_submission import HomeworkSubmission
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
@@ -192,6 +193,7 @@ class _Item:
     has_video: bool = False
     tasks: list[str] | None = None  # долг цикла: незакрытые обязательные
     amount_kop: int | None = None   # окно оплаты: сумма месяца
+    holiday: bool = False           # конец доступа каникулярного: продлить нечем
 
 
 # Кто вообще получает — `tracker.program_students` / `program_learners`,
@@ -460,6 +462,7 @@ def _collect_access(
         kind = _stage(until - now, ACCESS_STAGES)
         items[uid].append(_Item(
             kind=kind, ref=until.isoformat(), title="", moment=until,
+            holiday=user.program == PROGRAM_HOLIDAY,
         ))
 
 
@@ -583,6 +586,12 @@ def _deadline_message(items: list[_Item]) -> tuple[str, str]:
 
 def _access_message(item: _Item) -> tuple[str, str]:
     title = f"Доступ к урокам закроется {_short_msk(item.moment)}"
+    if item.holiday:
+        # Каникулярный набор (23.10.2026): срок у всех один, продлить его
+        # оплатой нельзя — «оплати обучение» толкало бы платить за ничто.
+        if item.kind == KIND_ACCESS_1D:
+            return title, "Остался последний день – досдай работы, пока уроки открыты."
+        return title, "Осталось три дня – успей досмотреть уроки и сдать работы."
     if item.kind == KIND_ACCESS_1D:
         return title, "Остался последний день. Оплати обучение, и уроки останутся открытыми."
     return title, "Осталось три дня. Оплати обучение, и уроки останутся открытыми."
@@ -668,7 +677,6 @@ def _without_silent_holiday(db: Session, students: dict[int, User]) -> dict[int,
     не нужно»). Без трека (не оплатил) — тоже нет. Отбор только здесь:
     `program_students` кормит и статистику «сдали / не сдали», где каникулярный
     должник остаётся должником."""
-    from app.constants import PROGRAM_HOLIDAY
     from app.services.intake_link import tracks_by_user
 
     holiday_ids = [uid for uid, user in students.items() if user.program == PROGRAM_HOLIDAY]
@@ -683,10 +691,25 @@ def _without_silent_holiday(db: Session, students: dict[int, User]) -> dict[int,
     return {uid: user for uid, user in students.items() if uid not in silent}
 
 
+def _without_waiting_holiday(learners: dict[int, User], now: datetime) -> dict[int, User]:
+    """Каникулярный, чья программа ещё не открылась (`constants.HOLIDAY_PROGRAM_OPENS_AT`),
+    учебных напоминаний не получает: пока программу наполняют, «Новое задание»
+    звало бы в ленту, где висит карточка «Доступ откроется …» (23.10.2026).
+    Закрыто ровно то, что закрывает `dependencies.get_current_user` — правило
+    одно, `intake_link.waits_for_program`. Конец доступа и оплата идут по
+    `students`, их это не касается."""
+    from app.services.intake_link import waits_for_program
+
+    return {
+        uid: user for uid, user in learners.items()
+        if not (user.program == PROGRAM_HOLIDAY and waits_for_program(uid, now))
+    }
+
+
 def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     """Что каждому ученику пора сообщить — без уже отправленного."""
     students = _without_silent_holiday(db, program_students(db, now))
-    learners = program_learners(students)
+    learners = _without_waiting_holiday(program_learners(students), now)
     raw: dict[int, list[_Item]] = defaultdict(list)
     _collect_new_content(db, learners, now, raw)
     _collect_deadlines(db, learners, now, raw)

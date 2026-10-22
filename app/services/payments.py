@@ -61,6 +61,7 @@ from app.models.payment import (
     PaymentPrice,
 )
 from app.models.intake_link import IntakeLink
+from app.models.tag import UserTag
 from app.models.user import User
 from app.services import intake_link as intake_link_service
 from app.services.contacts import normalize_tg_username
@@ -610,7 +611,7 @@ def grant_track_for_test(db: DBSession, user: User, track: IntakeLink, *, now: d
     След — журнал `holiday_track_test_grant`. Не коммитит."""
     if not is_test_account(user.id):
         raise PaymentUnavailable("Без оплаты трек открывается только служебным аккаунтам")
-    if track not in intake_link_service.tracks_on_sale(db):
+    if track not in intake_link_service.tracks_on_sale(db, now):
         raise PaymentUnavailable("Этот трек сейчас не продаётся")
     if any(owned.id == track.id for owned in intake_link_service.tracks_of(db, user.id)):
         raise PaymentUnavailable("Этот трек уже открыт")
@@ -634,7 +635,7 @@ def get_or_create_track_payment(
         raise PaymentUnavailable("Оплата через сайт ещё не подключена")
     if user.program != PROGRAM_HOLIDAY:
         raise PaymentUnavailable("Треки каникулярного набора оплачивают только его ученики")
-    if track not in intake_link_service.tracks_on_sale(db):
+    if track not in intake_link_service.tracks_on_sale(db, now):
         raise PaymentUnavailable("Этот трек сейчас не продаётся")
     # Другой трек купить можно (школа 18.10.2026), тот же второй раз — нет.
     if any(owned.id == track.id for owned in intake_link_service.tracks_of(db, user.id)):
@@ -880,6 +881,28 @@ def _notify_staff(db: DBSession, title: str, text: str) -> list[Notification]:
     return rows
 
 
+def track_refund_reason(db: DBSession, payment: Payment, now: datetime) -> str:
+    """Оплата трека, которая доступа не даёт, — школе вернуть деньги
+    (23.10.2026). Пусто — оплата обычная. Смотреть до зачисления: оно ставит
+    тег трека.
+
+    Трек уже был у ученика — вторая оплата того же (две вкладки, ручной тег и
+    оплата мимо платформы). Набор по треку закончился — срок трека в прошлом,
+    кабинет закрыт сроком, тег ничего не открывает."""
+    if payment.kind != KIND_HOLIDAY or not payment.intake_link_id:
+        return ""
+    track = db.get(IntakeLink, payment.intake_link_id)
+    if track is None:
+        return ""
+    if track.tag_id is not None and db.query(UserTag.user_id).filter(
+        UserTag.user_id == payment.user_id, UserTag.tag_id == track.tag_id,
+    ).first() is not None:
+        return "этот трек у ученика уже был открыт – похоже на вторую оплату"
+    if intake_link_service.date_passed(track, now):
+        return f"набор по треку закончился {msk_text(track.access_until)} – доступа оплата не даёт"
+    return ""
+
+
 def record_paid(
     db: DBSession,
     payment: Payment,
@@ -901,6 +924,8 @@ def record_paid(
     (`notify_many`).
     """
     user = db.get(User, payment.user_id)
+    # Ручную отметку ставит сотрудник, который сам знает, за что деньги.
+    refund_reason = track_refund_reason(db, payment, now) if source == SOURCE_PRODAMUS else ""
     payment.status = STATUS_PAID
     payment.source = source
     payment.paid_at = now
@@ -984,6 +1009,13 @@ def record_paid(
             _paid_staff_text(user, payment, paid_sum_kop, how, tariff_from,
                              subject=payment_subject(db, payment)),
         )
+        if refund_reason:
+            created += _notify_staff(
+                db, "Оплата трека: нужен возврат",
+                f"{_who(user)}: за {payment_subject(db, payment)} пришло "
+                f"{rub_text(paid_sum_kop)}, но {refund_reason}. Верните деньги в "
+                "Продамусе и отметьте «Возврат» в «Оплатах» (каникулярный курс).",
+            )
     return created
 
 
@@ -1161,6 +1193,14 @@ class WebhookResult:
     notifications: list[Notification] = field(default_factory=list)
 
 
+def webhook_order_paid(db: DBSession, data: dict) -> bool:
+    """Платёж из уведомления уже оплачен — после сбоя записи вебхук отличает
+    так параллельный повтор от настоящей ошибки (23.10.2026)."""
+    payment_id = payment_id_from_order(str(data.get("order_num") or ""))
+    payment = db.get(Payment, payment_id) if payment_id else None
+    return payment is not None and payment.status == STATUS_PAID
+
+
 def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
     """Разбор уже проверенного по подписи уведомления Продамуса. Не коммитит.
 
@@ -1196,12 +1236,14 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
             return WebhookResult(200, "already paid")
         # Тот же месяц оплачен вторым заказом — деньги не терять, решает человек.
         user = db.get(User, payment.user_id)
+        # У трека «следующего месяца» нет — только возврат (23.10.2026).
+        decide = ("Нужен возврат – оформите его в Продамусе." if payment.kind == KIND_HOLIDAY
+                  else "Возврат или зачёт в следующий месяц — решите вручную.")
         notes = _notify_staff(
             db, "Двойная оплата",
             f"{_who(user) if user else payment.user_id}: за "
             f"{payment_subject(db, payment)} пришла вторая оплата "
-            f"{data.get('sum')} ₽ (Продамус № {prodamus_order_id}). Возврат или зачёт в "
-            "следующий месяц — решите вручную.",
+            f"{data.get('sum')} ₽ (Продамус № {prodamus_order_id}). {decide}",
         )
         return WebhookResult(200, "duplicate payment", notes)
 
@@ -1249,11 +1291,14 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
     note = None
     if payment.status == STATUS_CANCELLED:
         note = "оплачена отменённая ссылка"
+    # Если зачисление само скажет «нужен возврат», «не нужна ли доплата» про ту
+    # же оплату сбивало бы с толку.
+    refund_reason = track_refund_reason(db, payment, now)
     notes = record_paid(
         db, payment, now=now, source=SOURCE_PRODAMUS, paid_sum_kop=paid_sum,
         performed_by_id=payment.user_id, prodamus_order_id=prodamus_order_id, note=note,
     )
-    if note:
+    if note and not refund_reason:
         user = db.get(User, payment.user_id)
         notes += _notify_staff(
             db, "Оплата по отменённой ссылке",

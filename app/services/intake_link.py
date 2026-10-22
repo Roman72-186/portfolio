@@ -8,7 +8,7 @@
 `api/cabinet_superadmin.py`) своих копий условий не держат.
 """
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
@@ -17,6 +17,7 @@ from app.constants import INTAKE_TRIAL_SLUG, PROGRAM_HOLIDAY
 from app.models.intake_link import IntakeLink
 from app.models.user import User
 from app.services.tags import add_tag_to_user
+from app.services.tz import _as_utc
 
 # Алфавит адреса группы: без похожих друг на друга знаков (0/o, 1/l), чтобы
 # ссылку можно было продиктовать или переписать с экрана.
@@ -28,9 +29,22 @@ def get_link(db: DBSession, slug: str) -> IntakeLink | None:
     return db.query(IntakeLink).filter(IntakeLink.slug == slug).first()
 
 
-def is_open(link: IntakeLink | None) -> bool:
-    """Ссылка работает как вход прямо сейчас: включена и дата задана."""
-    return bool(link and link.is_active and link.access_until is not None)
+def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
+    """Ссылка работает как вход прямо сейчас: включена и дата задана.
+
+    Каникулярная — ещё и пока дата не прошла (23.10.2026): после неё вошедший
+    получил бы срок в прошлом и закрытый кабинет, а школа может забыть выключить
+    ссылку. Правило `/proba` не менялось."""
+    if not (link and link.is_active and link.access_until is not None):
+        return False
+    return not is_holiday(link) or not date_passed(link, now)
+
+
+def date_passed(link: IntakeLink, now: datetime | None = None) -> bool:
+    """Дата доступа ссылки уже наступила — набор по ней закончился."""
+    if link.access_until is None:
+        return False
+    return _as_utc(link.access_until) <= _as_utc(now or datetime.now(timezone.utc))
 
 
 def is_holiday(link: IntakeLink | None) -> bool:
@@ -110,12 +124,14 @@ def holiday_tracks(db: DBSession) -> list[IntakeLink]:
     return [link for link in holiday_links(db) if link.tag_id is not None]
 
 
-def tracks_on_sale(db: DBSession) -> list[IntakeLink]:
+def tracks_on_sale(db: DBSession, now: datetime | None = None) -> list[IntakeLink]:
     """Что показать на странице оплаты: трек с ценой, включён и с датой
-    доступа — без даты оплата не дала бы срока."""
+    доступа — без даты оплата не дала бы срока. Дата не прошла (23.10.2026):
+    после неё оплата дала бы тег, но не доступ — кабинет уже закрыт сроком."""
     return [
         link for link in holiday_tracks(db)
         if link.price_kop and link.is_active and link.access_until is not None
+        and not date_passed(link, now)
     ]
 
 
