@@ -5,9 +5,11 @@
 сообщения сотрудника копятся черновиком, ученику их открывает и одним
 уведомлением сообщает кнопка «Отправить ОС».
 
-Одна колонка с умолчанием `false`: все прежние сообщения ученик уже видел,
-перекладывать нечего. Откат: колонка удаляется, неотправленные черновики
-станут видны ученику без уведомления.
+`is_draft` с умолчанием `false`: все прежние сообщения ученик уже видел,
+перекладывать нечего. `sent_at` — когда ученик получил сообщение: от него
+считаются двое суток тишины, после которых можно «Завершить ОС»; у прежних
+сообщений пусто, вместо него берётся `created_at`. Откат: колонки удаляются,
+неотправленные черновики станут видны ученику без уведомления.
 
 Revision ID: a7c3e9f1b2d4
 Revises: f2b6d8a1c3e5
@@ -32,7 +34,12 @@ def upgrade() -> None:
         "task_block_feedback_messages",
         sa.Column("is_draft", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
+    op.add_column(
+        "task_block_feedback_messages",
+        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True),
+    )
 
 
 def downgrade() -> None:
+    op.drop_column("task_block_feedback_messages", "sent_at")
     op.drop_column("task_block_feedback_messages", "is_draft")

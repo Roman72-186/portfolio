@@ -185,27 +185,31 @@ def _reminders(db, user):
     ).all()
 
 
-def test_unsent_draft_reminds_author_hourly_then_daily(db, user_factory, session_factory, client):
-    """Через час тишины — напоминание автору черновика, повтор раз в сутки,
-    отправленная ОС не напоминает."""
+def test_unsent_draft_reminds_after_one_hour_two_hours_then_daily(
+    db, user_factory, session_factory, client,
+):
+    """Напоминание автору черновика через час, через два, дальше раз в сутки
+    (владелец 22.10.2026); отправленная ОС не напоминает."""
     curator, _student, _task, submission = _setup_block(db, user_factory, base=994_071)
     _staff_says(client, session_factory, curator, submission, send=False)
+    start = datetime.now(timezone.utc)
 
-    run_unsent_feedback_reminders(db)
-    assert _reminders(db, curator) == []
+    def run(hours):
+        return run_unsent_feedback_reminders(db, now=start + timedelta(hours=hours))
 
-    _age_drafts(db, submission, hours=2)
-    first = run_unsent_feedback_reminders(db)
-    assert len(first) == 1
+    assert run(0.5) == []
+    assert len(run(1.1)) == 1
     note = _reminders(db, curator)[0]
     assert note.task_block_submission_id == submission.id
     assert f"/cabinet/staff/task-block-submissions/{submission.id}/feedback" in note.text
-    assert run_unsent_feedback_reminders(db) == []
-
-    later = datetime.now(timezone.utc) + timedelta(hours=24)
-    assert len(run_unsent_feedback_reminders(db, now=later)) == 1
-    assert run_unsent_feedback_reminders(db, now=later) == []
-    assert db.query(StudentReminder).filter_by(kind=KIND_FEEDBACK_UNSENT).count() == 2
+    assert run(1.5) == []
+    assert len(run(2.1)) == 1
+    assert run(12) == []
+    assert len(run(24.1)) == 1
+    assert run(40) == []
+    assert len(run(48.1)) == 1
+    assert db.query(StudentReminder).filter_by(kind=KIND_FEEDBACK_UNSENT).count() == 4
+    later = start + timedelta(hours=48.1)
 
     _login(client, session_factory, curator)
     _send(client, submission)
@@ -220,3 +224,32 @@ def test_sent_messages_never_remind(db, user_factory, session_factory, client):
     db.commit()
     assert run_unsent_feedback_reminders(db) == []
     assert db.query(TaskBlockFeedbackMessage).filter_by(is_draft=True).count() == 0
+
+
+def test_close_opens_after_two_days_of_silence(db, user_factory, session_factory, client):
+    """Ученик не тратит вопросы — через двое суток после последнего сообщения
+    «Завершить ОС» всё равно появляется (владелец 22.10.2026). Двое суток
+    считаются от отправки, а не от черновика."""
+    from app.services.task_block_feedback import close_refusal
+
+    curator, student, _task, submission = _setup_block(
+        db, user_factory, base=994_091, dialog_tariffs=[TARIFF_WITH_YOU],
+    )
+    _staff_says(client, session_factory, curator, submission, send=False)
+    _age_drafts(db, submission, hours=24 * 5)
+    _login(client, session_factory, curator)
+    _send(client, submission)
+
+    feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
+    db.refresh(feedback)
+    now = datetime.now(timezone.utc)
+    refusal = close_refusal(db, submission, feedback, now=now + timedelta(hours=47))
+    assert "промолчит до" in refusal
+    assert close_refusal(db, submission, feedback, now=now + timedelta(hours=49)) is None
+
+    # Вопрос без ответа держит диалог открытым, сколько бы ни прошло.
+    _student_asks(client, session_factory, student, submission)
+    db.refresh(feedback)
+    assert "Ответь на последний вопрос" in close_refusal(
+        db, submission, feedback, now=now + timedelta(days=10),
+    )

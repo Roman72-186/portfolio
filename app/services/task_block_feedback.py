@@ -19,7 +19,7 @@ from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackM
 from app.models.tracker import TrackerTask
 from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import ROLE_STUDENT, dialog_sender, role_from_rank
-from app.services.tz import msk_date_text
+from app.services.tz import msk_date_text, msk_text
 from app.services.utils import compress_image
 
 logger = logging.getLogger(__name__)
@@ -176,9 +176,16 @@ def draft_messages(
     return [message for message in feedback.messages if message.is_draft]
 
 
+CLOSE_AFTER_SILENCE = timedelta(days=2)
+
+
+def _aware(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 def close_refusal(
     db: DBSession, submission: TaskBlockSubmission,
-    feedback: TaskBlockFeedback | None,
+    feedback: TaskBlockFeedback | None, now: datetime | None = None,
 ) -> str | None:
     """**Единственное место правила «можно ли нажать «Завершить ОС»»**
     (владелец 22.10.2026). Читают роут `close_feedback` и экран диалога.
@@ -187,7 +194,10 @@ def close_refusal(
     черновиков нет, и либо ответ ему закрыт «Настройкой диалога», либо он
     потратил свой лимит и на последний вопрос уже ответили. До 22.10.2026
     завершить можно было сразу после первого сообщения — и ученик, узнав об
-    ОС, уже не мог задать вопрос. None — завершить можно."""
+    ОС, уже не мог задать вопрос. Ученик, который молчит двое суток после
+    ответа преподавателя (`CLOSE_AFTER_SILENCE`, владелец 22.10.2026), вопросы
+    не тратит — тогда завершить тоже можно, иначе диалог висел бы открытым
+    навсегда и до оценки не доходил. None — завершить можно."""
     messages = feedback.messages if feedback is not None else []
     if not any(_is_sent_staff(message) for message in messages):
         return "Завершить можно после того, как ОС отправлена ученику."
@@ -196,24 +206,30 @@ def close_refusal(
     limit = reply_limit(db, submission)
     if limit is None:
         return None
-    sent = sum(1 for message in messages if message.sender_role == ROLE_STUDENT)
-    if sent < limit:
-        left = limit - sent
-        return (
-            f"Ученик ещё может задать вопрос: осталось {left} {_messages_word(left)}. "
-            "«Завершить ОС» появится, когда он их потратит."
-        )
     if messages[-1].sender_role == ROLE_STUDENT:
         return "Ответь на последний вопрос ученика – потом можно завершить."
-    return None
+    sent = sum(1 for message in messages if message.sender_role == ROLE_STUDENT)
+    if sent >= limit:
+        return None
+    now = now or datetime.now(timezone.utc)
+    silent_until = max(_aware(message.delivered_at) for message in messages) + CLOSE_AFTER_SILENCE
+    if now >= silent_until:
+        return None
+    left = limit - sent
+    return (
+        f"Ученик ещё может задать вопрос: осталось {left} {_messages_word(left)}. "
+        f"«Завершить ОС» появится, когда он их потратит или промолчит до {msk_text(silent_until)}."
+    )
 
 
 def send_drafts(feedback: TaskBlockFeedback) -> int:
     """«Отправить ОС»: открыть ученику все черновики сотрудников разом.
     Возвращает их число; уведомление шлёт роут — одно на отправку."""
     drafts = draft_messages(feedback)
+    now = datetime.now(timezone.utc)
     for message in drafts:
         message.is_draft = False
+        message.sent_at = now
     return len(drafts)
 
 async def _upload_photo(
@@ -356,6 +372,7 @@ async def send_message(
         # Сотрудник пишет черновиком, ученику его открывает «Отправить ОС»
         # (владелец 22.10.2026). Ученик пишет сразу — его ждут.
         is_draft=sender_role != ROLE_STUDENT,
+        sent_at=datetime.now(timezone.utc) if sender_role == ROLE_STUDENT else None,
     )
     db.add(message)
     db.flush()
@@ -537,13 +554,26 @@ def list_student_feedback_cards(
     return open_cards, closed_cards
 
 
-UNSENT_FIRST_AFTER = timedelta(hours=1)
+# Через час и через два после последнего черновика, дальше раз в сутки
+# (владелец 22.10.2026).
+UNSENT_REMIND_AT = (timedelta(hours=1), timedelta(hours=2), timedelta(days=1))
 UNSENT_REPEAT_EVERY = timedelta(days=1)
+
+
+def _unsent_step(quiet: timedelta) -> int | None:
+    """Номер напоминания для паузы после последнего черновика; None — рано."""
+    if quiet < UNSENT_REMIND_AT[0]:
+        return None
+    for step, start in enumerate(UNSENT_REMIND_AT[1:]):
+        if quiet < start:
+            return step
+    last = len(UNSENT_REMIND_AT) - 1
+    return last + int((quiet - UNSENT_REMIND_AT[-1]) / UNSENT_REPEAT_EVERY)
 
 
 def run_unsent_feedback_reminders(db: DBSession, now: datetime | None = None) -> list[int]:
     """Напомнить сотруднику, что ОС написана, а ученику не отправлена
-    (владелец 22.10.2026). Первое — через час после последнего черновика
+    (владелец 22.10.2026). Через час и через два после последнего черновика
     (куратор, скорее всего, закончил), дальше раз в сутки, пока черновик
     лежит. Получает каждый, чей черновик в диалоге. Повторы держит
     `StudentReminder` (вид `feedback_unsent`). Коммитит сам; возвращает id
@@ -568,13 +598,10 @@ def run_unsent_feedback_reminders(db: DBSession, now: datetime | None = None) ->
     )
     created: list[Notification] = []
     for feedback_id, first_draft_id, last_at in rows:
-        if last_at.tzinfo is None:
-            last_at = last_at.replace(tzinfo=timezone.utc)
-        quiet = now - last_at
-        if quiet < UNSENT_FIRST_AFTER:
+        step = _unsent_step(now - _aware(last_at))
+        if step is None:
             continue
-        day = int((quiet - UNSENT_FIRST_AFTER) / UNSENT_REPEAT_EVERY)
-        ref = f"{feedback_id}:{first_draft_id}:{day}"
+        ref = f"{feedback_id}:{first_draft_id}:{step}"
         feedback = db.get(TaskBlockFeedback, feedback_id)
         submission = db.get(TaskBlockSubmission, feedback.submission_id)
         student = db.get(User, submission.user_id)

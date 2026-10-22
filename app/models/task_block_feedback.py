@@ -102,6 +102,14 @@ class TaskBlockFeedbackMessage(Base):
     is_draft: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Когда сообщение дошло до ученика: у сотрудника — нажатие «Отправить ОС»,
+    # у ученика — сама отправка. Пусто у сообщений до 22.10.2026 — тогда
+    # момент отправки и есть `created_at` (`delivered_at`).
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def delivered_at(self) -> datetime:
+        return self.sent_at or self.created_at
 
     feedback: Mapped["TaskBlockFeedback"] = relationship(
         "TaskBlockFeedback", back_populates="messages"
