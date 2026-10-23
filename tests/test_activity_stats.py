@@ -35,9 +35,10 @@ def test_login_stats_counts_and_inactive(db, user_factory):
 
     now = datetime.now(timezone.utc)
     fresh = user_factory(vk_id=970101, name="Свежий", role_name="ученик")
-    fresh.last_login_at = now - timedelta(days=1)
+    # «Заходил» — `last_seen_at` (пинг вкладки, 23.10.2026), не вход.
+    fresh.last_seen_at = now - timedelta(days=1)
     stale = user_factory(vk_id=970102, name="Старый", role_name="ученик")
-    stale.last_login_at = now - timedelta(days=20)
+    stale.last_seen_at = now - timedelta(days=20)
     never = user_factory(vk_id=970103, name="Никогда", role_name="ученик")
     db.commit()
 

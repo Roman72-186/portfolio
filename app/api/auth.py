@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Form, Header, BackgroundTasks
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import bcrypt as _bcrypt_lib
@@ -21,8 +21,8 @@ from app.constants import HOLIDAY_ENTRY_PATH, INTAKE_TRIAL_SLUG, SUPPORT_URL
 from app.csrf import generate_csrf_token
 from app.db.database import get_db
 from app.dependencies import (
-    _as_utc, get_current_user, require_internal_api_token, require_lab3d_token,
-    require_telegram_webhook_secret,
+    _as_utc, get_current_user, require_csrf_header, require_internal_api_token,
+    require_lab3d_token, require_telegram_webhook_secret,
 )
 from app.limiter import limiter
 from app.models.role import Role
@@ -48,6 +48,7 @@ from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import broadcast_delivery
 from app.services import payment_debtors
+from app.services import presence as presence_service
 from app.services import telegram as telegram_service
 from app.services import vpn_keys as vpn_keys_service
 from app.services.user_management import open_program_from_now, restore_deleted_user
@@ -229,6 +230,8 @@ def _create_session_response(db: DBSession, user: User, request: Request) -> Red
     # Все настоящие логины (VK, magic link, staff) проходят здесь; сессия
     # имперсонации создаётся отдельно и last_login_at цели не трогает.
     user.last_login_at = _now()
+    # Вход — тоже «был на платформе»; дальше отметку двигает пинг вкладки.
+    user.last_seen_at = user.last_login_at
     db.add(StudentActivityEvent(user_id=user.id, event_type="login"))
     db.commit()
 
@@ -849,6 +852,22 @@ def fresh_csrf(user: Annotated[dict, Depends(get_current_user)]):
     строка `generate_csrf_token`, второй копии правил нет.
     """
     return JSONResponse({"csrf_token": generate_csrf_token(user["session_id"])})
+
+
+@router.post("/presence", status_code=204)
+def presence(
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Пинг открытой вкладки ученика: «был на платформе» и время на платформе
+    (`services/presence.py`, Александрия 22.10.2026). Сотрудник и вход
+    «глазами» не считаются: суперадмин в шкуре ученика — не ученик на
+    платформе. Путь открыт и закрытому кабинету (`ACCESS_EXPIRED_ALLOWED_PREFIXES`):
+    ученик с истёкшим сроком на «Личной информации» тоже на платформе."""
+    if user["role_rank"] == 1 and not user["impersonated_by_id"]:
+        presence_service.record_presence(db, user["user_id"])
+    return Response(status_code=204)
 
 
 # ── Telegram bot login ───────────────────────────────────────────────────────

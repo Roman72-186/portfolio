@@ -243,6 +243,11 @@
        base.html, а не на страницах загрузки: ключ старится у любой долго
        открытой вкладки, а не только у формы с фото (разбор — в самом файле). #}
     <script src="/static/js/csrf.js?v=2"></script>
+    {# «Был на платформе» и время на платформе — пинг видимой вкладки, только
+       ученику и не во входе «глазами» (`services/presence.py`). #}
+    {% if user is defined and user and user.role_rank == 1 and not user.impersonated_by_id %}
+    <script src="/static/js/presence.js?v=1"></script>
+    {% endif %}
     {# Поиск ученика по номеру — одно правило на все списки (14.10.2026). #}
     <script src="/static/js/student-search.js?v=2"></script>
     {% include "_includes/impersonation_banner.html" %}

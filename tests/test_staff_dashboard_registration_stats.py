@@ -196,6 +196,8 @@ def test_student_activity_overview_tracks_logins_and_portfolio_uploads(db, user_
     sessions = db.query(Session).filter(Session.user_id == student.id).all()
     sessions[0].created_at = first_login
     sessions[1].created_at = last_login
+    # «Был на платформе» — пинг вкладки (`last_seen_at`), не последняя сессия.
+    student.last_seen_at = last_login + timedelta(days=2)
     db.commit()
 
     overview = get_student_activity_overview(db)
@@ -203,7 +205,7 @@ def test_student_activity_overview_tracks_logins_and_portfolio_uploads(db, user_
 
     assert row["login_count"] == 2
     assert row["first_login"].replace(tzinfo=timezone.utc) == first_login
-    assert row["last_login"].replace(tzinfo=timezone.utc) == last_login
+    assert row["last_login"].replace(tzinfo=timezone.utc) == last_login + timedelta(days=2)
     assert row["upload_count"] == 1
     assert row["has_portfolio_before"] is True
     assert row["last_upload"].replace(tzinfo=timezone.utc) == last_login

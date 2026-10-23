@@ -224,7 +224,7 @@ _REGISTRATION_XLSX_COLUMNS = (
     ("Оплачено до", 12),
     ("Начало обучения", 12),
     ("Регистрация", 20),
-    ("Последний вход", 20),
+    ("Был на платформе", 20),
     ("Куратор", 24),
     ("Формат", 10),
     ("Предметы экзамена", 20),
@@ -302,7 +302,7 @@ def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats
             msk_date_text(user.paid_until),
             user.enrolled_at.strftime("%m.%Y") if user.enrolled_at else "",
             msk_text(user.created_at),
-            msk_text(user.last_login_at),
+            msk_text(user.last_seen_at),
             curators.get(user.curator_id, ""),
             STUDY_MODE_LABELS.get(user.study_mode or "", ""),
             user.exam_subjects or "",
@@ -664,7 +664,9 @@ def get_student_activity_overview(
             "tariff": student.tariff or "Без тарифа",
             "registered_at": student.created_at,
             "first_login": login.first_login if login else None,
-            "last_login": login.last_login if login else None,
+            # «Был на платформе» — пинг вкладки (`services/presence.py`):
+            # последняя новая сессия застывала, сессия продлевается сама.
+            "last_login": student.last_seen_at,
             "login_count": int(login.login_count) if login else 0,
             "upload_count": int(upload.upload_count) if upload else 0,
             "has_portfolio_before": student.id in portfolio_before_user_ids,

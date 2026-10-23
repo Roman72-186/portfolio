@@ -197,7 +197,7 @@
                 {% if ho.rows %}
                 <div class="ss-table-wrap">
                 <table class="ss-table">
-                    <thead><tr><th>Ученик</th><th>Треки</th><th>Оплата</th><th>Анкета</th><th>Вошёл</th><th>Последний вход</th><th class="ss-ta-r">Адресов за неделю</th><th>Задания</th></tr></thead>
+                    <thead><tr><th>Ученик</th><th>Треки</th><th>Оплата</th><th>Анкета</th><th>Вошёл</th><th>Был на платформе</th><th class="ss-ta-r">Адресов за неделю</th><th>Задания</th></tr></thead>
                     <tbody>
                     {% for r in ho.rows %}
                     <tr>
@@ -206,7 +206,7 @@
                         <td data-label="Оплата">{{ r.pay_state }}{% if r.paid_text %}<br><span class="ss-dim-sm">{{ r.paid_text }}{% if r.paid_at %} · {{ r.paid_at }}{% endif %}</span>{% endif %}</td>
                         <td data-label="Анкета">{% if r.profile_completed %}заполнена{% if r.school %}<br><span class="ss-dim-sm">{{ r.school }}</span>{% endif %}{% else %}не заполнена{% endif %}</td>
                         <td data-label="Вошёл" class="ss-dim">{{ r.entered_at or '—' }}</td>
-                        <td data-label="Последний вход" class="ss-dim">{{ r.last_login or 'Не заходил' }}</td>
+                        <td data-label="Был на платформе" class="ss-dim">{{ r.last_login or 'Не заходил' }}</td>
                         <td data-label="Адресов за неделю" class="ss-ta-r">{{ r.ips }}</td>
                         <td data-label="Задания">{% if r.tasks_total %}сдал {{ r.tasks_done }} из {{ r.tasks_total }}{% if r.tasks_overdue %}<br><span class="ss-dim-sm">просрочено {{ r.tasks_overdue }}</span>{% endif %}{% else %}—{% endif %}</td>
                     </tr>
@@ -825,14 +825,14 @@
             {% if logins.inactive %}
             <div class="ss-table-wrap">
                 <table class="ss-table">
-                    <thead><tr><th>Ученик</th><th>Telegram</th><th>Тариф</th><th>Последний вход</th></tr></thead>
+                    <thead><tr><th>Ученик</th><th>Telegram</th><th>Тариф</th><th>Был на платформе</th></tr></thead>
                     <tbody>
                     {% for s in logins.inactive %}
                     <tr>
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
                         <td data-label="Telegram" class="ss-dim-sm">{{ tg_copy('@' ~ s.tg_username.lstrip('@') if s.tg_username else '') }}</td>
                         <td data-label="Тариф">{{ s.tariff }}</td>
-                        <td data-label="Последний вход" class="ss-dim">{{ s.last_login_at.strftime('%d.%m.%Y %H:%M') if s.last_login_at else "не заходил с 11.07" }}</td>
+                        <td data-label="Был на платформе" class="ss-dim">{{ s.last_seen_at.strftime('%d.%m.%Y %H:%M') if s.last_seen_at else "не заходил с 11.07" }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>

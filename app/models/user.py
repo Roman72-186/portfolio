@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Integer, BigInteger, String, Boolean, Date, DateTime, ForeignKey, Index
+from sqlalchemy import Integer, BigInteger, String, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.crypto import EncryptedString
@@ -86,6 +86,11 @@ class User(Base):
     last_vk_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Таймстемпы активности/онбординга (для статистики; ставятся один раз, кроме last_login_at)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # «Был на платформе» (Александрия 22.10.2026): последний пинг открытой
+    # вкладки ученика (`services/presence.py`), при входе — время входа.
+    # `last_login_at` для этого не годится: сессия продлевается сама, и у
+    # ребёнка, который заходит каждый день, дата входа застывала на неделю.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     profile_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     portfolio_do_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # New fields (spec v1.0)
@@ -219,4 +224,27 @@ class User(Base):
         Index("ix_users_active_role", "is_active", "role_id"),
         Index("ix_users_curator_active", "curator_id", "is_active"),
         Index("ix_users_deleted_active", "deleted_at", "is_active"),
+    )
+
+
+class UserActivityDay(Base):
+    """Время ученика на платформе за день по Москве (Александрия 22.10.2026:
+    «время на платформе»). Копится пингами открытой видимой вкладки
+    (`services/presence.py`) с дня выкатки, прошлое не восстановить.
+    Строка на ученика и день."""
+
+    __tablename__ = "user_activity_days"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_user_activity_days_user_day"),
+        Index("ix_user_activity_days_day", "day"),
     )

@@ -77,7 +77,7 @@
 
         <div class="ss-table-wrap">
             <table class="ss-table">
-                <thead><tr><th>Ученик</th><th>Статус</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th></tr></thead>
+                <thead><tr><th>Ученик</th><th>Статус</th><th>Регистрация</th><th>Был на платформе</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th></tr></thead>
                 <tbody>
                 {% for student in student_activity.students %}
                 {% set username = student.username if student.username.startswith('@') else '' %}
@@ -85,7 +85,7 @@
                     <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></td>
                     <td data-label="Статус" data-assignment-state>—</td>
                     <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
-                    <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
+                    <td data-label="Был на платформе" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
                     <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
                     <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
                     <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>

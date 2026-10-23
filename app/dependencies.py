@@ -63,6 +63,10 @@ MODERATOR_FORBIDDEN_DETAIL = "Модератору открыты только �
 # `/cabinet/superadmin/impersonate/stop` здесь не по ошибке: режим «глазами
 # ученика» намеренно не обходит запрет — иначе суперадмин не увидит того, что
 # видит ученик, — и без этого пути он бы застрял в чужой шкуре без выхода.
+#
+# `/presence` — пинг «был на платформе» (`api/auth.py::presence`): ученик на
+# «Личной информации» тоже на платформе, а отказ раз в минуту только шумел бы.
+# Отсюда он попадает и во все списки ниже, построенные на этом.
 ACCESS_EXPIRED_ALLOWED_PREFIXES = (
     "/cabinet/personal",
     "/cabinet/superadmin/impersonate/stop",
@@ -70,6 +74,7 @@ ACCESS_EXPIRED_ALLOWED_PREFIXES = (
     "/logout",
     "/static",
     "/health",
+    "/presence",
 )
 
 

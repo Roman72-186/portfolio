@@ -46,6 +46,7 @@ from app.services.meeting_joins import (
     event_titles,
     student_meeting_joins,
 )
+from app.services.presence import seconds_on_platform
 from app.services.program import day_bounds, week_start
 from app.services.report_scope import reportable_students_q
 from app.services.tracker import accessible_task_entries, effective_week_start
@@ -164,23 +165,26 @@ def _scope_ids(db: DBSession, student_id: int | None):
 
 
 def get_login_stats(db: DBSession) -> dict:
-    """Входы учеников: за 7/30 дней, всего активных, список давно не заходивших.
+    """Заходы учеников: за 7/30 дней, всего активных, список давно не заходивших.
 
-    last_login_at копится с ACTIVITY_STATS_START: NULL означает
-    «не заходил с этой даты», а не «никогда».
+    «Заходил» — `last_seen_at` («был на платформе», пинг открытой вкладки,
+    с 23.10.2026). До него брался `last_login_at`, а он застывал: сессия
+    продлевается сама, и ежедневный ученик неделями «не входил». Поле
+    заполнено из `last_login_at`, тот копится с ACTIVITY_STATS_START: NULL
+    означает «не заходил с этой даты», а не «никогда».
     """
     now = datetime.now(timezone.utc)
     total = _active_students_q(db).count()
-    d7 = _active_students_q(db).filter(User.last_login_at >= now - timedelta(days=7)).count()
-    d30 = _active_students_q(db).filter(User.last_login_at >= now - timedelta(days=30)).count()
+    d7 = _active_students_q(db).filter(User.last_seen_at >= now - timedelta(days=7)).count()
+    d30 = _active_students_q(db).filter(User.last_seen_at >= now - timedelta(days=30)).count()
 
     inactive_rows = (
         _active_students_q(db)
         .filter(or_(
-            User.last_login_at.is_(None),
-            User.last_login_at < now - timedelta(days=14),
+            User.last_seen_at.is_(None),
+            User.last_seen_at < now - timedelta(days=14),
         ))
-        .order_by(User.last_login_at.asc().nullsfirst(), User.last_name, User.first_name)
+        .order_by(User.last_seen_at.asc().nullsfirst(), User.last_name, User.first_name)
         .limit(200)
         .all()
     )
@@ -190,7 +194,7 @@ def get_login_stats(db: DBSession) -> dict:
             "student_name": _student_name(u.first_name, u.last_name, u.name),
             "tg_username": (u.tg_username or "").lstrip("@"),
             "tariff": u.tariff or "—",
-            "last_login_at": _msk(u.last_login_at),
+            "last_seen_at": _msk(u.last_seen_at),
         }
         for u in inactive_rows
     ]
@@ -1885,7 +1889,13 @@ def student_activity(
 
     return {
         "days": days,
-        "last_login": _when(student.last_login_at),
+        # «Был на платформе» — пинг вкладки, а не вход (сессия продлевается
+        # сама, дата входа застывала); время — за те же `days` дней.
+        "last_login": _when(student.last_seen_at),
+        "time_on_platform": fmt_duration(
+            seconds_on_platform(db, [student.id], since=today - timedelta(days=days - 1))
+            .get(student.id, 0)
+        ),
         "logins": counts.get("login", 0),
         "uploads": counts.get("portfolio_upload", 0) + counts.get("work_upload", 0),
         # Нажатия «Подключиться» у событий дайджеста (владелец 20.10.2026):
@@ -2053,7 +2063,7 @@ def get_holiday_overview(db: DBSession) -> dict:
             "profile_completed": bool(student.profile_completed),
             "school": SCHOOL_GRADE_LABELS.get(student.school_grade or "", ""),
             "entered_at": _when_msk(student.created_at),
-            "last_login": _when_msk(student.last_login_at),
+            "last_login": _when_msk(student.last_seen_at),
             "ips": ips.get(student.id, 0),
             "tasks_total": t["eligible"],
             "tasks_done": t["submitted"],

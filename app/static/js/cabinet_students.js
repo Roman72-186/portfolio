@@ -1827,7 +1827,8 @@ function buildStatistics(data) {
     html += buildStatsMeetings(a);
 
     html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
-        + activityTile('Последний вход', a.last_login || 'Не входил', true)
+        + activityTile('Был на платформе', a.last_login || 'Не заходил', true)
+        + activityTile('На платформе за ' + a.days + ' дней', a.time_on_platform || '0 м.', true)
         + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
         + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
         + '</div>';
