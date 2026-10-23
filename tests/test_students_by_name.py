@@ -228,6 +228,18 @@ def test_cycle_label_gets_ordinal_unless_already_numbered(db, user_factory):
     assert [c["label"] for c in months[0]["cycles"]] == ["1 неделя", "2. Контрольная работа"]
 
 
+def test_only_cycle_of_stage_has_no_ordinal(db, user_factory):
+    """Этап «Портфолио» с одним циклом: «Портфолио», а не «1. Портфолио»."""
+    user_factory(vk_id=820_075, name="Student", tariff=TARIFF_SELF)
+    _stage, cycle, _block, _upload = _cycle_with_video(db, stage_title="Портфолио")
+    cycle.title = "Портфолио"
+    db.commit()
+
+    months = get_student_activity_overview(db, include_assignments=True)["months"]
+
+    assert [c["label"] for c in months[0]["cycles"]] == ["Портфолио"]
+
+
 def test_holiday_mode_filters_by_track_and_hides_foreign_tasks(db, user_factory):
     """Каникулярный курс: фильтр по треку вместо тарифа, задания годового
     курса, которые каникулярным не положены, в выбор не попадают."""

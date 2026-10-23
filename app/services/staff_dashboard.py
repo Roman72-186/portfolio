@@ -32,7 +32,7 @@ from app.services.task_blocks import (
 )
 from app.services.tracker import (
     cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
-    task_audience_user_ids,
+    stage_sibling_cycles, task_audience_user_ids,
 )
 from app.services.tz import msk_date_text, msk_midnight, msk_text
 
@@ -565,10 +565,14 @@ def _numbered_cycle_label(db: DBSession, cycle: LearningTopic) -> str:
     «5. Контрольная работа» (Александрия 23.10.2026: «писать номер рядом с
     названием цикла, чтобы это отражало последовательность»). Номер уже в
     названии («Цикл 1», «1 неделя») — подпись как есть, без «1. Цикл 1».
+    Единственный цикл этапа номера не получает: «Портфолио», а не
+    «1. Портфолио» — последовательности там нет.
     Номер тот же, что даёт безымянному циклу «Цикл N» (`stage_cycle_ordinal`)."""
     label = cycle_label(db, cycle)
     ordinal = stage_cycle_ordinal(db, cycle) if cycle.parent_id else None
     if ordinal is None or re.search(rf"(?<!\d){ordinal}(?!\d)", label):
+        return label
+    if ordinal == 1 and len(stage_sibling_cycles(db, cycle.parent_id)) == 1:
         return label
     return f"{ordinal}. {label}"
 
