@@ -205,7 +205,7 @@ def _upsert_user(
         first_name=first_name,
         last_name=last_name,
         photo_url=photo_url,
-        tariff=tariff or "УВЕРЕННЫЙ",
+        tariff=tariff or "",
         is_group_member=bool(is_group_member),
         last_vk_check_at=now if mark_vk_checked else None,
         role_id=student_role.id if student_role else None,

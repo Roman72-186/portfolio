@@ -8,7 +8,7 @@
 а не «все активные ученики» — иначе диагностика, назначенная одному тегу,
 показала бы «не начал» про учеников, которым она вообще не видна.
 """
-from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS
+from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_CURRENT
 from app.models.task_block import TaskBlockResponse
 from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
@@ -120,7 +120,7 @@ def diagnostic_stats(db: Session, task: TrackerTask, *, only_user_id: int | None
 
     by_tariff: dict[str, dict[str, int]] = {
         tariff: {STATUS_NOT_STARTED: 0, STATUS_IN_PROGRESS: 0, STATUS_FINISHED: 0}
-        for tariff in TARIFFS
+        for tariff in TARIFFS_CURRENT
     }
     for row in rows:
         tariff = (row["student"].tariff or "").strip().upper()
@@ -134,6 +134,7 @@ def diagnostic_stats(db: Session, task: TrackerTask, *, only_user_id: int | None
         "status_counts": status_counts,
         "status_labels": STATUS_LABELS,
         "profile_counts": sorted(profile_counts.items(), key=lambda item: -item[1]),
-        "tariffs": TARIFFS,
+        # Старые тарифы не показываются (владелец 23.10.2026).
+        "tariffs": TARIFFS_CURRENT,
         "by_tariff": by_tariff,
     }

@@ -365,12 +365,12 @@ def test_staff_explicit_tariff_wins_over_clearing(db, staff_client, user_factory
 
     resp = client.post(
         f"/cabinet/students/{student.id}/profile",
-        data=_profile_form(access_until="2026-09-27T23:30", tariff="УВЕРЕННЫЙ"),
+        data=_profile_form(access_until="2026-09-27T23:30", tariff="Я С ВАМИ"),
     )
 
     assert resp.status_code == 200, resp.text
     db.refresh(student)
-    assert student.tariff == "УВЕРЕННЫЙ"
+    assert student.tariff == "Я С ВАМИ"
 
 
 # ── Смена тарифа снимает срок доступа ────────────────────────────────────────

@@ -17,7 +17,10 @@ class User(Base):
     # Аватар, загруженный самим учеником один раз в кабинете (не путать с photo_url —
     # тот приходит из Telegram и перезаписывается при каждом входе, см. auth.py).
     custom_avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    tariff: Mapped[str] = mapped_column(String(50), default="УВЕРЕННЫЙ")
+    # Пусто — без тарифа: новичок до анкеты, сотрудник. До 23.10.2026 дефолт
+    # был отработавший «УВЕРЕННЫЙ», и он заново садился на каждый новый аккаунт
+    # (владелец: «старые тарифы… нигде не показывать»).
+    tariff: Mapped[str] = mapped_column(String(50), default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_group_member: Mapped[bool] = mapped_column(Boolean, default=False)

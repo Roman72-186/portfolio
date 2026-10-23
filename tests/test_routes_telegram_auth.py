@@ -132,7 +132,7 @@ def test_new_start_member_creates_user_and_confirms_connection_without_login_lin
 
     user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
     assert user is not None
-    assert user.tariff == "УВЕРЕННЫЙ"  # дефолт модели, анкета переопределит
+    assert user.tariff == ""  # без тарифа до анкеты (с 23.10.2026 не «УВЕРЕННЫЙ»)
     assert user.profile_completed is False  # анкета ещё не заполнена
     assert user.vk_id < 0  # синтетическая идентичность, next_manual_vk_id
     assert len(sent_messages) == 1

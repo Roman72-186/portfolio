@@ -91,7 +91,7 @@ def test_stats_split_by_tariff(db, regular_user, user_factory):
     topic = _cycle(db, regular_user)
     task = _task(db, regular_user)
     block = _block(db, task)
-    regular_user.tariff = "МАКСИМУМ"
+    regular_user.tariff = "УВЕРЕННЫЙ МАКСИМУМ"
     second = user_factory(vk_id=771_002, role_name="ученик")
     second.tariff = "Я С ВАМИ"
     db.commit()
@@ -101,7 +101,7 @@ def test_stats_split_by_tariff(db, regular_user, user_factory):
     stats = cycle_stats(db, topic)
 
     by_tariff = stats["steps"][0]["by_tariff"]
-    assert by_tariff["МАКСИМУМ"] == 1
+    assert by_tariff["УВЕРЕННЫЙ МАКСИМУМ"] == 1
     assert by_tariff["Я С ВАМИ"] == 0
 
 

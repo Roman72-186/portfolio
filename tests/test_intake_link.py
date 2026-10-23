@@ -197,15 +197,17 @@ def test_existing_student_via_intake_keeps_tariff(client, db, monkeypatch, user_
 
 
 def test_new_user_without_deadline_keeps_default_tariff(client, db, monkeypatch):
-    """Ссылка без даты никого не помечает: ни срока, ни снятого тарифа —
-    иначе человек остался бы без тарифа и без метки, по которой его ищут."""
+    """Ссылка без даты никого не помечает: срока нет, тариф — по умолчанию
+    модели. С 23.10.2026 это пусто, а не отработавший «УВЕРЕННЫЙ»: тариф такой
+    новичок выбирает в анкете (шаг «Тариф обучения» без срока доступа есть)."""
     _make_link(db, is_active=False, access_until=None)
     _mock_callback(client, monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
 
     client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
 
     user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
-    assert user.tariff == "УВЕРЕННЫЙ"
+    assert user.tariff == ""
+    assert user.access_until is None
 
 
 def test_repeat_login_by_intake_link_does_not_move_deadline(client, db, monkeypatch):

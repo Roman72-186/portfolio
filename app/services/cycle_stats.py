@@ -14,7 +14,7 @@ from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
-from app.constants import TARIFFS
+from app.constants import TARIFFS_CURRENT
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
 from app.models.student_reminder import KIND_CYCLE_DEBT, StudentReminder
@@ -122,7 +122,7 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
                 done_by_task.setdefault(state.task_id, set()).add(state.user_id)
 
     def by_tariff(done_ids: set[int]) -> dict[str, int]:
-        counts = {tariff: 0 for tariff in TARIFFS}
+        counts = {tariff: 0 for tariff in TARIFFS_CURRENT}
         for user_id in done_ids:
             tariff = tariff_of.get(user_id)
             if tariff in counts:
@@ -174,10 +174,12 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
         "students": total,
         "steps": steps,
         "finished": finished,
-        "tariffs": TARIFFS,
+        # Только действующие тарифы: колонки «МАКСИМУМ» и «УВЕРЕННЫЙ» с нулями
+        # висели в каждой статистике (владелец 23.10.2026: «нигде не показывать»).
+        "tariffs": TARIFFS_CURRENT,
         "students_by_tariff": {
             tariff: sum(1 for value in tariff_of.values() if value == tariff)
-            for tariff in TARIFFS
+            for tariff in TARIFFS_CURRENT
         },
     }
 

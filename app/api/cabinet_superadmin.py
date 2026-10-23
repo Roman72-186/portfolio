@@ -26,7 +26,6 @@ from app.constants import (
     FEATURE_MOCK_EXAM,
     HOLIDAY_ENTRY_PATH,
     INTAKE_TRIAL_SLUG,
-    TARIFFS,
     TARIFFS_CURRENT,
     tariff_choices,
     tariffs_for_data,
@@ -2174,7 +2173,7 @@ def superadmin_create_student(
     first_name: str = Form(...),
     last_name: str = Form(""),
     tg_username: str = Form(...),
-    tariff: str = Form("УВЕРЕННЫЙ"),
+    tariff: str = Form(""),
     curator_id: str = Form(""),
 ):
     first_name_clean = first_name.strip()
@@ -2187,7 +2186,8 @@ def superadmin_create_student(
         raise HTTPException(status_code=400, detail="Telegram username обязателен")
     if not _TG_USERNAME_RE.match(tg_username_clean):
         raise HTTPException(status_code=400, detail="Telegram username должен содержать 4–32 символа: латиница, цифры или _")
-    if tariff_clean not in TARIFFS:
+    # Назначить можно только действующий тариф (владелец 23.10.2026).
+    if tariff_clean not in TARIFFS_CURRENT:
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
     student_role = db.query(Role).filter(Role.rank == 1).first()
@@ -2864,7 +2864,9 @@ def superadmin_user_save_tags(
     clear_tariff = tariff_v.upper() == "__NONE__"
     if clear_tariff:
         tariff_v = ""
-    if tariff_v and tariff_v not in TARIFFS:
+    # Назначить — только действующий; свой старый тариф человека не мешает
+    # пересохранить карточку (`tariff_choices`, владелец 23.10.2026).
+    if tariff_v and tariff_v not in tariff_choices(target.tariff):
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
     cohort_tag_v = cohort_tag.strip().lower()
@@ -2952,7 +2954,9 @@ def superadmin_user_set_tariff(
     tariff_v = tariff.strip()
     if tariff_v.upper() == "__NONE__":
         tariff_v = ""
-    if tariff_v and tariff_v not in TARIFFS:
+    # Назначить — только действующий; свой старый тариф человека не мешает
+    # пересохранить карточку (`tariff_choices`, владелец 23.10.2026).
+    if tariff_v and tariff_v not in tariff_choices(target.tariff):
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
     if apply_tariff_change(db, user["user_id"], target, tariff_v):

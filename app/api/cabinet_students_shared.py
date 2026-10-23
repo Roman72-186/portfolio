@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
 from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
-from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
+from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.constants import EXAM_SUBJECT_HINTS, STUDY_MODES, STUDY_MODE_LABELS, tariff_choices
 from app.config import settings
 from app.db.database import get_db
@@ -1411,7 +1411,9 @@ def edit_student_profile(
         errors.append("Фамилия обязательна")
     if not phone:
         errors.append("Телефон обязателен")
-    if tariff and tariff not in TARIFFS:
+    # Назначить — только действующий; свой старый тариф ученика не мешает
+    # пересохранить анкету (`tariff_choices`, владелец 23.10.2026).
+    if tariff and tariff not in tariff_choices(student.tariff):
         errors.append("Неверный тариф")
     if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
         errors.append("Неверная метка набора")

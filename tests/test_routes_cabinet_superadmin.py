@@ -149,7 +149,7 @@ def test_superadmin_create_manual_student_issues_credentials(superadmin_client, 
             "first_name": "Анна",
             "last_name": "Иванова",
             "tg_username": "@anna_arch",
-            "tariff": "УВЕРЕННЫЙ",
+            "tariff": "УВЕРЕННЫЙ МАКСИМУМ",
             "curator_id": str(curator_user.id),
             "csrf_token": "bypass",
         },
@@ -189,7 +189,7 @@ def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username
             "first_name": "Мария",
             "last_name": "Соколова",
             "tg_username": "@maria_arch",
-            "tariff": "МАКСИМУМ",
+            "tariff": "Я С ВАМИ",
             "curator_id": str(curator_user.id),
             "csrf_token": "bypass",
         },
@@ -205,7 +205,7 @@ def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username
     assert existing.staff_login is not None
     assert existing.password_hash is not None
     assert existing.curator_id == curator_user.id
-    assert existing.tariff == "МАКСИМУМ"
+    assert existing.tariff == "Я С ВАМИ"
     assert existing.profile_completed is True
 
 
@@ -702,13 +702,50 @@ def test_superadmin_tags_update_changes_tariff(superadmin_client, db, user_facto
 
     resp = client.post(
         f"/cabinet/superadmin/users/{target.id}/tags",
-        data={"tariff": "МАКСИМУМ", "csrf_token": "bypass"},
+        data={"tariff": "Я С ВАМИ", "csrf_token": "bypass"},
         follow_redirects=False,
     )
 
     assert resp.status_code == 303
     db.refresh(target)
-    assert target.tariff == "МАКСИМУМ"
+    assert target.tariff == "Я С ВАМИ"
+
+
+def test_superadmin_cannot_assign_legacy_tariff_but_keeps_own(superadmin_client, db, user_factory):
+    """Старый тариф не назначается никому (владелец 23.10.2026), но человек,
+    у которого он уже стоит, пересохраняет карточку без ошибки."""
+    client, _ = superadmin_client
+    target = user_factory(vk_id=900222, name="Legacy Student", tariff="УВЕРЕННЫЙ")
+
+    refused = client.post(
+        f"/cabinet/superadmin/users/{target.id}/tags",
+        data={"tariff": "МАКСИМУМ", "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+    kept = client.post(
+        f"/cabinet/superadmin/users/{target.id}/tags",
+        data={"tariff": "УВЕРЕННЫЙ", "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert refused.status_code == 400
+    assert kept.status_code == 303
+    db.refresh(target)
+    assert target.tariff == "УВЕРЕННЫЙ"
+
+
+def test_superadmin_create_student_refuses_legacy_tariff(superadmin_client, db, curator_user):
+    client, _ = superadmin_client
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-student",
+        data={
+            "first_name": "Олег", "last_name": "Старый", "tg_username": "@oleg_old",
+            "tariff": "УВЕРЕННЫЙ", "curator_id": str(curator_user.id), "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 400
 
 
 def test_superadmin_tags_update_invalid_tariff_rejected(superadmin_client, db, user_factory):

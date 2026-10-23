@@ -13,7 +13,7 @@
 пункт, и обычное сохранение карточки молча переведёт человека с «МАКСИМУМА»
 на «Я САМ».
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.constants import (
     TARIFFS,
@@ -202,17 +202,49 @@ def test_tariffs_for_data_adds_legacy_only_when_present():
 
 
 def test_tariffs_in_use_reads_living_rows(db, user_factory):
-    """Удалённых не считаем, архив считаем: по архиву как раз и фильтруют."""
+    """Старый тариф в фильтре — только у действующего человека: архив,
+    заблокированные и удалённые его не держат (владелец 23.10.2026: «нигде не
+    показывать», архив — «по кнопке»)."""
     user_factory(vk_id=910101, tariff="МАКСИМУМ").archived_at = datetime.now(timezone.utc)
     deleted = user_factory(vk_id=910102, tariff="УВЕРЕННЫЙ")
     deleted.deleted_at = datetime.now(timezone.utc)
+    user_factory(vk_id=910103, tariff="УВЕРЕННЫЙ", is_active=False)
     db.commit()
 
-    in_use = tariffs_in_use(db)
+    assert tariffs_in_use(db) == TARIFFS_CURRENT
 
-    assert "МАКСИМУМ" in in_use
-    assert "УВЕРЕННЫЙ" not in in_use
-    assert in_use[:3] == TARIFFS_CURRENT
+    user_factory(vk_id=910104, tariff="МАКСИМУМ")
+    db.commit()
+    assert tariffs_in_use(db) == TARIFFS_CURRENT + ["МАКСИМУМ"]
+
+
+def test_new_account_gets_no_legacy_tariff_by_default(db):
+    """Дефолт модели был «УВЕРЕННЫЙ» и сажал на него каждый новый аккаунт."""
+    from app.models.user import User
+
+    user = User(vk_id=910105, name="Новичок")
+    db.add(user)
+    db.commit()
+
+    assert user.tariff == ""
+
+
+def test_cycle_stats_columns_are_current_tariffs_only(db, user_factory):
+    from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+    from app.services.cycle_stats import cycle_stats
+
+    now = datetime.now(timezone.utc)
+    topic = LearningTopic(
+        title="Цикл", kind=TOPIC_KIND_WEEK, is_published=True,
+        opens_at=now - timedelta(days=1), ends_at=now + timedelta(days=6),
+    )
+    db.add(topic)
+    db.commit()
+
+    stats = cycle_stats(db, topic)
+
+    assert stats["tariffs"] == TARIFFS_CURRENT
+    assert set(stats["students_by_tariff"]) == set(TARIFFS_CURRENT)
 
 
 def test_stats_export_has_no_sheets_for_unused_legacy_tariffs(superadmin_client):
