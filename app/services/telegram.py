@@ -320,8 +320,11 @@ def get_chat_username_sync(chat_id: int, *, timeout: float = 6.0) -> tuple[bool,
     Telegram не ответил, менять ничего нельзя."""
     if not settings.telegram_bot_token:
         return False, None
+    # IPv4 и одна повторная попытка соединения: с сервера выход по IPv6
+    # обрывается («Network is unreachable», прод 23.10.2026).
+    transport = httpx.HTTPTransport(local_address="0.0.0.0", retries=1)
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=timeout, transport=transport) as client:
             resp = client.post(_api_url("getChat"), json={"chat_id": chat_id})
         data = resp.json()
     except Exception as exc:
