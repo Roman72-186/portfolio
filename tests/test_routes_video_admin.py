@@ -598,6 +598,81 @@ def test_metadata_without_topic_id_keeps_the_binding(admin_client, db, monkeypat
     assert video.topic_id == topic.id
 
 
+def test_admin_adds_cover_to_uploaded_video(admin_client, db, monkeypatch):
+    """Обложку, забытую при загрузке, ставят из списка роликов (23.10.2026).
+
+    Адрес картинки сервер строит из пути сам — клиентский адрес не принимается.
+    """
+    from app.models.audit_log import AuditLog
+    from app.services.s3 import s3_public_url
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="guid-late-cover",
+        title="Урок без обложки",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+    path = "Обложки видео/0123456789ab.jpg"
+
+    saved = client.post(f"/cabinet/admin/videos/{video.id}/cover", json={"cover_path": path})
+
+    assert saved.status_code == 200
+    assert saved.json()["cover_url"] == s3_public_url(path)
+    db.expire_all()
+    video = db.get(LearningVideo, video.id)
+    assert video.cover_s3_path == path
+    assert video.cover_s3_url == s3_public_url(path)
+    entry = db.query(AuditLog).filter(AuditLog.action == "video_cover_update").one()
+    assert '"cover_path_before": null' in entry.details
+
+    page = client.get("/cabinet/admin/videos")
+    assert "Заменить обложку" in page.text
+
+
+def test_cover_route_accepts_only_uploaded_cover_path(admin_client, db, monkeypatch):
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="guid-foreign-cover",
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+
+    for path in ("works/1/photo.jpg", "Обложки видео/../works/1.jpg", "https://evil.example/x.jpg"):
+        refused = client.post(f"/cabinet/admin/videos/{video.id}/cover", json={"cover_path": path})
+        assert refused.status_code == 422, path
+    db.expire_all()
+    assert db.get(LearningVideo, video.id).cover_s3_url is None
+
+
+def test_student_cannot_change_video_cover(auth_client, db):
+    client, _ = auth_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="guid-student-cover",
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+
+    refused = client.post(
+        f"/cabinet/admin/videos/{video.id}/cover",
+        json={"cover_path": "Обложки видео/0123456789ab.jpg"},
+    )
+
+    assert refused.status_code == 403
+    db.expire_all()
+    assert db.get(LearningVideo, video.id).cover_s3_path is None
+
+
 def test_completion_uses_server_duration_not_client_claim(
     auth_client, db, monkeypatch
 ):

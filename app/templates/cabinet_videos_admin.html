@@ -124,7 +124,7 @@ FORM: Operate, расширение существующего кабинета 
                 </div>
                 {% if prg_edit %}
                 <details class="vam-edit">
-                    <summary>Изменить название, описание и тему</summary>
+                    <summary>Изменить название, описание и обложку</summary>
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
                         <label class="vam-field">Описание<textarea data-rich-text data-edit-description maxlength="5000">{{ video.description or '' }}</textarea>
@@ -133,6 +133,12 @@ FORM: Operate, расширение существующего кабинета 
                            блоками задания и настраиваются в дне программы, а
                            не на самом ролике. #}
                         <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
+                        {# Обложка сохраняется сразу при выборе файла, своей
+                           кнопки у неё нет (владелец 23.10.2026). #}
+                        <label class="vam-field">{% if video.cover_s3_url %}Заменить обложку{% else %}Добавить обложку{% endif %}
+                            <input data-edit-cover type="file" accept="image/*">
+                        </label>
+                        <p class="vam-message" data-cover-message aria-live="polite"></p>
                     </div>
                 </details>
                 {% endif %}
@@ -577,6 +583,64 @@ FORM: Operate, расширение существующего кабинета 
             button.disabled = false;
             window.alert(error.message === 'unpublish_first' ? 'Сначала скройте видео.' : 'Действие не выполнено. Попробуйте ещё раз.');
         });
+    });
+
+    // Обложка загруженного ролика: картинка уходит в S3 тем же маршрутом, что
+    // в форме загрузки, и сразу привязывается к ролику. Страницу не
+    // перезагружаем — в этой вкладке могут идти загрузки видео.
+    document.addEventListener('change', function (event) {
+        var input = event.target.closest('[data-edit-cover]');
+        if (!input) return;
+        var file = input.files && input.files[0];
+        if (!file) return;
+        var row = input.closest('[data-video-id]');
+        var note = row.querySelector('[data-cover-message]');
+        function say(text, isError) {
+            note.textContent = text;
+            note.classList.toggle('is-error', Boolean(isError));
+        }
+        // Своё сообщение отличаем от сбоя сети: у того текст английский.
+        function refusal(text) { var error = new Error(text); error.forUser = true; return error; }
+        var data = new FormData();
+        data.append('file', file);
+        input.disabled = true;
+        say('Загружаем обложку…', false);
+        window.csrfFetch('/cabinet/staff/program/upload-cover', {method: 'POST', body: data})
+            .then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (result) {
+                    if (!response.ok || !result.ok || !result.path) {
+                        throw refusal(window.csrfFailure(response.status, result, 'Обложка не загрузилась. Выберите другой файл.'));
+                    }
+                    return window.csrfFetch('/cabinet/admin/videos/' + row.dataset.videoId + '/cover', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({cover_path: result.path})
+                    });
+                });
+            })
+            .then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (result) {
+                    if (!response.ok || !result.ok) {
+                        throw refusal(window.csrfFailure(response.status, result, 'Обложка не сохранилась. Попробуйте ещё раз.'));
+                    }
+                    var img = row.querySelector('.vam-row-cover');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.className = 'vam-row-cover';
+                        img.alt = '';
+                        row.querySelector('.vam-row-copy').insertBefore(img, row.querySelector('.vam-row-copy').firstChild);
+                    }
+                    img.src = result.cover_url;
+                    say('Обложка сохранена.', false);
+                });
+            })
+            .catch(function (error) {
+                say(error.forUser ? error.message : 'Обложка не сохранилась. Проверьте связь и попробуйте ещё раз.', true);
+            })
+            .then(function () {
+                input.disabled = false;
+                input.value = '';
+            });
     });
 
     // Фоном опрашиваем только то, что Bunny двигает само. Строки в статусе

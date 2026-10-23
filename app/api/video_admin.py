@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import PurePath
 from typing import Annotated
@@ -31,6 +32,7 @@ from app.services.bunny_stream import (
     delete_video,
     is_bunny_upload_available,
 )
+from app.services.s3 import s3_public_url
 from app.services.tags import parse_usernames
 from app.services.tracker import TopicHasSubmissionsError
 from app.services.tz import MSK_TZ
@@ -132,6 +134,24 @@ class UpdateVideoMetadata(BaseModel):
     def strip_optional_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+
+# Ключ, который выдаёт `/cabinet/staff/program/upload-cover`. Другой путь
+# маршрут обложки не принимает: адрес картинки сервер строит из пути сам, и
+# без этой проверки ролику можно было бы подставить любой объект бакета.
+COVER_PATH_RE = re.compile(r"Обложки видео/[0-9a-f]{12}\.jpg")
+
+
+class UpdateVideoCover(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    cover_path: str = Field(min_length=1, max_length=300)
+
+    @field_validator("cover_path")
+    @classmethod
+    def cover_from_upload(cls, value: str) -> str:
+        if not COVER_PATH_RE.fullmatch(value):
+            raise ValueError("Обложка должна быть загружена через форму")
+        return value
 
 
 class DeleteVideoConfirmation(BaseModel):
@@ -330,6 +350,33 @@ def update_video_metadata(
     )
     db.commit()
     return JSONResponse({"ok": True})
+
+
+@router.post("/{video_id}/cover", response_class=JSONResponse)
+def update_video_cover(
+    video_id: int,
+    payload: UpdateVideoCover,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Обложка уже загруженного ролика (владелец 23.10.2026: «добавлять
+    обложку, если забыли при загрузке»). Картинка к этому моменту лежит в S3 —
+    её заливает `/cabinet/staff/program/upload-cover`, как и в форме загрузки.
+    Прежняя картинка из бакета не удаляется: удаление ролика её тоже не трогает."""
+    video = _get_video_or_404(db, video_id)
+    previous_path = video.cover_s3_path
+    video.cover_s3_path = payload.cover_path
+    video.cover_s3_url = s3_public_url(payload.cover_path)
+    _audit(
+        db,
+        action="video_cover_update",
+        user_id=user["user_id"],
+        video=video,
+        extra={"cover_path_before": previous_path, "cover_path_after": video.cover_s3_path},
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "cover_url": video.cover_s3_url})
 
 
 @router.post("/{video_id}/publish", response_class=JSONResponse)
