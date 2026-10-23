@@ -128,6 +128,26 @@ def reportable_students_q(
     return q if include_holiday else q.filter(User.program != PROGRAM_HOLIDAY)
 
 
+def flow_students_q(db: Session):
+    """Ученики годового курса за всё время, вместе с ушедшими, — для отчёта
+    «кто пришёл, ушёл, перешёл» (`activity_stats.get_month_tariff_flow`).
+
+    Обычная выборка ушедших скрывает: архивного, заблокированного и
+    удалённого в ней нет и в прошлом, а отчёт месяца как раз о них. Здесь
+    только постоянная часть правила: ранг ученика, не служебный, не
+    каникулярный. Когда ушёл — отчёт решает сам по `archived_at`,
+    `deleted_at` и журналу блокировок."""
+    return (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == 1,
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            User.program != PROGRAM_HOLIDAY,
+        )
+    )
+
+
 def reportable_student_ids(db: Session, now: datetime | None = None):
     """Подзапрос id для фильтра `col.in_(...)` по чужим таблицам (работы,
     циклы, оценки, события)."""

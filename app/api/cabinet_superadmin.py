@@ -1470,6 +1470,7 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         get_holiday_overview,
         get_login_link_stats,
         get_login_stats,
+        get_month_tariff_flow,
         get_mock_attempt_stats,
         get_notification_reaction,
         get_onboarding_funnel,
@@ -1495,6 +1496,8 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         # Каникулярный набор поимённо и оплата треков — только в своём режиме.
         "holiday_overview": get_holiday_overview(db) if holiday else None,
         "logins": get_login_stats(db),
+        # Отчёт месяца по тарифам — только годовой курс: у каникулярного треки.
+        "tariff_flow": None if holiday else get_month_tariff_flow(db),
         "review_speed": get_curator_review_speed(db),
         "feedback_curators": get_feedback_curator_stats(db),
         # Средняя оценка ОС куратора по каждому заданию цикла (О19, 01.10.2026).

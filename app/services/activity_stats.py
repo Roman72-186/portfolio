@@ -10,8 +10,9 @@ curator_assign/tariff_change. Исторических данных до это�
 дат) — так запросы работают одинаково в Postgres и SQLite-тестах,
 как в period_stats.py.
 """
+import re
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
@@ -199,6 +200,188 @@ def get_login_stats(db: DBSession) -> dict:
         for u in inactive_rows
     ]
     return {"total": total, "d7": d7, "d30": d30, "inactive": inactive}
+
+
+# Журнал смен тарифа ведётся с 11.07.2026 — раньше месяцев в отчёте нет.
+TARIFF_FLOW_SINCE = date(2026, 7, 1)
+_TARIFF_DETAILS_RE = re.compile(r"^tariff: (.*?) → (.*?)(?: \(.*\))?$")
+
+
+def _tariff_from_log(value: str) -> str:
+    value = (value or "").strip()
+    return "" if value == "—" else value
+
+
+def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict:
+    """Отчёт месяца по тарифам (Александрия 22.10.2026): кто пришёл, кто ушёл,
+    кто перешёл — всего и по тарифам, по каждому месяцу с июля 2026.
+
+    Считаются только действующие тарифы (`TARIFFS_CURRENT`). Новичок пробного
+    набора без тарифа и отработавшие «МАКСИМУМ»/«УВЕРЕННЫЙ» (у прежних
+    аккаунтов это был дефолт при создании) — «без тарифа»: такой ученик
+    в отчёт не попадает, пока не получит действующий тариф.
+
+    - «Пришёл» — момент, когда у ученика впервые появился действующий тариф:
+      создание аккаунта с ним или первая запись журнала «без тарифа → тариф».
+    - «Ушёл» — архив, удаление или блокировка (по журналу, если блокировка
+      держится и сейчас), пока он был на действующем тарифе.
+    - «Перешёл» — запись журнала с одного действующего тарифа на другой.
+
+    Ученики — `report_scope.flow_students_q`: годовой курс вместе с ушедшими,
+    без служебных. Тариф в любой момент восстанавливается по журналу: до
+    первой записи — её «было», без записей — текущий. Поэтому начальный тариф
+    журналу не нужен, а смена мимо журнала (до 23.10.2026 — повторный вход
+    по ссылке, `auth._upsert_user`) сдвигает «пришёл» на день создания.
+    """
+    from app.constants import TARIFF_DISPLAY, TARIFFS_CURRENT
+    from app.services.contacts import normalize_tg_username
+    from app.services.program import MONTH_NAMES
+    from app.services.report_scope import flow_students_q
+
+    now = _utc(now) or datetime.now(timezone.utc)
+    real = set(TARIFFS_CURRENT)
+    students = flow_students_q(db).all()
+    ids = [s.id for s in students]
+    changes: dict[int, list[tuple[datetime, str, str]]] = defaultdict(list)
+    block_toggles: dict[int, tuple[str, datetime]] = {}
+    if ids:
+        for row in (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.target_user_id.in_(ids),
+                AuditLog.action.in_(("tariff_change", "user_block", "user_unblock")),
+            )
+            .order_by(AuditLog.created_at, AuditLog.id)
+        ):
+            at = _utc(row.created_at)
+            if row.action == "tariff_change":
+                match = _TARIFF_DETAILS_RE.match(row.details or "")
+                if match:
+                    changes[row.target_user_id].append(
+                        (at, _tariff_from_log(match.group(1)), _tariff_from_log(match.group(2)))
+                    )
+            else:
+                block_toggles[row.target_user_id] = (row.action, at)
+
+    people = []
+    for student in students:
+        own = changes.get(student.id, [])
+        created = _utc(student.created_at)
+        initial = own[0][1] if own else (student.tariff or "").strip()
+        if initial in real:
+            came = (created, initial)
+        else:
+            came = next(((at, new) for at, old, new in own if new in real and old not in real), None)
+        left_marks = [_utc(student.archived_at), _utc(student.deleted_at)]
+        toggle = block_toggles.get(student.id)
+        if not student.is_active and toggle and toggle[0] == "user_block":
+            left_marks.append(toggle[1])
+        nick = normalize_tg_username(student.tg_username or "")
+        people.append({
+            "name": _student_name(student.first_name, student.last_name, student.name),
+            "nick": f"@{nick}" if nick else "(нет username)",
+            "timeline": [(created, initial)] + [(at, new) for at, _old, new in own],
+            "came": came,
+            "left_at": min((mark for mark in left_marks if mark), default=None),
+            "switches": [
+                (at, old, new) for at, old, new in own
+                if old in real and new in real and old != new
+            ],
+        })
+
+    def tariff_at(person: dict, moment: datetime) -> str:
+        current = ""
+        for at, value in person["timeline"]:
+            if at > moment:
+                break
+            current = value
+        return current
+
+    def on_tariff_at(person: dict, moment: datetime) -> str | None:
+        """Действующий тариф ученика, который в школе на `moment`, иначе None."""
+        if person["came"] is None or person["came"][0] > moment:
+            return None
+        if person["left_at"] is not None and person["left_at"] <= moment:
+            return None
+        value = tariff_at(person, moment)
+        return value if value in real else None
+
+    def counts(moment: datetime) -> dict[str, int]:
+        values = [on_tariff_at(person, moment) for person in people]
+        return {tariff: values.count(tariff) for tariff in TARIFFS_CURRENT}
+
+    def label(tariff: str) -> str:
+        return TARIFF_DISPLAY.get(tariff, tariff)
+
+    def row(person: dict, moment: datetime, **extra) -> dict:
+        return {"name": person["name"], "nick": person["nick"],
+                "at": _msk(moment).strftime("%d.%m.%Y"), **extra}
+
+    months = []
+    today = now.astimezone(MSK_TZ).date()
+    cursor = date(today.year, today.month, 1)
+    while cursor >= TARIFF_FLOW_SINCE:
+        following = date(cursor.year + cursor.month // 12, cursor.month % 12 + 1, 1)
+        start, end = msk_midnight(cursor), msk_midnight(following)
+        came_rows, left_rows, switch_rows = [], [], []
+        for person in people:
+            came = person["came"]
+            if came and start <= came[0] < end:
+                came_rows.append(row(person, came[0], tariff=came[1]))
+            left_at = person["left_at"]
+            if left_at and start <= left_at < end and came and came[0] <= left_at:
+                value = tariff_at(person, left_at)
+                if value in real:
+                    left_rows.append(row(person, left_at, tariff=value))
+            for at, old, new in person["switches"]:
+                if start <= at < end:
+                    switch_rows.append(row(person, at, **{"from": old, "to": new}))
+        before = counts(start - timedelta(microseconds=1))
+        after = counts(min(end, now) - timedelta(microseconds=1))
+        came_by = {t: sum(1 for r in came_rows if r["tariff"] == t) for t in TARIFFS_CURRENT}
+        left_by = {t: sum(1 for r in left_rows if r["tariff"] == t) for t in TARIFFS_CURRENT}
+        pairs: dict[tuple[str, str], int] = defaultdict(int)
+        for item in switch_rows:
+            pairs[(item["from"], item["to"])] += 1
+        base_total = sum(before.values()) + len(came_rows)
+        tariffs = []
+        for tariff in TARIFFS_CURRENT:
+            base = before[tariff] + came_by[tariff]
+            tariffs.append({
+                "label": label(tariff),
+                "start": before[tariff],
+                "end": after[tariff],
+                "came": came_by[tariff],
+                "came_pct": round(100 * came_by[tariff] / len(came_rows)) if came_rows else None,
+                "left": left_by[tariff],
+                "left_pct": round(100 * left_by[tariff] / base) if base else None,
+            })
+        for rows in (came_rows, left_rows, switch_rows):
+            rows.sort(key=lambda item: item["name"])
+            for item in rows:
+                for key in ("tariff", "from", "to"):
+                    if key in item:
+                        item[key] = label(item[key])
+        months.append({
+            "key": cursor.strftime("%Y-%m"),
+            "label": f"{MONTH_NAMES[cursor.month - 1].capitalize()} {cursor.year}",
+            "start": sum(before.values()),
+            "end": sum(after.values()),
+            "came": len(came_rows),
+            "left": len(left_rows),
+            "left_pct": round(100 * len(left_rows) / base_total) if base_total else None,
+            "switched": len(switch_rows),
+            "tariffs": tariffs,
+            "pairs": [
+                {"from": label(old), "to": label(new), "count": count}
+                for (old, new), count in sorted(pairs.items(), key=lambda item: -item[1])
+            ],
+            "came_rows": came_rows,
+            "left_rows": left_rows,
+            "switch_rows": switch_rows,
+        })
+        cursor = date(cursor.year - (cursor.month == 1), (cursor.month - 2) % 12 + 1, 1)
+    return {"months": months}
 
 
 def get_curator_review_speed(db: DBSession) -> list[dict]:

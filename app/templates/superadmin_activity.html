@@ -99,6 +99,30 @@
     {% else %}<div class="ss-empty">Оценок обратной связи пока нет</div>{% endif %}
 {% endmacro %}
 
+{# Список учеников карточки «Отчёт месяца по тарифам» — с ником Telegram. #}
+{% macro flow_people(title, rows, switched=false) %}
+    {% if rows %}
+    <div class="ss-sub">
+        <h3 class="ss-sub-head">{{ title }} <span class="ss-sub-count">{{ rows | length }}</span></h3>
+        <div class="ss-table-wrap">
+        <table class="ss-table">
+            <thead><tr><th>Ученик</th><th>Telegram</th><th>{{ 'Переход' if switched else 'Тариф' }}</th><th>Дата</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td data-label="Ученик" class="ss-bold">{{ r.name }}</td>
+                <td data-label="Telegram" class="ss-dim-sm">{{ tg_copy(r.nick) }}</td>
+                <td data-label="{{ 'Переход' if switched else 'Тариф' }}">{% if switched %}{{ r['from'] }} → {{ r['to'] }}{% else %}{{ r.tariff }}{% endif %}</td>
+                <td data-label="Дата" class="ss-dim">{{ r.at }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
+
 {% block content %}
 {% set staff_curators = staff_activity | selectattr("role_group", "equalto", "curators") | list %}
 {% set staff_head = staff_activity | selectattr("role_group", "equalto", "head") | list %}
@@ -138,6 +162,84 @@
 
     {# ═══════════════ Ученики ═══════════════ #}
     <div id="actPanelStudents">
+
+    {# Отчёт месяца по тарифам (Александрия 22.10.2026): кто пришёл, ушёл,
+       перешёл — `activity_stats.get_month_tariff_flow`, правила подсчёта в её
+       докстринге. Только годовой курс. Все месяцы уже в разметке, выбор
+       месяца только показывает свой блок. #}
+    {% if tariff_flow and tariff_flow.months %}
+    <details class="ss-acc" data-tariff-flow open>
+        <summary><h2 class="ss-acc-title">Отчёт месяца по тарифам</h2><span class="ss-acc-badge">с июля 2026</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-filters">
+                <label for="tf-month">Месяц
+                    <select id="tf-month" data-tf-month>
+                        {% for m in tariff_flow.months %}<option value="{{ m.key }}">{{ m.label }}</option>{% endfor %}
+                    </select>
+                </label>
+            </div>
+            <div class="ss-dim-sm">Считаются три действующих тарифа. «Пришли» – ученик впервые получил тариф, процент – доля от всех пришедших за месяц. «Ушли» – архив, удаление или блокировка, процент – от тех, кто был на тарифе в этом месяце.</div>
+            {% for m in tariff_flow.months %}
+            <div data-tf-panel="{{ m.key }}"{% if not loop.first %} hidden{% endif %}>
+                <div class="ss-stats-strip">
+                    <div class="ss-stat"><div class="ss-stat-val">{{ m.came }}</div><div class="ss-stat-lbl">Пришли</div></div>
+                    <div class="ss-stat"><div class="ss-stat-val">{{ m.left }}{% if m.left and m.left_pct is not none %}<span class="ss-suffix-dim"> · {{ m.left_pct }}%</span>{% endif %}</div><div class="ss-stat-lbl">Ушли</div></div>
+                    <div class="ss-stat"><div class="ss-stat-val">{{ m.switched }}</div><div class="ss-stat-lbl">Сменили тариф</div></div>
+                    <div class="ss-stat"><div class="ss-stat-val">{{ m.start }}<span class="ss-suffix-dim"> → {{ m.end }}</span></div><div class="ss-stat-lbl">Учеников на начало и конец месяца</div></div>
+                </div>
+                <div class="ss-sub">
+                    <h3 class="ss-sub-head">По тарифам</h3>
+                    <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Тариф</th><th class="ss-ta-r">На начало</th><th class="ss-ta-r">Пришли</th><th class="ss-ta-r">Ушли</th><th class="ss-ta-r">На конец</th></tr></thead>
+                        <tbody>
+                        {% for t in m.tariffs %}
+                        <tr>
+                            <td data-label="Тариф" class="ss-bold">{{ t.label }}</td>
+                            <td data-label="На начало" class="ss-ta-r">{{ t.start }}</td>
+                            <td data-label="Пришли" class="ss-ta-r">{{ t.came }}{% if t.came %} <span class="ss-dim-sm">· {{ t.came_pct }}%</span>{% endif %}</td>
+                            <td data-label="Ушли" class="ss-ta-r">{{ t.left }}{% if t.left and t.left_pct is not none %} <span class="ss-dim-sm">· {{ t.left_pct }}%</span>{% endif %}</td>
+                            <td data-label="На конец" class="ss-ta-r">{{ t.end }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+                {% if m.pairs %}
+                <div class="ss-sub">
+                    <h3 class="ss-sub-head">Переходы между тарифами</h3>
+                    <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Был</th><th>Стал</th><th class="ss-ta-r">Учеников</th></tr></thead>
+                        <tbody>
+                        {% for p in m.pairs %}
+                        <tr><td data-label="Был">{{ p.from }}</td><td data-label="Стал">{{ p.to }}</td><td data-label="Учеников" class="ss-ta-r">{{ p.count }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+                {% endif %}
+                {{ flow_people("Пришли", m.came_rows) }}
+                {{ flow_people("Ушли", m.left_rows) }}
+                {{ flow_people("Сменили тариф", m.switch_rows, switched=true) }}
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    <script>
+    (function () {
+        var select = document.querySelector('[data-tf-month]');
+        if (!select) return;
+        select.addEventListener('change', function () {
+            document.querySelectorAll('[data-tf-panel]').forEach(function (panel) {
+                panel.hidden = panel.getAttribute('data-tf-panel') !== select.value;
+            });
+        });
+    })();
+    </script>
+    {% endif %}
 
     <!-- Плитки: входы + онбординг -->
     <div class="ss-stats-strip">

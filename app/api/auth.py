@@ -51,7 +51,9 @@ from app.services import payment_debtors
 from app.services import presence as presence_service
 from app.services import telegram as telegram_service
 from app.services import vpn_keys as vpn_keys_service
-from app.services.user_management import open_program_from_now, restore_deleted_user
+from app.services.user_management import (
+    log_tariff_change, open_program_from_now, restore_deleted_user,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,9 @@ def _upsert_user(
         if photo_url is not None:
             user.photo_url = photo_url
         if tariff:
+            # Мимо журнала смена тарифа ломала отчёт месяца «кто перешёл»
+            # (`activity_stats.get_month_tariff_flow`).
+            log_tariff_change(db, user.id, user.id, user.tariff, tariff)
             user.tariff = tariff
         if is_group_member is not None:
             user.is_group_member = is_group_member
