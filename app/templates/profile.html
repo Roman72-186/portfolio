@@ -128,7 +128,7 @@
                 <input class="prf-field-input" type="text" id="profile-tg" name="tg_username" readonly
                        value="{{ ('@' ~ user.tg_username) if user.tg_username else '' }}"
                        placeholder="ника нет" aria-describedby="profile-tg-hint">
-                <p class="prf-field-note" id="profile-tg-hint">Берём из Telegram, здесь он не меняется. Нет ника – задай его в настройках Telegram, поле «Имя пользователя», и сохрани анкету ещё раз.</p>
+                <p class="prf-field-note" id="profile-tg-hint">Берём из Telegram, здесь он не меняется. Нет ника – задай его в настройках Telegram, поле «Имя пользователя», затем выйди и войди снова.</p>
                 {% else %}
                 <input class="prf-field-input" type="text" id="profile-tg" name="tg_username" required
                        value="{{ form.tg_username if form else (user.tg_username or '') }}"

@@ -553,14 +553,10 @@ def holiday_tg_username(db_user: User) -> str:
     без перезахода. Telegram не ответил — ник, записанный при входе
     (`auth._upsert_telegram_user` обновляет его при каждом входе). Пусто — ника
     в Telegram нет, анкету не сохранить (`validate_holiday_profile`)."""
-    import asyncio
-
     from app.services import telegram as telegram_service
 
     if db_user.telegram_chat_id:
-        ok, live = asyncio.run(telegram_service.get_chat_username(
-            db_user.telegram_chat_id, max_attempts=1, timeout=6.0,
-        ))
+        ok, live = telegram_service.get_chat_username_sync(db_user.telegram_chat_id)
         if ok:
             return normalize_tg_username(live or "")
     return normalize_tg_username(db_user.tg_username or "")

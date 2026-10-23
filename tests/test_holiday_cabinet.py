@@ -199,13 +199,11 @@ def test_holiday_nick_set_in_telegram_later_is_picked_up(
 ):
     """Ника при входе не было, ученик задал его в Telegram — анкета берёт
     живой ник через getChat, перезаходить не нужно."""
-    from unittest.mock import AsyncMock
-
     student = _holiday(db, user_factory, profile_completed=False)
     student.telegram_chat_id = 900_302
     db.commit()
     monkeypatch.setattr(
-        "app.services.telegram.get_chat_username", AsyncMock(return_value=(True, "anya_tg")),
+        "app.services.telegram.get_chat_username_sync", lambda chat_id, **kw: (True, "anya_tg"),
     )
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
@@ -222,13 +220,11 @@ def test_holiday_nick_set_in_telegram_later_is_picked_up(
 def test_holiday_without_telegram_nick_is_sent_to_telegram_settings(
     client, db, user_factory, session_factory, monkeypatch,
 ):
-    from unittest.mock import AsyncMock
-
     student = _holiday(db, user_factory, profile_completed=False)
     student.telegram_chat_id = 900_303
     db.commit()
     monkeypatch.setattr(
-        "app.services.telegram.get_chat_username", AsyncMock(return_value=(True, None)),
+        "app.services.telegram.get_chat_username_sync", lambda chat_id, **kw: (True, None),
     )
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={

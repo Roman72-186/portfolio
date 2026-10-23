@@ -129,7 +129,7 @@ def validate_holiday_profile(
     # поэтому ошибка зовёт в настройки Telegram, а не к полю.
     if not tg_username:
         errors.append("В Telegram не задан ник. Задай его в настройках Telegram "
-                      "(«Имя пользователя») и сохрани ещё раз.")
+                      "(«Имя пользователя»), выйди из кабинета и войди снова через Telegram.")
     elif not TG_RE.match(tg_username):
         errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
     errors.extend(validate_phone(phone))

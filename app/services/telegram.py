@@ -311,6 +311,28 @@ async def get_chat_username(
     return True, data.get("result", {}).get("username")
 
 
+def get_chat_username_sync(chat_id: int, *, timeout: float = 6.0) -> tuple[bool, str | None]:
+    """`get_chat_username` для синхронного роута — одна попытка, своё
+    соединение на вызов. Общий `AsyncClient` привязан к циклу событий, в
+    котором создан, и из `asyncio.run` в потоке роута второй вызов падал
+    «Event loop is closed» (проверено на проде 23.10.2026) — ответ был бы
+    «не смогли узнать» почти всегда. Смысл ответа тот же: (False, None) —
+    Telegram не ответил, менять ничего нельзя."""
+    if not settings.telegram_bot_token:
+        return False, None
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(_api_url("getChat"), json={"chat_id": chat_id})
+        data = resp.json()
+    except Exception as exc:
+        logger.warning("Telegram getChat (sync) failed for chat_id=%s: %s", chat_id, exc)
+        return False, None
+    if resp.status_code >= 400 or not data.get("ok"):
+        logger.warning("Telegram getChat (sync) chat_id=%s: %s", chat_id, str(data)[:300])
+        return False, None
+    return True, data.get("result", {}).get("username")
+
+
 @dataclass(frozen=True)
 class ApiResult:
     """Ответ Bot API целиком — для рассылок (`services/broadcast_delivery.py`).
