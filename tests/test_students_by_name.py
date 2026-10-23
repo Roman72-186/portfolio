@@ -102,6 +102,14 @@ def test_overview_for_curator_has_only_own_students(db, user_factory):
     assert overview["students"][0]["level"] is None
 
 
+def test_overview_for_curator_without_students_has_same_shape(db, user_factory):
+    curator = user_factory(vk_id=820_025, name="Empty", role_name="куратор")
+
+    overview = get_student_activity_overview(db, include_assignments=True, curator_id=curator.id)
+
+    assert overview["students"] == [] and overview["tariffs"] == [] and overview["months"] == []
+
+
 @pytest.fixture()
 def curator_client(client, user_factory, session_factory):
     curator = user_factory(vk_id=820_030, name="Curator", role_name="куратор")

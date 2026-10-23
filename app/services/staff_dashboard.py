@@ -542,7 +542,7 @@ def get_student_activity_overview(
     student_ids = [student.id for student in students]
     if not student_ids:
         return {"students": [], "events": [], "assignments": [], "scores": [],
-                "videos": [], "months": []}
+                "videos": [], "months": [], "tariffs": []}
 
     login_rows = (
         db.query(
@@ -632,7 +632,7 @@ def get_student_activity_overview(
     ]
     if not include_assignments:
         return {"students": overview, "events": journal, "assignments": [], "scores": [],
-                "videos": [], "months": []}
+                "videos": [], "months": [], "tariffs": []}
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
     # Уровень точки А — фильтр «Уровень» (1 / 2 / ещё не определён).
