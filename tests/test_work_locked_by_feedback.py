@@ -256,7 +256,8 @@ def test_curator_reply_then_return_makes_last_photo_final(
 
 
 def test_ordinary_replace_does_not_notify_curator(auth_client, db, user_factory):
-    """Замена до проверки, без возврата, проверяющего не дёргает."""
+    """Замена до проверки, без возврата, проверяющего не дёргает. Уведомление
+    о самой сдаче (23.10.2026) у куратора одно — замена его не повторяет."""
     from app.models.notification import Notification
 
     client, user = auth_client
@@ -264,12 +265,127 @@ def test_ordinary_replace_does_not_notify_curator(auth_client, db, user_factory)
     user.curator_id = curator.id
     db.commit()
     _task_obj, block = _autoclosed(client, db, user)
+    assert db.query(Notification).filter_by(user_id=curator.id).count() == 1
 
     with patch("app.api.cabinet_tracker.notify") as notify_mock:
         assert _upload(client, block.id, replace=True, url=NEW_URL).status_code == 200
 
-    assert db.query(Notification).filter_by(user_id=curator.id).count() == 0
+    assert db.query(Notification).filter_by(user_id=curator.id).count() == 1
     notify_mock.assert_not_called()
+
+
+# ── Куратору — о сданной работе (владелец 23.10.2026) ────────────────────────
+
+def _curator_notes(db, curator):
+    from app.models.notification import Notification
+
+    return db.query(Notification).filter_by(user_id=curator.id).all()
+
+
+def _with_curator(db, user, user_factory, vk_id):
+    curator = user_factory(vk_id=vk_id, name="Куратор", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    return curator
+
+
+def test_first_submission_notifies_curator(auth_client, db, user_factory):
+    """Сдал работу — куратору одно уведомление: кто, задание, ссылка на проверку."""
+    client, user = auth_client
+    curator = _with_curator(db, user, user_factory, 777_041)
+    user.tg_username = "masha_art"
+    db.commit()
+    task = _task(db, user)
+    block = _block(db, task, photos=1)
+
+    with patch("app.api.cabinet_tracker.notify") as notify_mock:
+        assert _upload(client, block.id).status_code == 200
+
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    [notice] = _curator_notes(db, curator)
+    assert notice.title == "Ученик сдал работу"
+    assert "(@masha_art)" in notice.text
+    assert "«Эскиз» – Шаг 1" in notice.text
+    assert f"/cabinet/staff/task-block-submissions/{submission.id}/feedback" in notice.text
+    assert notice.task_block_submission_id == submission.id
+    notify_mock.assert_called_once_with(notice.id)
+
+
+def test_timed_submission_is_called_control_work(auth_client, db, user_factory):
+    from app.models.task_block import BLOCK_TIMED
+    from app.services.task_blocks import start_timed_block
+
+    client, user = auth_client
+    curator = _with_curator(db, user, user_factory, 777_042)
+    task = _task(db, user)
+    block = _block(db, task, block_type=BLOCK_TIMED)
+    start_timed_block(db, block=block, user_id=user.id)
+    db.commit()
+
+    with patch("app.api.cabinet_tracker.notify"):
+        assert _upload(client, block.id).status_code == 200
+
+    [notice] = _curator_notes(db, curator)
+    assert notice.title == "Ученик сдал контрольную"
+
+
+def test_partial_upload_waits_for_all_photos(auth_client, db, user_factory):
+    """«Ровно N»: пока фото не все, работа не сдана — куратору рано."""
+    client, user = auth_client
+    curator = _with_curator(db, user, user_factory, 777_043)
+    task = _task(db, user)
+    block = _block(db, task, photos=2)
+
+    with patch("app.api.cabinet_tracker.notify"):
+        assert _upload(client, block.id).status_code == 200
+        assert _curator_notes(db, curator) == []
+        assert _upload(client, block.id).status_code == 200
+
+    assert len(_curator_notes(db, curator)) == 1
+
+
+def test_student_without_curator_notifies_nobody(auth_client, db):
+    from app.models.notification import Notification
+
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, photos=1)
+
+    with patch("app.api.cabinet_tracker.notify") as notify_mock:
+        assert _upload(client, block.id).status_code == 200
+
+    assert db.query(Notification).count() == 0
+    notify_mock.assert_not_called()
+
+
+def test_absorbed_work_notifies_only_after_main(auth_client, db, user_factory):
+    """Общая ОС: прошлая работа до сдачи главной куратору не видна — и
+    уведомления нет; главная сдана — ссылка ведёт на её экран."""
+    from app.models.task_block import TaskBlockFeedbackLink
+
+    client, user = auth_client
+    curator = _with_curator(db, user, user_factory, 777_044)
+    old_block = _block(db, _task(db, user), photos=1)
+    later_block = _block(db, _task(db, user), photos=1)
+    main_task = _task(db, user)
+    main_task.title = "Главное"
+    main_block = _block(db, main_task, photos=1)
+    db.add(TaskBlockFeedbackLink(block_id=main_block.id, linked_block_id=old_block.id))
+    db.add(TaskBlockFeedbackLink(block_id=main_block.id, linked_block_id=later_block.id))
+    db.commit()
+
+    with patch("app.api.cabinet_tracker.notify"):
+        assert _upload(client, old_block.id).status_code == 200
+        assert _curator_notes(db, curator) == []
+        assert _upload(client, main_block.id).status_code == 200
+        assert _upload(client, later_block.id).status_code == 200
+
+    main = get_submission(db, block_id=main_block.id, user_id=user.id)
+    first, second = sorted(_curator_notes(db, curator), key=lambda n: n.id)
+    assert "Общая обратная связь" in first.text
+    assert second.task_block_submission_id == main.id
+    assert "войдёт в общую ОС с «Главное»" in second.text
+    assert f"/task-block-submissions/{main.id}/feedback" in second.text
 
 
 def test_empty_block_of_a_done_task_takes_a_first_upload(auth_client, db):

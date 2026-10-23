@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.cache import invalidate_unread
 from app.models.notification import Notification
-from app.models.task_block import DIALOG_BLOCK_TYPES, TaskBlock, TaskBlockSubmission
+from app.models.task_block import BLOCK_TIMED, DIALOG_BLOCK_TYPES, TaskBlock, TaskBlockSubmission
 from app.models.user import User
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
@@ -422,6 +422,83 @@ def notify_counterpart(
     return notification
 
 
+def _student_label(student: User | None) -> str:
+    """«Фамилия Имя» ученика для уведомлений персоналу."""
+    if student is None:
+        return "Ученик"
+    return f"{student.last_name or ''} {student.first_name or student.name}".strip()
+
+
+def submission_notification(
+    db: DBSession, *, submission: TaskBlockSubmission,
+) -> Notification | None:
+    """Ученик впервые сдал работу — сказать его куратору (владелец 23.10.2026:
+    «прислать уведомления по их ученику, если он сдал домашнее задание»).
+    Сразу на каждую работу, по всем тарифам, только куратору ученика; без
+    куратора — никому, ГП видит работу в счётчике «на проверку».
+
+    Зовёт `upload_task_block_work` в момент, когда сдача впервые стала полной
+    («N из N»). Замена сданной работы сюда не приходит, возврат на доработку —
+    к `resubmission_notification`.
+
+    Общая ОС: поглощённая сдача отдельной строкой в очереди не идёт, а пока
+    главная не сдана, не видна вовсе (владелец 17.10.2026) — тогда и
+    уведомления нет; главная сдана — ссылка ведёт на её экран."""
+    from app.services.contacts import normalize_tg_username
+    from app.services.feedback_rating import _absolute
+    from app.services.linked_feedback import (
+        absorbed_for_mains, absorbed_main_block, main_submission_for,
+    )
+
+    student = db.get(User, submission.user_id)
+    if student is None or student.curator_id is None or student.curator_id == student.id:
+        return None
+    curator = db.get(User, student.curator_id)
+    if curator is None or not curator.is_active or curator.deleted_at is not None:
+        return None
+
+    target = submission
+    extra = ""
+    if absorbed_main_block(db, submission) is not None:
+        main = main_submission_for(db, submission)
+        if main is None:
+            return None
+        target = main
+        main_block = db.get(TaskBlock, main.block_id)
+        main_task = db.get(TrackerTask, main_block.task_id) if main_block is not None else None
+        if main_task is not None:
+            extra = f" Работа войдёт в общую ОС с «{main_task.title}»."
+    else:
+        label = group_works_label(
+            submission, absorbed_for_mains(db, [submission]).get(submission.id),
+        )
+        if label:
+            extra = f" {label}."
+
+    block = db.get(TaskBlock, submission.block_id)
+    task = db.get(TrackerTask, block.task_id) if block is not None else None
+    nick = normalize_tg_username(student.tg_username or "")
+    who = _student_label(student) + (f" (@{nick})" if nick else "")
+    where = f", «{task.title}»" if task is not None else ""
+    if block is not None and block.title:
+        where += f" – {block.title}"
+    link = _absolute(f"/cabinet/staff/task-block-submissions/{target.id}/feedback")
+    notification = Notification(
+        user_id=curator.id,
+        title=(
+            "Ученик сдал контрольную"
+            if block is not None and block.block_type == BLOCK_TIMED
+            else "Ученик сдал работу"
+        ),
+        text=f"{who}{where}.{extra} Проверить: {link}",
+        task_block_submission_id=target.id,
+    )
+    db.add(notification)
+    db.flush()
+    invalidate_unread(curator.id)
+    return notification
+
+
 def resubmission_notification(
     db: DBSession, *, submission: TaskBlockSubmission,
 ) -> Notification | None:
@@ -438,10 +515,7 @@ def resubmission_notification(
         return None
     block = db.get(TaskBlock, submission.block_id)
     task = db.get(TrackerTask, block.task_id) if block is not None else None
-    who = (
-        f"{student.last_name or ''} {student.first_name or student.name}".strip()
-        if student is not None else "Ученик"
-    )
+    who = _student_label(student)
     where = f" по заданию «{task.title}»" if task is not None else ""
     notification = Notification(
         user_id=recipient_id,
@@ -607,10 +681,7 @@ def run_unsent_feedback_reminders(db: DBSession, now: datetime | None = None) ->
         student = db.get(User, submission.user_id)
         block = db.get(TaskBlock, submission.block_id)
         task = db.get(TrackerTask, block.task_id) if block is not None else None
-        who = (
-            f"{student.last_name or ''} {student.first_name or student.name}".strip()
-            if student is not None else "Ученик"
-        )
+        who = _student_label(student)
         where = f", «{task.title}»" if task is not None else ""
         link = _absolute(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
         authors = {message.sender_id for message in draft_messages(feedback)}

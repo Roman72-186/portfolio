@@ -90,7 +90,7 @@ from app.services.submission_edit import (
 )
 from app.services import s3 as s3_service
 from app.services.notify import notify
-from app.services.task_block_feedback import resubmission_notification
+from app.services.task_block_feedback import resubmission_notification, submission_notification
 from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
     answered_block_ids as task_block_answered_ids,
@@ -1647,7 +1647,7 @@ async def upload_task_block_work(
         delete_task_block_submission_images(db, submission.id)
 
     created = 0
-    resubmitted = None
+    notice = None
     for filename, data in files:
         s3_path = s3_service.s3_path_task_block_submission(
             user["vk_id"], submission.id, filename, user.get("tariff") or "",
@@ -1670,7 +1670,11 @@ async def upload_task_block_work(
         # Работу возвращали на доработку, и ученик её заменил — проверяющий
         # должен узнать о новой версии (владелец 14.10.2026).
         if was_on_revision:
-            resubmitted = resubmission_notification(db, submission=submission)
+            notice = resubmission_notification(db, submission=submission)
+        # Первая сдача — куратору ученика (владелец 23.10.2026). Замена уже
+        # сданной работы не уведомляет: она и так в очереди «на проверку».
+        elif not was_submitted:
+            notice = submission_notification(db, submission=submission)
         # Закрываем блок фактом сдачи: работа приехала, лента едет дальше.
         # Проверка куратора на это не влияет — иначе ученик стоял бы в ленте,
         # пока куратор не дойдёт до его работы (то же правило, что у домашки
@@ -1689,8 +1693,8 @@ async def upload_task_block_work(
             removed=before if replacing else (),
         )
     db.commit()
-    if resubmitted is not None:
-        background_tasks.add_task(notify, resubmitted.id)
+    if notice is not None:
+        background_tasks.add_task(notify, notice.id)
     return JSONResponse({"ok": True, "created": created})
 
 
