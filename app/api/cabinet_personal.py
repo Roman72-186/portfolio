@@ -39,6 +39,7 @@ from app.api.cabinet_student import (
     EMAIL_RE,
     _MIN_BIRTH_YEAR,
     _university_year_options,
+    holiday_tg_username,
     needs_profile_setup,
 )
 from app.cache import invalidate_session
@@ -537,14 +538,15 @@ def _save_holiday_contacts(
 ):
     """«Контакты» каникулярного набора: поля его короткой анкеты, без
     родителя, СДЭК, вуза, почты и города. Ник обязателен (владелец
-    17.10.2026), но с Telegram не сверяется: у каникулярного он ни к чему не
-    привязан (`exam_scheduler` его не проверяет), а обновляет его вход через
-    Telegram. Пояс — московский (`HOLIDAY_TIMEZONE`). Начало обучения не
-    трогаем — его поставила анкета."""
+    17.10.2026) и берётся только из Telegram, форма его не меняет
+    (`cabinet_student.holiday_tg_username`, 23.10.2026). Ночная сверка
+    (`exam_scheduler`) каникулярных не проверяет. Пояс — московский
+    (`HOLIDAY_TIMEZONE`). Начало обучения не трогаем — его поставила анкета."""
     first_name = first_name.strip()
     last_name = last_name.strip()
     phone = normalize_phone(phone)
-    tg_username = normalize_tg_username(tg_username)
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    tg_username = holiday_tg_username(db_user)
     grade = parse_school_grade(school_grade)
 
     errors = validate_holiday_profile(
@@ -560,7 +562,6 @@ def _save_holiday_contacts(
             _contacts_ctx(request, user, errors=errors, form=form),
         )
 
-    db_user = db.query(User).filter(User.id == user["user_id"]).first()
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"

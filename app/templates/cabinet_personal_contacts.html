@@ -92,11 +92,10 @@
             {% if holiday_form %}
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-tg">Ник в Telegram <span class="prs-required">*</span></label>
-                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" required
-                       value="{{ form.tg_username }}" placeholder="@username"
-                       maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}"
-                       aria-describedby="contacts-tg-hint">
-                <p class="prs-field-note" id="contacts-tg-hint">Взяли из Telegram. Нет ника – задай его в настройках Telegram, поле «Имя пользователя».</p>
+                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" readonly
+                       value="{{ ('@' ~ user.tg_username) if user.tg_username else '' }}"
+                       placeholder="ника нет" aria-describedby="contacts-tg-hint">
+                <p class="prs-field-note" id="contacts-tg-hint">Берём из Telegram, здесь он не меняется. Нет ника – задай его в настройках Telegram, поле «Имя пользователя», и сохрани ещё раз.</p>
             </div>
             {% else %}
             <div class="prs-field">

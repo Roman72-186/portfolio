@@ -545,6 +545,27 @@ def _enrollment_now() -> tuple[int, datetime]:
     return moment.year, datetime(moment.year, moment.month, 1, tzinfo=timezone.utc)
 
 
+def holiday_tg_username(db_user: User) -> str:
+    """Ник каникулярного — только из Telegram, ученик его не меняет
+    (владелец 23.10.2026: «запретим менять юзер»). Что пришло в форме, не
+    читаем. Живой ник — короткий запрос `getChat` (как сверка «Контактов»
+    годовых): кто задал ник в Telegram уже после входа, сохранит анкету сразу,
+    без перезахода. Telegram не ответил — ник, записанный при входе
+    (`auth._upsert_telegram_user` обновляет его при каждом входе). Пусто — ника
+    в Telegram нет, анкету не сохранить (`validate_holiday_profile`)."""
+    import asyncio
+
+    from app.services import telegram as telegram_service
+
+    if db_user.telegram_chat_id:
+        ok, live = asyncio.run(telegram_service.get_chat_username(
+            db_user.telegram_chat_id, max_attempts=1, timeout=6.0,
+        ))
+        if ok:
+            return normalize_tg_username(live or "")
+    return normalize_tg_username(db_user.tg_username or "")
+
+
 def _save_holiday_profile(
     request: Request, user: dict, db: DBSession, *,
     first_name: str, last_name: str, phone: str, tg_username: str,
@@ -555,12 +576,13 @@ def _save_holiday_profile(
     здесь нет вовсе — ни тарифа, ни родителя, ни СДЭК, ни года поступления,
     ни города. Пояс не спрашиваем: каникулярный живёт по Москве
     (`HOLIDAY_TIMEZONE`, владелец 16.10.2026). Ник обязателен (владелец
-    17.10.2026), подставлен из входа через Telegram. Вариант «Где учишься?»
-    ставит тег (`tags.ensure_grade_tag`)."""
+    17.10.2026) и берётся только из Telegram (`holiday_tg_username`, 23.10.2026).
+    Вариант «Где учишься?» ставит тег (`tags.ensure_grade_tag`)."""
     first_name = first_name.strip()
     last_name = last_name.strip()
     phone = normalize_phone(phone)
-    tg_username = normalize_tg_username(tg_username)
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    tg_username = holiday_tg_username(db_user)
     grade = parse_school_grade(school_grade)
 
     errors = validate_holiday_profile(
@@ -578,7 +600,6 @@ def _save_holiday_profile(
         return templates.TemplateResponse(request, "profile.html",
             _profile_template_ctx(request, user, errors=errors, form=form))
 
-    db_user = db.query(User).filter(User.id == user["user_id"]).first()
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"

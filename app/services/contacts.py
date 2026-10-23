@@ -125,8 +125,11 @@ def validate_holiday_profile(
         last_name, empty="Введи фамилию", what="Фамилия",
         too_long="Фамилия слишком длинная (максимум 50 символов)",
     )
+    # Ник берётся из Telegram (23.10.2026), ученик его здесь не печатает —
+    # поэтому ошибка зовёт в настройки Telegram, а не к полю.
     if not tg_username:
-        errors.append("Укажи ник в Telegram")
+        errors.append("В Telegram не задан ник. Задай его в настройках Telegram "
+                      "(«Имя пользователя») и сохрани ещё раз.")
     elif not TG_RE.match(tg_username):
         errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
     errors.extend(validate_phone(phone))
@@ -135,7 +138,8 @@ def validate_holiday_profile(
     if not errors and find_student_by_tg_username(
         db, tg_username, exclude_user_id=user_id
     ):
-        errors.append("Такой ник в Telegram уже занят другим учеником. Проверь написание.")
+        errors.append("Твой ник из Telegram уже записан у другого ученика. "
+                      "Напиши в службу заботы – разберёмся.")
     return errors
 
 

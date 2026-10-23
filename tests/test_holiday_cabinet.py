@@ -127,6 +127,8 @@ def test_holiday_profile_accepts_real_names(
     client, db, user_factory, session_factory, first_name, last_name,
 ):
     student = _holiday(db, user_factory, profile_completed=False)
+    student.tg_username = "kanikuly_anya"
+    db.commit()
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
         "csrf_token": "x", "first_name": first_name, "last_name": last_name,
         "phone": "+79991234567", "tg_username": "kanikuly_anya", "school_grade": "grade11",
@@ -141,6 +143,7 @@ def test_holiday_profile_moves_timezone_to_moscow(client, db, user_factory, sess
     """Пояс не спрашивается: сохранение ставит МСК, даже если раньше стоял другой."""
     student = _holiday(db, user_factory, profile_completed=False)
     student.timezone = "4"
+    student.tg_username = "anya_k"
     db.commit()
 
     resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
@@ -155,21 +158,105 @@ def test_holiday_profile_moves_timezone_to_moscow(client, db, user_factory, sess
     assert _grade_tags(db, student) == ["Колледж"]
 
 
-def test_holiday_profile_rejects_bad_or_taken_nick(client, db, user_factory, session_factory):
+def test_holiday_profile_rejects_taken_nick(client, db, user_factory, session_factory):
     other = user_factory(vk_id=300_010, name="Годовой Петя")
     other.tg_username = "busy_nick"
     student = _holiday(db, user_factory, profile_completed=False)
+    student.tg_username = "Busy_Nick"
+    db.commit()
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+        "phone": "+79991234567", "tg_username": "busy_nick", "school_grade": "grade9",
+    })
+
+    assert resp.status_code == 200
+    assert "службу заботы" in resp.text
+    db.refresh(student)
+    assert student.profile_completed is False
+
+
+@pytest.mark.parametrize("path", ["/cabinet/profile", "/cabinet/personal/contacts"])
+def test_holiday_nick_from_form_is_ignored(client, db, user_factory, session_factory, path):
+    """Владелец 23.10.2026: «запретим менять юзер» — ник только из Telegram,
+    подменённый в форме не сохраняется."""
+    student = _holiday(db, user_factory, profile_completed=path == "/cabinet/personal/contacts")
+    student.tg_username = "kanikuly_anya"
+    db.commit()
+
+    resp = _login_as(client, session_factory, student).post(path, data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+        "phone": "+79991234567", "tg_username": "@chuzhoy_nick", "school_grade": "grade11",
+    }, follow_redirects=False)
+
+    assert resp.status_code == 302
+    db.refresh(student)
+    assert student.tg_username == "kanikuly_anya"
+
+
+def test_holiday_nick_set_in_telegram_later_is_picked_up(
+    client, db, user_factory, session_factory, monkeypatch,
+):
+    """Ника при входе не было, ученик задал его в Telegram — анкета берёт
+    живой ник через getChat, перезаходить не нужно."""
+    from unittest.mock import AsyncMock
+
+    student = _holiday(db, user_factory, profile_completed=False)
+    student.telegram_chat_id = 900_302
+    db.commit()
+    monkeypatch.setattr(
+        "app.services.telegram.get_chat_username", AsyncMock(return_value=(True, "anya_tg")),
+    )
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+        "phone": "+79991234567", "tg_username": "", "school_grade": "grade11",
+    }, follow_redirects=False)
+
+    assert resp.status_code == 302
+    db.refresh(student)
+    assert student.tg_username == "anya_tg"
+    assert student.profile_completed is True
+
+
+def test_holiday_without_telegram_nick_is_sent_to_telegram_settings(
+    client, db, user_factory, session_factory, monkeypatch,
+):
+    from unittest.mock import AsyncMock
+
+    student = _holiday(db, user_factory, profile_completed=False)
+    student.telegram_chat_id = 900_303
+    db.commit()
+    monkeypatch.setattr(
+        "app.services.telegram.get_chat_username", AsyncMock(return_value=(True, None)),
+    )
+
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
+        "phone": "+79991234567", "tg_username": "pridumal", "school_grade": "grade11",
+    })
+
+    assert resp.status_code == 200
+    assert "настройках Telegram" in resp.text
+    db.refresh(student)
+    assert student.profile_completed is False
+    assert not student.tg_username
+
+
+def test_holiday_nick_field_is_read_only(client, db, user_factory, session_factory):
+    student = _holiday(db, user_factory, profile_completed=False)
+    student.tg_username = "kanikuly_anya"
     db.commit()
     client = _login_as(client, session_factory, student)
-    base = {"csrf_token": "x", "first_name": "Аня", "last_name": "Котова",
-            "phone": "+79991234567", "school_grade": "grade9"}
+    page = client.get("/cabinet/profile").text
+    assert 'id="profile-tg" name="tg_username" readonly' in page
+    assert "@kanikuly_anya" in page
 
-    nick_before = student.tg_username
-    for nick in ("ник", "@Busy_Nick"):  # кириллица; ник другого ученика
-        assert client.post("/cabinet/profile", data={**base, "tg_username": nick}).status_code == 200
-        db.refresh(student)
-        assert student.profile_completed is False, nick
-        assert student.tg_username == nick_before, nick
+    student.profile_completed = True
+    db.commit()
+    page = client.get("/cabinet/personal/contacts").text
+    assert 'id="contacts-tg" name="tg_username" readonly' in page
+    assert "@kanikuly_anya" in page
 
 
 def test_holiday_profile_requires_class(client, db, user_factory, session_factory):
@@ -249,8 +336,8 @@ def test_holiday_contacts_save_without_annual_fields(client, db, user_factory, s
     assert (student.city, student.timezone) == ("Казань", HOLIDAY_TIMEZONE)
     assert student.phone == "+79997654321"
     assert student.school_grade == "grade11"
-    # Ник из формы сохраняется, с Telegram не сверяется.
-    assert student.tg_username == "anya_new"
+    # Ник только из Telegram (23.10.2026): из формы не сохраняется.
+    assert student.tg_username == "kanikuly_anya"
     assert (student.enrollment_year, student.enrolled_at) == enrolled
     assert _grade_tags(db, student) == ["11 класс"]
 
