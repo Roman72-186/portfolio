@@ -26,6 +26,22 @@ from app.models.user import User
 PHONE_RE = re.compile(r'^\+[1-9]\d{7,14}$')
 PHONE_CHARS_RE = re.compile(r'^[\d\s+().-]+$')
 TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
+# Имя и фамилия каникулярного (владелец 23.10.2026: «могут просто точки
+# поставить»): только буквы, внутри — дефис, пробел или апостроф («Анна-Мария»,
+# «Ли Мин», «Д'Артаньян»), букв не меньше двух.
+NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё]+(?:[ '’\-–][A-Za-zА-Яа-яЁё]+)*$")
+
+
+def validate_person_name(value: str, *, empty: str, what: str, too_long: str) -> list[str]:
+    """Имя или фамилия — настоящие слова, а не «.» или «...». Значение уже
+    без крайних пробелов."""
+    if not value:
+        return [empty]
+    if len(value) > 50:
+        return [too_long]
+    if not NAME_RE.match(value) or sum(ch.isalpha() for ch in value) < 2:
+        return [f"{what}: только буквы, как в паспорте"]
+    return []
 
 
 def normalize_phone(raw: str) -> str:
@@ -101,14 +117,14 @@ def validate_holiday_profile(
     пачкой, и двое с одним ником слились бы в одну карточку. Значения уже
     очищены от пробелов, телефон и ник нормализованы."""
     errors = []
-    if not first_name:
-        errors.append("Введи имя")
-    elif len(first_name) > 50:
-        errors.append("Имя слишком длинное (максимум 50 символов)")
-    if not last_name:
-        errors.append("Введи фамилию")
-    elif len(last_name) > 50:
-        errors.append("Фамилия слишком длинная (максимум 50 символов)")
+    errors += validate_person_name(
+        first_name, empty="Введи имя", what="Имя",
+        too_long="Имя слишком длинное (максимум 50 символов)",
+    )
+    errors += validate_person_name(
+        last_name, empty="Введи фамилию", what="Фамилия",
+        too_long="Фамилия слишком длинная (максимум 50 символов)",
+    )
     if not tg_username:
         errors.append("Укажи ник в Telegram")
     elif not TG_RE.match(tg_username):

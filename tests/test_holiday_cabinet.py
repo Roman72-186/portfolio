@@ -100,6 +100,43 @@ def test_holiday_profile_requires_nick(client, db, user_factory, session_factory
     assert student.profile_completed is False
 
 
+@pytest.mark.parametrize("first_name, last_name", [
+    (".", "."), ("...", "Котова"), ("Аня", "-"), ("А", "Котова"), ("Аня", "К1"),
+])
+def test_holiday_profile_rejects_placeholder_names(
+    client, db, user_factory, session_factory, first_name, last_name,
+):
+    """Владелец 23.10.2026: «могут просто точки поставить» — имя и фамилия
+    только буквами."""
+    student = _holiday(db, user_factory, profile_completed=False)
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": first_name, "last_name": last_name,
+        "phone": "+79991234567", "tg_username": "kanikuly_anya", "school_grade": "grade11",
+    })
+
+    assert resp.status_code == 200
+    assert "только буквы" in resp.text
+    db.refresh(student)
+    assert student.profile_completed is False
+
+
+@pytest.mark.parametrize("first_name, last_name", [
+    ("Анна-Мария", "Петрова-Водкина"), ("Ли", "Мин"), ("Ivan", "O'Brien"), ("Алёна", "Ёлкина"),
+])
+def test_holiday_profile_accepts_real_names(
+    client, db, user_factory, session_factory, first_name, last_name,
+):
+    student = _holiday(db, user_factory, profile_completed=False)
+    resp = _login_as(client, session_factory, student).post("/cabinet/profile", data={
+        "csrf_token": "x", "first_name": first_name, "last_name": last_name,
+        "phone": "+79991234567", "tg_username": "kanikuly_anya", "school_grade": "grade11",
+    }, follow_redirects=False)
+
+    assert resp.status_code == 302
+    db.refresh(student)
+    assert student.profile_completed is True
+
+
 def test_holiday_profile_moves_timezone_to_moscow(client, db, user_factory, session_factory):
     """Пояс не спрашивается: сохранение ставит МСК, даже если раньше стоял другой."""
     student = _holiday(db, user_factory, profile_completed=False)
