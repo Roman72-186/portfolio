@@ -1686,7 +1686,9 @@ def get_deadline_stats(db: DBSession, *, student_id: int | None = None) -> dict:
     }
 
 
-def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
+def get_timed_stats(
+    db: DBSession, *, student_id: int | None = None, levels: dict[int, int | None] | None = None,
+) -> dict:
     """Контрольные на время: кто уложился в таймер, кто превысил, кто сдал
     после срока (владелец 03.09.2026: «будем отслеживать статистику, сколько
     детей превысили время… пометить красненьким»; сводка — 30.09.2026).
@@ -1698,6 +1700,15 @@ def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
     `student_id` — один ученик (карточка): в `students` тогда каждая его
     контрольная, а не только с превышением или опозданием — уложился в
     таймер тоже ответ.
+
+    `attempts` — каждая попытка для фильтров карточки (Александрия
+    22.10.2026, этап 4: месяц, тариф, предмет, ник, уровень, статус, крупно
+    «60% уложились · 20% превысили · 20% после срока»). Статус один на
+    попытку, чтобы проценты складывались в 100: «после срока» главнее
+    «превысили время», «уложились» — сдал в срок и в таймер; без сдачи —
+    «время вышло, работы нет» или «пишет сейчас». Месяц — этап цикла
+    задания. `levels` — уровень точки А по ученикам, если вызывающий его
+    уже посчитал (страница статистики берёт из «Учеников поимённо»).
     """
     from app.models.task_block import BLOCK_TIMED, TaskBlock
     from app.services.task_blocks import (
@@ -1707,7 +1718,10 @@ def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
 
     now = datetime.now(timezone.utc)
     rows = (
-        db.query(TaskBlockState, TaskBlock, TrackerTask, User.name, User.tariff)
+        db.query(
+            TaskBlockState, TaskBlock, TrackerTask, User.name, User.tariff,
+            User.first_name, User.last_name, User.tg_username,
+        )
         .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .join(User, User.id == TaskBlockState.user_id)
@@ -1722,9 +1736,25 @@ def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
     block_deadlines = get_submit_deadlines(db, list({r[1].id for r in rows}))
     task_deadlines = get_task_submit_deadlines(db, list({r[2].id for r in rows}))
 
+    from app.constants import TARIFF_DISPLAY
+    from app.services.contacts import normalize_tg_username
+
+    cycle_ids = {row[2].topic_id for row in rows if row[2].topic_id}
+    cycles = (
+        {c.id: c for c in db.query(LearningTopic).filter(LearningTopic.id.in_(cycle_ids))}
+        if cycle_ids else {}
+    )
+    stage_ids = {c.parent_id for c in cycles.values() if c.parent_id}
+    stages = (
+        {t.id: t for t in db.query(LearningTopic).filter(LearningTopic.id.in_(stage_ids))}
+        if stage_ids else {}
+    )
+    levels = levels or {}
+
     by_block: dict[int, dict] = {}
     students: list[dict] = []
-    for state, block, task, name, tariff in rows:
+    attempts: list[dict] = []
+    for state, block, task, name, tariff, first_name, last_name, tg_username in rows:
         title = f"{task.title} — {block.title}" if block.title else task.title
         item = by_block.setdefault(block.id, {
             "title": title, "limit": block.time_limit_minutes,
@@ -1751,6 +1781,35 @@ def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
         ):
             # Начал, время вышло, а работы нет — ещё рисует или бросил.
             item["running_over"] += 1
+        if finished is not None:
+            status = "late" if late else ("overrun" if overrun else "in_time")
+        elif (
+            started is not None and block.time_limit_minutes
+            and (now - started).total_seconds() > block.time_limit_minutes * 60
+        ):
+            status = "running_over"
+        else:
+            status = "running"
+        cycle = cycles.get(task.topic_id)
+        stage = stages.get(cycle.parent_id) if cycle is not None else None
+        nick = normalize_tg_username(tg_username or "")
+        attempts.append({
+            "student_id": state.user_id,
+            "name": _student_name(first_name, last_name, name),
+            "nick": f"@{nick}" if nick else "",
+            "tariff": TARIFF_DISPLAY.get(tariff or "", tariff or "Без тарифа"),
+            "level": levels.get(state.user_id),
+            "title": title,
+            "subject": block.subject or task.subject or "",
+            "month_id": stage.id if stage is not None else 0,
+            "month": stage.title if stage is not None else "Без месяца",
+            "minutes": (
+                int((finished - started).total_seconds() // 60)
+                if started is not None and finished is not None else None
+            ),
+            "limit": block.time_limit_minutes,
+            "status": status,
+        })
         if overrun or late or student_id is not None:
             students.append({
                 "name": name, "tariff": tariff, "title": title,
@@ -1763,10 +1822,12 @@ def get_timed_stats(db: DBSession, *, student_id: int | None = None) -> dict:
             })
 
     students.sort(key=lambda row: (row["title"], row["name"] or ""))
+    attempts.sort(key=lambda row: (row["name"], row["title"]))
     blocks = sorted(by_block.values(), key=lambda row: row["title"])
     return {
         "blocks": blocks,
         "students": students,
+        "attempts": attempts,
         "submitted": sum(b["submitted"] for b in blocks),
         "overrun": sum(b["overrun"] for b in blocks),
         "late": sum(b["late"] for b in blocks),

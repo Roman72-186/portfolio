@@ -757,9 +757,141 @@
     </details>
 
     <!-- Контрольные на время: таймер и срок (владелец 30.09.2026) -->
-    <details class="ss-acc">
+    <details class="ss-acc" data-timed>
         <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">{{ timed.submitted }} сдано · {{ timed.overrun }} превысили время · {{ timed.late }} после срока</span></summary>
         <div class="ss-acc-body">
+            {# Фильтры, крупные проценты и список по алфавиту (Александрия
+               22.10.2026, этап 4): каждая попытка — `get_timed_stats().attempts`,
+               статус один на попытку, проценты складываются в 100. #}
+            {% if timed.attempts %}
+            <div class="ss-filters">
+                <label for="tm-month">Месяц<select id="tm-month" data-tm-filter="month_id"><option value="">Все месяцы</option></select></label>
+                <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
+                <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
+                <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
+                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option></select></label>
+                <label for="tm-search">Имя или ник<input type="search" id="tm-search" data-tm-search placeholder="Фамилия или @ник" autocomplete="off"></label>
+            </div>
+            <div class="ss-stats-strip" data-tm-big></div>
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Ученики по алфавиту <span class="ss-sub-count" data-tm-count></span></h3>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th></tr></thead>
+                        <tbody data-tm-rows></tbody>
+                    </table>
+                </div>
+            </div>
+            <script>
+            (function () {
+                const root = document.querySelector('[data-timed]');
+                if (!root) return;
+                const attempts = {{ timed.attempts | tojson }};
+                const LABELS = { in_time: 'Уложились', overrun: 'Превысили время', late: 'После срока',
+                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас' };
+                const DANGER = { overrun: true, late: true, running_over: true };
+                const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
+                const search = root.querySelector('[data-tm-search]');
+                const big = root.querySelector('[data-tm-big]');
+                const body = root.querySelector('[data-tm-rows]');
+                const count = root.querySelector('[data-tm-count]');
+
+                function addOptions(select, pairs) {
+                    pairs.forEach(function (pair) {
+                        const node = document.createElement('option');
+                        node.value = pair[0];
+                        node.textContent = pair[1];
+                        select.appendChild(node);
+                    });
+                }
+                function unique(key, label) {
+                    const seen = new Map();
+                    attempts.forEach(function (a) { if (a[key] !== '' && !seen.has(String(a[key]))) seen.set(String(a[key]), a[label || key]); });
+                    return Array.from(seen.entries());
+                }
+                addOptions(root.querySelector('#tm-month'), unique('month_id', 'month'));
+                addOptions(root.querySelector('#tm-tariff'), unique('tariff').sort());
+                addOptions(root.querySelector('#tm-subject'), unique('subject').sort());
+
+                function passes(a) {
+                    for (let i = 0; i < filters.length; i += 1) {
+                        const value = filters[i].value;
+                        const key = filters[i].dataset.tmFilter;
+                        if (!value) continue;
+                        if (key === 'level') {
+                            if (value === 'none' ? a.level : String(a.level) !== value) return false;
+                        } else if (String(a[key]) !== value) {
+                            return false;
+                        }
+                    }
+                    return window.studentMatchesQuery(search.value, String(a.student_id), a.name + ' ' + a.nick);
+                }
+                function tile(value, label) {
+                    const node = document.createElement('div');
+                    node.className = 'ss-stat';
+                    const val = document.createElement('div');
+                    val.className = 'ss-stat-val';
+                    val.textContent = value;
+                    const lbl = document.createElement('div');
+                    lbl.className = 'ss-stat-lbl';
+                    lbl.textContent = label;
+                    node.append(val, lbl);
+                    return node;
+                }
+                function cell(label, text, className) {
+                    const td = document.createElement('td');
+                    td.dataset.label = label;
+                    if (className) td.className = className;
+                    td.textContent = text;
+                    return td;
+                }
+                function render() {
+                    const shown = attempts.filter(passes);
+                    // Проценты — по сдавшим и тем, у кого время вышло без работы:
+                    // «пишет сейчас» ещё не результат.
+                    const counted = shown.filter(function (a) { return a.status !== 'running'; });
+                    const by = { in_time: 0, overrun: 0, late: 0, running_over: 0 };
+                    counted.forEach(function (a) { by[a.status] += 1; });
+                    const pct = function (n) { return counted.length ? Math.round(n * 100 / counted.length) + '%' : '—'; };
+                    big.replaceChildren(
+                        tile(pct(by.in_time), 'уложились · ' + by.in_time),
+                        tile(pct(by.overrun), 'превысили время · ' + by.overrun),
+                        tile(pct(by.late), 'после срока · ' + by.late),
+                        tile(pct(by.running_over), 'время вышло, работы нет · ' + by.running_over)
+                    );
+                    body.replaceChildren.apply(body, shown.map(function (a) {
+                        const tr = document.createElement('tr');
+                        const who = document.createElement('td');
+                        who.dataset.label = 'Ученик';
+                        const name = document.createElement('span');
+                        name.className = 'ss-bold';
+                        name.textContent = a.name;
+                        const meta = document.createElement('span');
+                        meta.className = 'ss-dim-sm';
+                        meta.textContent = (a.nick || '(нет username)') + ' · ' + a.tariff + (a.level ? ' · уровень ' + a.level : '');
+                        who.append(name, document.createElement('br'), meta);
+                        const status = document.createElement('td');
+                        status.dataset.label = 'Статус';
+                        const badge = document.createElement('span');
+                        badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
+                        badge.textContent = LABELS[a.status];
+                        status.appendChild(badge);
+                        tr.append(
+                            who,
+                            cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
+                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—'), 'ss-ta-r'),
+                            status
+                        );
+                        return tr;
+                    }));
+                    count.textContent = shown.length;
+                }
+                filters.forEach(function (select) { select.addEventListener('change', render); });
+                search.addEventListener('input', render);
+                render();
+            })();
+            </script>
+            {% endif %}
             {% if timed.blocks %}
             <div class="ss-table-wrap">
                 <table class="ss-table">

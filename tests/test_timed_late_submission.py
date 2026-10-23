@@ -286,6 +286,45 @@ def test_stats_count_overrun_and_late(db, user_factory):
     assert flagged["Опоздал"]["late"] and not flagged["Опоздал"]["overrun"]
 
 
+def test_stats_attempts_have_one_status_each_for_filters(db, user_factory):
+    """Этап 4 статистики (Александрия 22.10.2026): каждая попытка с одним
+    статусом — проценты в карточке складываются в 100. Опоздал и превысил
+    сразу — «после срока»; уровень приходит от вызывающего."""
+    task = _task(db, user_factory(vk_id=500_101, name="Преподаватель"))
+    task.subject = "Рисунок"
+    block = _block(db, task, submit_until=datetime(2026, 10, 3, 20, 0))
+    start = datetime(2026, 10, 3, 18, 0)
+    cases = {
+        "Уложилась": (start, start + timedelta(minutes=60)),
+        "Превысил": (start, start + timedelta(minutes=90)),
+        "Опоздал и превысил": (start + timedelta(hours=3), start + timedelta(hours=4, minutes=30)),
+        "Время вышло": (datetime(2026, 9, 1, 10, 0), None),
+    }
+    ids = {}
+    for index, (name, (started, finished)) in enumerate(cases.items()):
+        student = user_factory(vk_id=600_100 + index, name=name)
+        ids[name] = student.id
+        db.add(TaskBlockState(
+            block_id=block.id, user_id=student.id,
+            status="done" if finished else "open",
+            started_at=started, completed_at=finished,
+        ))
+    db.commit()
+
+    stats = get_timed_stats(db, levels={ids["Уложилась"]: 2})
+
+    by_name = {a["name"]: a for a in stats["attempts"]}
+    assert [a["name"] for a in stats["attempts"]] == sorted(cases)
+    assert {name: a["status"] for name, a in by_name.items()} == {
+        "Уложилась": "in_time", "Превысил": "overrun",
+        "Опоздал и превысил": "late", "Время вышло": "running_over",
+    }
+    assert by_name["Уложилась"]["level"] == 2 and by_name["Превысил"]["level"] is None
+    assert by_name["Превысил"]["minutes"] == 90 and by_name["Превысил"]["limit"] == 75
+    assert by_name["Уложилась"]["subject"] == "Рисунок"
+    assert by_name["Уложилась"]["month"] == "Без месяца"
+
+
 def test_condition_is_hidden_until_the_start(auth_client, db):
     """Условие контрольной до «Начать работу» не уходит в браузер вовсе
     (владелец 02.10.2026): иначе ученик успевает обдумать задание до

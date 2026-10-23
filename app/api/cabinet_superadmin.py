@@ -1488,6 +1488,7 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         get_video_watch_stats,
     )
 
+    student_activity = get_student_activity_overview(db, include_assignments=True)
     return templates.TemplateResponse(request, "superadmin_activity.html", {
         "request": request,
         "user": user,
@@ -1520,8 +1521,11 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         "submissions": get_submission_stats(db),
         # Сдано до и после срока (владелец 27.09.2026).
         "deadlines": get_deadline_stats(db),
-        # Контрольные на время: превысили таймер, сдали после срока (30.09.2026).
-        "timed": get_timed_stats(db),
+        # Контрольные на время: превысили таймер, сдали после срока (30.09.2026);
+        # уровень точки А для фильтра — из «Учеников поимённо», не заново.
+        "timed": get_timed_stats(db, levels={
+            row["id"]: row.get("level") for row in student_activity["students"]
+        }),
         "staff_activity": get_staff_activity(db),
         "audit_feed": get_audit_feed(db),
         # Регистрации и поимённая сводка переехали сюда с «Пользователей»
@@ -1530,7 +1534,7 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         # Регистрации по тарифам и месячная оплата — про годовой курс.
         "tariff_registration_stats": None if holiday else get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
-        "student_activity": get_student_activity_overview(db, include_assignments=True),
+        "student_activity": student_activity,
         # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
         # Считает payment_board.py — тот же расчёт, что у экрана «Оплаты»;
         # карточку видят только те, кому открыта оплата.
