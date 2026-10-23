@@ -60,6 +60,7 @@ from app.models.task_block import (
     TaskBlockStudent,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
+    TaskBlockTag,
     TaskBlockTariff,
     TaskBlockTariffDeadline,
 )
@@ -325,40 +326,58 @@ def get_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
 
 @dataclass(frozen=True)
 class BlockAudience:
-    """Кому виден блок — три оси «Доступности блока»: тарифы, уровни точки А
-    и ученики поимённо (последние две — владелец 06.10.2026). Все пустые —
-    блок видят все. Решает по ним только `is_block_open_to`."""
+    """Кому виден блок — оси «Доступности блока»: тарифы, уровни точки А,
+    ученики поимённо (владелец 06.10.2026) и теги — треки каникулярного
+    набора (владелец 23.10.2026). Все пустые — блок видят все. Решает по ним
+    только `is_block_open_to`."""
 
     tariffs: frozenset[str] = frozenset()
     levels: frozenset[int] = frozenset()
     user_ids: frozenset[int] = frozenset()
+    tag_ids: frozenset[int] = frozenset()
 
     @property
     def is_everyone(self) -> bool:
-        return not (self.tariffs or self.levels or self.user_ids)
+        return not (self.tariffs or self.levels or self.user_ids or self.tag_ids)
 
 
 _LEVEL_UNKNOWN = object()
 
 
 class BlockViewer:
-    """Ученик, для которого решаем, какие блоки ему видны: id, тариф и уровень
-    точки А.
+    """Ученик, для которого решаем, какие блоки ему видны: id, тариф, уровень
+    точки А и теги.
 
     Уровень считается лениво и один раз: точка А собирается из шести
     источников (`point_a.student_point_a`), а блоков с уровнем почти нет —
     платить за неё на каждом показе ленты незачем. `level=` задают тесты и
-    массовые проходы, где уровень уже известен.
+    массовые проходы, где уровень уже известен. Теги — так же лениво: их
+    спрашивает только блок, отмеченный треком.
     """
 
     def __init__(
         self, db: DBSession | None, *, user_id: int | None, tariff: str | None,
         level: int | None | object = _LEVEL_UNKNOWN,
+        tag_ids: frozenset[int] | None = None,
     ) -> None:
         self._db = db
         self.user_id = user_id
         self.tariff = tariff
         self._level = level
+        self._tag_ids = tag_ids
+
+    @property
+    def tag_ids(self) -> frozenset[int]:
+        if self._tag_ids is None:
+            self._tag_ids = frozenset()
+            if self._db is not None and self.user_id is not None:
+                from app.models.tag import UserTag
+
+                self._tag_ids = frozenset(
+                    tag_id for (tag_id,) in
+                    self._db.query(UserTag.tag_id).filter(UserTag.user_id == self.user_id)
+                )
+        return self._tag_ids
 
     @property
     def level(self) -> int | None:
@@ -377,12 +396,13 @@ class BlockViewer:
 
 def get_audiences(db: DBSession, block_ids: list[int]) -> dict[int, BlockAudience]:
     """Кому видны блоки — только блоки с ограничением; блока нет в ответе —
-    его видят все. Три чтения на любой список блоков."""
+    его видят все. Четыре чтения на любой список блоков."""
     if not block_ids:
         return {}
     tariffs: dict[int, set[str]] = {}
     levels: dict[int, set[int]] = {}
     users: dict[int, set[int]] = {}
+    tags: dict[int, set[int]] = {}
     for block_id, tariff in (
         db.query(TaskBlockTariff.block_id, TaskBlockTariff.tariff)
         .filter(TaskBlockTariff.block_id.in_(block_ids))
@@ -398,13 +418,19 @@ def get_audiences(db: DBSession, block_ids: list[int]) -> dict[int, BlockAudienc
         .filter(TaskBlockStudent.block_id.in_(block_ids))
     ):
         users.setdefault(block_id, set()).add(user_id)
+    for block_id, tag_id in (
+        db.query(TaskBlockTag.block_id, TaskBlockTag.tag_id)
+        .filter(TaskBlockTag.block_id.in_(block_ids))
+    ):
+        tags.setdefault(block_id, set()).add(tag_id)
     return {
         block_id: BlockAudience(
             tariffs=frozenset(tariffs.get(block_id, ())),
             levels=frozenset(levels.get(block_id, ())),
             user_ids=frozenset(users.get(block_id, ())),
+            tag_ids=frozenset(tags.get(block_id, ())),
         )
-        for block_id in set(tariffs) | set(levels) | set(users)
+        for block_id in set(tariffs) | set(levels) | set(users) | set(tags)
     }
 
 
@@ -414,20 +440,24 @@ def is_block_open_to(audience: BlockAudience | None, viewer: BlockViewer) -> boo
     **Единственное место, где записано это правило.** До 28.09.2026 условие
     по тарифу жило в трёх местах, и ученик чужого тарифа видел в ленте
     название чужого урока. С 06.10.2026 (владелец: «кроме доступа по тарифу
-    будет ещё по юзернейму», «задание по уровню») осей три:
+    будет ещё по юзернейму», «задание по уровню») осей три, с 23.10.2026 —
+    четыре: треки каникулярного набора, то есть теги ученика.
 
     - ничего не отмечено — видят все;
-    - ученик выбран поимённо — видит при любом тарифе и уровне;
-    - отмечены тарифы и/или уровни — нужно подойти под каждую отмеченную ось;
+    - ученик выбран поимённо — видит при любом тарифе, уровне и треке;
+    - отмечены тарифы, уровни и/или треки — нужно подойти под каждую
+      отмеченную ось; внутри оси треков хватает одного из отмеченных;
     - отмечены только ученики — видят только они.
     """
     if audience is None or audience.is_everyone:
         return True
     if viewer.user_id is not None and viewer.user_id in audience.user_ids:
         return True
-    if not audience.tariffs and not audience.levels:
+    if not audience.tariffs and not audience.levels and not audience.tag_ids:
         return False
     if audience.tariffs and viewer.tariff not in audience.tariffs:
+        return False
+    if audience.tag_ids and not (audience.tag_ids & viewer.tag_ids):
         return False
     if audience.levels and viewer.level not in audience.levels:
         return False
@@ -841,6 +871,45 @@ def _sync_students(db: DBSession, block: TaskBlock, user_ids: list | None) -> No
     for user_id in wanted:
         if user_id in allowed:
             db.add(TaskBlockStudent(block_id=block.id, user_id=user_id))
+
+
+def _sync_tags(db: DBSession, block: TaskBlock, tag_ids: list | None) -> None:
+    """Полная пересборка треков блока, как у учеников поимённо: записывается
+    только тег, который сейчас трек каникулярного набора
+    (`intake_link.holiday_tracks`), чужой id молча отбрасывается."""
+    db.query(TaskBlockTag).filter(
+        TaskBlockTag.block_id == block.id
+    ).delete(synchronize_session=False)
+    wanted: list[int] = []
+    for raw in tag_ids or []:
+        try:
+            tag_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if tag_id not in wanted:
+            wanted.append(tag_id)
+    if not wanted:
+        return
+    from app.services.intake_link import holiday_tracks
+
+    allowed = {link.tag_id for link in holiday_tracks(db)}
+    for tag_id in wanted:
+        if tag_id in allowed:
+            db.add(TaskBlockTag(block_id=block.id, tag_id=tag_id))
+
+
+def get_tag_ids(db: DBSession, block_ids: list[int]) -> dict[int, list[int]]:
+    """Треки (теги) у блоков — id для формы конструктора. Пусто — трек не важен."""
+    if not block_ids:
+        return {}
+    grouped: dict[int, list[int]] = {}
+    for block_id, tag_id in (
+        db.query(TaskBlockTag.block_id, TaskBlockTag.tag_id)
+        .filter(TaskBlockTag.block_id.in_(block_ids))
+        .order_by(TaskBlockTag.tag_id)
+    ):
+        grouped.setdefault(block_id, []).append(tag_id)
+    return grouped
 
 
 def _student_query(db: DBSession):
@@ -1402,6 +1471,9 @@ def _drop_block(db: DBSession, block: TaskBlock) -> None:
     db.query(TaskBlockStudent).filter(
         TaskBlockStudent.block_id == block.id
     ).delete(synchronize_session=False)
+    db.query(TaskBlockTag).filter(
+        TaskBlockTag.block_id == block.id
+    ).delete(synchronize_session=False)
     db.query(TaskBlockState).filter(
         TaskBlockState.block_id == block.id
     ).delete(synchronize_session=False)
@@ -1614,6 +1686,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_levels(db, row, item.get("levels"))
         _sync_students(db, row, item.get("student_ids"))
+        _sync_tags(db, row, item.get("tag_ids"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
         _sync_dialog_settings(db, row, item)
         # Общая ОС с прошлыми заданиями (созвон 13.10.2026) — после

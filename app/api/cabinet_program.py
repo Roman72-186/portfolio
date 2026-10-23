@@ -88,6 +88,7 @@ from app.services.task_blocks import (
     get_images as get_task_block_images,
     get_levels as get_task_block_levels,
     get_student_ids as get_task_block_student_ids,
+    get_tag_ids as get_task_block_tag_ids,
     get_option_images as get_task_block_option_images,
     get_options as get_task_block_options,
     get_required_tariffs as get_task_block_required_tariffs,
@@ -444,6 +445,29 @@ def _rule_item_payload(option, option_images: dict) -> dict:
     }
 
 
+def _cycle_block_tracks(db: DBSession, topic, edit_payloads: dict) -> list[dict]:
+    """Треки для «Кому доступно» каникулярного цикла (владелец 23.10.2026:
+    «доступность блока нужно настроить под каникулярные теги»).
+
+    Треки этого цикла — по его тегам; у цикла без трека — все треки набора.
+    Трек, уже отмеченный в блоке, остаётся в списке, даже если тег с цикла
+    сняли: иначе форма молча стёрла бы его при следующем сохранении.
+    """
+    from app.services.intake_link import holiday_tracks
+
+    tracks = holiday_tracks(db)
+    cycle_tags = set(get_tag_ids(db, topic.id))
+    marked = {
+        int(tag_id)
+        for payload in edit_payloads.values()
+        for block in payload.get("blocks") or []
+        for tag_id in block.get("tag_ids") or []
+    }
+    if cycle_tags & {link.tag_id for link in tracks}:
+        tracks = [link for link in tracks if link.tag_id in cycle_tags | marked]
+    return [{"id": link.tag_id, "name": link.title} for link in tracks]
+
+
 def _cycle_block_students(db: DBSession, user: dict, edit_payloads: dict) -> list[dict]:
     """Ученики для экрана цикла.
 
@@ -559,6 +583,7 @@ def _edit_payloads(
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         block_levels = get_task_block_levels(db, [b.id for b in blocks])
         block_students = get_task_block_student_ids(db, [b.id for b in blocks])
+        block_tags = get_task_block_tag_ids(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
         block_dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
         block_submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
@@ -595,6 +620,7 @@ def _edit_payloads(
                         "tariffs": sorted(block_tariffs.get(b.id, set())),
                         "levels": sorted(block_levels.get(b.id, set())),
                         "student_ids": block_students.get(b.id, []),
+                        "tag_ids": block_tags.get(b.id, []),
                         "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
                         "opens_at": msk_input_value(b.opens_at) or None,
                         "closes_at": (
@@ -636,6 +662,7 @@ def _edit_payloads(
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),
                 "student_ids": block_students.get(b.id, []),
+                "tag_ids": block_tags.get(b.id, []),
                 "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
                 "opens_at": msk_input_value(b.opens_at) or None,
                 "closes_at": (
@@ -1770,7 +1797,7 @@ POLL_ANSWER_TYPES = QUESTION_TYPES + (POLL_ANSWER_SCALE,)
 # конструктора, сервер копирует её на каждый вопрос, как у диагностики.
 _POLL_SHARED_FIELDS = (
     "hidden_until_done", "is_required", "subject", "tariffs", "required_tariffs",
-    "levels", "student_ids",
+    "levels", "student_ids", "tag_ids",
     "opens_at", "closes_at", "submit_until", "submit_deadlines",
     "locked_message", "bypass_sequence",
 )
@@ -1897,6 +1924,9 @@ class BlockItem(BaseModel):
     # `sync_blocks` (`_sync_levels`, `_sync_students`).
     levels: list[int] = Field(default_factory=list, max_length=2)
     student_ids: list[int] = Field(default_factory=list, max_length=500)
+    # Треки каникулярного набора — теги учеников (владелец 23.10.2026);
+    # сужают, как тарифы. Чужой тег отбрасывает `sync_blocks` (`_sync_tags`).
+    tag_ids: list[int] = Field(default_factory=list, max_length=20)
     # Период доступа — блок открывается в указанный момент, независимо от
     # действий ученика; складывается с is_required, не заменяет (владелец
     # 03.09.2026, найдено при повторном разборе 06.09.2026).
@@ -2238,6 +2268,9 @@ def program_cycle_items(
             "max_block_images": MAX_BLOCK_IMAGES,
             "tariffs": [] if holiday else TARIFFS_CURRENT,
             "block_students": _cycle_block_students(db, user, edit_payloads),
+            # Треки в «Кому доступно» — только у каникулярного цикла: у
+            # годового ученика трека нет (владелец 23.10.2026).
+            "block_tracks": _cycle_block_tracks(db, topic, edit_payloads) if holiday else [],
             # Подпись «Уровень 1 – 65 и ниже» в «Кому доступно» — от
             # серверного порога, а не от числа в JS.
             "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
@@ -2377,6 +2410,7 @@ def _diagnostic_availability(item: "BlockItem") -> dict:
         "required_tariffs": item.required_tariffs,
         "levels": item.levels,
         "student_ids": item.student_ids,
+        "tag_ids": item.tag_ids,
         "subject": item.subject,
         "locked_message": item.locked_message,
         "bypass_sequence": item.bypass_sequence,
@@ -2833,6 +2867,7 @@ def _fold_diagnostic_for_copy(
             "tariffs": row["tariffs"],
             "levels": row["levels"],
             "student_ids": row["student_ids"],
+            "tag_ids": row["tag_ids"],
             "required_tariffs": row["required_tariffs"],
             "locked_message": row["locked_message"],
             "bypass_sequence": row["bypass_sequence"],
@@ -2863,6 +2898,7 @@ def blocks_source_content(
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
     levels = get_task_block_levels(db, [b.id for b in blocks])
     students = get_task_block_student_ids(db, [b.id for b in blocks])
+    block_tags = get_task_block_tag_ids(db, [b.id for b in blocks])
     required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
     dialog_tariffs = get_task_block_dialog_tariffs(db, [b.id for b in blocks])
     copied = [
@@ -2892,6 +2928,7 @@ def blocks_source_content(
             # для Маши» в копии стал бы виден всем (владелец 06.10.2026).
             "levels": sorted(levels.get(b.id, set())),
             "student_ids": students.get(b.id, []),
+            "tag_ids": block_tags.get(b.id, []),
             "required_tariffs": sorted(required_tariffs.get(b.id, set())),
             # opens_at, closes_at и submit_until сюда намеренно не копируются:
             # это абсолютные дата и время исходного дня, в новом дне они бы

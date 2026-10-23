@@ -207,6 +207,16 @@
                     {% for tariff in tariffs %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}
                 </select>
             </label>
+            {# Трек — только у каникулярного цикла, ось «Треки» в «Кому
+               доступно» (владелец 23.10.2026). #}
+            {% if block_tracks %}
+            <label class="prg-field">Трек
+                <select data-cycle-preview-track>
+                    <option value="">Все треки</option>
+                    {% for track in block_tracks %}<option value="{{ track.id }}">{{ track.name }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
             {# Уровень точки А и ученик поимённо — те же оси, что «Кому доступно»
                у блока (владелец 08.10.2026: просмотр учитывал только тариф). #}
             <label class="prg-field">Уровень
@@ -521,20 +531,23 @@ function uploadImage(file, url) {
     // Виден ли блок тому, на кого смотрим, — перенос серверного
     // `task_blocks.is_block_open_to` (владелец 08.10.2026: просмотр
     // учитывал только тариф, блоки «Уровень 2» и «только Маше» были видны
-    // всегда). `viewer` — {tariff, level, studentId}, пустое — «не выбрано».
+    // всегда). `viewer` — {tariff, level, studentId, track}, пустое — «не
+    // выбрано»; трек — тег ученика, ось «Треки» (23.10.2026).
     // Ничего не выбрано — обзор всего цикла, видны все блоки, как и раньше.
     // Не выбранные тариф или уровень не сужают: «Все уровни» — любой уровень.
     // Ученик не выбран — значит, смотрим не глазами отмеченного поимённо:
     // блок «только этим ученикам» такому не виден.
     function previewBlockOpenTo(block, viewer) {
-        if (!viewer.tariff && !viewer.level && !viewer.studentId) return true;
+        if (!viewer.tariff && !viewer.level && !viewer.studentId && !viewer.track) return true;
         var tariffs = block.tariffs || [];
         var levels = (block.levels || []).map(Number);
         var students = (block.student_ids || []).map(Number);
-        if (!tariffs.length && !levels.length && !students.length) return true;
+        var tracks = (block.tag_ids || []).map(Number);
+        if (!tariffs.length && !levels.length && !students.length && !tracks.length) return true;
         if (viewer.studentId && students.indexOf(viewer.studentId) !== -1) return true;
-        if (!tariffs.length && !levels.length) return false;
+        if (!tariffs.length && !levels.length && !tracks.length) return false;
         if (tariffs.length && viewer.tariff && tariffs.indexOf(viewer.tariff) === -1) return false;
+        if (tracks.length && viewer.track && tracks.indexOf(viewer.track) === -1) return false;
         if (levels.length && viewer.level && levels.indexOf(viewer.level) === -1) return false;
         return true;
     }
@@ -577,6 +590,7 @@ function uploadImage(file, url) {
             tariff: document.querySelector('[data-cycle-preview-tariff]').value,
             level: Number(document.querySelector('[data-cycle-preview-level]').value) || 0,
             studentId: Number(cyclePreviewStudent.value) || 0,
+            track: Number((document.querySelector('[data-cycle-preview-track]') || {}).value) || 0,
         };
     }
 
@@ -647,7 +661,7 @@ function uploadImage(file, url) {
                 tariffSelect.value = row.tariff;
             }
         });
-        document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-level], [data-cycle-preview-student], [data-cycle-preview-subject]').forEach(function (select) {
+        document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-track], [data-cycle-preview-level], [data-cycle-preview-student], [data-cycle-preview-subject]').forEach(function (select) {
             select.addEventListener('change', function () {
                 if (!cyclePreviewBox.hidden) previewCycle();
             });

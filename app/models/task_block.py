@@ -793,6 +793,28 @@ class TaskBlockStudent(Base):
     )
 
 
+class TaskBlockTag(Base):
+    """Тег, ученикам с которым доступен блок, — трек каникулярного набора
+    (владелец 23.10.2026: «доступность блока нужно настроить под каникулярные
+    теги»). Трек ученика — его тег (`intake_link.track_of`), а тарифа у
+    каникулярного нет, поэтому внутри одного цикла на два трека делить блоки
+    было нечем.
+
+    Сужает вместе с тарифами и уровнем, как они: отмечены треки — блок видят
+    ученики хотя бы с одним из этих тегов. Пусто — тег не важен. Правило
+    одно — `task_blocks.is_block_open_to`.
+    """
+
+    __tablename__ = "task_block_tags"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class TaskBlockLevel(Base):
     """Уровень точки А, которому доступен блок (владелец 06.10.2026: «задание
     по уровню»). Уровень 1 или 2 — `point_a.point_a_level`.

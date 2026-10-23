@@ -144,6 +144,21 @@ function tariffChecksHTML() {
 // программу) и ищутся здесь же, в браузере: ник в базе зашифрован, SQL по нему
 // не ищет, а учеников пара сотен. Выбранный — метка `.chip` с крестиком.
 var BLOCK_STUDENTS = {{ (block_students or [])|tojson }};
+
+// Треки каникулярного набора — теги учеников (владелец 23.10.2026: «доступность
+// блока нужно настроить под каникулярные теги»). Приходят только у
+// каникулярного цикла (`cabinet_program._cycle_block_tracks`); пусто — пункта
+// «Треки» нет совсем, как тарифов у каникулярного.
+var BLOCK_TRACKS = {{ (block_tracks or [])|tojson }};
+
+function trackChecksHTML() {
+    return BLOCK_TRACKS.map(function (track) {
+        return '<label class="prg-field prg-field--row">'
+            + '<input type="checkbox" data-b-track value="' + Number(track.id) + '"'
+            + ' data-sum-name="' + escapeHTML(track.name) + '">'
+            + '<span>' + escapeHTML(track.name) + '</span></label>';
+    }).join('');
+}
 var BLOCK_STUDENT_RESULTS_MAX = 8;
 
 // Порог уровня — серверный (`point_a.POINT_A_LEVEL_2_MIN_AVERAGE`), чтобы
@@ -213,6 +228,12 @@ function blockAudienceHTML() {
             'Блок увидят только ученики отмеченных тарифов. Ничего не отмечено – тариф не важен.',
             'все тарифы',
             '<div class="prg-blk-tariffs" data-sum-list="только">' + tariffChecksHTML() + '</div>'
+        ) : '')
+        + (BLOCK_TRACKS.length ? settingItemHTML(
+            'Треки',
+            'Блок увидят только ученики отмеченных треков. Ничего не отмечено – видят все треки цикла.',
+            'все треки',
+            '<div class="prg-blk-tariffs" data-sum-list="только">' + trackChecksHTML() + '</div>'
         ) : '')
         + settingItemHTML(
             'Уровень точки А',
@@ -1461,6 +1482,10 @@ function fillBlockRow(row, block) {
         var box = row.querySelector('[data-b-level][value="' + Number(level) + '"]');
         if (box) box.checked = true;
     });
+    (block.tag_ids || []).forEach(function (tagId) {
+        var box = row.querySelector('[data-b-track][value="' + Number(tagId) + '"]');
+        if (box) box.checked = true;
+    });
     // Имя к метке — из списка учеников страницы. Ученика, которого там уже
     // нет (удалён, в архиве потока), сервер при сохранении и так отбросит
     // (`_sync_students`), поэтому меткой он не показывается.
@@ -1693,6 +1718,10 @@ function collectFormBlocks(form) {
         item.levels = [];
         row.querySelectorAll('[data-b-level]:checked').forEach(function (box) {
             item.levels.push(Number(box.value));
+        });
+        item.tag_ids = [];
+        row.querySelectorAll('[data-b-track]:checked').forEach(function (box) {
+            item.tag_ids.push(Number(box.value));
         });
         item.student_ids = [];
         row.querySelectorAll('[data-b-student-chip]').forEach(function (chip) {

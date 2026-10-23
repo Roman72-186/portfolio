@@ -15,7 +15,8 @@
 - `data-sum-on="текст"` — чекбокс, пустой по умолчанию: текст, когда отмечен;
 - `data-sum-off="текст"` — чекбокс, отмеченный по умолчанию: текст, когда
   галочку сняли. «Обязательный» в сводке стоял бы всегда, а нужна разница;
-- `data-sum-list="только"` — контейнер чекбоксов: «только A, B». Пустой выбор
+- `data-sum-list="только"` — контейнер чекбоксов: «только A, B», имя — `value`
+  чекбокса или его `data-sum-name`, если значение — номер (треки, 23.10.2026). Пустой выбор
   значит на разных панелях разное (у блока «виден всем», у задания с
   «Ограничить по тарифу» — «никому не видно»), поэтому своя фраза на пустоту —
   `data-sum-empty`, нет её — пустой список в сводку не идёт;
@@ -74,7 +75,7 @@ function settingsSummaryParts(panel) {
         } else if (el.hasAttribute('data-sum-list')) {
             var names = [];
             el.querySelectorAll('input[type="checkbox"]:checked').forEach(function (box) {
-                names.push(box.value);
+                names.push(box.getAttribute('data-sum-name') || box.value);
             });
             if (names.length) {
                 parts.push(el.getAttribute('data-sum-list') + ' ' + names.join(', '));

@@ -225,6 +225,7 @@ def blocks_from_config(config: dict, availability: dict | None = None) -> list[d
         "required_tariffs": availability.get("required_tariffs") or [],
         "levels": availability.get("levels") or [],
         "student_ids": availability.get("student_ids") or [],
+        "tag_ids": availability.get("tag_ids") or [],
         "subject": availability.get("subject"),
         "locked_message": availability.get("locked_message"),
         "bypass_sequence": availability.get("bypass_sequence", False),
