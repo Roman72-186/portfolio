@@ -182,3 +182,77 @@ def test_students_by_name_script_parses(admin_client, db, user_factory, tmp_path
     path.write_text(card[0], encoding="utf-8")
     result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+# ── Ответы Александрии 23.10.2026 ───────────────────────────────────────────
+
+def test_theory_shows_minutes_for_unfinished_video(db, user_factory):
+    """«Посмотрел 27 минут из 40» — у начавшего, но не досмотревшего."""
+    from app.models.video_progress import VideoProgress
+
+    started = user_factory(vk_id=820_060, name="Started", tariff=TARIFF_SELF)
+    untouched = user_factory(vk_id=820_061, name="Untouched", tariff=TARIFF_SELF)
+    _stage, _cycle, block, _upload = _cycle_with_video(db)
+    video = db.get(LearningVideo, block.video_id)
+    video.duration_seconds = 40 * 60
+    db.add(VideoProgress(user_id=started.id, video_id=video.bunny_video_id,
+                         covered_seconds=27 * 60 + 30))
+    db.commit()
+
+    item = get_student_activity_overview(db, include_assignments=True)["videos"][0]
+
+    assert item["notes"][started.id] == "Смотрел 27 из 40 мин"
+    assert item["notes"][untouched.id] == "Не посмотрел"
+    assert item["started"] == [started.id]
+    assert set(item["pending"]) == {started.id, untouched.id}
+
+
+def test_cycle_label_gets_ordinal_unless_already_numbered(db, user_factory):
+    """«5. Контрольная работа» — номер по порядку в этапе; «Цикл 1» и
+    «1 неделя» не получают второй номер."""
+    user_factory(vk_id=820_070, name="Student", tariff=TARIFF_SELF)
+    stage, first, _block, _upload = _cycle_with_video(db, stage_title="Предобучение")
+    first.title = "1 неделя"
+    second = LearningTopic(title="Контрольная работа", kind="week", parent_id=stage.id,
+                           opens_at=OPENS.replace(day=8), is_published=True, assign_to_all=True)
+    db.add(second)
+    db.flush()
+    task = TrackerTask(title="Контрольная", topic_id=second.id, kind="material", is_published=True)
+    db.add(task)
+    db.flush()
+    db.add(TaskBlock(task_id=task.id, block_type="photo_upload", title="Работа"))
+    db.commit()
+
+    months = get_student_activity_overview(db, include_assignments=True)["months"]
+
+    assert [c["label"] for c in months[0]["cycles"]] == ["1 неделя", "2. Контрольная работа"]
+
+
+def test_holiday_mode_filters_by_track_and_hides_foreign_tasks(db, user_factory):
+    """Каникулярный курс: фильтр по треку вместо тарифа, задания годового
+    курса, которые каникулярным не положены, в выбор не попадают."""
+    from app.constants import PROGRAM_HOLIDAY
+    from app.models.intake_link import IntakeLink
+    from app.models.tag import Tag, UserTag
+    from app.services.report_scope import report_program
+
+    kid = user_factory(vk_id=820_080, name="Kid", tariff="")
+    kid.program = PROGRAM_HOLIDAY
+    tag = Tag(name="АРХИпроба 1 трек")
+    db.add(tag)
+    db.flush()
+    db.add(IntakeLink(slug="arhi-1", title="АРХИпроба 1 трек", program=PROGRAM_HOLIDAY,
+                      tag_id=tag.id, is_active=True))
+    db.add(UserTag(user_id=kid.id, tag_id=tag.id))
+    db.commit()
+    stage, _cycle, _block, _upload = _cycle_with_video(db)
+    stage.assign_to_all = False
+    db.commit()
+
+    with report_program(PROGRAM_HOLIDAY):
+        overview = get_student_activity_overview(db, include_assignments=True)
+
+    assert [row["tariff"] for row in overview["students"]] == ["АРХИпроба 1 трек"]
+    assert overview["tariffs"] == ["АРХИпроба 1 трек"]
+    assert overview["group_label"] == "Трек" and overview["show_level"] is False
+    assert all(item["eligible"] for item in overview["videos"] + overview["assignments"])

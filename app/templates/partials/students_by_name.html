@@ -4,7 +4,8 @@
    решает сервер (`staff_dashboard.get_student_activity_overview`, у куратора
    с `curator_id`), карточка только фильтрует.
 
-   Фильтры: тариф, уровень точки А, имя или ник (`studentMatchesQuery` из
+   Фильтры: тариф (у каникулярного курса — трек, `group_label`), уровень точки А
+   (у каникулярного его нет, `show_level`), имя или ник (`studentMatchesQuery` из
    student-search.js — одно правило поиска на все списки), портфолио. Режимы:
    «Теория» — месяц → цикл → видео, «Практика» — месяц → цикл → задание; ниже
    кто посмотрел / сдал и когда. Сверху крупно «20 из 90 · 22%» и по тарифам,
@@ -17,13 +18,14 @@
     <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
     <div class="ss-acc-body">
         <div class="ss-filters">
-            <label for="sbn-tariff">Тариф
+            {% set group_label = student_activity.group_label or 'Тариф' %}
+            <label for="sbn-tariff">{{ group_label }}
                 <select id="sbn-tariff" data-sbn-tariff>
-                    <option value="">Все тарифы</option>
+                    <option value="">{{ 'Все треки' if group_label == 'Трек' else 'Все тарифы' }}</option>
                     {% for tariff in student_activity.tariffs or [] %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}
                 </select>
             </label>
-            <label for="sbn-level">Уровень
+            <label for="sbn-level"{% if student_activity.show_level is false %} hidden{% endif %}>Уровень
                 <select id="sbn-level" data-sbn-level>
                     <option value="">Все уровни</option>
                     <option value="1">Уровень 1</option>
@@ -107,7 +109,8 @@
     const months = {{ (student_activity.months or []) | tojson }};
     const WORDS = {
         theory: { item: 'Видео', pick: 'Выберите видео', done: 'посмотрели', statuses: [
-            ['all', 'Все'], ['submitted', 'Посмотрели'], ['missing', 'Не посмотрели']] },
+            ['all', 'Все'], ['submitted', 'Посмотрели'], ['missing', 'Не посмотрели'],
+            ['started', 'Начали, не досмотрели']] },
         practice: { item: 'Задание', pick: 'Выберите задание', done: 'сдали', statuses: [
             ['all', 'Все'], ['submitted', 'Сдали'], ['missing', 'Не сдали'],
             ['overdue', 'Не сдали, срок прошёл'], ['pending', 'Не сдали, срок не наступил']] },
@@ -271,6 +274,8 @@
         let total = 0;
         let doneCount = 0;
         let overdue = 0;
+        let started = 0;
+        const startedIds = new Set(item.started || []);
         baseRows.forEach(function (row) {
             const userId = Number(row.dataset.studentId);
             if (!eligible.has(userId)) return;
@@ -279,6 +284,7 @@
             total += 1;
             if (done.has(userId)) { counts.done += 1; doneCount += 1; }
             if (item.overdue.indexOf(userId) !== -1) overdue += 1;
+            if (startedIds.has(userId)) started += 1;
             byTariff.set(row.dataset.studentTariff, counts);
         });
         const word = WORDS[mode].done;
@@ -297,7 +303,10 @@
                 + ' (срок прошёл: ' + overdue + ', срок не наступил: ' + (total - doneCount - overdue) + ')';
             stats.hidden = false;
         } else {
-            stats.hidden = true;
+            // «Смотрел 27 из 40 мин» — у каждого в списке, здесь итог.
+            stats.textContent = 'Не посмотрели: ' + (total - doneCount)
+                + ' (начали, но не досмотрели: ' + started + ')';
+            stats.hidden = false;
         }
     }
 
@@ -308,6 +317,7 @@
         const eligible = item ? new Set(item.eligible) : null;
         const done = item ? new Set(item.submitted) : null;
         const overdue = item ? new Set(item.overdue) : null;
+        const started = item ? new Set(item.started || []) : null;
         const statusMode = statusSelect.value || 'all';
         const baseRows = [];
         rows.forEach(function (row) {
@@ -327,6 +337,7 @@
                 || (item && statusMode === 'submitted' && !hasDone)
                 || (item && statusMode !== 'submitted' && statusMode !== 'all' && hasDone)
                 || (item && statusMode === 'overdue' && !overdue.has(userId))
+                || (item && statusMode === 'started' && !started.has(userId))
                 || (item && statusMode === 'pending' && overdue.has(userId));
         });
         renderBig(item, baseRows);

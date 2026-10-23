@@ -1,6 +1,7 @@
 """Shared aggregates for the Chief Teacher and Superadmin dashboards."""
 
 import io
+import re
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
 from typing import TypedDict
@@ -11,10 +12,11 @@ from sqlalchemy.orm import Session as DBSession, aliased
 from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic
 from app.models.learning_video import LearningVideo
+from app.models.video_progress import VideoProgress
 from app.models.task_block import BLOCK_TIMED, BLOCK_VIDEO, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.constants import (
-    MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS, STUDY_MODE_LABELS, TARIFF_CONFIDENT_MAX,
+    MOCK_SUBJECTS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, STUDY_MODE_LABELS, TARIFF_CONFIDENT_MAX,
     TARIFF_DISPLAY, TARIFF_SELF, TARIFF_WITH_YOU, TARIFFS_CURRENT,
 )
 from app.models.role import Role
@@ -22,14 +24,15 @@ from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.point_a import student_point_a_level
-from app.services.report_scope import reportable_student_ids, reportable_students_q
+from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
     BlockViewer, completed_after_deadline, feed_visible_blocks, get_audiences,
     get_submit_deadlines, get_task_submit_deadlines,
 )
 from app.services.tracker import (
-    cycle_deadline_lookup, cycle_label, program_learners, program_students, task_audience_user_ids,
+    cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
+    task_audience_user_ids,
 )
 from app.services.tz import msk_date_text, msk_midnight, msk_text
 
@@ -329,7 +332,10 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
     «Посмотрел» — видео-блок закрыт: кружок ученика или зачёт преподавателя
     (`video_credit`), тот же `TaskBlockState`, что «сдал» у работ. Срока у
     видео нет — все непосмотревшие в `pending`. Пробник не считается, как в
-    контроле просмотра.
+    контроле просмотра. Непосмотревшему подпись говорит, сколько он уже
+    досмотрел: «Смотрел 27 из 40 мин» (Александрия 23.10.2026) — покрытие
+    текущего прохода `VideoProgress.covered_seconds`, то же, по которому
+    засчитывается просмотр; такие ученики ещё и в `started`.
 
     У каждого задания ещё `topic_id` (цикл — для выбора «месяц → цикл») и
     `done_at` — когда сдал или посмотрел, по Москве.
@@ -398,11 +404,21 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
         )
     }
 
-    video_titles = dict(
-        db.query(LearningVideo.id, LearningVideo.title)
-        .filter(LearningVideo.id.in_({block.video_id for block, _ in candidates}))
-        .all()
-    ) if theory else {}
+    videos = {
+        video.id: video
+        for video in db.query(LearningVideo).filter(
+            LearningVideo.id.in_({block.video_id for block, _ in candidates})
+        )
+    } if theory else {}
+    video_titles = {video_id: video.title for video_id, video in videos.items()}
+    # Сколько досмотрено у непосмотревших — одним запросом на всю выборку.
+    progress: dict[tuple[int, str], VideoProgress] = {}
+    if theory and reachable:
+        for row in db.query(VideoProgress).filter(
+            VideoProgress.video_id.in_({video.bunny_video_id for video in videos.values()}),
+            VideoProgress.user_id.in_(reachable),
+        ):
+            progress[(row.user_id, row.video_id)] = row
 
     assignments = []
     for block, task in candidates:
@@ -410,7 +426,7 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
             uid for uid in audience[task.id]
             if feed_visible_blocks([block], audiences, viewers[uid])
         )
-        submitted, overdue, pending, notes, done_at = [], [], [], {}, {}
+        submitted, overdue, pending, started, notes, done_at = [], [], [], [], {}, {}
         for uid in eligible:
             tariff = learners[uid].tariff
             state = done.get((block.id, uid))
@@ -418,9 +434,17 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
                 submitted.append(uid)
                 done_at[uid] = msk_text(state.completed_at or state.updated_at)
             if theory:
-                if state is None:
-                    pending.append(uid)
-                notes[uid] = "Посмотрел" if state is not None else "Не посмотрел"
+                if state is not None:
+                    notes[uid] = "Посмотрел"
+                    continue
+                pending.append(uid)
+                video = videos.get(block.video_id)
+                watched = _watched_note(
+                    progress.get((uid, video.bunny_video_id)) if video else None, video,
+                )
+                if watched:
+                    started.append(uid)
+                notes[uid] = watched or "Не посмотрел"
                 continue
             if state is not None:
                 late = completed_after_deadline(
@@ -470,10 +494,24 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
             "submitted": submitted,
             "overdue": overdue,
             "pending": pending,
+            "started": started,
             "notes": notes,
             "done_at": done_at,
         })
     return assignments
+
+
+def _watched_note(progress: VideoProgress | None, video: LearningVideo | None) -> str | None:
+    """«Смотрел 27 из 40 мин» — непосмотревшему, который начал; None — не
+    начинал. Длина — у ролика, а если её ещё нет, из плеера (`VideoProgress`)."""
+    if progress is None or not progress.covered_seconds:
+        return None
+    duration = (video.duration_seconds if video else None) or progress.duration_seconds
+    minutes = int(progress.covered_seconds // 60)
+    seen = str(minutes) if minutes else "меньше минуты"
+    if duration:
+        return f"Смотрел {seen} из {max(1, round(duration / 60))} мин"
+    return f"Смотрел {seen} мин" if minutes else "Смотрел меньше минуты"
 
 
 def _program_months(db: DBSession, items: list[dict]) -> list[dict]:
@@ -507,7 +545,7 @@ def _program_months(db: DBSession, items: list[dict]) -> list[dict]:
             "opens_at": (stage.opens_at if stage else cycle.opens_at),
             "cycles": [],
         })
-        month["cycles"].append({"id": cycle.id, "label": cycle_label(db, cycle)})
+        month["cycles"].append({"id": cycle.id, "label": _numbered_cycle_label(db, cycle)})
     if any(not item["topic_id"] for item in items):
         months.setdefault(-1, {"id": -1, "label": "Без цикла", "opens_at": None, "cycles": []})
         months[-1]["cycles"].append({"id": 0, "label": "Без цикла"})
@@ -520,6 +558,19 @@ def _program_months(db: DBSession, items: list[dict]) -> list[dict]:
     for month in ordered:
         month.pop("opens_at")
     return ordered
+
+
+def _numbered_cycle_label(db: DBSession, cycle: LearningTopic) -> str:
+    """Подпись цикла в выборе статистики с номером по порядку в этапе:
+    «5. Контрольная работа» (Александрия 23.10.2026: «писать номер рядом с
+    названием цикла, чтобы это отражало последовательность»). Номер уже в
+    названии («Цикл 1», «1 неделя») — подпись как есть, без «1. Цикл 1».
+    Номер тот же, что даёт безымянному циклу «Цикл N» (`stage_cycle_ordinal`)."""
+    label = cycle_label(db, cycle)
+    ordinal = stage_cycle_ordinal(db, cycle) if cycle.parent_id else None
+    if ordinal is None or re.search(rf"(?<!\d){ordinal}(?!\d)", label):
+        return label
+    return f"{ordinal}. {label}"
 
 
 def get_student_activity_overview(
@@ -635,17 +686,36 @@ def get_student_activity_overview(
                 "videos": [], "months": [], "tariffs": []}
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
-    # Уровень точки А — фильтр «Уровень» (1 / 2 / ещё не определён).
-    levels = {student.id: student_point_a_level(db, student) for student in students}
-    for row in overview:
-        row["level"] = levels.get(row["id"])
-    # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).
-    tariffs = sorted({row["tariff"] for row in overview},
-                     key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
-    return {"students": overview, "events": journal, "assignments": assignments,
+    # В выбор «месяц → цикл → задание» — только то, что положено хоть одному
+    # ученику выборки: в каникулярном режиме иначе шли все задания годового
+    # курса (23.10.2026). Баллы считают по полному списку: сдавший сохраняет
+    # балл, даже если задание ему больше не адресовано.
+    shown = [item for item in assignments if item["eligible"]]
+    shown_videos = [item for item in videos if item["eligible"]]
+    holiday = current_report_program() == PROGRAM_HOLIDAY
+    if holiday:
+        # У каникулярного тарифа нет — фильтр идёт по треку, тегу группы
+        # (Александрия 23.10.2026: «5 линий… отслеживать с 25 по 1 ноября»).
+        from app.services.intake_link import tracks_by_user
+
+        tracks = tracks_by_user(db, student_ids)
+        for row in overview:
+            titles = [link.title for link in tracks.get(row["id"], [])]
+            row["tariff"] = " + ".join(titles) if titles else "Без трека"
+        groups = sorted({row["tariff"] for row in overview}, key=lambda t: (t == "Без трека", t))
+    else:
+        # Уровень точки А — фильтр «Уровень» (1 / 2 / ещё не определён).
+        levels = {student.id: student_point_a_level(db, student) for student in students}
+        for row in overview:
+            row["level"] = levels.get(row["id"])
+        # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).
+        groups = sorted({row["tariff"] for row in overview},
+                        key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
+    return {"students": overview, "events": journal, "assignments": shown,
             "scores": _assignment_scores(db, student_ids, assignments),
-            "videos": videos, "months": _program_months(db, assignments + videos),
-            "tariffs": tariffs}
+            "videos": shown_videos, "months": _program_months(db, shown + shown_videos),
+            "tariffs": groups, "group_label": "Трек" if holiday else "Тариф",
+            "show_level": not holiday}
 
 
 def _score_value(score) -> int | float:
