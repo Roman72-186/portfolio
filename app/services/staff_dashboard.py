@@ -24,6 +24,7 @@ from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.point_a import student_point_a_level
+from app.services.presence import daily_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
@@ -31,7 +32,7 @@ from app.services.task_blocks import (
     get_submit_deadlines, get_task_submit_deadlines,
 )
 from app.services.tracker import (
-    cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
+    cycle_bounds, cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
     stage_sibling_cycles, task_audience_user_ids,
 )
 from app.services.tz import msk_date_text, msk_midnight, msk_text
@@ -545,7 +546,10 @@ def _program_months(db: DBSession, items: list[dict]) -> list[dict]:
             "opens_at": (stage.opens_at if stage else cycle.opens_at),
             "cycles": [],
         })
-        month["cycles"].append({"id": cycle.id, "label": _numbered_cycle_label(db, cycle)})
+        # Даты цикла — период «времени на платформе» в таблице «По ученику».
+        first, last = cycle_bounds(cycle)
+        month["cycles"].append({"id": cycle.id, "label": _numbered_cycle_label(db, cycle),
+                                "start": first.isoformat(), "end": last.isoformat()})
     if any(not item["topic_id"] for item in items):
         months.setdefault(-1, {"id": -1, "label": "Без цикла", "opens_at": None, "cycles": []})
         months[-1]["cycles"].append({"id": 0, "label": "Без цикла"})
@@ -597,7 +601,7 @@ def get_student_activity_overview(
     student_ids = [student.id for student in students]
     if not student_ids:
         return {"students": [], "events": [], "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": []}
+                "videos": [], "months": [], "tariffs": [], "activity_days": {}}
 
     login_rows = (
         db.query(
@@ -689,7 +693,7 @@ def get_student_activity_overview(
     ]
     if not include_assignments:
         return {"students": overview, "events": journal, "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": []}
+                "videos": [], "months": [], "tariffs": [], "activity_days": {}}
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
     # В выбор «месяц → цикл → задание» — только то, что положено хоть одному
@@ -717,11 +721,18 @@ def get_student_activity_overview(
         # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).
         groups = sorted({row["tariff"] for row in overview},
                         key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
+    months = _program_months(db, shown + shown_videos)
+    # Время на платформе по дням — таблица «По ученику» суммирует его за
+    # выбранный цикл в браузере (Александрия 22.10.2026, этап 3 плана).
+    starts = [cycle["start"] for month in months for cycle in month["cycles"] if cycle.get("start")]
+    activity_days = (
+        daily_seconds(db, student_ids, since=date.fromisoformat(min(starts))) if starts else {}
+    )
     return {"students": overview, "events": journal, "assignments": shown,
             "scores": _assignment_scores(db, student_ids, assignments),
-            "videos": shown_videos, "months": _program_months(db, shown + shown_videos),
+            "videos": shown_videos, "months": months,
             "tariffs": groups, "group_label": "Трек" if holiday else "Тариф",
-            "show_level": not holiday}
+            "show_level": not holiday, "activity_days": activity_days}
 
 
 def _score_value(score) -> int | float:

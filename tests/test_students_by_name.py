@@ -65,8 +65,10 @@ def test_theory_lists_who_watched_video_with_date(db, user_factory):
     assert video["done_at"] == {watched.id: "20.10.2026 в 14:30"}
     # Видео в «Практику» не попадает, работа — в «Теорию».
     assert [item["id"] for item in overview["assignments"]] == [upload.id]
+    # Цикл без конца — неделя от понедельника: период «времени на платформе».
     assert overview["months"] == [{"id": stage.id, "label": "Октябрь",
-                                   "cycles": [{"id": cycle.id, "label": "Цикл 1"}]}]
+                                   "cycles": [{"id": cycle.id, "label": "Цикл 1",
+                                               "start": "2026-09-28", "end": "2026-10-04"}]}]
 
 
 def test_practice_item_carries_cycle_and_submit_time(db, user_factory):
@@ -268,3 +270,38 @@ def test_holiday_mode_filters_by_track_and_hides_foreign_tasks(db, user_factory)
     assert overview["tariffs"] == ["АРХИпроба 1 трек"]
     assert overview["group_label"] == "Трек" and overview["show_level"] is False
     assert all(item["eligible"] for item in overview["videos"] + overview["assignments"])
+
+
+# ── Этап 3: «По ученику» ────────────────────────────────────────────────────
+
+def test_overview_has_daily_time_from_first_cycle(db, user_factory):
+    """Время на платформе по дням с начала самого раннего цикла выбора —
+    браузер суммирует его за выбранный цикл."""
+    from datetime import date
+
+    from app.models.user import UserActivityDay
+
+    student = user_factory(vk_id=820_080, name="Student", tariff=TARIFF_SELF)
+    _cycle_with_video(db)  # неделя 28.09–04.10
+    db.add_all([
+        UserActivityDay(user_id=student.id, day=date(2026, 9, 27), seconds=600,
+                        first_seen_at=OPENS, last_seen_at=OPENS),
+        UserActivityDay(user_id=student.id, day=date(2026, 9, 29), seconds=1800,
+                        first_seen_at=OPENS, last_seen_at=OPENS),
+    ])
+    db.commit()
+
+    overview = get_student_activity_overview(db, include_assignments=True)
+
+    assert overview["activity_days"] == {student.id: {"2026-09-29": 1800}}
+
+
+def test_students_by_name_has_student_mode(admin_client, db, user_factory):
+    client, _ = admin_client
+    user_factory(vk_id=820_090, name="Student", tariff=TARIFF_SELF)
+    _cycle_with_video(db)
+
+    html = client.get("/cabinet/superadmin/activity").text
+
+    assert 'data-sbn-mode="student"' in html
+    assert "const activityDays = {" in html

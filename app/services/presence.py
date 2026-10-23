@@ -74,6 +74,21 @@ def _day_row(db: DBSession, user_id: int, day: date) -> UserActivityDay | None:
     )
 
 
+def daily_seconds(db: DBSession, user_ids: list[int], *, since: date) -> dict[int, dict[str, int]]:
+    """Секунды на платформе по дням с `since`: `{ученик: {"2026-10-26": 1800}}`.
+    Для таблицы «По ученику», где период — выбранный в браузере цикл."""
+    result: dict[int, dict[str, int]] = {}
+    if not user_ids:
+        return result
+    for row in (
+        db.query(UserActivityDay)
+        .filter(UserActivityDay.user_id.in_(user_ids), UserActivityDay.day >= since)
+    ):
+        if row.seconds:
+            result.setdefault(row.user_id, {})[row.day.isoformat()] = row.seconds
+    return result
+
+
 def seconds_on_platform(
     db: DBSession, user_ids: list[int], *, since: date, until: date | None = None,
 ) -> dict[int, int]:

@@ -49,6 +49,7 @@
             <button type="button" class="nav-pill-item active" aria-pressed="true" data-sbn-mode="all">Все ученики</button>
             <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="theory">Теория</button>
             <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="practice">Практика</button>
+            <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="student">По ученику</button>
         </div>
 
         <div class="ss-filters" data-sbn-pick hidden>
@@ -58,10 +59,10 @@
             <label for="sbn-cycle">Цикл
                 <select id="sbn-cycle" data-sbn-cycle></select>
             </label>
-            <label for="sbn-item"><span data-sbn-item-label>Видео</span>
+            <label for="sbn-item" data-sbn-item-wrap><span data-sbn-item-label>Видео</span>
                 <select id="sbn-item" data-sbn-item></select>
             </label>
-            <label for="activity-submission-filter">Статус
+            <label for="activity-submission-filter" data-sbn-status-wrap>Статус
                 <select id="activity-submission-filter" data-submission-filter disabled></select>
             </label>
         </div>
@@ -107,6 +108,8 @@
         theory: {{ (student_activity.videos or []) | tojson }},
     };
     const months = {{ (student_activity.months or []) | tojson }};
+    // Секунды на платформе по дням: {ученик: {"2026-10-26": 1800}} — «По ученику».
+    const activityDays = {{ (student_activity.activity_days or {}) | tojson }};
     const WORDS = {
         theory: { item: 'Видео', pick: 'Выберите видео', done: 'посмотрели', statuses: [
             ['all', 'Все'], ['submitted', 'Посмотрели'], ['missing', 'Не посмотрели'],
@@ -126,6 +129,8 @@
     const cycleSelect = $('[data-sbn-cycle]');
     const itemSelect = $('[data-sbn-item]');
     const itemLabel = $('[data-sbn-item-label]');
+    const itemWrap = $('[data-sbn-item-wrap]');
+    const statusWrap = $('[data-sbn-status-wrap]');
     const statusSelect = $('[data-submission-filter]');
     const emptyProgram = $('[data-sbn-empty-program]');
     const big = $('[data-sbn-big]');
@@ -136,6 +141,8 @@
     const copyButton = $('[data-activity-copy]');
     const copyStatus = $('[data-activity-copy-status]');
     let mode = 'all';
+    // Строки «По ученику» для копии списка: в ячейке они разложены по строкам.
+    const studentLinesById = new Map();
 
     function option(value, text) {
         const node = document.createElement('option');
@@ -156,8 +163,12 @@
     }
 
     // Месяцы и циклы, где в этом режиме есть хоть одно видео / задание.
+    function modeItems() {
+        return mode === 'student' ? sources.theory.concat(sources.practice) : sources[mode];
+    }
+
     function cyclesWithItems() {
-        const ids = new Set(sources[mode].map(function (item) { return item.topic_id || 0; }));
+        const ids = new Set(modeItems().map(function (item) { return item.topic_id || 0; }));
         return months.map(function (month) {
             return { id: month.id, label: month.label,
                      cycles: month.cycles.filter(function (cycle) { return ids.has(cycle.id); }) };
@@ -177,6 +188,7 @@
     }
 
     function fillItems() {
+        if (mode === 'student') return;
         const month = currentMonth();
         const cycleIds = cycleSelect.value
             ? [Number(cycleSelect.value)]
@@ -211,12 +223,16 @@
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
         pick.hidden = mode === 'all';
+        itemWrap.hidden = mode === 'student';
+        statusWrap.hidden = mode === 'student';
         if (mode !== 'all') {
             const available = cyclesWithItems();
             emptyProgram.hidden = available.length !== 0;
             fill(monthSelect, available.map(function (month) { return [String(month.id), month.label]; }));
-            itemLabel.textContent = WORDS[mode].item;
-            fill(statusSelect, WORDS[mode].statuses);
+            if (mode !== 'student') {
+                itemLabel.textContent = WORDS[mode].item;
+                fill(statusSelect, WORDS[mode].statuses);
+            }
             fillCycles();
         } else {
             emptyProgram.hidden = true;
@@ -225,7 +241,7 @@
     }
 
     function selectedItem() {
-        if (mode === 'all' || !itemSelect.value) return null;
+        if (mode === 'all' || mode === 'student' || !itemSelect.value) return null;
         return sources[mode].find(function (item) { return String(item.id) === itemSelect.value; }) || null;
     }
 
@@ -310,6 +326,65 @@
         }
     }
 
+    // «По ученику» (Александрия 22.10.2026, этап 3 плана): за выбранный цикл
+    // или весь месяц — время на платформе, видео и работы с ✅/❌.
+    function periodCycles() {
+        const month = currentMonth();
+        if (!month) return [];
+        return cycleSelect.value
+            ? month.cycles.filter(function (cycle) { return String(cycle.id) === cycleSelect.value; })
+            : month.cycles;
+    }
+
+    function minutesText(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        if (!minutes) return seconds ? 'меньше минуты' : '0 мин';
+        const hours = Math.floor(minutes / 60);
+        return hours ? hours + ' ч ' + (minutes % 60) + ' мин' : minutes + ' мин';
+    }
+
+    function secondsIn(userId, cycles) {
+        const days = activityDays[userId] || {};
+        let total = 0;
+        Object.keys(days).forEach(function (day) {
+            const inside = cycles.some(function (cycle) {
+                return cycle.start && day >= cycle.start && day <= cycle.end;
+            });
+            if (inside) total += days[day];
+        });
+        return total;
+    }
+
+    function studentLines(userId, cycles) {
+        const ids = cycles.map(function (cycle) { return cycle.id; });
+        const lines = ['На платформе за период: ' + minutesText(secondsIn(userId, cycles))];
+        [['theory', 'Видео'], ['practice', 'Работы']].forEach(function (pair) {
+            const items = sources[pair[0]].filter(function (item) {
+                return ids.indexOf(item.topic_id || 0) !== -1 && item.eligible.indexOf(userId) !== -1;
+            }).sort(function (a, b) {
+                return ids.indexOf(a.topic_id || 0) - ids.indexOf(b.topic_id || 0) || byOrder(a, b);
+            });
+            if (!items.length) return;
+            lines.push(pair[1] + ':');
+            items.forEach(function (item) {
+                const done = item.submitted.indexOf(userId) !== -1;
+                const when = item.done_at[userId];
+                const note = item.notes[userId] || '';
+                const watched = !done && note.indexOf('Смотрел') === 0 ? ' (' + note + ')' : '';
+                lines.push((done ? '✅ ' : '❌ ') + item.label + (done && when ? ' · ' + when : '') + watched);
+            });
+        });
+        return lines;
+    }
+
+    function renderStudentState(state, lines) {
+        state.replaceChildren.apply(state, lines.map(function (line) {
+            const node = document.createElement('div');
+            node.textContent = line;
+            return node;
+        }));
+    }
+
     function applyFilter() {
         const item = selectedItem();
         statusSelect.disabled = !item;
@@ -325,7 +400,11 @@
             const base = passesBase(row);
             if (base) baseRows.push(row);
             const state = row.querySelector('[data-assignment-state]');
-            if (item) {
+            if (mode === 'student') {
+                const lines = studentLines(userId, periodCycles());
+                studentLinesById.set(userId, lines);
+                renderStudentState(state, lines);
+            } else if (item) {
                 const when = item.done_at[userId];
                 state.textContent = (item.notes[userId] || '') + (when ? ' · ' + when : '');
             } else {
@@ -356,7 +435,11 @@
         const text = rows.filter(function (row) { return !row.hidden; }).map(function (row) {
             const username = row.dataset.studentUsername || '(нет username)';
             const parts = [row.dataset.studentName + ' ' + username, row.dataset.studentTariff];
-            if (item) parts.push(row.querySelector('[data-assignment-state]').textContent);
+            if (mode === 'student') {
+                parts.push((studentLinesById.get(Number(row.dataset.studentId)) || []).join('; '));
+            } else if (item) {
+                parts.push(row.querySelector('[data-assignment-state]').textContent);
+            }
             return parts.join(' – ');
         }).join('\n');
         if (!text) return;
