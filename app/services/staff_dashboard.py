@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
-from app.models.tracker import STATUS_DONE, TrackerTask
+from app.models.learning_video import LearningVideo
+from app.models.task_block import BLOCK_TIMED, BLOCK_VIDEO, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
+from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.constants import (
     MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS, STUDY_MODE_LABELS, TARIFF_CONFIDENT_MAX,
     TARIFF_DISPLAY, TARIFF_SELF, TARIFF_WITH_YOU, TARIFFS_CURRENT,
@@ -20,6 +21,7 @@ from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
+from app.services.point_a import student_point_a_level
 from app.services.report_scope import reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
@@ -27,7 +29,7 @@ from app.services.task_blocks import (
     get_submit_deadlines, get_task_submit_deadlines,
 )
 from app.services.tracker import (
-    cycle_deadline_lookup, program_learners, program_students, task_audience_user_ids,
+    cycle_deadline_lookup, cycle_label, program_learners, program_students, task_audience_user_ids,
 )
 from app.services.tz import msk_date_text, msk_midnight, msk_text
 
@@ -318,9 +320,19 @@ _ACTIVITY_LABELS = {
 }
 
 
-def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
+def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = False) -> list[dict]:
     """Открытые блоки сдачи работы (домашка и контрольная на время): кому
     положено сдавать, кто сдал, а у несдавших — прошёл ли срок.
+
+    `theory=True` — то же по видео-блокам (Александрия 22.10.2026: «Теория —
+    месяц, цикл, видео, и список, кто посмотрел и дата просмотра»).
+    «Посмотрел» — видео-блок закрыт: кружок ученика или зачёт преподавателя
+    (`video_credit`), тот же `TaskBlockState`, что «сдал» у работ. Срока у
+    видео нет — все непосмотревшие в `pending`. Пробник не считается, как в
+    контроле просмотра.
+
+    У каждого задания ещё `topic_id` (цикл — для выбора «месяц → цикл») и
+    `done_at` — когда сдал или посмотрел, по Москве.
 
     Фильтр «Задание → Сдали / Не сдали» в «Учениках поимённо» и копирование
     списка (владелец 03.10.2026: «выбрал задание, фильтр сдал или не сдал, и
@@ -337,12 +349,17 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
     а статистика числила должниками.
     """
     now = datetime.now(timezone.utc)
+    kind_filter = (
+        (TaskBlock.block_type == BLOCK_VIDEO, TaskBlock.video_id.isnot(None),
+         TrackerTask.kind != ITEM_MOCK_EXAM)
+        if theory else (TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),)
+    )
     candidates = (
         db.query(TaskBlock, TrackerTask)
         .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
         .outerjoin(LearningTopic, TrackerTask.topic_id == LearningTopic.id)
         .filter(
-            TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),
+            *kind_filter,
             TrackerTask.is_published.is_(True),
             TrackerTask.deleted_at.is_(None),
             or_(TrackerTask.starts_at.is_(None), TrackerTask.starts_at <= now),
@@ -381,18 +398,31 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
         )
     }
 
+    video_titles = dict(
+        db.query(LearningVideo.id, LearningVideo.title)
+        .filter(LearningVideo.id.in_({block.video_id for block, _ in candidates}))
+        .all()
+    ) if theory else {}
+
     assignments = []
     for block, task in candidates:
         eligible = sorted(
             uid for uid in audience[task.id]
             if feed_visible_blocks([block], audiences, viewers[uid])
         )
-        submitted, overdue, pending, notes = [], [], [], {}
+        submitted, overdue, pending, notes, done_at = [], [], [], {}, {}
         for uid in eligible:
             tariff = learners[uid].tariff
             state = done.get((block.id, uid))
             if state is not None:
                 submitted.append(uid)
+                done_at[uid] = msk_text(state.completed_at or state.updated_at)
+            if theory:
+                if state is None:
+                    pending.append(uid)
+                notes[uid] = "Посмотрел" if state is not None else "Не посмотрел"
+                continue
+            if state is not None:
                 late = completed_after_deadline(
                     block, task, state, user_tariff=tariff,
                     block_overrides=block_deadlines.get(block.id),
@@ -415,36 +445,104 @@ def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
                     f"Не сдал · срок до {msk_text(deadline)}" if deadline is not None
                     else "Не сдал · срок не задан"
                 )
-        label = task.title
-        if block.title and block.title.strip() and block.title.strip().casefold() != task.title.casefold():
-            label += f" · {block.title.strip()}"
-        # Предмет — подпись в выпадающем списке, на подсчёт не влияет. Стоит
-        # первым: на телефоне длинное название обрезается справа.
-        subject = block.subject or task.subject
-        if subject:
-            label = f"{subject}: {label}"
+        if theory:
+            # Видео узнают по названию ролика; задание — уточнение, если
+            # называется иначе (в одном задании бывает несколько роликов).
+            label = (video_titles.get(block.video_id) or "").strip() or task.title
+            if label.casefold() != task.title.casefold():
+                label += f" · {task.title}"
+        else:
+            label = task.title
+            if block.title and block.title.strip() and block.title.strip().casefold() != task.title.casefold():
+                label += f" · {block.title.strip()}"
+            # Предмет — подпись в выпадающем списке, на подсчёт не влияет. Стоит
+            # первым: на телефоне длинное название обрезается справа.
+            subject = block.subject or task.subject
+            if subject:
+                label = f"{subject}: {label}"
         assignments.append({
             "id": block.id,
             "label": label,
+            "topic_id": task.topic_id,
+            # Порядок внутри цикла — как в ленте ученика.
+            "order": [task.sort_order or 0, task.id, block.sort_order or 0, block.id],
             "eligible": eligible,
             "submitted": submitted,
             "overdue": overdue,
             "pending": pending,
             "notes": notes,
+            "done_at": done_at,
         })
     return assignments
 
 
-def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, include_assignments: bool = False) -> dict:
-    """Return per-student lifecycle metrics and the append-only action journal."""
-    students = (
-        reportable_students_q(db)
-        .order_by(User.last_name, User.first_name, User.id)
-        .all()
+def _program_months(db: DBSession, items: list[dict]) -> list[dict]:
+    """Выбор «месяц → цикл» для «Теории» и «Практики» в «Учениках поимённо»
+    (Александрия 22.10.2026: «выбор месяца, выбор цикла 1/2/3/4 неделя»).
+
+    Месяц — этап программы (`LearningTopic kind='stage'`), цикл — его цикл с
+    подписью `tracker.cycle_label` («Цикл N», как у ученика). Берутся только
+    циклы, в которых есть задания из `items`: пустой выбор никому не нужен.
+    Цикл без этапа — в «Без месяца», задание без цикла — в «Без цикла»
+    (`topic_id` пуст, ключ цикла 0). Порядок — по дате открытия, свежие
+    месяцы сверху: смотрят обычно текущий.
+    """
+    topic_ids = {item["topic_id"] for item in items if item["topic_id"]}
+    cycles = (
+        db.query(LearningTopic).filter(LearningTopic.id.in_(topic_ids)).all()
+        if topic_ids else []
     )
+    stage_ids = {cycle.parent_id for cycle in cycles if cycle.parent_id}
+    stages = {
+        stage.id: stage
+        for stage in db.query(LearningTopic).filter(LearningTopic.id.in_(stage_ids))
+    } if stage_ids else {}
+    months: dict[int, dict] = {}
+    for cycle in sorted(cycles, key=lambda c: (c.opens_at, c.sort_order, c.id)):
+        stage = stages.get(cycle.parent_id)
+        key = stage.id if stage else 0
+        month = months.setdefault(key, {
+            "id": key,
+            "label": stage.title if stage else "Без месяца",
+            "opens_at": (stage.opens_at if stage else cycle.opens_at),
+            "cycles": [],
+        })
+        month["cycles"].append({"id": cycle.id, "label": cycle_label(db, cycle)})
+    if any(not item["topic_id"] for item in items):
+        months.setdefault(-1, {"id": -1, "label": "Без цикла", "opens_at": None, "cycles": []})
+        months[-1]["cycles"].append({"id": 0, "label": "Без цикла"})
+    ordered = sorted(
+        months.values(),
+        key=lambda m: (m["opens_at"] is not None, m["opens_at"] or datetime.min), reverse=True,
+    )
+    # Без цикла и без месяца — в конец, после настоящих месяцев.
+    ordered.sort(key=lambda m: m["id"] <= 0)
+    for month in ordered:
+        month.pop("opens_at")
+    return ordered
+
+
+def get_student_activity_overview(
+    db: DBSession, event_limit: int = 200, *, include_assignments: bool = False,
+    curator_id: int | None = None,
+) -> dict:
+    """Return per-student lifecycle metrics and the append-only action journal.
+
+    `curator_id` — «Ученики поимённо» куратора: только его ученики
+    (`User.curator_id`, то же правило, что у его списка «Учеников»),
+    Александрия 22.10.2026: «чтобы видели ситуацию только по своей группе».
+
+    С `include_assignments` ещё «Теория» (`videos` — видео-блоки), выбор
+    «месяц → цикл» (`months`) и уровень точки А у каждого ученика.
+    """
+    query = reportable_students_q(db)
+    if curator_id is not None:
+        query = query.filter(User.curator_id == curator_id)
+    students = query.order_by(User.last_name, User.first_name, User.id).all()
     student_ids = [student.id for student in students]
     if not student_ids:
-        return {"students": [], "events": [], "assignments": [], "scores": []}
+        return {"students": [], "events": [], "assignments": [], "scores": [],
+                "videos": [], "months": []}
 
     login_rows = (
         db.query(
@@ -532,9 +630,22 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, incl
         }
         for event, user in events
     ]
-    assignments = _assignment_activity(db, students) if include_assignments else []
+    if not include_assignments:
+        return {"students": overview, "events": journal, "assignments": [], "scores": [],
+                "videos": [], "months": []}
+    assignments = _assignment_activity(db, students)
+    videos = _assignment_activity(db, students, theory=True)
+    # Уровень точки А — фильтр «Уровень» (1 / 2 / ещё не определён).
+    levels = {student.id: student_point_a_level(db, student) for student in students}
+    for row in overview:
+        row["level"] = levels.get(row["id"])
+    # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).
+    tariffs = sorted({row["tariff"] for row in overview},
+                     key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
     return {"students": overview, "events": journal, "assignments": assignments,
-            "scores": _assignment_scores(db, student_ids, assignments) if include_assignments else []}
+            "scores": _assignment_scores(db, student_ids, assignments),
+            "videos": videos, "months": _program_months(db, assignments + videos),
+            "tariffs": tariffs}
 
 
 def _score_value(score) -> int | float:

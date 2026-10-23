@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Статистика моих учеников{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=16">
+{% endblock %}
+
+{# Статистика группы куратора (Александрия 22.10.2026): «Ученики поимённо» —
+   та же карточка, что на «Статистике активности», только свои ученики
+   (`api/cabinet_curator.cabinet_curator_statistics`). #}
+{% block content %}
+{% include "_curator_nav.html" %}
+<div class="ss-wrap ios-ss">
+    <div class="ss-header">
+        <a href="/cabinet" class="back-link">← Кабинет</a>
+        <h1 class="ss-title">Статистика моих учеников</h1>
+        <span class="ss-since">Только ученики, закреплённые за вами. Всё про одного ученика – во вкладке «Статистика» <a class="ss-link" href="/cabinet/students?tab=statistics">его карточки</a>.</span>
+    </div>
+
+    {% if student_activity.students %}
+    {% include "partials/students_by_name.html" %}
+    {% else %}
+    <div class="ss-empty">За вами пока не закреплён ни один ученик.</div>
+    {% endif %}
+</div>
+<script src="/static/js/copy.js?v=1"></script>
+{% endblock %}

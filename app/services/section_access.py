@@ -235,6 +235,7 @@ _RULES: tuple[_Rule, ...] = (
     # ── Статистика ──
     _rule("statistics", _exact("/cabinet/students"), _GET, ("tab", "statistics")),
     _rule("statistics", _tree("/cabinet/superadmin/activity")),
+    _rule("statistics", _exact("/cabinet/curator/statistics")),
     _rule("statistics", _tree("/cabinet/superadmin/stats")),
     _rule("statistics", _exact("/cabinet/admin/registration-stats.xlsx")),
     _rule("statistics", _exact("/cabinet/superadmin/registration-stats.xlsx")),

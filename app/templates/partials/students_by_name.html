@@ -1,0 +1,371 @@
+{# «Ученики поимённо» — одна карточка на «Статистике активности» и на странице
+   куратора `/cabinet/curator/statistics` (Александрия 22.10.2026: «также это
+   должно быть в доступе у кураторов по своим ученикам»). Кого показывать,
+   решает сервер (`staff_dashboard.get_student_activity_overview`, у куратора
+   с `curator_id`), карточка только фильтрует.
+
+   Фильтры: тариф, уровень точки А, имя или ник (`studentMatchesQuery` из
+   student-search.js — одно правило поиска на все списки), портфолио. Режимы:
+   «Теория» — месяц → цикл → видео, «Практика» — месяц → цикл → задание; ниже
+   кто посмотрел / сдал и когда. Сверху крупно «20 из 90 · 22%» и по тарифам,
+   если тариф не выбран, — плитками `ss-stats-strip`, как «Баллы за задания».
+
+   Странице нужны: `student_activity` (с `include_assignments=True`),
+   superadmin_stats_ios.css и обёртка `.ios-ss`, copy.js. #}
+{% from "components/tg_copy.html" import tg_copy %}
+<details class="ss-acc" data-activity-portfolio{% if open_by_default %} open{% endif %}>
+    <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
+    <div class="ss-acc-body">
+        <div class="ss-filters">
+            <label for="sbn-tariff">Тариф
+                <select id="sbn-tariff" data-sbn-tariff>
+                    <option value="">Все тарифы</option>
+                    {% for tariff in student_activity.tariffs or [] %}<option value="{{ tariff }}">{{ tariff }}</option>{% endfor %}
+                </select>
+            </label>
+            <label for="sbn-level">Уровень
+                <select id="sbn-level" data-sbn-level>
+                    <option value="">Все уровни</option>
+                    <option value="1">Уровень 1</option>
+                    <option value="2">Уровень 2</option>
+                    <option value="none">Не определён</option>
+                </select>
+            </label>
+            <label for="sbn-search">Имя или ник
+                <input type="search" id="sbn-search" data-sbn-search placeholder="Фамилия, @ник или номер" autocomplete="off">
+            </label>
+            <label for="activity-portfolio-filter">Портфолио
+                <select id="activity-portfolio-filter" data-activity-filter>
+                    <option value="all">Все</option>
+                    <option value="missing">Не загрузили</option>
+                    <option value="uploaded">Загрузили</option>
+                </select>
+            </label>
+        </div>
+
+        <div class="nav-pill act-tabs" role="group" aria-label="Что смотрим">
+            <button type="button" class="nav-pill-item active" aria-pressed="true" data-sbn-mode="all">Все ученики</button>
+            <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="theory">Теория</button>
+            <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="practice">Практика</button>
+        </div>
+
+        <div class="ss-filters" data-sbn-pick hidden>
+            <label for="sbn-month">Месяц
+                <select id="sbn-month" data-sbn-month></select>
+            </label>
+            <label for="sbn-cycle">Цикл
+                <select id="sbn-cycle" data-sbn-cycle></select>
+            </label>
+            <label for="sbn-item"><span data-sbn-item-label>Видео</span>
+                <select id="sbn-item" data-sbn-item></select>
+            </label>
+            <label for="activity-submission-filter">Статус
+                <select id="activity-submission-filter" data-submission-filter disabled></select>
+            </label>
+        </div>
+
+        <p class="ss-dim-sm" data-sbn-empty-program hidden>В этом разделе пока нет открытых заданий.</p>
+        <div class="ss-stats-strip" data-sbn-big hidden></div>
+        <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
+
+        <div class="ss-filters">
+            <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать список</button>
+            <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
+        </div>
+
+        <div class="ss-table-wrap">
+            <table class="ss-table">
+                <thead><tr><th>Ученик</th><th>Статус</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th></tr></thead>
+                <tbody>
+                {% for student in student_activity.students %}
+                {% set username = student.username if student.username.startswith('@') else '' %}
+                <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}">
+                    <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></td>
+                    <td data-label="Статус" data-assignment-state>—</td>
+                    <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
+                    <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
+                    <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
+                    <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
+                    <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
+                </tr>
+                {% endfor %}
+                <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</details>
+<script>
+// «Ученики поимённо»: фильтры, «Теория» и «Практика», крупные цифры, копирование.
+(function () {
+    const root = document.querySelector('[data-activity-portfolio]');
+    if (!root) return;
+    const sources = {
+        practice: {{ (student_activity.assignments or []) | tojson }},
+        theory: {{ (student_activity.videos or []) | tojson }},
+    };
+    const months = {{ (student_activity.months or []) | tojson }};
+    const WORDS = {
+        theory: { item: 'Видео', pick: 'Выберите видео', done: 'посмотрели', statuses: [
+            ['all', 'Все'], ['submitted', 'Посмотрели'], ['missing', 'Не посмотрели']] },
+        practice: { item: 'Задание', pick: 'Выберите задание', done: 'сдали', statuses: [
+            ['all', 'Все'], ['submitted', 'Сдали'], ['missing', 'Не сдали'],
+            ['overdue', 'Не сдали, срок прошёл'], ['pending', 'Не сдали, срок не наступил']] },
+    };
+    const $ = function (selector) { return root.querySelector(selector); };
+    const tariffSelect = $('[data-sbn-tariff]');
+    const levelSelect = $('[data-sbn-level]');
+    const searchInput = $('[data-sbn-search]');
+    const portfolioSelect = $('[data-activity-filter]');
+    const modeButtons = Array.from(root.querySelectorAll('[data-sbn-mode]'));
+    const pick = $('[data-sbn-pick]');
+    const monthSelect = $('[data-sbn-month]');
+    const cycleSelect = $('[data-sbn-cycle]');
+    const itemSelect = $('[data-sbn-item]');
+    const itemLabel = $('[data-sbn-item-label]');
+    const statusSelect = $('[data-submission-filter]');
+    const emptyProgram = $('[data-sbn-empty-program]');
+    const big = $('[data-sbn-big]');
+    const stats = $('[data-assignment-stats]');
+    const rows = Array.from(root.querySelectorAll('[data-activity-student]'));
+    const count = $('[data-activity-count]');
+    const empty = $('[data-activity-empty]');
+    const copyButton = $('[data-activity-copy]');
+    const copyStatus = $('[data-activity-copy-status]');
+    let mode = 'all';
+
+    function option(value, text) {
+        const node = document.createElement('option');
+        node.value = value;
+        node.textContent = text;
+        return node;
+    }
+
+    function fill(select, pairs) {
+        select.replaceChildren.apply(select, pairs.map(function (pair) { return option(pair[0], pair[1]); }));
+    }
+
+    function byOrder(a, b) {
+        for (let i = 0; i < a.order.length; i += 1) {
+            if (a.order[i] !== b.order[i]) return a.order[i] - b.order[i];
+        }
+        return 0;
+    }
+
+    // Месяцы и циклы, где в этом режиме есть хоть одно видео / задание.
+    function cyclesWithItems() {
+        const ids = new Set(sources[mode].map(function (item) { return item.topic_id || 0; }));
+        return months.map(function (month) {
+            return { id: month.id, label: month.label,
+                     cycles: month.cycles.filter(function (cycle) { return ids.has(cycle.id); }) };
+        }).filter(function (month) { return month.cycles.length; });
+    }
+
+    function currentMonth() {
+        return cyclesWithItems().find(function (month) { return String(month.id) === monthSelect.value; });
+    }
+
+    function cycleLabels() {
+        const labels = new Map();
+        months.forEach(function (month) {
+            month.cycles.forEach(function (cycle) { labels.set(cycle.id, cycle.label); });
+        });
+        return labels;
+    }
+
+    function fillItems() {
+        const month = currentMonth();
+        const cycleIds = cycleSelect.value
+            ? [Number(cycleSelect.value)]
+            : (month ? month.cycles.map(function (cycle) { return cycle.id; }) : []);
+        const labels = cycleLabels();
+        const items = sources[mode]
+            .filter(function (item) { return cycleIds.indexOf(item.topic_id || 0) !== -1; })
+            .sort(function (a, b) {
+                return cycleIds.indexOf(a.topic_id || 0) - cycleIds.indexOf(b.topic_id || 0) || byOrder(a, b);
+            });
+        // «Все циклы месяца» — к названию добавляется цикл, иначе два
+        // одинаковых ролика из разных циклов не различить.
+        fill(itemSelect, [['', WORDS[mode].pick]].concat(items.map(function (item) {
+            const prefix = cycleSelect.value ? '' : (labels.get(item.topic_id || 0) || '') + ' · ';
+            return [String(item.id), prefix + item.label];
+        })));
+    }
+
+    function fillCycles() {
+        const month = currentMonth();
+        fill(cycleSelect, [['', 'Все циклы месяца']].concat((month ? month.cycles : []).map(function (cycle) {
+            return [String(cycle.id), cycle.label];
+        })));
+        fillItems();
+    }
+
+    function setMode(next) {
+        mode = next;
+        modeButtons.forEach(function (button) {
+            const active = button.dataset.sbnMode === mode;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        pick.hidden = mode === 'all';
+        if (mode !== 'all') {
+            const available = cyclesWithItems();
+            emptyProgram.hidden = available.length !== 0;
+            fill(monthSelect, available.map(function (month) { return [String(month.id), month.label]; }));
+            itemLabel.textContent = WORDS[mode].item;
+            fill(statusSelect, WORDS[mode].statuses);
+            fillCycles();
+        } else {
+            emptyProgram.hidden = true;
+        }
+        applyFilter();
+    }
+
+    function selectedItem() {
+        if (mode === 'all' || !itemSelect.value) return null;
+        return sources[mode].find(function (item) { return String(item.id) === itemSelect.value; }) || null;
+    }
+
+    // Фильтры, от которых зависят и список, и крупные цифры: всё, кроме статуса.
+    function passesBase(row) {
+        const tariff = tariffSelect.value;
+        const level = levelSelect.value;
+        const portfolio = portfolioSelect.value;
+        const uploaded = row.dataset.portfolioUploaded === '1';
+        if (tariff && row.dataset.studentTariff !== tariff) return false;
+        if (level === 'none' && row.dataset.studentLevel) return false;
+        if (level && level !== 'none' && row.dataset.studentLevel !== level) return false;
+        if (portfolio === 'missing' && uploaded) return false;
+        if (portfolio === 'uploaded' && !uploaded) return false;
+        return window.studentMatchesQuery(searchInput.value, row.dataset.studentId,
+            row.dataset.studentName + ' ' + row.dataset.studentUsername);
+    }
+
+    function percent(part, whole) {
+        return whole ? Math.round(part * 100 / whole) + '%' : '—';
+    }
+
+    function tile(value, label) {
+        const node = document.createElement('div');
+        node.className = 'ss-stat';
+        const val = document.createElement('div');
+        val.className = 'ss-stat-val';
+        val.textContent = value;
+        const lbl = document.createElement('div');
+        lbl.className = 'ss-stat-lbl';
+        lbl.textContent = label;
+        node.append(val, lbl);
+        return node;
+    }
+
+    // Крупно: «20 из 90 · 22% посмотрели» и, если тариф не выбран, по тарифам.
+    function renderBig(item, baseRows) {
+        if (!item) {
+            big.hidden = true;
+            stats.hidden = true;
+            return;
+        }
+        const eligible = new Set(item.eligible);
+        const done = new Set(item.submitted);
+        const byTariff = new Map();
+        let total = 0;
+        let doneCount = 0;
+        let overdue = 0;
+        baseRows.forEach(function (row) {
+            const userId = Number(row.dataset.studentId);
+            if (!eligible.has(userId)) return;
+            const counts = byTariff.get(row.dataset.studentTariff) || { done: 0, total: 0 };
+            counts.total += 1;
+            total += 1;
+            if (done.has(userId)) { counts.done += 1; doneCount += 1; }
+            if (item.overdue.indexOf(userId) !== -1) overdue += 1;
+            byTariff.set(row.dataset.studentTariff, counts);
+        });
+        const word = WORDS[mode].done;
+        const tiles = [tile(doneCount + ' из ' + total, percent(doneCount, total) + ' ' + word)];
+        if (!tariffSelect.value) {
+            Array.from(tariffSelect.options).forEach(function (opt) {
+                const counts = byTariff.get(opt.value);
+                if (!opt.value || !counts) return;
+                tiles.push(tile(counts.done + ' / ' + counts.total, opt.value + ' · ' + percent(counts.done, counts.total)));
+            });
+        }
+        big.replaceChildren.apply(big, tiles);
+        big.hidden = false;
+        if (mode === 'practice') {
+            stats.textContent = 'Не сдали: ' + (total - doneCount)
+                + ' (срок прошёл: ' + overdue + ', срок не наступил: ' + (total - doneCount - overdue) + ')';
+            stats.hidden = false;
+        } else {
+            stats.hidden = true;
+        }
+    }
+
+    function applyFilter() {
+        const item = selectedItem();
+        statusSelect.disabled = !item;
+        if (!item) statusSelect.value = 'all';
+        const eligible = item ? new Set(item.eligible) : null;
+        const done = item ? new Set(item.submitted) : null;
+        const overdue = item ? new Set(item.overdue) : null;
+        const statusMode = statusSelect.value || 'all';
+        const baseRows = [];
+        rows.forEach(function (row) {
+            const userId = Number(row.dataset.studentId);
+            const base = passesBase(row);
+            if (base) baseRows.push(row);
+            const state = row.querySelector('[data-assignment-state]');
+            if (item) {
+                const when = item.done_at[userId];
+                state.textContent = (item.notes[userId] || '') + (when ? ' · ' + when : '');
+            } else {
+                state.textContent = mode === 'all' ? '—' : WORDS[mode].pick;
+            }
+            const hasDone = done && done.has(userId);
+            row.hidden = !base
+                || (eligible && !eligible.has(userId))
+                || (item && statusMode === 'submitted' && !hasDone)
+                || (item && statusMode !== 'submitted' && statusMode !== 'all' && hasDone)
+                || (item && statusMode === 'overdue' && !overdue.has(userId))
+                || (item && statusMode === 'pending' && overdue.has(userId));
+        });
+        renderBig(item, baseRows);
+        const visible = rows.filter(function (row) { return !row.hidden; }).length;
+        count.textContent = visible;
+        empty.hidden = visible !== 0;
+        copyButton.disabled = visible === 0;
+        copyStatus.textContent = '';
+    }
+
+    // Строка копии: «Имя @ник – тариф», при выбранном видео / задании ещё и
+    // статус с датой. Ника нет — так и пишем (владелец 30.09.2026: «список
+    // всегда должен быть с username»).
+    copyButton.addEventListener('click', async function () {
+        const item = selectedItem();
+        const text = rows.filter(function (row) { return !row.hidden; }).map(function (row) {
+            const username = row.dataset.studentUsername || '(нет username)';
+            const parts = [row.dataset.studentName + ' ' + username, row.dataset.studentTariff];
+            if (item) parts.push(row.querySelector('[data-assignment-state]').textContent);
+            return parts.join(' – ');
+        }).join('\n');
+        if (!text) return;
+        try {
+            await copyText(text);
+            copyStatus.textContent = 'Скопировано';
+        } catch (error) {
+            copyStatus.textContent = 'Не удалось скопировать';
+        }
+    });
+
+    modeButtons.forEach(function (button) {
+        button.addEventListener('click', function () { setMode(button.dataset.sbnMode); });
+    });
+    monthSelect.addEventListener('change', function () { fillCycles(); applyFilter(); });
+    cycleSelect.addEventListener('change', function () { fillItems(); applyFilter(); });
+    [tariffSelect, levelSelect, portfolioSelect, itemSelect, statusSelect].forEach(function (select) {
+        select.addEventListener('change', applyFilter);
+    });
+    searchInput.addEventListener('input', applyFilter);
+    setMode('all');
+})();
+</script>

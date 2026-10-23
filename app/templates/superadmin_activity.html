@@ -216,63 +216,13 @@
                 </div>
                 {% else %}<div class="ss-empty">В каникулярный набор пока никто не вошёл</div>{% endif %}
             </div>
-            <p class="ss-dim-sm">Кто сдал конкретное задание – в «Учениках поимённо» ниже: фильтр «Задание» и «Сдача».</p>
+            <p class="ss-dim-sm">Кто сдал конкретное задание – в «Учениках поимённо» ниже: «Практика», месяц, цикл и задание.</p>
         </div>
     </details>
     {% endif %}
 
-    <!-- Поимённая сводка: входы, портфолио, сдача конкретного задания. Первая под плитками (владелец 03.10.2026) -->
-    <details class="ss-acc" data-activity-portfolio>
-        <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-filters">
-                <label for="activity-portfolio-filter">Портфолио
-                    <select id="activity-portfolio-filter" data-activity-filter>
-                        <option value="all">Все</option>
-                        <option value="missing">Не загрузили</option>
-                        <option value="uploaded">Загрузили</option>
-                    </select>
-                </label>
-                <label for="activity-assignment-filter">Задание
-                    <select id="activity-assignment-filter" data-assignment-filter>
-                        <option value="">Все ученики</option>
-                        {% for assignment in student_activity.assignments %}<option value="{{ assignment.id }}">{{ assignment.label }}</option>{% endfor %}
-                    </select>
-                </label>
-                <label for="activity-submission-filter">Сдача
-                    <select id="activity-submission-filter" data-submission-filter disabled>
-                        <option value="all">Все</option>
-                        <option value="submitted">Сдали</option>
-                        <option value="missing">Не сдали</option>
-                        <option value="overdue">Не сдали, срок прошёл</option>
-                        <option value="pending">Не сдали, срок не наступил</option>
-                    </select>
-                </label>
-                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать список</button>
-                <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
-            </div>
-            <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th><th>Задание</th></tr></thead>
-                    <tbody>
-                    {% for student in student_activity.students %}
-                    <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}">
-                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}</span></td>
-                        <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
-                        <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
-                        <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
-                        <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
-                        <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
-                        <td data-label="Задание" data-assignment-state>Выберите задание</td>
-                    </tr>
-                    {% endfor %}
-                    <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </details>
+    <!-- Поимённая сводка: входы, портфолио, теория и практика по циклам. Первая под плитками (владелец 03.10.2026; Александрия 22.10.2026) -->
+    {% include "partials/students_by_name.html" %}
 
     {# Оплаты (владелец 14.10.2026: «перенести оплату в статистику»). Итоги
        месяца и сводка — payment_board.stats_card, тот же расчёт, что у экрана
@@ -1073,107 +1023,6 @@
 })();
 </script>
 <script src="/static/js/copy.js?v=1"></script>
-<script>
-// Поимённая сводка: фильтры по портфолио и заданию, копирование списка.
-(function () {
-    const root = document.querySelector('[data-activity-portfolio]');
-    if (!root) return;
-    const filter = root.querySelector('[data-activity-filter]');
-    const assignmentFilter = root.querySelector('[data-assignment-filter]');
-    const submissionFilter = root.querySelector('[data-submission-filter]');
-    const assignments = new Map({{ student_activity.assignments | tojson }}.map(function (item) { return [String(item.id), item]; }));
-    const rows = Array.from(root.querySelectorAll('[data-activity-student]'));
-    const count = root.querySelector('[data-activity-count]');
-    const empty = root.querySelector('[data-activity-empty]');
-    const copyButton = root.querySelector('[data-activity-copy]');
-    const status = root.querySelector('[data-activity-copy-status]');
-    const stats = root.querySelector('[data-assignment-stats]');
-
-    function visibleRows() {
-        return rows.filter(function (row) { return !row.hidden; });
-    }
-
-    function applyFilter() {
-        const value = filter.value;
-        const assignment = assignments.get(assignmentFilter.value);
-        submissionFilter.disabled = !assignment;
-        if (!assignment) submissionFilter.value = 'all';
-        const eligible = assignment ? new Set(assignment.eligible) : null;
-        const submitted = assignment ? new Set(assignment.submitted) : null;
-        const overdue = assignment ? new Set(assignment.overdue) : null;
-        if (assignment) {
-            const byTariff = new Map();
-            rows.forEach(function (row) {
-                const userId = Number(row.dataset.studentId);
-                if (!eligible.has(userId)) return;
-                const tariff = row.dataset.studentTariff;
-                const counts = byTariff.get(tariff) || { submitted: 0, missing: 0 };
-                counts[submitted.has(userId) ? 'submitted' : 'missing'] += 1;
-                byTariff.set(tariff, counts);
-            });
-            const submittedCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.submitted; }, 0);
-            const missingCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.missing; }, 0);
-            stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount
-                + ' (срок прошёл: ' + assignment.overdue.length + ', срок не наступил: ' + assignment.pending.length + ')'
-                + '. По тарифам: '
-                + Array.from(byTariff, function (entry) {
-                    // Итог по тарифу первым: без него «27 / 2» читали как «27 учеников на тарифе».
-                    const total = entry[1].submitted + entry[1].missing;
-                    return entry[0] + ' — ' + total + ' (сдали ' + entry[1].submitted + ', не сдали ' + entry[1].missing + ')';
-                }).join('; ');
-            stats.hidden = false;
-        } else {
-            stats.hidden = true;
-            stats.textContent = '';
-        }
-        rows.forEach(function (row) {
-            const uploaded = row.dataset.portfolioUploaded === '1';
-            const userId = Number(row.dataset.studentId);
-            const hasSubmitted = submitted && submitted.has(userId);
-            const isOverdue = overdue && overdue.has(userId);
-            const mode = submissionFilter.value;
-            row.querySelector('[data-assignment-state]').textContent = assignment
-                ? (assignment.notes[userId] || '') : 'Выберите задание';
-            row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded)
-                || (eligible && !eligible.has(userId))
-                || (assignment && mode === 'submitted' && !hasSubmitted)
-                || (assignment && mode !== 'submitted' && mode !== 'all' && hasSubmitted)
-                || (assignment && mode === 'overdue' && !isOverdue)
-                || (assignment && mode === 'pending' && isOverdue);
-        });
-        const visible = visibleRows().length;
-        count.textContent = visible;
-        empty.hidden = visible !== 0;
-        copyButton.disabled = visible === 0;
-        status.textContent = '';
-    }
-
-    // Строка копии: «Имя @ник – тариф», при выбранном задании ещё и статус
-    // сдачи со сроком. Ника нет — так и пишем (владелец 30.09.2026: «список
-    // всегда должен быть с username»).
-    copyButton.addEventListener('click', async function () {
-        const assignment = assignments.get(assignmentFilter.value);
-        const text = visibleRows().map(function (row) {
-            const username = row.dataset.studentUsername || '(нет username)';
-            const parts = [row.dataset.studentName + ' ' + username, row.dataset.studentTariff];
-            if (assignment) parts.push(row.querySelector('[data-assignment-state]').textContent);
-            return parts.join(' – ');
-        }).join('\n');
-        if (!text) return;
-        try {
-            await copyText(text);
-            status.textContent = 'Скопировано';
-        } catch (error) {
-            status.textContent = 'Не удалось скопировать';
-        }
-    });
-
-    filter.addEventListener('change', applyFilter);
-    assignmentFilter.addEventListener('change', applyFilter);
-    submissionFilter.addEventListener('change', applyFilter);
-    applyFilter();
-})();
-</script>
 <script>
 // «Баллы за задания»: распределение по баллам, поимённый список, копирование.
 (function () {
