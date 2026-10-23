@@ -36,7 +36,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   # local run (нужн
 alembic upgrade head                            # apply migrations
 alembic revision --autogenerate -m "msg"        # new migration
 
-set -a && source .env.deploy && set +a && python scripts/deploy.py   # deploy to prod — хост задать явно, см. ⚠️ ниже
+set -a && source .env.deploy && set +a && export PORTFOLIO_SSH_HOST=139.100.237.57 PORTFOLIO_SSH_KNOWN_HOSTS=deploy_known_hosts && python scripts/deploy.py   # deploy; хост — ПОСЛЕ source, иначе .env.deploy его перезапишет
 python scripts/deploy.py app/api/video.py app/services/video_catalog.py  # только эти файлы
 python scripts/deploy.py --sync-env                 # + залить окружение из .env.prod
 python scripts/deploy.py --status                   # версия на проде + сверка всех файлов
