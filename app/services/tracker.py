@@ -489,7 +489,8 @@ def accessible_task_entries(
 
         student = db.get(User, user_id)
         viewer = BlockViewer(
-            db, user_id=user_id, tariff=student.tariff if student is not None else None
+            db, user_id=user_id, tariff=student.tariff if student is not None else None,
+            study_subject=student.study_subject if student is not None else None,
         )
         closed = tasks_closed_to(db, [task.id for task in tasks], viewer=viewer)
         tasks = [task for task in tasks if task.id not in closed]

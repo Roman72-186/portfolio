@@ -2712,6 +2712,26 @@ def _parse_student_labels(
     }
 
 
+STUDY_SUBJECT_ALL = "__ALL__"
+
+
+def _apply_study_subject(target: User, raw: str | None) -> None:
+    """Предмет обучения (24.10.2026): `__ALL__` — все предметы, иначе только
+    один из `MOCK_SUBJECTS`. Не прислан (`None`: старая страница в кэше,
+    форма без поля) — не трогаем, иначе молча снятый предмет открыл бы
+    ученику чужую программу. Пустую строку FastAPI отдаёт как «не прислано»,
+    поэтому «все» — своё значение, как `__NONE__` у тарифа."""
+    if raw is None:
+        return
+    value = raw.strip()
+    if value == STUDY_SUBJECT_ALL:
+        target.study_subject = None
+        return
+    if value not in MOCK_SUBJECTS:
+        raise HTTPException(status_code=400, detail="Неверный предмет обучения")
+    target.study_subject = value
+
+
 def _require_student_target(db: DBSession, user: dict, target_id: int) -> User:
     """Ученик для правки из блока «Управление»: только ученик, ниже своего
     ранга, не в архиве (`_require_profile_editable`)."""
@@ -2735,16 +2755,22 @@ def superadmin_user_set_labels(
     study_mode: str = Form(""),
     is_publishable: str = Form(""),
     about: str = Form(""),
+    study_subject: str | None = Form(None),
 ):
     """Учебные метки из карточки ученика (JSON). Форма шлёт все пять полей:
-    пустое значит «снять». Право — действие `people:students`."""
+    пустое значит «снять». Предмет обучения — только если прислан
+    (`_apply_study_subject`). Право — действие `people:students`."""
     target = _require_student_target(db, user, target_id)
     labels = _parse_student_labels(exam_dates, exam_subjects, study_mode, is_publishable, about)
+    _apply_study_subject(target, study_subject)
     for field, value in labels.items():
         setattr(target, field, value)
     db.commit()
     _invalidate_user_sessions(db, target.id)
-    return JSONResponse({"ok": True, "user_id": target.id, **labels})
+    return JSONResponse({
+        "ok": True, "user_id": target.id, **labels,
+        "study_subject": target.study_subject or "",
+    })
 
 
 @router.post("/superadmin/users/{target_id}/access-until")

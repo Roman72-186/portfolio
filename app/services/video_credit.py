@@ -76,7 +76,9 @@ def student_video_blocks(db: DBSession, student: User) -> list[dict]:
         )
         .all()
     )
-    viewer = BlockViewer(db, user_id=student.id, tariff=student.tariff)
+    viewer = BlockViewer(
+        db, user_id=student.id, tariff=student.tariff, study_subject=student.study_subject
+    )
     blocks = visible_blocks_for_student(db, blocks, viewer=viewer)
     if not blocks:
         return []

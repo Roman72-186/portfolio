@@ -390,7 +390,11 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
     audiences = get_audiences(db, block_ids)
     # Уровень точки А считается лениво и один раз на ученика (`BlockViewer`).
     viewers = {
-        uid: BlockViewer(db, user_id=uid, tariff=learners[uid].tariff) for uid in reachable
+        uid: BlockViewer(
+            db, user_id=uid, tariff=learners[uid].tariff,
+            study_subject=learners[uid].study_subject,
+        )
+        for uid in reachable
     }
     block_deadlines = get_submit_deadlines(db, block_ids)
     task_deadlines = get_task_submit_deadlines(db, task_ids)

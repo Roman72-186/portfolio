@@ -1307,8 +1307,11 @@ def feed_for_student(
         # 01.10.2026): если хоть у одного шага есть предмет — все три, иначе
         # переключателя нет (владелец 03.09.2026: «мы просто не будем ставить
         # разделение, и кнопок в принципе не будет»). «Общее» — шаги без
-        # предмета, значение пустое.
-        "subject_tabs": _subject_tabs(steps),
+        # предмета, значение пустое. Ученику одного предмета (24.10.2026) —
+        # только «Общее» и его предмет: чужого у него в ленте нет вовсе.
+        "subject_tabs": _subject_tabs(
+            steps, only=BlockViewer(db, user_id=user_id, tariff=user_tariff).study_subject
+        ),
         # Открытая по умолчанию вкладка — та, где первый невыполненный шаг:
         # туда ученику и идти. Всё сделано — «Общее».
         "default_subject": next(
@@ -1365,12 +1368,15 @@ SUBJECT_TAB_GENERAL = ("", "Общее")
 SUBJECT_TAB_ORDER = ("Композиция", "Рисунок")
 
 
-def _subject_tabs(steps: list[dict]) -> list[dict]:
+def _subject_tabs(steps: list[dict], *, only: str | None = None) -> list[dict]:
     present = {step["subject"] for step in steps if step["subject"]}
     if not present:
         return []
-    # Предмет вне привычной пары (если появится) не теряется — встаёт в конец.
-    subjects = list(SUBJECT_TAB_ORDER) + sorted(present - set(SUBJECT_TAB_ORDER))
+    if only:
+        subjects = [only]
+    else:
+        # Предмет вне привычной пары (если появится) не теряется — встаёт в конец.
+        subjects = list(SUBJECT_TAB_ORDER) + sorted(present - set(SUBJECT_TAB_ORDER))
     return [{"value": SUBJECT_TAB_GENERAL[0], "label": SUBJECT_TAB_GENERAL[1]}] + [
         {"value": subject, "label": subject} for subject in subjects
     ]

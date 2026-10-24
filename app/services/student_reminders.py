@@ -290,7 +290,9 @@ def _collect_new_content(
         for uid in audience:
             user = learners[uid]
             viewer = viewers.setdefault(
-                uid, BlockViewer(db, user_id=uid, tariff=user.tariff)
+                uid, BlockViewer(
+                    db, user_id=uid, tariff=user.tariff, study_subject=user.study_subject
+                )
             )
             visible = feed_visible_blocks(blocks_by_task.get(task_id, []), audiences, viewer)
             if blocks_by_task.get(task_id) and not visible:
@@ -414,7 +416,9 @@ def _collect_deadlines(
             user = learners[uid]
             pending: list[datetime] = []
             viewer = viewers.setdefault(
-                uid, BlockViewer(db, user_id=uid, tariff=user.tariff)
+                uid, BlockViewer(
+                    db, user_id=uid, tariff=user.tariff, study_subject=user.study_subject
+                )
             )
             for block in feed_visible_blocks(blocks, audiences, viewer):
                 if (uid, block.id) in done_blocks:

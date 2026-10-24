@@ -174,6 +174,31 @@ def test_labels_saved(client, db, session_factory, people):
     assert student.about == "Любит акварель"
 
 
+def test_study_subject_set_kept_and_cleared(client, db, session_factory, people):
+    """Предмет обучения (24.10.2026): не прислан — не трогаем, иначе старая
+    страница в кэше молча открыла бы ученику чужой предмет."""
+    student = people["student"]
+    db.commit()
+    _login(client, session_factory, people["chief"])
+    url = f"/cabinet/superadmin/users/{student.id}/labels"
+
+    assert client.post(url, data={"study_subject": "Рисунок"}).status_code == 200
+    db.refresh(student)
+    assert student.study_subject == "Рисунок"
+
+    assert client.post(url, data={"study_mode": "online"}).status_code == 200
+    db.refresh(student)
+    assert student.study_subject == "Рисунок"
+
+    assert client.post(url, data={"study_subject": "Живопись"}).status_code == 400
+    db.refresh(student)
+    assert student.study_subject == "Рисунок"
+
+    assert client.post(url, data={"study_subject": "__ALL__"}).status_code == 200
+    db.refresh(student)
+    assert student.study_subject is None
+
+
 def test_access_until_set_clear_and_garbage(client, db, session_factory, people):
     student = people["student"]
     db.commit()

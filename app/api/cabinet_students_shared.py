@@ -292,6 +292,8 @@ def _manage_block(db: DBSession, user: dict, student: User) -> dict | None:
         "exam_dates": student.exam_dates or "",
         "exam_subjects": student.exam_subjects or "",
         "exam_subject_hints": list(EXAM_SUBJECT_HINTS),
+        "study_subject": student.study_subject or "",
+        "study_subjects": list(MOCK_SUBJECTS),
         "study_mode": student.study_mode or "",
         "study_modes": [[m, STUDY_MODE_LABELS[m]] for m in STUDY_MODES],
         "is_publishable": bool(student.is_publishable),

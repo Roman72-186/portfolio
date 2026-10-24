@@ -1221,6 +1221,12 @@ function buildManage(s) {
     html += manageField('Предметы экзаменов',
         '<input class="profile-edit-input" id="manage-exam-subjects" maxlength="20" placeholder="Р + К" list="manage-exam-hints" value="' + esc(m.exam_subjects) + '"' + dis + '>'
         + '<datalist id="manage-exam-hints">' + m.exam_subject_hints.map(function(h) { return '<option value="' + esc(h) + '">'; }).join('') + '</datalist>');
+    html += manageField('Предмет обучения',
+        '<select class="profile-edit-select" id="manage-study-subject"' + dis + '>'
+        + manageOptions([['__ALL__', 'Все предметы']].concat(m.study_subjects.map(function(subj) {
+            return [subj, 'Только ' + subj.toLowerCase()];
+        })), m.study_subject || '__ALL__') + '</select>',
+        false, 'В программе – только этот предмет и «Общее»');
     html += manageField('Публикация',
         '<label class="manage-check"><input type="checkbox" id="manage-publishable"' + (m.is_publishable ? ' checked' : '') + dis + '>'
         + '<span>Работы можно показывать в соцсетях и портфолио школы</span></label>');
@@ -1442,6 +1448,7 @@ function saveLabels() {
         study_mode: document.getElementById('manage-study-mode').value,
         exam_dates: document.getElementById('manage-exam-dates').value,
         exam_subjects: document.getElementById('manage-exam-subjects').value,
+        study_subject: document.getElementById('manage-study-subject').value,
         is_publishable: document.getElementById('manage-publishable').checked ? '1' : '',
         about: document.getElementById('manage-about').value
     }, 'Сохранено', 'Не удалось сохранить');

@@ -12,6 +12,7 @@
 {% set _course_periods = s.course_periods if s.course_periods is defined else None %}
 {% set _lessons_count = s.lessons_count if s.lessons_count is defined else None %}
 {% set _curator_tag = s.curator_tag if s.curator_tag is defined else None %}
+{% set _study_subject = s.study_subject if s.study_subject is defined else None %}
 
 {% if _course_periods %}
   {% for p in _course_periods.split(',') %}
@@ -36,6 +37,10 @@
     <span class="tag-pill tag-pill--{{ _scls }}">{{ _s }}</span>
     {% endif %}
   {% endfor %}
+{% endif %}
+
+{% if _study_subject %}
+<span class="tag-pill tag-pill--{{ 'blue' if _study_subject == 'Рисунок' else 'purple' }}">ТОЛЬКО {{ _study_subject[:1] }}</span>
 {% endif %}
 
 {% if _study_mode == 'offline' %}

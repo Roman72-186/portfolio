@@ -64,7 +64,7 @@ from app.models.task_block import (
     TaskBlockTariff,
     TaskBlockTariffDeadline,
 )
-from app.models.tracker import STATUS_DONE, STATUS_OPEN
+from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask
 from app.services.tz import msk_midnight, parse_msk_local
 
 
@@ -329,12 +329,19 @@ class BlockAudience:
     """Кому виден блок — оси «Доступности блока»: тарифы, уровни точки А,
     ученики поимённо (владелец 06.10.2026) и теги — треки каникулярного
     набора (владелец 23.10.2026). Все пустые — блок видят все. Решает по ним
-    только `is_block_open_to`."""
+    только `is_block_open_to`.
+
+    `subject` — предмет шага (`block.subject or task.subject`, 24.10.2026).
+    Это не настройка «Доступности», а свойство самого шага: оно сужает только
+    ученику с предметом обучения (`User.study_subject`). Поэтому в
+    `is_everyone` его нет — по `is_everyone` судят рассылки, им предмет шага
+    не ограничение."""
 
     tariffs: frozenset[str] = frozenset()
     levels: frozenset[int] = frozenset()
     user_ids: frozenset[int] = frozenset()
     tag_ids: frozenset[int] = frozenset()
+    subject: str | None = None
 
     @property
     def is_everyone(self) -> bool:
@@ -342,6 +349,7 @@ class BlockAudience:
 
 
 _LEVEL_UNKNOWN = object()
+_SUBJECT_UNKNOWN = object()
 
 
 class BlockViewer:
@@ -352,19 +360,34 @@ class BlockViewer:
     источников (`point_a.student_point_a`), а блоков с уровнем почти нет —
     платить за неё на каждом показе ленты незачем. `level=` задают тесты и
     массовые проходы, где уровень уже известен. Теги — так же лениво: их
-    спрашивает только блок, отмеченный треком.
+    спрашивает только блок, отмеченный треком. Предмет обучения — тоже: его
+    спрашивает только шаг с предметом; массовые проходы, у которых `User` уже
+    в руках, передают `study_subject=` сами.
     """
 
     def __init__(
         self, db: DBSession | None, *, user_id: int | None, tariff: str | None,
         level: int | None | object = _LEVEL_UNKNOWN,
         tag_ids: frozenset[int] | None = None,
+        study_subject: str | None | object = _SUBJECT_UNKNOWN,
     ) -> None:
         self._db = db
         self.user_id = user_id
         self.tariff = tariff
         self._level = level
         self._tag_ids = tag_ids
+        self._study_subject = study_subject
+
+    @property
+    def study_subject(self) -> str | None:
+        if self._study_subject is _SUBJECT_UNKNOWN:
+            self._study_subject = None
+            if self._db is not None and self.user_id is not None:
+                from app.models.user import User
+
+                row = self._db.query(User.study_subject).filter(User.id == self.user_id).first()
+                self._study_subject = row[0] if row else None
+        return self._study_subject
 
     @property
     def tag_ids(self) -> frozenset[int]:
@@ -395,10 +418,19 @@ class BlockViewer:
 
 
 def get_audiences(db: DBSession, block_ids: list[int]) -> dict[int, BlockAudience]:
-    """Кому видны блоки — только блоки с ограничением; блока нет в ответе —
-    его видят все. Четыре чтения на любой список блоков."""
+    """Кому видны блоки — только блоки с ограничением или с предметом; блока
+    нет в ответе — его видят все. Пять чтений на любой список блоков."""
     if not block_ids:
         return {}
+    subjects: dict[int, str] = {}
+    for block_id, block_subject, task_subject in (
+        db.query(TaskBlock.id, TaskBlock.subject, TrackerTask.subject)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .filter(TaskBlock.id.in_(block_ids))
+    ):
+        # Предмет шага — как у вкладок ленты: свой у блока, иначе задания.
+        if block_subject or task_subject:
+            subjects[block_id] = block_subject or task_subject
     tariffs: dict[int, set[str]] = {}
     levels: dict[int, set[int]] = {}
     users: dict[int, set[int]] = {}
@@ -429,8 +461,9 @@ def get_audiences(db: DBSession, block_ids: list[int]) -> dict[int, BlockAudienc
             levels=frozenset(levels.get(block_id, ())),
             user_ids=frozenset(users.get(block_id, ())),
             tag_ids=frozenset(tags.get(block_id, ())),
+            subject=subjects.get(block_id),
         )
-        for block_id in set(tariffs) | set(levels) | set(users) | set(tags)
+        for block_id in set(tariffs) | set(levels) | set(users) | set(tags) | set(subjects)
     }
 
 
@@ -441,17 +474,25 @@ def is_block_open_to(audience: BlockAudience | None, viewer: BlockViewer) -> boo
     по тарифу жило в трёх местах, и ученик чужого тарифа видел в ленте
     название чужого урока. С 06.10.2026 (владелец: «кроме доступа по тарифу
     будет ещё по юзернейму», «задание по уровню») осей три, с 23.10.2026 —
-    четыре: треки каникулярного набора, то есть теги ученика.
+    четыре: треки каникулярного набора, то есть теги ученика. С 24.10.2026 —
+    предмет обучения ученика (Александрия: «ребёнок занимается только по
+    одному предмету»).
 
+    - у ученика предмет обучения, у шага другой предмет — не видит, если не
+      выбран поимённо; шаг без предмета («Общее») виден всем;
     - ничего не отмечено — видят все;
     - ученик выбран поимённо — видит при любом тарифе, уровне и треке;
     - отмечены тарифы, уровни и/или треки — нужно подойти под каждую
       отмеченную ось; внутри оси треков хватает одного из отмеченных;
     - отмечены только ученики — видят только они.
     """
-    if audience is None or audience.is_everyone:
+    if audience is None:
         return True
     if viewer.user_id is not None and viewer.user_id in audience.user_ids:
+        return True
+    if audience.subject and viewer.study_subject and audience.subject != viewer.study_subject:
+        return False
+    if audience.is_everyone:
         return True
     if not audience.tariffs and not audience.levels and not audience.tag_ids:
         return False

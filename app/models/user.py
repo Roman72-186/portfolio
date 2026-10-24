@@ -78,6 +78,12 @@ class User(Base):
     cohort_tag: Mapped[str | None] = mapped_column(String(20), nullable=True)
     exam_dates: Mapped[str | None] = mapped_column(String(30), nullable=True)
     exam_subjects: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Предмет обучения (Александрия 23.10.2026: «ребёнок занимается только по
+    # одному предмету»). Пусто — все предметы; «Рисунок» или «Композиция» —
+    # программа показывает только этот предмет и «Общее»
+    # (`task_blocks.is_block_open_to`). Не то же, что `exam_subjects`: тот —
+    # предметы экзамена и сужает только пробник.
+    study_subject: Mapped[str | None] = mapped_column(String(50), nullable=True)
     study_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_publishable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     course_periods: Mapped[str | None] = mapped_column(String(100), nullable=True)
