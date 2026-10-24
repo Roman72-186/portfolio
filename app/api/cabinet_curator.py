@@ -156,8 +156,10 @@ def cabinet_curator_statistics(
     активности», ученики — только `curator_id` = куратор. ГП и выше смотрят
     школу целиком там, сюда их не пускаем, чтобы не видеть пустую страницу.
     Ранг — свой (`nav_rank`): раздел, открытый куратору сверх роли, поднимает
-    `role_rank` на запрос, и куратора увело бы в статистику всей школы."""
-    from app.services.staff_dashboard import get_student_activity_overview
+    `role_rank` на запрос, и куратора увело бы в статистику всей школы.
+    Тарифы — только те, что куратор ведёт (`CURATOR_STATS_TARIFFS`,
+    Александрия 24.10.2026), карточка открывается сразу «По ученику»."""
+    from app.services.staff_dashboard import CURATOR_STATS_TARIFFS, get_student_activity_overview
 
     if (user.get("nav_rank") or user["role_rank"]) >= 4:
         return RedirectResponse("/cabinet/superadmin/activity", status_code=303)
@@ -168,6 +170,7 @@ def cabinet_curator_statistics(
         "open_by_default": True,
         "student_activity": get_student_activity_overview(
             db, include_assignments=True, curator_id=user["user_id"],
+            tariffs=CURATOR_STATS_TARIFFS,
         ),
     })
 

@@ -39,6 +39,14 @@ from app.services.tz import msk_date_text, msk_midnight, msk_text
 
 
 REGISTRATION_STATS_SINCE = date(2026, 9, 19)
+
+# Тарифы, которые куратор видит в своей статистике (Александрия 24.10.2026:
+# «кураторы занимаются сопровождением именно на тарифе уверенный максимум…
+# тариф я с вами для них тоже должен быть виден»). «Я сам» куратор не ведёт.
+CURATOR_STATS_TARIFFS = (TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU)
+# У этих куратор в «По ученику» смотрит только сдачи: «факт отправки заданий
+# (дата и время)… количество дз». У «Уверенного максимума» — всё подробно.
+CURATOR_WORKS_ONLY_TARIFFS = (TARIFF_WITH_YOU,)
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -585,27 +593,86 @@ def _numbered_cycle_label(db: DBSession, cycle: LearningTopic) -> str:
     return f"{ordinal}. {label}"
 
 
+def _last_steps(db: DBSession, student_ids: list[int]) -> dict[int, str]:
+    """«На чём остановился» ученик (Александрия 24.10.2026: куратору «на чём
+    остановился ребёнок на платформе — чтобы сопоставлять с тем, что ребёнок
+    говорит в личке куратору»).
+
+    Из того, что платформа уже пишет: последнее открытое видео
+    (`VideoViewLog`) и последняя сданная работа (`TaskBlockSubmission`),
+    что позже. Журнала «открыл задание» нет, поэтому задание без сдачи сюда
+    не попадает. Ролик без строки каталога — «без названия».
+    """
+    from app.models.video_view_log import VideoViewLog
+
+    steps: dict[int, tuple[datetime, str]] = {}
+
+    def keep(user_id: int, at: datetime | None, text: str) -> None:
+        if at is None:
+            return
+        at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+        if user_id not in steps or at > steps[user_id][0]:
+            steps[user_id] = (at, text)
+
+    last_view = (
+        db.query(VideoViewLog.user_id, func.max(VideoViewLog.opened_at).label("at"))
+        .filter(VideoViewLog.user_id.in_(student_ids))
+        .group_by(VideoViewLog.user_id)
+        .subquery()
+    )
+    for user_id, at, title in (
+        db.query(VideoViewLog.user_id, VideoViewLog.opened_at, LearningVideo.title)
+        .join(last_view, (VideoViewLog.user_id == last_view.c.user_id)
+              & (VideoViewLog.opened_at == last_view.c.at))
+        .outerjoin(LearningVideo, LearningVideo.bunny_video_id == VideoViewLog.video_id)
+    ):
+        keep(user_id, at, f"открыто видео «{title or 'без названия'}»")
+
+    last_submission = (
+        db.query(TaskBlockSubmission.user_id, func.max(TaskBlockSubmission.submitted_at).label("at"))
+        .filter(TaskBlockSubmission.user_id.in_(student_ids), TaskBlockSubmission.submitted_at.isnot(None))
+        .group_by(TaskBlockSubmission.user_id)
+        .subquery()
+    )
+    for user_id, at, title in (
+        db.query(TaskBlockSubmission.user_id, TaskBlockSubmission.submitted_at, TrackerTask.title)
+        .join(last_submission, (TaskBlockSubmission.user_id == last_submission.c.user_id)
+              & (TaskBlockSubmission.submitted_at == last_submission.c.at))
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+    ):
+        keep(user_id, at, f"сдана работа в задании «{title}»")
+
+    return {user_id: f"{msk_text(at)} – {text}" for user_id, (at, text) in steps.items()}
+
+
 def get_student_activity_overview(
     db: DBSession, event_limit: int = 200, *, include_assignments: bool = False,
-    curator_id: int | None = None,
+    curator_id: int | None = None, tariffs: tuple[str, ...] | None = None,
 ) -> dict:
     """Return per-student lifecycle metrics and the append-only action journal.
 
     `curator_id` — «Ученики поимённо» куратора: только его ученики
     (`User.curator_id`, то же правило, что у его списка «Учеников»),
     Александрия 22.10.2026: «чтобы видели ситуацию только по своей группе».
+    `tariffs` — только эти тарифы (куратору — `CURATOR_STATS_TARIFFS`).
 
     С `include_assignments` ещё «Теория» (`videos` — видео-блоки), выбор
-    «месяц → цикл» (`months`) и уровень точки А у каждого ученика.
+    «месяц → цикл» (`months`), уровень точки А и «на чём остановился»
+    (`last_step`) у каждого ученика.
     """
     query = reportable_students_q(db)
     if curator_id is not None:
         query = query.filter(User.curator_id == curator_id)
+    if tariffs is not None:
+        query = query.filter(User.tariff.in_(tariffs))
     students = query.order_by(User.last_name, User.first_name, User.id).all()
     student_ids = [student.id for student in students]
+    curator_view = curator_id is not None
     if not student_ids:
         return {"students": [], "events": [], "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": [], "activity_days": {}}
+                "videos": [], "months": [], "tariffs": [], "activity_days": {},
+                "curator_view": curator_view}
 
     login_rows = (
         db.query(
@@ -697,7 +764,11 @@ def get_student_activity_overview(
     ]
     if not include_assignments:
         return {"students": overview, "events": journal, "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": [], "activity_days": {}}
+                "videos": [], "months": [], "tariffs": [], "activity_days": {},
+                "curator_view": curator_view}
+    last_steps = _last_steps(db, student_ids)
+    for row in overview:
+        row["last_step"] = last_steps.get(row["id"])
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
     # В выбор «месяц → цикл → задание» — только то, что положено хоть одному
@@ -736,7 +807,9 @@ def get_student_activity_overview(
             "scores": _assignment_scores(db, student_ids, assignments),
             "videos": shown_videos, "months": months,
             "tariffs": groups, "group_label": "Трек" if holiday else "Тариф",
-            "show_level": not holiday, "activity_days": activity_days}
+            "show_level": not holiday, "activity_days": activity_days,
+            "curator_view": curator_view,
+            "works_only_tariffs": list(CURATOR_WORKS_ONLY_TARIFFS) if curator_view else []}
 
 
 def _score_value(score) -> int | float:

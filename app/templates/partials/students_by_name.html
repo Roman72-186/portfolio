@@ -11,6 +11,11 @@
    кто посмотрел / сдал и когда. Сверху крупно «20 из 90 · 22%» и по тарифам,
    если тариф не выбран, — плитками `ss-stats-strip`, как «Баллы за задания».
 
+   У куратора (`curator_view`, Александрия 24.10.2026) карточка открывается
+   «По ученику»: у «Уверенного максимума» — время, «на чём остановился», видео
+   и работы, у тарифов из `works_only_tariffs` («Я с вами») — только работы с
+   датой и временем и счёт «сдано N из M».
+
    Странице нужны: `student_activity` (с `include_assignments=True`),
    superadmin_stats_ios.css и обёртка `.ios-ss`, copy.js. #}
 {% from "components/tg_copy.html" import tg_copy %}
@@ -82,7 +87,7 @@
                 <tbody>
                 {% for student in student_activity.students %}
                 {% set username = student.username if student.username.startswith('@') else '' %}
-                <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}">
+                <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}" data-student-last-step="{{ student.last_step or '' }}">
                     <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></td>
                     <td data-label="Статус" data-assignment-state>—</td>
                     <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
@@ -110,6 +115,8 @@
     const months = {{ (student_activity.months or []) | tojson }};
     // Секунды на платформе по дням: {ученик: {"2026-10-26": 1800}} — «По ученику».
     const activityDays = {{ (student_activity.activity_days or {}) | tojson }};
+    const curatorView = {{ 'true' if student_activity.curator_view else 'false' }};
+    const worksOnlyTariffs = {{ (student_activity.works_only_tariffs or []) | tojson }};
     const WORDS = {
         theory: { item: 'Видео', pick: 'Выберите видео', done: 'посмотрели', statuses: [
             ['all', 'Все'], ['submitted', 'Посмотрели'], ['missing', 'Не посмотрели'],
@@ -355,17 +362,27 @@
         return total;
     }
 
-    function studentLines(userId, cycles) {
+    function studentLines(row, cycles) {
+        const userId = Number(row.dataset.studentId);
         const ids = cycles.map(function (cycle) { return cycle.id; });
-        const lines = ['На платформе за период: ' + minutesText(secondsIn(userId, cycles))];
-        [['theory', 'Видео'], ['practice', 'Работы']].forEach(function (pair) {
+        // «Я с вами» у куратора — только сдачи (Александрия 24.10.2026).
+        const worksOnly = worksOnlyTariffs.indexOf(row.dataset.studentTariff) !== -1;
+        const lines = [];
+        if (!worksOnly) {
+            lines.push('На платформе за период: ' + minutesText(secondsIn(userId, cycles)));
+            lines.push('Последнее действие: ' + (row.dataset.studentLastStep || 'пока нет'));
+        }
+        (worksOnly ? [['practice', 'Работы']] : [['theory', 'Видео'], ['practice', 'Работы']]).forEach(function (pair) {
             const items = sources[pair[0]].filter(function (item) {
                 return ids.indexOf(item.topic_id || 0) !== -1 && item.eligible.indexOf(userId) !== -1;
             }).sort(function (a, b) {
                 return ids.indexOf(a.topic_id || 0) - ids.indexOf(b.topic_id || 0) || byOrder(a, b);
             });
             if (!items.length) return;
-            lines.push(pair[1] + ':');
+            const doneCount = items.filter(function (item) { return item.submitted.indexOf(userId) !== -1; }).length;
+            lines.push(pair[0] === 'practice'
+                ? pair[1] + ' – сдано ' + doneCount + ' из ' + items.length + ':'
+                : pair[1] + ':');
             items.forEach(function (item) {
                 const done = item.submitted.indexOf(userId) !== -1;
                 const when = item.done_at[userId];
@@ -401,7 +418,7 @@
             if (base) baseRows.push(row);
             const state = row.querySelector('[data-assignment-state]');
             if (mode === 'student') {
-                const lines = studentLines(userId, periodCycles());
+                const lines = studentLines(row, periodCycles());
                 studentLinesById.set(userId, lines);
                 renderStudentState(state, lines);
             } else if (item) {
@@ -460,6 +477,6 @@
         select.addEventListener('change', applyFilter);
     });
     searchInput.addEventListener('input', applyFilter);
-    setMode('all');
+    setMode(curatorView ? 'student' : 'all');
 })();
 </script>

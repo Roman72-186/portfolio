@@ -305,3 +305,88 @@ def test_students_by_name_has_student_mode(admin_client, db, user_factory):
 
     assert 'data-sbn-mode="student"' in html
     assert "const activityDays = {" in html
+
+
+# ── Кураторы, ответы Александрии 24.10.2026 ─────────────────────────────────
+
+def test_curator_overview_has_only_led_tariffs(db, user_factory):
+    """Куратор ведёт «Уверенный максимум» и «Я с вами» — «Я сам» ему не виден."""
+    from app.constants import TARIFF_WITH_YOU
+    from app.services.staff_dashboard import CURATOR_STATS_TARIFFS
+
+    curator = user_factory(vk_id=820_100, name="Curator", role_name="куратор")
+    rows = [user_factory(vk_id=820_101 + i, name=f"S{i}", tariff=tariff)
+            for i, tariff in enumerate((TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU, TARIFF_SELF))]
+    for row in rows:
+        row.curator_id = curator.id
+    db.commit()
+    _cycle_with_video(db)
+
+    overview = get_student_activity_overview(
+        db, include_assignments=True, curator_id=curator.id, tariffs=CURATOR_STATS_TARIFFS,
+    )
+
+    assert {row["id"] for row in overview["students"]} == {rows[0].id, rows[1].id}
+    assert overview["curator_view"] is True
+    assert overview["works_only_tariffs"] == [TARIFF_WITH_YOU]
+
+
+def test_last_step_is_latest_of_video_and_submission(db, user_factory):
+    """«На чём остановился» — что позже: открытое видео или сданная работа."""
+    from app.models.task_block import TaskBlockSubmission
+    from app.models.video_view_log import VideoViewLog
+
+    watcher = user_factory(vk_id=820_110, name="Watcher", tariff=TARIFF_CONFIDENT_MAX)
+    sender = user_factory(vk_id=820_111, name="Sender", tariff=TARIFF_CONFIDENT_MAX)
+    idle = user_factory(vk_id=820_112, name="Idle", tariff=TARIFF_CONFIDENT_MAX)
+    _stage, cycle, _block, upload = _cycle_with_video(db)
+    early = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    late = datetime(2026, 10, 21, 15, 30, tzinfo=timezone.utc)
+    db.add_all([
+        VideoViewLog(user_id=watcher.id, video_id=f"vid-{cycle.id}", opened_at=early),
+        VideoViewLog(user_id=watcher.id, video_id=f"vid-{cycle.id}", opened_at=late),
+        VideoViewLog(user_id=sender.id, video_id=f"vid-{cycle.id}", opened_at=early),
+        TaskBlockSubmission(block_id=upload.id, user_id=sender.id, submitted_at=late),
+    ])
+    db.commit()
+
+    rows = {row["id"]: row for row in get_student_activity_overview(db, include_assignments=True)["students"]}
+
+    assert rows[watcher.id]["last_step"] == "21.10.2026 в 18:30 – открыто видео «Перспектива»"
+    assert rows[sender.id]["last_step"] == "21.10.2026 в 18:30 – сдана работа в задании «Теория недели»"
+    assert rows[idle.id]["last_step"] is None
+
+
+def test_curator_page_opens_by_student_without_self_tariff(curator_client, db, user_factory):
+    client, curator = curator_client
+    led = user_factory(vk_id=820_120, name="Led", tariff=TARIFF_CONFIDENT_MAX)
+    led.last_name, led.first_name = "Ведомая", "Ученица"
+    alone = user_factory(vk_id=820_121, name="Alone", tariff=TARIFF_SELF)
+    alone.last_name, alone.first_name = "Сама", "Ученица"
+    led.curator_id = alone.curator_id = curator.id
+    db.commit()
+    _cycle_with_video(db)
+
+    html = client.get("/cabinet/curator/statistics").text
+
+    assert "Ведомая Ученица" in html
+    assert "Сама Ученица" not in html
+    assert "const curatorView = true;" in html
+    assert "setMode(curatorView ? 'student' : 'all');" in html
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="нужен node")
+def test_curator_card_script_parses(curator_client, db, user_factory, tmp_path):
+    client, curator = curator_client
+    led = user_factory(vk_id=820_130, name="Led", tariff=TARIFF_CONFIDENT_MAX)
+    led.curator_id = curator.id
+    db.commit()
+    _cycle_with_video(db)
+
+    html = client.get("/cabinet/curator/statistics").text
+    card = [s for s in re.findall(r"<script>(.*?)</script>", html, re.S) if "data-activity-portfolio" in s]
+    assert len(card) == 1
+    path = tmp_path / "card.js"
+    path.write_text(card[0], encoding="utf-8")
+    result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
