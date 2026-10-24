@@ -226,10 +226,10 @@ def test_sent_messages_never_remind(db, user_factory, session_factory, client):
     assert db.query(TaskBlockFeedbackMessage).filter_by(is_draft=True).count() == 0
 
 
-def test_close_opens_after_two_days_of_silence(db, user_factory, session_factory, client):
-    """Ученик не тратит вопросы — через двое суток после последнего сообщения
-    «Завершить ОС» всё равно появляется (владелец 22.10.2026). Двое суток
-    считаются от отправки, а не от черновика."""
+def test_close_opens_after_45_minutes_of_silence(db, user_factory, session_factory, client):
+    """Ученик не тратит вопросы — через 45 минут после последнего сообщения
+    «Завершить ОС» всё равно появляется (владелец 22.10.2026, срок сокращён
+    с двух суток 24.10.2026). Срок считается от отправки, а не от черновика."""
     from app.services.task_block_feedback import close_refusal
 
     curator, student, _task, submission = _setup_block(
@@ -243,9 +243,9 @@ def test_close_opens_after_two_days_of_silence(db, user_factory, session_factory
     feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
     db.refresh(feedback)
     now = datetime.now(timezone.utc)
-    refusal = close_refusal(db, submission, feedback, now=now + timedelta(hours=47))
+    refusal = close_refusal(db, submission, feedback, now=now + timedelta(minutes=44))
     assert "промолчит до" in refusal
-    assert close_refusal(db, submission, feedback, now=now + timedelta(hours=49)) is None
+    assert close_refusal(db, submission, feedback, now=now + timedelta(minutes=46)) is None
 
     # Вопрос без ответа держит диалог открытым, сколько бы ни прошло.
     _student_asks(client, session_factory, student, submission)
