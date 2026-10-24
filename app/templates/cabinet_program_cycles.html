@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=63">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -92,15 +92,19 @@
             <span>Группы</span>
             <div class="prg-blk-deadlines" data-c-tags>
                 <p class="prg-hint">Цикл увидят ученики с отмеченным тегом группы. Ничего не отмечено – цикл видят все ученики каникулярного набора.</p>
-                {% for tag in cycle_tag_choices %}
-                <label class="prg-field--row">
-                    <input type="checkbox" data-c-tag="{{ tag.id }}"
-                           aria-label="Цикл доступен группе {{ tag.name }}">
-                    <span>{{ tag.name }}</span>
-                </label>
+                {% if cycle_tag_choices %}
+                <div class="prg-tag-grid">
+                    {% for tag in cycle_tag_choices %}
+                    <label class="prg-field--row">
+                        <input type="checkbox" data-c-tag="{{ tag.id }}"
+                               aria-label="Цикл доступен группе {{ tag.name }}">
+                        <span>{{ tag.name }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
                 {% else %}
                 <p class="prg-hint">Тегов пока нет. Заведите тег группы на экране <a href="/cabinet/superadmin/tags">«Теги»</a>.</p>
-                {% endfor %}
+                {% endif %}
             </div>
         </div>
         {% else %}
@@ -144,13 +148,15 @@
             <span>Только ученикам с тегами</span>
             <div class="prg-blk-deadlines">
                 <p class="prg-hint">Цикл увидят только ученики с отмеченным тегом, тарифы выше тоже учитываются. Ничего не отмечено – тегом цикл не ограничен.</p>
-                {% for tag in cycle_tag_choices %}
-                <label class="prg-field--row">
-                    <input type="checkbox" data-c-tag="{{ tag.id }}"
-                           aria-label="Цикл только ученикам с тегом {{ tag.name }}">
-                    <span>{{ tag.name }}</span>
-                </label>
-                {% endfor %}
+                <div class="prg-tag-grid">
+                    {% for tag in cycle_tag_choices %}
+                    <label class="prg-field--row">
+                        <input type="checkbox" data-c-tag="{{ tag.id }}"
+                               aria-label="Цикл только ученикам с тегом {{ tag.name }}">
+                        <span>{{ tag.name }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
             </div>
         </div>
         {% endif %}
@@ -160,15 +166,19 @@
             <span>Скрыть от учеников с тегами</span>
             <div class="prg-blk-deadlines">
                 <p class="prg-hint">Ученик с отмеченным тегом цикл не увидит и должником по нему не станет.</p>
-                {% for tag in cycle_tag_choices %}
-                <label class="prg-field--row">
-                    <input type="checkbox" data-c-xtag="{{ tag.id }}"
-                           aria-label="Скрыть цикл от учеников с тегом {{ tag.name }}">
-                    <span>{{ tag.name }}</span>
-                </label>
+                {% if cycle_tag_choices %}
+                <div class="prg-tag-grid">
+                    {% for tag in cycle_tag_choices %}
+                    <label class="prg-field--row">
+                        <input type="checkbox" data-c-xtag="{{ tag.id }}"
+                               aria-label="Скрыть цикл от учеников с тегом {{ tag.name }}">
+                        <span>{{ tag.name }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
                 {% else %}
                 <p class="prg-hint">Тегов пока нет. Заведите тег на экране <a href="/cabinet/superadmin/tags">«Теги»</a>.</p>
-                {% endfor %}
+                {% endif %}
             </div>
         </div>
         <label class="prg-field prg-field--row">

@@ -250,3 +250,25 @@ def test_annual_cycle_form_saves_both_tag_lists_with_tariffs(admin_client, db):
     assert page.status_code == 200
     assert "Скрыть от учеников с тегами" in page.text
     assert "Только ученикам с тегами" in page.text
+
+
+def test_cycle_form_shows_only_tags_of_its_program(admin_client, db):
+    """Владелец 24.10.2026: в годовом курсе не показывать теги каникулярного
+    набора (группы, треки, классы), в каникулярном — теги годового."""
+    from tests.test_holiday_intake import _group_link
+
+    client, _ = admin_client
+    newcomer = _newcomer_tag(db)
+    link = _group_link(db, tag_name="АРХИпроба 1 трек")
+    grade = get_or_create_tag(db, "10 класс")
+    db.commit()
+
+    annual = client.get(CYCLES_PAGE + "?program=annual").text
+    assert f'data-c-tag="{newcomer.id}"' in annual
+    assert f'data-c-tag="{link.tag_id}"' not in annual
+    assert f'data-c-xtag="{grade.id}"' not in annual
+
+    holiday = client.get(CYCLES_PAGE + "?program=holiday").text
+    assert f'data-c-tag="{link.tag_id}"' in holiday
+    assert f'data-c-xtag="{grade.id}"' in holiday
+    assert f'data-c-tag="{newcomer.id}"' not in holiday

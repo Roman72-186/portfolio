@@ -936,6 +936,23 @@
    один шаблон и ни один скрипт к ним больше не обращались. */
 .prg-deadlines,
 .prg-blk-deadlines { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+/* Галочки тегов цикла — сетка карточек с обводкой (владелец 24.10.2026):
+   столбиком по одной на строку список из десятка тегов уезжал на экран вниз.
+   Отмеченная карточка подсвечена акцентом, чтобы выбор читался с одного
+   взгляда. */
+.prg-tag-grid {
+    display: grid; gap: var(--s-2);
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.prg-tag-grid > .prg-field--row {
+    padding: 0 var(--s-2);
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
+    cursor: pointer;
+}
+.prg-tag-grid > .prg-field--row:has(input:checked) {
+    border-color: var(--accent); background: var(--accent-soft);
+}
+.prg-tag-grid > .prg-field--row:focus-within { border-color: var(--accent); }
 .prg-deadline-row,
 .prg-blk-deadline {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);

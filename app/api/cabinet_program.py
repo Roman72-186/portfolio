@@ -207,7 +207,7 @@ from app.services.video_topics import (
     unpublish_topic,
     update_topic,
 )
-from app.services.tags import get_all_tags
+from app.services.tags import program_tags
 from app.tmpl import format_rich_text, templates
 
 router = APIRouter(prefix="/cabinet/staff/program")
@@ -1212,9 +1212,15 @@ def program_cycles(
          "cycle_tariffs": cycle_tariffs,
          "program": program,
          "program_switch": _program_switch(program, "/cabinet/staff/program/cycles"),
-         # Теги цикла — обеим программам: у каникулярной это группы, у
-         # годовой — сверх тарифов (24.10.2026, адаптация новичков).
-         "cycle_tag_choices": [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)],
+         # Теги цикла — обеим программам, каждой только свои (24.10.2026):
+         # у каникулярной группы, треки и классы, у годовой — остальные.
+         "cycle_tag_choices": [
+             {"id": tag.id, "name": tag.name}
+             for tag in program_tags(db, program, keep={
+                 tag["id"] for cycle in cycles
+                 for tag in cycle["tags"] + cycle["excluded_tags"]
+             })
+         ],
          "stage_filter": stage_filter,
          "period_filter": (
              {"id": period_topic.id, "label": cycle_label(db, period_topic)}

@@ -5,7 +5,8 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS, SCHOOL_GRADES, TARIFFS_CURRENT
+from app.constants import MOCK_SUBJECTS, PROGRAM_HOLIDAY, SCHOOL_GRADES, TARIFFS_CURRENT
+from app.models.intake_link import IntakeLink
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -189,6 +190,33 @@ def get_all_tags(db: DBSession) -> list[Tag]:
     """Видимые теги по имени — для выпадающих списков фильтров и адресации.
     Скрытые (`Tag.is_hidden`) сюда не попадают."""
     return db.query(Tag).filter(Tag.is_hidden == False).order_by(Tag.name).all()  # noqa: E712
+
+
+def holiday_tag_ids(db: DBSession) -> set[int]:
+    """Теги каникулярного набора: группы и треки (тег каникулярной ссылки
+    `IntakeLink`) и «Где учишься?» (`SCHOOL_GRADES`, `ensure_grade_tag`).
+    Остальные теги — годового курса."""
+    ids = {
+        tag_id for (tag_id,) in db.query(IntakeLink.tag_id).filter(
+            IntakeLink.program == PROGRAM_HOLIDAY, IntakeLink.tag_id.is_not(None)
+        )
+    }
+    grade_names = {name for _, name in SCHOOL_GRADES}
+    ids.update(tag_id for tag_id, in db.query(Tag.id).filter(Tag.name.in_(grade_names)))
+    return ids
+
+
+def program_tags(db: DBSession, program: str, *, keep: set[int] = frozenset()) -> list[Tag]:
+    """Видимые теги одной программы — для адресации цикла (владелец 24.10.2026:
+    «в годовом курсе не показывать теги каникуляров, и наоборот»). `keep` —
+    теги, уже стоящие на циклах экрана: они остаются в списке при любой
+    программе, иначе форма молча стёрла бы их при следующем сохранении."""
+    holiday = holiday_tag_ids(db)
+    want_holiday = program == PROGRAM_HOLIDAY
+    return [
+        tag for tag in get_all_tags(db)
+        if (tag.id in holiday) == want_holiday or tag.id in keep
+    ]
 
 
 def get_suggested_tags(db: DBSession) -> list[str]:
