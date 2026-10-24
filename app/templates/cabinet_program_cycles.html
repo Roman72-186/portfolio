@@ -138,7 +138,39 @@
                 {% endfor %}
             </div>
         </div>
+        {# Теги у годового цикла — сверх тарифов (школа 24.10.2026: цикл
+           адаптации видят только «Новенькие»). #}
+        <div class="prg-field">
+            <span>Только ученикам с тегами</span>
+            <div class="prg-blk-deadlines">
+                <p class="prg-hint">Цикл увидят только ученики с отмеченным тегом, тарифы выше тоже учитываются. Ничего не отмечено – тегом цикл не ограничен.</p>
+                {% for tag in cycle_tag_choices %}
+                <label class="prg-field--row">
+                    <input type="checkbox" data-c-tag="{{ tag.id }}"
+                           aria-label="Цикл только ученикам с тегом {{ tag.name }}">
+                    <span>{{ tag.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
         {% endif %}
+        {# Владелец 24.10.2026: недели 1–4 октября не видят «Новенькие».
+           Главнее «только ученикам с тегами» (`accessible_topic_ids`). #}
+        <div class="prg-field">
+            <span>Скрыть от учеников с тегами</span>
+            <div class="prg-blk-deadlines">
+                <p class="prg-hint">Ученик с отмеченным тегом цикл не увидит и должником по нему не станет.</p>
+                {% for tag in cycle_tag_choices %}
+                <label class="prg-field--row">
+                    <input type="checkbox" data-c-xtag="{{ tag.id }}"
+                           aria-label="Скрыть цикл от учеников с тегом {{ tag.name }}">
+                    <span>{{ tag.name }}</span>
+                </label>
+                {% else %}
+                <p class="prg-hint">Тегов пока нет. Заведите тег на экране <a href="/cabinet/superadmin/tags">«Теги»</a>.</p>
+                {% endfor %}
+            </div>
+        </div>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>
@@ -170,6 +202,7 @@
                 {% if cycle.stage_label %}<span class="prg-badge">{{ cycle.stage_label }}</span>{% endif %}
                 {% if cycle.tariff_access is not none %}<span class="prg-badge">Доступ по тарифам</span>{% endif %}
                 {% for tag in cycle.tags %}<span class="prg-badge">{{ tag.name }}</span>{% endfor %}
+                {% for tag in cycle.excluded_tags %}<span class="prg-badge">Скрыт от: {{ tag.name }}</span>{% endfor %}
                 <h3>{{ cycle.label }}</h3>
                 {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
@@ -252,6 +285,7 @@
     // Каникулярная программа: тегов групп вместо тарифов (созвон 13.10.2026).
     var holiday = form.getAttribute('data-program') === 'holiday';
     var tagBoxes = Array.prototype.slice.call(form.querySelectorAll('[data-c-tag]'));
+    var xtagBoxes = Array.prototype.slice.call(form.querySelectorAll('[data-c-xtag]'));
     var message = form.querySelector('[data-cycle-message]');
     var formTitle = form.querySelector('[data-cycle-form-title]');
     var resetBtn = form.querySelector('[data-cycle-reset]');
@@ -289,18 +323,19 @@
         });
     }
 
-    // `tags` — теги цикла [{id, name}], пусто — цикл для всех каникулярных.
-    function fillTags(tags) {
+    // `tags` — теги цикла [{id, name}], пусто — цикл для всех учеников программы.
+    // `attr` — «только с тегами» (`data-c-tag`) или «скрыть от» (`data-c-xtag`).
+    function fillTags(tags, boxes, attr) {
         var chosen = {};
         (tags || []).forEach(function (tag) { chosen[tag.id] = true; });
-        tagBoxes.forEach(function (box) {
-            box.checked = !!chosen[box.getAttribute('data-c-tag')];
+        (boxes || tagBoxes).forEach(function (box) {
+            box.checked = !!chosen[box.getAttribute(attr || 'data-c-tag')];
         });
     }
 
-    function collectTags() {
-        return tagBoxes.filter(function (box) { return box.checked; }).map(function (box) {
-            return Number(box.getAttribute('data-c-tag'));
+    function collectTags(boxes, attr) {
+        return (boxes || tagBoxes).filter(function (box) { return box.checked; }).map(function (box) {
+            return Number(box.getAttribute(attr || 'data-c-tag'));
         });
     }
 
@@ -316,6 +351,7 @@
         fields.locksNext.checked = true;
         fillTariffs(null);
         fillTags([]);
+        fillTags([], xtagBoxes, 'data-c-xtag');
         formTitle.textContent = 'Новый цикл';
         message.textContent = '';
     }
@@ -347,6 +383,7 @@
             fields.locksNext.checked = data.locks_next !== false;
             fillTariffs(data.tariff_access === undefined ? null : data.tariff_access);
             fillTags(data.tags);
+            fillTags(data.excluded_tags, xtagBoxes, 'data-c-xtag');
             // Заголовок формы повторяет текст кнопки: человек нажал «Название и
             // даты» и должен увидеть его же там, куда его перебросило (отзыв с
             // теста 15.09.2026 — «я не поняла, куда мне жать»).
@@ -439,9 +476,10 @@
             locks_next: fields.locksNext.checked,
             program: form.getAttribute('data-program')
         };
-        // У каникулярного цикла тарифов нет, у годового — тегов.
-        if (holiday) body.tag_ids = collectTags();
-        else body.tariff_access = tariffAccess;
+        // У каникулярного цикла тарифов нет; теги — у обеих программ (24.10.2026).
+        body.tag_ids = collectTags();
+        body.excluded_tag_ids = collectTags(xtagBoxes, 'data-c-xtag');
+        if (!holiday) body.tariff_access = tariffAccess;
         window.csrfFetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

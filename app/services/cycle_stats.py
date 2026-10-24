@@ -29,6 +29,7 @@ from app.services.tracker import cycle_bounds, cycle_label, missing_required_tas
 from app.services.tz import now_msk
 from app.services.video_topics import (
     get_assignee_ids,
+    get_excluded_tag_ids,
     get_tag_ids,
     get_topic_tariff_windows,
     saw_topic_period,
@@ -199,7 +200,8 @@ def _audience(
     (06.10.2026) — то же правило, что `accessible_topic_ids`. И ученик
     другой программы (годовой курс / каникулярный набор, созвон 13.10.2026),
     и, у цикла не «для всех», ученик без его тега или поимённого назначения
-    (каникулярные группы)."""
+    (каникулярные группы). И ученик с тегом из «скрыть от учеников с
+    тегами» (24.10.2026: «Новенькие» не должники недель 1–4 октября)."""
     windows = _tariff_windows(db, topic)
     opened_by = now_msk()
     program = topic_program(db, topic)
@@ -212,6 +214,13 @@ def _audience(
                 row[0] for row in
                 db.query(UserTag.user_id).filter(UserTag.tag_id.in_(tag_ids))
             )
+    excluded_tag_ids = get_excluded_tag_ids(db, topic.id)
+    excluded: set[int] = set()
+    if excluded_tag_ids:
+        excluded = {
+            row[0] for row in
+            db.query(UserTag.user_id).filter(UserTag.tag_id.in_(excluded_tag_ids))
+        }
 
     def tariff_saw(student: User) -> bool:
         if windows is None:
@@ -227,6 +236,7 @@ def _audience(
         if saw_topic_period(student.program_access_from, topic) and tariff_saw(student)
         and student.program == program
         and (addressed is None or student.id in addressed)
+        and student.id not in excluded
     ]
 
 

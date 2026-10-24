@@ -53,6 +53,7 @@ from app.services import telegram as telegram_service
 from app.services import vpn_keys as vpn_keys_service
 from app.services.user_management import (
     log_tariff_change, open_program_from_now, restore_deleted_user,
+    tag_annual_newcomer,
 )
 
 logger = logging.getLogger(__name__)
@@ -682,6 +683,8 @@ async def telegram_login_callback(
     # ставится (срок, тариф, программа, тег группы) — `apply_to_new_user`.
     if created:
         intake_link_service.apply_to_new_user(db, user, link)
+        # После ссылки: каникулярному по ссылке группы тег не нужен.
+        tag_annual_newcomer(db, user)
 
     db.commit()
     return _create_session_response(db, user, request)
@@ -1152,7 +1155,9 @@ async def _handle_telegram_new_start(
         await _send_membership_denied(chat_id)
         return
 
-    user, _created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
+    user, created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
+    if created:
+        tag_annual_newcomer(db, user)
     db.commit()
     await _confirm_telegram_connection(chat_id)
 

@@ -8,7 +8,9 @@ from sqlalchemy import delete, update
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
-from app.constants import REPORT_EXCLUDED_USER_IDS, tariffs_for_data
+from app.constants import (
+    ANNUAL_NEWCOMER_TAG, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, tariffs_for_data,
+)
 from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
@@ -31,6 +33,7 @@ from app.models.telegram_link_token import TelegramLinkToken
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work
+from app.services.tags import add_tag_to_user, get_or_create_tag
 from app.services.tz import msk_text
 
 STUDENT_RANK = 1
@@ -244,6 +247,27 @@ def open_program_from_now(user: User) -> None:
     ставит одна эта функция.
     """
     user.program_access_from = datetime.now(timezone.utc)
+
+
+def tag_annual_newcomer(db: DBSession, user: User) -> None:
+    """Тег «Новенькие» только что заведённому ученику годового курса.
+
+    Школа 24.10.2026: новички заходят в адаптационную неделю, им открыт
+    только её цикл, а недели 1–4 октября скрыты (иначе они с первого дня
+    должники и до адаптации не доходят). Какой цикл кому — решает тег в форме
+    цикла («только ученикам с тегами» / «скрыть от учеников с тегами»), а
+    ставится он здесь, сам, чтобы между входом и ручной отметкой новичок не
+    видел чужих недель (владелец 24.10.2026). Зовут только при заведении
+    ученика: вход через Telegram, бот `/start`, «Добавить ученика». Возврат
+    из удаления или архива тег не ставит — это не новичок. Каникулярному не
+    ставится: у него своя программа и свои теги.
+    """
+    if user.program == PROGRAM_HOLIDAY:
+        return
+    if user.id is None:
+        db.flush()
+    tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
+    add_tag_to_user(db, user.id, tag.id)
 
 
 def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) -> bool:

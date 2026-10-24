@@ -51,6 +51,7 @@ from app.models.task_block import (
 from app.models.learning_topic import (
     LearningTopic,
     LearningTopicAssignee,
+    LearningTopicExcludedTag,
     LearningTopicTag,
 )
 from app.models.guest_exam import (

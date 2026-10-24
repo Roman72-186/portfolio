@@ -192,12 +192,14 @@ from app.services.video_topics import (
     create_topic,
     delete_topic,
     get_assignee_ids,
+    get_excluded_tag_ids,
     get_tag_ids,
     get_topic,
     get_topic_tariff_windows,
     get_topic_tariffs,
     list_topics as list_week_topics,
     publish_topic,
+    set_topic_excluded_tags,
     set_topic_tags,
     set_topic_tariff_windows,
     set_topic_tariffs,
@@ -807,10 +809,15 @@ class CyclePayload(BaseModel):
     # программа цикла — по его этапу (`topic_program`); поле нужно, чтобы
     # цикл с каникулярного экрана не ушёл без этапа в годовой курс.
     program: Literal["annual", "holiday"] | None = None
-    # Теги групп у каникулярного цикла — вместо тарифов: «каждой группе свой
-    # цикл, доступ по тегам». Пусто — цикл видят все каникулярные ученики.
-    # Не прислано вовсе — адресацию не трогать, как `tariff_access`.
+    # «Только ученикам с тегами»: у каникулярного цикла — теги групп вместо
+    # тарифов («каждой группе свой цикл, доступ по тегам»), у годового —
+    # вместе с тарифами (школа 24.10.2026: цикл адаптации — «Новенькие»).
+    # Пусто — цикл видят все ученики программы. Не прислано вовсе —
+    # адресацию не трогать, как `tariff_access`.
     tag_ids: list[int] | None = Field(default=None, max_length=50)
+    # «Скрыть от учеников с тегами» (24.10.2026: недели 1–4 октября не видят
+    # «Новенькие»). Главнее `tag_ids`. Не прислано — не трогать.
+    excluded_tag_ids: list[int] | None = Field(default=None, max_length=50)
 
     @field_validator("title")
     @classmethod
@@ -950,13 +957,23 @@ def _cycle_program(
 
 
 def _apply_cycle_audience(
-    db: DBSession, topic: LearningTopic, payload: CyclePayload, windows, program: str
+    db: DBSession, topic: LearningTopic, payload: CyclePayload, windows, program: str,
+    *, moved: bool = False,
 ) -> None:
-    """Кому виден цикл (созвон 13.10.2026). Годовой — всем, сузить можно
-    только тарифом (`tariff_access`, 06.10.2026). Каникулярный — по тегам
-    групп: «каждой группе свой цикл, доступ по тегам, без тарифов»; тег не
-    выбран — всем каникулярным. Перенос цикла в другую программу снимает
-    адресацию прежней, иначе она держала бы его невидимым."""
+    """Кому виден цикл (созвон 13.10.2026). Каникулярный — по тегам групп:
+    «каждой группе свой цикл, доступ по тегам, без тарифов»; тег не выбран —
+    всем каникулярным. Перенос в каникулярную программу снимает тарифы,
+    иначе они держали бы цикл невидимым. Годовой сужается тарифом
+    (`tariff_access`, 06.10.2026) и с 24.10.2026 ещё тегами: «только
+    ученикам с тегами» (цикл адаптации новичков) — вместе с тарифом, как в
+    `accessible_topic_ids`. У обеих программ — «скрыть от учеников с
+    тегами» (недели 1–4 октября не видят «Новенькие»), оно главнее.
+
+    `moved` — цикл перенесли из другой программы. Теги групп каникулярного
+    в годовом держали бы цикл невидимым, поэтому без присланных тегов
+    адресация прежней программы снимается."""
+    if payload.excluded_tag_ids is not None:
+        set_topic_excluded_tags(db, topic, validate_tags(db, payload.excluded_tag_ids))
     if program == PROGRAM_HOLIDAY:
         if topic.tariff_restricted:
             set_topic_tariff_windows(db, topic, None)
@@ -967,9 +984,15 @@ def _apply_cycle_audience(
             tag_ids = get_tag_ids(db, topic.id)
         topic.assign_to_all = not tag_ids
         return
-    if get_tag_ids(db, topic.id):
-        set_topic_tags(db, topic, [])
-    topic.assign_to_all = True
+    if payload.tag_ids is not None:
+        tag_ids = validate_tags(db, payload.tag_ids)
+        set_topic_tags(db, topic, tag_ids)
+    elif moved:
+        tag_ids = []
+        set_topic_tags(db, topic, tag_ids)
+    else:
+        tag_ids = get_tag_ids(db, topic.id)
+    topic.assign_to_all = not tag_ids
     _apply_cycle_tariff_access(db, topic, payload, windows)
 
 
@@ -1096,15 +1119,23 @@ def _remember_program(response, program: str):
     return response
 
 
-def _cycle_tags(db: DBSession, topic: LearningTopic) -> list[dict]:
-    """Теги групп цикла для карточки и формы; у цикла «для всех» — пусто."""
-    if topic.assign_to_all:
-        return []
-    tag_ids = get_tag_ids(db, topic.id)
+def _tag_rows(db: DBSession, tag_ids: list[int]) -> list[dict]:
     if not tag_ids:
         return []
     names = dict(db.query(Tag.id, Tag.name).filter(Tag.id.in_(tag_ids)).all())
     return [{"id": tag_id, "name": names[tag_id]} for tag_id in tag_ids if tag_id in names]
+
+
+def _cycle_tags(db: DBSession, topic: LearningTopic) -> list[dict]:
+    """«Только ученикам с тегами» для карточки и формы; у цикла «для всех» — пусто."""
+    if topic.assign_to_all:
+        return []
+    return _tag_rows(db, get_tag_ids(db, topic.id))
+
+
+def _cycle_excluded_tags(db: DBSession, topic: LearningTopic) -> list[dict]:
+    """«Скрыть от учеников с тегами» для карточки и формы."""
+    return _tag_rows(db, get_excluded_tag_ids(db, topic.id))
 
 
 @router.get("/cycles", response_class=HTMLResponse)
@@ -1157,6 +1188,7 @@ def program_cycles(
             "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
             "tariff_access": _cycle_tariff_rows(db, topic),
             "tags": _cycle_tags(db, topic),
+            "excluded_tags": _cycle_excluded_tags(db, topic),
         }
         for topic in list_week_topics(db)
         if (stage_filter is None or topic.parent_id == stage_filter["id"])
@@ -1175,17 +1207,14 @@ def program_cycles(
     cycle_tariffs = tariff_choices(*(
         row["tariff"] for cycle in cycles for row in (cycle["tariff_access"] or [])
     ))
-    holiday = program == PROGRAM_HOLIDAY
     response = templates.TemplateResponse(request, "cabinet_program_cycles.html",
         {"request": request, "user": user, "cycles": cycles, "stages": stages,
          "cycle_tariffs": cycle_tariffs,
          "program": program,
          "program_switch": _program_switch(program, "/cabinet/staff/program/cycles"),
-         # Теги групп — только каникулярной программе: у годовой доступ по
-         # тарифам, и тег у её цикла никто бы не увидел в форме.
-         "cycle_tag_choices": (
-             [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)] if holiday else []
-         ),
+         # Теги цикла — обеим программам: у каникулярной это группы, у
+         # годовой — сверх тарифов (24.10.2026, адаптация новичков).
+         "cycle_tag_choices": [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)],
          "stage_filter": stage_filter,
          "period_filter": (
              {"id": period_topic.id, "label": cycle_label(db, period_topic)}
@@ -1627,6 +1656,7 @@ def update_program_cycle(
     tariff_windows = _cycle_tariff_windows(payload)
     stage = _resolve_stage(db, payload.stage_id)
     program = _cycle_program(db, payload, stage)
+    moved = topic_program(db, topic) != program
     update_topic(
         topic,
         title=payload.title,
@@ -1639,7 +1669,7 @@ def update_program_cycle(
         set_parent=True,
     )
     topic.locks_next = payload.locks_next
-    _apply_cycle_audience(db, topic, payload, tariff_windows, program)
+    _apply_cycle_audience(db, topic, payload, tariff_windows, program, moved=moved)
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
     else:

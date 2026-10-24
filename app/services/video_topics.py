@@ -18,6 +18,7 @@ from app.models.learning_topic import (
     TOPIC_KIND_WEEK,
     LearningTopic,
     LearningTopicAssignee,
+    LearningTopicExcludedTag,
     LearningTopicTag,
     LearningTopicTariff,
 )
@@ -83,7 +84,8 @@ def accessible_topic_ids(
     `upcoming_topic_ids`, своей копии адресации у неё нет.
 
     Тема открыта, если опубликована, наступил её `opens_at`, адресована
-    ученику (флагом «всем», пересечением тегов или поимённо), не скрыта по
+    ученику (флагом «всем», пересечением тегов или поимённо), не скрыта от
+    его тегов (`LearningTopicExcludedTag`, 24.10.2026), не скрыта по
     тарифу, не закончилась до его прихода (`ended_before_arrival_filter`) и
     стоит в его программе — годовой или каникулярной (`program_topic_filter`,
     созвон 13.10.2026). Это ученический контракт функции: тарифный фильтр здесь
@@ -101,6 +103,13 @@ def accessible_topic_ids(
     tagged_topic_ids = (
         db.query(LearningTopicTag.topic_id)
         .filter(LearningTopicTag.tag_id.in_(user_tag_ids))
+        .scalar_subquery()
+    )
+    # «Скрыть от учеников с тегами» (школа 24.10.2026: недели 1–4 октября не
+    # видят «Новенькие») — главнее адресации и поимённого назначения.
+    excluded_topic_ids = (
+        db.query(LearningTopicExcludedTag.topic_id)
+        .filter(LearningTopicExcludedTag.tag_id.in_(user_tag_ids))
         .scalar_subquery()
     )
     assigned_topic_ids = (
@@ -143,6 +152,7 @@ def accessible_topic_ids(
                 LearningTopic.id.in_(tagged_topic_ids),
                 LearningTopic.id.in_(assigned_topic_ids),
             ),
+            LearningTopic.id.notin_(excluded_topic_ids),
             or_(
                 LearningTopic.tariff_restricted.is_(False),
                 LearningTopic.id.in_(tariff_ok_topic_ids),
@@ -305,6 +315,7 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
             if window_opens is None or _aware(window_opens) <= now
         ]
         students = students.filter(User.tariff.in_(tariffs or ()))
+    students = _without_excluded_tags(students, get_excluded_tag_ids(db, topic_id))
 
     if topic.assign_to_all:
         return {row[0] for row in students.all()}
@@ -413,6 +424,34 @@ def get_tag_ids(db: Session, topic_id: int) -> list[int]:
         .all()
     )
     return [row[0] for row in rows]
+
+
+def set_topic_excluded_tags(db: Session, topic: LearningTopic, tag_ids: list[int]) -> None:
+    """Переписать «скрыть от учеников с тегами» целиком."""
+    db.query(LearningTopicExcludedTag).filter(
+        LearningTopicExcludedTag.topic_id == topic.id
+    ).delete(synchronize_session=False)
+    for tag_id in dict.fromkeys(tag_ids):
+        db.add(LearningTopicExcludedTag(topic_id=topic.id, tag_id=tag_id))
+    db.flush()
+
+
+def get_excluded_tag_ids(db: Session, topic_id: int) -> list[int]:
+    rows = (
+        db.query(LearningTopicExcludedTag.tag_id)
+        .filter(LearningTopicExcludedTag.topic_id == topic_id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def _without_excluded_tags(students, excluded_tag_ids: list[int]):
+    """Зеркало исключения из `accessible_topic_ids` для выборок учеников."""
+    if not excluded_tag_ids:
+        return students
+    return students.filter(User.id.notin_(
+        select(UserTag.user_id).where(UserTag.tag_id.in_(excluded_tag_ids))
+    ))
 
 
 def get_assignee_ids(db: Session, topic_id: int) -> list[int]:
@@ -559,6 +598,7 @@ def count_topic_audience(
     tariff_restricted: bool = False,
     tariffs: list[str] | None = None,
     program: str = PROGRAM_ANNUAL,
+    excluded_tag_ids: list[int] | None = None,
 ) -> int:
     """Сколько активных учеников реально получат тему.
 
@@ -593,6 +633,7 @@ def count_topic_audience(
         # `User.tariff.in_([])` на некоторых диалектах ведёт себя странно;
         # `in_(())` даёт заведомо ложное условие на любом бэкенде.
         students = students.filter(User.tariff.in_(tariff_values or ()))
+    students = _without_excluded_tags(students, excluded_tag_ids or [])
 
     if assign_to_all:
         return students.count()

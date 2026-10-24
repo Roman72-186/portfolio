@@ -155,6 +155,25 @@ class LearningTopicTag(Base):
     )
 
 
+class LearningTopicExcludedTag(Base):
+    """От кого тема скрыта по тегам (школа 24.10.2026: недели 1–4 октября не
+    видят новички адаптации). Исключение главнее адресации: тег стоит в обоих
+    списках — ученик тему не видит. Сопоставление строгое, по tag_id."""
+
+    __tablename__ = "learning_topic_excluded_tags"
+
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("learning_topics.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (
+        Index("ix_learning_topic_excluded_tags_tag", "tag_id"),
+    )
+
+
 class LearningTopicTariff(Base):
     """Каким тарифам видна тема, когда `tariff_restricted=True`.
 

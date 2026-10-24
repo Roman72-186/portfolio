@@ -21,6 +21,11 @@ PROGRAM_ANNUAL = "annual"
 PROGRAM_HOLIDAY = "holiday"
 PROGRAMS = (PROGRAM_ANNUAL, PROGRAM_HOLIDAY)
 PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный"}
+# Тег нового ученика годового курса (школа 24.10.2026: новички — только цикл
+# адаптации). Ставит при заведении `user_management.tag_annual_newcomer`;
+# цикл адресуют ему или скрывают от него в форме цикла. Тег заведён
+# миграцией 7a017de2a05c, имя менять только вместе с ней.
+ANNUAL_NEWCOMER_TAG = "Новенькие"
 # «Где учишься?» в анкете каникулярного набора (`User.school_grade`): варианты
 # школы 16.10.2026, код — в колонке, подпись — в форме и в имени тега
 # (`tags.ensure_grade_tag`). Порядок списка — порядок в выпадающем списке.

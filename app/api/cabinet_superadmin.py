@@ -1760,6 +1760,7 @@ from app.services.user_management import (
     log_curator_change,
     open_program_from_now,
     soft_delete_user,
+    tag_annual_newcomer,
     tariffs_in_use,
     toggle_user_active,
     unarchive_user,
@@ -2244,6 +2245,7 @@ def superadmin_create_student(
         open_program_from_now(student)
         db.add(student)
         db.flush()
+        tag_annual_newcomer(db, student)
         if curator_id_v is not None:
             log_curator_change(db, user["user_id"], student.id, None, curator_id_v)
     db.flush()
