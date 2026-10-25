@@ -488,6 +488,10 @@
 .sidebar-hard-filters-add {
     padding: 6px 16px 0; font-size: 12px;
 }
+/* Годовой / Каникулярный (26.10.2026): `.seg` из base.css на всю ширину колонки */
+.sidebar-program-switch { margin-bottom: 10px; }
+.sidebar-program-switch .seg { display: flex; width: 100%; box-sizing: border-box; }
+.sidebar-program-switch .seg-btn { flex: 1 1 0; padding: 8px 6px; text-align: center; text-decoration: none; }
 .sidebar-hard-filters-add summary {
     cursor: pointer; color: var(--muted); user-select: none;
     padding: 4px 0;

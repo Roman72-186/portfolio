@@ -2,7 +2,7 @@
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=14">
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=21">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=22">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -24,6 +24,11 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
     <div class="sidebar">
         <div class="sidebar-header">
             <h1 class="sidebar-title">{{ sidebar_title }}</h1>
+            {# Годовой / Каникулярный (владелец 26.10.2026) — общий партиал,
+               данные `report_scope.report_program_switch`. #}
+            {% if program_switch %}
+            <div class="sidebar-program-switch">{% include "partials/program_switch.html" %}</div>
+            {% endif %}
             <input type="text" class="sidebar-search" placeholder="{{ 'Имя, ник в Telegram или номер…' if is_admin_panel else 'Имя или номер ученика…' }}"
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
@@ -95,15 +100,16 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             {% endfor %}
         </div>
         {% endif %}
-        {# «Каникулярный набор» — и куратору: только его ученики (17.10.2026). #}
-        {% if not is_archive_view %}
+        {# Каникулярный набор — переключатель в шапке списка, не фильтр
+           (26.10.2026). Оба фильтра ниже — годового курса: каникулярный
+           список и так целиком, с незаполненной анкетой и сроком у всех. #}
+        {% if not is_archive_view and not is_holiday_view and is_admin_panel %}
         <div class="sidebar-hard-filters-add">
             <details>
                 <summary>Добавить фильтр</summary>
                 <div class="hard-filter-options">
                     {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">И те, кто не заполнил анкету</a>{% endif %}
-                    {% if is_admin_panel %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_access_deadline=1">Со сроком доступа</a>{% endif %}
-                    <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}program=holiday">Каникулярный набор</a>
+                    <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_access_deadline=1">Со сроком доступа</a>
                 </div>
             </details>
         </div>

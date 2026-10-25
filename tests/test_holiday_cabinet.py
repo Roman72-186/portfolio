@@ -430,6 +430,29 @@ def test_holiday_student_is_out_of_students_and_in_its_own_list(admin_client, db
     assert "Годовой Петя" not in own.text
 
 
+def test_students_screen_switches_programs_not_hides_them_in_filter(admin_client):
+    """Владелец 26.10.2026: каникулярных не нашли за «Добавить фильтр» — в
+    шапке списка переключатель «Годовой / Каникулярный», в меню фильтров
+    каникулярного пункта нет."""
+    client, _admin = admin_client
+    annual = client.get("/cabinet/students").text
+    assert 'class="sidebar-program-switch"' in annual
+    assert 'href="/cabinet/students?program=holiday"' in annual
+    assert 'aria-current="page">Годовой</a>' in annual
+    assert "program=holiday\">Каникулярный набор" not in annual
+
+    holiday = client.get("/cabinet/students?program=holiday&tab=statistics").text
+    assert 'aria-current="page">Каникулярный</a>' in holiday
+    assert 'href="/cabinet/students?program=annual&amp;tab=statistics"' in holiday
+    # Фильтры и тарифы годового курса каникулярному списку не нужны.
+    assert "Добавить фильтр" not in holiday
+    assert 'class="tariff-pills"' not in holiday
+    assert 'class="tariff-pills"' in annual
+
+    archive = client.get("/cabinet/archive").text
+    assert 'class="sidebar-program-switch"' not in archive
+
+
 def test_holiday_student_is_out_of_statistics_point_a_and_review(db, user_factory, admin_user):
     holiday = _holiday(db, user_factory)
     annual = user_factory(vk_id=300_004)

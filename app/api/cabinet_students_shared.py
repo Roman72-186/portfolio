@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
 from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.constants import EXAM_SUBJECT_HINTS, STUDY_MODES, STUDY_MODE_LABELS, tariff_choices
 from app.config import settings
@@ -48,6 +48,7 @@ from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.tariff_view import RETURN_COOKIE as TARIFF_VIEW_RETURN_COOKIE
 from app.services.notify import notify
 from app.services.access_state import access_open_clause
+from app.services.report_scope import report_program_switch
 from app.services.login_ips import distinct_ips_by_user, recent_logins_json
 from app.services.activity_stats import student_statistics
 from app.services.video_credit import credit_video_block, student_video_blocks
@@ -568,9 +569,24 @@ def _render_students_panel(
         holiday=holiday_b and not archived_b,
     )
 
+    # Переключатель «Годовой курс / Каникулярный курс» над списком (владелец
+    # 26.10.2026: ГП не нашла каникулярных за пунктом «Добавить фильтр»).
+    # Общий с «Оплатами» и статистикой (`report_scope.report_program_switch`).
+    # Архиву и аккаунту одного тарифа он не нужен: у каникулярных нет ни
+    # архива, ни тарифа — список был бы пустым. Подписи короче общих: колонка
+    # списка 250–280px, «Каникулярный курс» в половину не помещается.
+    program_switch = None
+    if not archived_b and not user.get("viewer_tariff"):
+        program_switch = report_program_switch(
+            request.url.path, PROGRAM_HOLIDAY if holiday_b else PROGRAM_ANNUAL,
+        )
+        short_labels = {PROGRAM_ANNUAL: "Годовой", PROGRAM_HOLIDAY: "Каникулярный"}
+        for option in program_switch["options"]:
+            option["label"] = short_labels[option["value"]]
+            if tab in ("tasks", "statistics"):
+                option["href"] += f"&tab={tab}"
+
     active_hard_filters: list[dict] = []
-    if holiday_b and not archived_b:
-        active_hard_filters.append({"key": "program", "label": "Каникулярный набор"})
     if show_hidden_b:
         active_hard_filters.append({"key": "show_hidden", "label": "Включая не заполнивших анкету"})
     if has_access_deadline_b:
@@ -673,7 +689,8 @@ def _render_students_panel(
         "months": MONTHS,
         # Аккаунту одного тарифа кнопки тарифов не нужны: в списке он один.
         "tariffs": TARIFFS_CURRENT,
-        "show_tariff_pills": not user.get("viewer_tariff"),
+        # Каникулярному списку тоже: тарифа у набора нет, любая кнопка — пусто.
+        "show_tariff_pills": not user.get("viewer_tariff") and not holiday_b,
         # Вошёл кнопкой из кабинета куратора — кнопка обратно
         # (`services/tariff_view.py`); кука проверяется на выходе.
         "tariff_view_return": bool(
@@ -687,6 +704,8 @@ def _render_students_panel(
         "enrollment_years": enrollment_years,
         "has_missing_enrollment_year": has_missing_enrollment_year,
         "active_hard_filters": active_hard_filters,
+        "program_switch": program_switch,
+        "is_holiday_view": holiday_b and not archived_b,
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
         "is_archive_view": archived_b,
