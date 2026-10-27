@@ -126,3 +126,25 @@ def test_embed_not_found_for_unassigned_topic(auth_client, db, monkeypatch):
 
     assert resp.status_code == 404
     assert resp.json()["error"] == "not_found"
+
+
+def test_embed_in_impersonation_does_not_log_a_view(client, db, monkeypatch, user_factory):
+    """Вход «глазами»: сотрудник открыл ролик в кабинете ученика — это не
+    просмотр ученика (27.10.2026: такое открытие 19.10 стояло у Захаровой
+    «последним действием»)."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.session import Session as DbSession
+
+    _configure_bunny(monkeypatch)
+    admin = user_factory(vk_id=870_001, role_name="суперадмин")
+    student = user_factory(vk_id=870_002)
+    video = _video_open_to_all(db, student.id)
+    view = DbSession(user_id=student.id, impersonated_by_id=admin.id,
+                     expires_at=datetime.now(timezone.utc) + timedelta(minutes=30))
+    db.add(view)
+    db.commit()
+    client.cookies.set("session_id", view.id)
+
+    assert client.get(f"/cabinet/videos/{video.id}/embed").status_code == 200
+    assert db.query(VideoViewLog).filter(VideoViewLog.user_id == student.id).count() == 0

@@ -362,7 +362,8 @@ def cabinet_video_by_id(
     if video is None:
         return _not_found(request, user)
     try:
-        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id,
+                       impersonated=bool(user.get("impersonated_by_id")))
     except SQLAlchemyError:
         logger.exception("Video view log failed for user_id=%s", user["user_id"])
         db.rollback()
@@ -396,7 +397,8 @@ def cabinet_video_embed(
     if video is None:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     try:
-        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id,
+                       impersonated=bool(user.get("impersonated_by_id")))
     except SQLAlchemyError:
         logger.exception("Video view log failed for user_id=%s", user["user_id"])
         db.rollback()

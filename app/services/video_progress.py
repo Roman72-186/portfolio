@@ -20,13 +20,19 @@ from app.models.video_view_log import VideoViewLog
 from app.models.video_watch_segment import VideoWatchSegment
 
 
-def log_video_view(db: DBSession, *, user_id: int, video_id: str) -> None:
+def log_video_view(db: DBSession, *, user_id: int, video_id: str, impersonated: bool = False) -> None:
     """Insert-only отметка «открыл плеер» — источник счётчика возвратов.
 
     Пишется на каждое открытие страницы, включая первое: «сколько раз
     возвращался» читатель считает как `count - 1`, а «когда именно» видно по
     `opened_at`, чего не даёт счётчик поверх VideoProgress.
+
+    Вход «глазами» (`impersonated_by_id`) не пишется: сотрудник открыл ролик
+    в кабинете ученика — это не ученик смотрел. До 27.10.2026 такие открытия
+    попадали в «На чём остановился» и «Просмотр видео».
     """
+    if impersonated:
+        return
     db.add(VideoViewLog(user_id=user_id, video_id=video_id))
     db.commit()
 
