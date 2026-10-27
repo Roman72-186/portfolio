@@ -121,3 +121,20 @@ def test_activity_page_shows_report_only_for_annual_course(admin_client, db, use
 
     assert "Отчёт месяца по тарифам" in annual and "data-tf-month" in annual
     assert "Отчёт месяца по тарифам" not in holiday
+
+
+def test_activity_page_tiles_first_and_all_cards_closed(admin_client, db, user_factory):
+    """Владелец 27.10.2026: «все вкладки должны быть закрыты… цифры должны быть
+    сверху всегда». До этого первым шёл раскрытый отчёт по тарифам, а плитки —
+    под ним."""
+    import re
+
+    client, _ = admin_client
+    _student(user_factory, db, 840_040, "Сам", TARIFF_SELF, datetime.now(timezone.utc))
+
+    html = client.get("/cabinet/superadmin/activity").text
+    students = html[html.index('id="actPanelStudents"'):html.index('id="actPanelCurators"')]
+
+    assert students.index("Заходили за 7 дней") < students.index("<details")
+    assert "data-tariff-flow" in students
+    assert not re.search(r"<details[^>]*\sopen[\s>]", html)

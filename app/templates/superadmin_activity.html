@@ -163,12 +163,35 @@
     {# ═══════════════ Ученики ═══════════════ #}
     <div id="actPanelStudents">
 
+    {# Плитки входов и онбординга — первыми на вкладке, над всеми карточками
+       (владелец 27.10.2026: «цифры должны быть сверху всегда»). До этого
+       над ними стоял раскрытый «Отчёт месяца по тарифам». #}
+    <div class="ss-stats-strip">
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 7 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 30 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
+        </div>
+    </div>
+
     {# Отчёт месяца по тарифам (Александрия 22.10.2026): кто пришёл, ушёл,
        перешёл — `activity_stats.get_month_tariff_flow`, правила подсчёта в её
        докстринге. Только годовой курс. Все месяцы уже в разметке, выбор
        месяца только показывает свой блок. #}
     {% if tariff_flow and tariff_flow.months %}
-    <details class="ss-acc" data-tariff-flow open>
+    {# Свёрнут, как все карточки страницы (владелец 03.10 и 27.10.2026). #}
+    <details class="ss-acc" data-tariff-flow>
         <summary><h2 class="ss-acc-title">Отчёт месяца по тарифам</h2><span class="ss-acc-badge">с июля 2026</span></summary>
         <div class="ss-acc-body">
             <div class="ss-filters">
@@ -240,26 +263,6 @@
     })();
     </script>
     {% endif %}
-
-    <!-- Плитки: входы + онбординг -->
-    <div class="ss-stats-strip">
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 7 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 30 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
-        </div>
-    </div>
 
     {# Каникулярный набор поимённо (владелец 19.10.2026: «кто вошёл, по каким
        трекам, что купил, на каком месте находятся… сдал, не сдал») —
