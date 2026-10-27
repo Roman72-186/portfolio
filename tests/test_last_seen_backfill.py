@@ -20,7 +20,10 @@ def _engine():
         conn.exec_driver_sql("CREATE TABLE user_activity_days (id INTEGER PRIMARY KEY, first_seen_at DATETIME)")
         conn.exec_driver_sql(
             "CREATE TABLE sessions (id INTEGER PRIMARY KEY, user_id INTEGER, expires_at DATETIME,"
-            " impersonated_by_id INTEGER)")
+            " created_at DATETIME, impersonated_by_id INTEGER)")
+        conn.exec_driver_sql(
+            "CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, action VARCHAR(50), target_user_id INTEGER,"
+            " created_at DATETIME)")
         conn.exec_driver_sql("CREATE TABLE video_view_logs (id INTEGER PRIMARY KEY, user_id INTEGER, opened_at DATETIME)")
         conn.exec_driver_sql(
             "CREATE TABLE task_block_submissions (id INTEGER PRIMARY KEY, user_id INTEGER, submitted_at DATETIME)")
@@ -45,15 +48,19 @@ def _seen(engine):
                 for row in conn.exec_driver_sql("SELECT id, last_seen_at FROM users")}
 
 
-def test_raises_stale_date_to_last_real_action_before_first_ping():
+def test_raises_stale_date_to_last_real_action_before_first_ping(monkeypatch):
+    from app.config import settings
+
+    # Срок сессии как на проде 27.10.2026 — 14 дней, а не 24 часа.
+    monkeypatch.setattr(settings, "session_ttl_hours", 336)
     engine = _engine()
     with engine.begin() as conn:
         conn.exec_driver_sql(f"INSERT INTO user_activity_days (first_seen_at) VALUES ('{FIRST_PING}')")
         conn.exec_driver_sql(
             "INSERT INTO users VALUES (1, '2026-10-11 09:00:00'), (2, '2026-10-12 09:00:00'),"
             " (3, '2026-10-25 08:00:00'), (4, NULL), (5, '2026-10-12 09:00:00')")
-        # 1: сессия продлена 20.10 в 18:00 — истекает 21.10 в 18:00.
-        conn.exec_driver_sql("INSERT INTO sessions (user_id, expires_at) VALUES (1, '2026-10-21 18:00:00')")
+        # 1: последний запрос 20.10 в 18:00 — сессия истекает через 14 дней.
+        conn.exec_driver_sql("INSERT INTO sessions (user_id, expires_at) VALUES (1, '2026-11-03 18:00:00')")
         # 2: сдал работу 22.10, видео открыл 19.10.
         conn.exec_driver_sql("INSERT INTO task_block_submissions (user_id, submitted_at) VALUES (2, '2026-10-22 15:30:00')")
         conn.exec_driver_sql("INSERT INTO video_view_logs (user_id, opened_at) VALUES (2, '2026-10-19 10:00:00')")
@@ -63,8 +70,18 @@ def test_raises_stale_date_to_last_real_action_before_first_ping():
         conn.exec_driver_sql("INSERT INTO video_view_logs (user_id, opened_at) VALUES (4, '2026-10-18 07:00:00')")
         # 5: сессия «глазами» и действия после первого пинга не считаются.
         conn.exec_driver_sql(
-            "INSERT INTO sessions (user_id, expires_at, impersonated_by_id) VALUES (5, '2026-10-23 10:00:00', 3)")
+            "INSERT INTO sessions (user_id, expires_at, impersonated_by_id) VALUES (5, '2026-11-05 10:00:00', 3)")
         conn.exec_driver_sql("INSERT INTO task_block_submissions (user_id, submitted_at) VALUES (5, '2026-10-26 10:00:00')")
+        # 2: видео 23.10 открыл сотрудник «глазами» — окно 23.10 09:00–09:30.
+        conn.exec_driver_sql(
+            "INSERT INTO sessions (user_id, created_at, expires_at, impersonated_by_id)"
+            " VALUES (2, '2026-10-23 09:00:00', '2026-10-23 09:30:00', 3)")
+        conn.exec_driver_sql("INSERT INTO video_view_logs (user_id, opened_at) VALUES (2, '2026-10-23 09:05:00')")
+        # 2: и ещё раз 23.10 в 20:00 — сессии уже нет, окно — по журналу.
+        conn.exec_driver_sql(
+            "INSERT INTO audit_logs (action, target_user_id, created_at) VALUES"
+            " ('impersonate_start', 2, '2026-10-23 20:00:00'), ('impersonate_stop', 2, '2026-10-23 20:00:20')")
+        conn.exec_driver_sql("INSERT INTO video_view_logs (user_id, opened_at) VALUES (2, '2026-10-23 20:00:05')")
 
     _run(engine)
 
