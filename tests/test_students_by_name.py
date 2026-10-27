@@ -408,7 +408,7 @@ def _cycle_with_link(db):
     return stage, cycle, link
 
 
-def test_meetings_mode_lists_who_pressed_link_with_date(db, user_factory):
+def test_meetings_mode_lists_who_pressed_link_without_time(db, user_factory):
     from app.models.activity_event import StudentActivityEvent
     from app.services.meeting_joins import EVENT_MEETING_JOIN
 
@@ -431,7 +431,9 @@ def test_meetings_mode_lists_who_pressed_link_with_date(db, user_factory):
     assert item["submitted"] == [pressed.id]
     assert item["pending"] == [missed.id]
     assert item["notes"] == {pressed.id: "Нажимал", missed.id: "Не нажимал"}
-    assert item["done_at"] == {pressed.id: "27.10.2026 в 19:05"}
+    # Время нажатия не показываем (владелец 27.10.2026), ленты действий — тоже.
+    assert item["done_at"] == {}
+    assert overview["events"] == []
     # Ссылка — не работа и не видео.
     assert link.id not in [i["id"] for i in overview["assignments"] + overview["videos"]]
 

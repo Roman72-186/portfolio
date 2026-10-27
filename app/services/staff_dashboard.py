@@ -23,7 +23,7 @@ from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
-from app.services.meeting_joins import link_opens
+from app.services.meeting_joins import EVENT_MEETING_JOIN, link_opens
 from app.services.point_a import student_point_a_level
 from app.services.presence import daily_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
@@ -353,7 +353,8 @@ def _assignment_activity(
     (владелец 27.10.2026: «выбираем кнопку… фильтр нажимал или не нажимал»).
     «Нажимал» — запись о переходе (`meeting_joins.link_opens`), а не
     `TaskBlockState`: у ссылки своего «сделано» нет. Это «открыл ссылку», а не
-    «был на занятии». Срока нет — все ненажавшие в `pending`.
+    «был на занятии». Срока нет — все ненажавшие в `pending`. Времени нажатия
+    нет ни в подписи, ни в `done_at` (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
 
     У каждого задания ещё `topic_id` (цикл — для выбора «месяц → цикл») и
     `done_at` — когда сдал или посмотрел, по Москве.
@@ -460,7 +461,6 @@ def _assignment_activity(
                     notes[uid] = "Не нажимал"
                 else:
                     submitted.append(uid)
-                    done_at[uid] = msk_text(opened_at)
                     notes[uid] = "Нажимал"
                 continue
             tariff = learners[uid].tariff
@@ -741,7 +741,12 @@ def get_student_activity_overview(
     events = (
         db.query(StudentActivityEvent, User)
         .join(User, StudentActivityEvent.user_id == User.id)
-        .filter(StudentActivityEvent.user_id.in_(student_ids))
+        .filter(
+            StudentActivityEvent.user_id.in_(student_ids),
+            # Нажатия ссылок занятий в ленту не идут: у строки ленты есть
+            # время, а время нажатия не показываем (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
+            StudentActivityEvent.event_type != EVENT_MEETING_JOIN,
+        )
         .order_by(StudentActivityEvent.created_at.desc(), StudentActivityEvent.id.desc())
         .limit(event_limit)
         .all()

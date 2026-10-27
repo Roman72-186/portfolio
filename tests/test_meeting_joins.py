@@ -123,7 +123,9 @@ def test_impersonation_is_not_recorded(client, db, user_factory, session_factory
     assert _joins(db, student.id) == []
 
 
-def test_card_statistics_lists_joins_and_feed_names_event(db, user_factory):
+def test_card_statistics_lists_joins_without_time(db, user_factory):
+    """Владелец 27.10.2026: «время нажатия вообще нужно убрать» — ни в
+    списке «Занятий», ни в ленте «Последних событий» (у её строки есть время)."""
     student = user_factory(vk_id=470_007, name="Ученик", role_name="ученик")
     event = _event(db, student.id, title="Разбор композиции")
     db.add(StudentActivityEvent(
@@ -135,11 +137,9 @@ def test_card_statistics_lists_joins_and_feed_names_event(db, user_factory):
 
     assert data["meetings"]["recent"] == 1
     [join] = data["meetings"]["joins"]
+    assert join == {"event": join["event"]}
     assert join["event"].startswith("Разбор композиции · ")
-    assert join["joined_at"]
-    [item] = data["feed"]
-    assert item["label"] == "Открыл ссылку занятия"
-    assert item["details"].startswith("Разбор композиции · ")
+    assert data["feed"] == []
 
 
 def test_deleted_event_keeps_join_with_placeholder(db, user_factory):
@@ -212,10 +212,8 @@ def test_link_block_open_is_recorded_once_and_shown_in_card(auth_client, db):
     data = student_activity(db, student, today=today_msk())
     assert data["meetings"]["recent"] == 1
     [join] = data["meetings"]["joins"]
-    assert join["event"] == "Подключение к занятию · Занятие 18.10"
-    [item] = data["feed"]
-    assert item["label"] == "Открыл ссылку занятия"
-    assert item["details"] == "Подключение к занятию · Занятие 18.10"
+    assert join == {"event": "Подключение к занятию · Занятие 18.10"}
+    assert data["feed"] == []
 
 
 def test_locked_link_block_is_not_recorded(auth_client, db):
@@ -255,3 +253,15 @@ def test_deleted_link_block_keeps_join_with_placeholder(db, user_factory):
     [join] = student_activity(db, student, today=today_msk())["meetings"]["joins"]
 
     assert join["event"] == "ссылка удалена из задания"
+
+
+def test_school_top_does_not_take_last_time_from_join(db, user_factory):
+    """«Самые активные» — колонка «Последнее» не берёт время нажатия ссылки
+    (владелец 27.10.2026)."""
+    student = user_factory(vk_id=470_013, name="Ученик", role_name="ученик")
+    db.add(StudentActivityEvent(user_id=student.id, event_type=EVENT_MEETING_JOIN, details="block:1"))
+    db.commit()
+
+    [row] = [r for r in get_student_event_stats(db)["top"] if r["student_name"]]
+
+    assert row["last_at"] is None
