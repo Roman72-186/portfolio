@@ -111,6 +111,14 @@
                         {% endfor %}
                     </select>
                 </label>
+                {# Смена тарифа — исправление ошибки, а не переход: отчёт месяца её
+                   переходом не считает (Александрия 26.10.2026). #}
+                <label class="uc-full">
+                    <span class="uc-checkbox">
+                        <input type="checkbox" name="tariff_correction" value="1">
+                        Смена тарифа — исправление ошибки, не переход (в отчёте месяца не будет переходом)
+                    </span>
+                </label>
                 <label>
                     Куратор
                     <select name="curator_id" class="form-select">

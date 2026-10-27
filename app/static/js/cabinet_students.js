@@ -1198,9 +1198,14 @@ function buildManage(s) {
     html += manageField('Куратор',
         '<select class="profile-edit-select" id="manage-curator" onchange="saveCurator(this)"' + dis + '>'
         + manageOptions(curators, m.curator_id || '') + '</select>');
+    // Галочка — до выбора тарифа: список сохраняет сразу (Александрия
+    // 26.10.2026, исправление не должно попадать в переходы отчёта месяца).
     html += manageField('Тариф',
         '<select class="profile-edit-select" id="manage-tariff" onchange="saveTariff(this)"' + dis + '>'
-        + manageOptions(tariffs, m.tariff || '__NONE__') + '</select>');
+        + manageOptions(tariffs, m.tariff || '__NONE__') + '</select>'
+        + '<label class="manage-check"><input type="checkbox" id="manage-tariff-correction"' + dis + '>'
+        + '<span>Исправление ошибки, не переход</span></label>',
+        false, 'Отметьте до смены тарифа – в отчёте месяца она не будет переходом');
     html += manageField('Метка набора',
         '<select class="profile-edit-select" id="manage-cohort" onchange="saveCohort(this)"' + dis + '>'
         + manageOptions(cohorts, s.cohort_tag || '') + '</select>');
@@ -1408,7 +1413,9 @@ function saveCurator(sel) {
 }
 
 function saveTariff(sel) {
-    manageSave('tariff', {tariff: sel.value}, 'Тариф сохранён', 'Не удалось сменить тариф');
+    var correction = document.getElementById('manage-tariff-correction');
+    manageSave('tariff', {tariff: sel.value, correction: correction && correction.checked ? '1' : ''},
+        'Тариф сохранён', 'Не удалось сменить тариф');
 }
 
 function saveCohort(sel) {

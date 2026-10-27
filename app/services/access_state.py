@@ -42,6 +42,17 @@ def access_expired(user: User, now: datetime | None = None) -> bool:
     return False
 
 
+def access_left_at(user: User, now: datetime) -> datetime | None:
+    """Когда ученик ушёл с курса сроком доступа: `access_until`, если он
+    поставлен и наступил, иначе None. Уходящим школа закрывает доступ сроком
+    (владелец 16.10.2026) — одно правило на «Оплаты» (`payment_board.has_left`)
+    и отчёт месяца по тарифам (`activity_stats.get_month_tariff_flow`)."""
+    if user.access_until is None:
+        return None
+    until = _as_utc(user.access_until)
+    return until if until <= now else None
+
+
 def not_left_clause(now: datetime):
     """Не ушёл с курса: срок доступа (`access_until`) пуст или ещё впереди.
     Оплаченный срок не смотрит — должник с закрытым за неоплату кабинетом

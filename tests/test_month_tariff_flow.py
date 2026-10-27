@@ -138,3 +138,102 @@ def test_activity_page_tiles_first_and_all_cards_closed(admin_client, db, user_f
     assert students.index("Заходили за 7 дней") < students.index("<details")
     assert "data-tariff-flow" in students
     assert not re.search(r"<details[^>]*\sopen[\s>]", html)
+
+
+# ── Правки Александрии 26.10.2026 ──────────────────────────────────────────
+
+
+def test_left_by_reached_access_deadline(db, user_factory):
+    """Уходящим школа закрывает доступ сроком (`access_state.access_left_at`):
+    без этого отчёт видел одного ушедшего из шести."""
+    left = _student(user_factory, db, 840_050, "Срок", TARIFF_WITH_YOU, _at(7, 15))
+    left.access_until = _at(10, 9)
+    later = _student(user_factory, db, 840_051, "Срок впереди", TARIFF_SELF, _at(7, 15))
+    later.access_until = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    db.commit()
+
+    october = _month(get_month_tariff_flow(db, now=NOW), "2026-10")
+
+    assert [(row["name"], row["at"]) for row in october["left_rows"]] == [("Срок", "09.10.2026")]
+    assert october["end"] == 1
+
+
+def test_back_and_forth_in_month_is_not_a_switch(db, user_factory):
+    student = _student(user_factory, db, 840_052, "Туда-обратно", TARIFF_WITH_YOU, _at(7, 15))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_WITH_YOU} → {TARIFF_SELF}", _at(10, 13))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_SELF} → {TARIFF_WITH_YOU}",
+         datetime(2026, 10, 13, 13, tzinfo=timezone.utc))
+
+    october = _month(get_month_tariff_flow(db, now=NOW), "2026-10")
+
+    assert october["switched"] == 0 and october["pairs"] == []
+
+
+def test_several_switches_in_month_collapse_to_one(db, user_factory):
+    student = _student(user_factory, db, 840_053, "Два шага", TARIFF_SELF, _at(7, 15))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_SELF} → {TARIFF_WITH_YOU}", _at(10, 3))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_WITH_YOU} → {TARIFF_CONFIDENT_MAX}", _at(10, 10))
+
+    october = _month(get_month_tariff_flow(db, now=NOW), "2026-10")
+
+    assert october["pairs"] == [{"from": "Я сам", "to": "Уверенный максимум", "count": 1}]
+    assert october["switch_rows"][0]["at"] == "10.10.2026"
+
+
+def test_switched_and_left_in_same_month_counts_only_as_left(db, user_factory):
+    """Смирнова: перевели на «Я сам», а она ушла — только в «Ушли»."""
+    student = _student(user_factory, db, 840_054, "Ушла", TARIFF_SELF, _at(7, 15))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_WITH_YOU} → {TARIFF_SELF}", _at(10, 5))
+    student.access_until = _at(10, 15)
+    db.commit()
+
+    october = _month(get_month_tariff_flow(db, now=NOW), "2026-10")
+
+    assert october["switched"] == 0
+    assert [(row["name"], row["tariff"]) for row in october["left_rows"]] == [("Ушла", "Я сам")]
+
+
+def test_correction_is_not_a_switch_and_fixes_arrival_tariff(db, user_factory):
+    """Ученик по ошибке выбрал «Я с вами», школа поправила на «Уверенный
+    максимум» с пометкой «исправление»: пришёл сразу на УМ, перехода нет."""
+    student = _student(user_factory, db, 840_055, "Исправили", TARIFF_CONFIDENT_MAX, _at(9, 20))
+    _log(db, student, "tariff_change",
+         f"tariff: {TARIFF_WITH_YOU} → {TARIFF_CONFIDENT_MAX} (исправление)", _at(10, 13))
+
+    flow = get_month_tariff_flow(db, now=NOW)
+    september, october = _month(flow, "2026-09"), _month(flow, "2026-10")
+
+    assert [(row["name"], row["tariff"]) for row in september["came_rows"]] == [("Исправили", "Уверенный максимум")]
+    assert _by_label(october)["Уверенный максимум"]["start"] == 1
+    assert october["switched"] == 0
+
+
+def test_correction_after_real_switch_rewrites_only_that_switch(db, user_factory):
+    student = _student(user_factory, db, 840_056, "Перешёл и поправили", TARIFF_CONFIDENT_MAX, _at(7, 15))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_SELF} → {TARIFF_WITH_YOU}", _at(9, 10))
+    _log(db, student, "tariff_change",
+         f"tariff: {TARIFF_WITH_YOU} → {TARIFF_CONFIDENT_MAX} (срок доступа снят) (исправление)", _at(10, 2))
+
+    flow = get_month_tariff_flow(db, now=NOW)
+
+    assert _month(flow, "2026-09")["pairs"] == [{"from": "Я сам", "to": "Уверенный максимум", "count": 1}]
+    assert _month(flow, "2026-10")["switched"] == 0
+
+
+def test_tariff_route_writes_correction_mark(admin_client, db, user_factory):
+    client, _ = admin_client
+    student = user_factory(vk_id=840_057, name="Галочка", tariff=TARIFF_WITH_YOU)
+
+    resp = client.post(f"/cabinet/superadmin/users/{student.id}/tariff",
+                       data={"tariff": TARIFF_CONFIDENT_MAX, "correction": "1"})
+    plain = client.post(f"/cabinet/superadmin/users/{student.id}/tariff",
+                        data={"tariff": TARIFF_SELF})
+
+    assert resp.status_code == 200 and plain.status_code == 200
+    details = [row.details for row in db.query(AuditLog)
+               .filter(AuditLog.target_user_id == student.id, AuditLog.action == "tariff_change")
+               .order_by(AuditLog.id)]
+    assert details == [
+        f"tariff: {TARIFF_WITH_YOU} → {TARIFF_CONFIDENT_MAX} (исправление)",
+        f"tariff: {TARIFF_CONFIDENT_MAX} → {TARIFF_SELF}",
+    ]

@@ -42,6 +42,7 @@ from app.models.payment import (
 from app.models.role import Role
 from app.models.user import User
 from app.services import payments
+from app.services.access_state import access_left_at
 from app.services.contacts import normalize_tg_username
 from app.services.student_search import student_matches
 from app.services.tz import MSK_TZ, _as_utc, msk_date_text
@@ -178,8 +179,9 @@ def has_left(student: User, now: datetime) -> bool:
     не нужно в список добавлять» — уходящим закрывают доступ сроком, окно
     оплаты при этом остаётся, и без этого правила они числились бы
     должниками. Одно правило на экран «Оплаты», статистику, Excel и
-    список неоплативших в боте (`payment_debtors`)."""
-    return student.access_until is not None and _as_utc(student.access_until) <= now
+    список неоплативших в боте (`payment_debtors`) — и отчёт месяца по
+    тарифам: условие одно, `access_state.access_left_at`."""
+    return access_left_at(student, now) is not None
 
 
 def display_name(student: User) -> str:

@@ -110,7 +110,8 @@
 .ios-ss .ss-stat:last-child,
 .ios-ss .ss-stats-strip:not(.ss-strip-3) > .ss-stat:nth-child(4n),
 .ios-ss .ss-strip-3 > .ss-stat:nth-child(3n) { border-right: none; }
-.ios-ss .ss-stat-val { font: 700 24px/1 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label); margin-bottom: 4px; }
+/* Большие цифры — фирменным фиолетовым (Александрия 27.10.2026). */
+.ios-ss .ss-stat-val { font: 700 24px/1 var(--ios-font); letter-spacing: -0.2px; color: var(--blue-text); margin-bottom: 4px; }
 .ios-ss .ss-stat-lbl { font: 400 12px/1.35 var(--ios-font); color: var(--ios-label-2); }
 .ios-ss .ss-strip-3 { grid-template-columns: repeat(3, 1fr); }
 .ios-ss .ss-strip-4 { grid-template-columns: repeat(4, 1fr); }
@@ -200,6 +201,12 @@
 }
 .ios-ss .ss-acc[open] > summary::before { transform: rotate(45deg); }
 .ios-ss .ss-acc > summary:hover { color: var(--blue-text); }
+/* Вложенная секция — списки внутри карточки («По тарифам», «Пришли», «Ушли»
+   отчёта месяца): серая плашка вместо второй белой карточки, название капсом
+   (Александрия 27.10.2026). */
+.ios-ss .ss-acc .ss-acc { background: var(--ios-grouped-bg); box-shadow: none; border-radius: 12px; margin-bottom: 8px; }
+.ios-ss .ss-acc .ss-acc > summary { padding: 10px 14px; font-size: 12px; }
+.ios-ss .ss-acc .ss-acc .ss-acc-title { text-transform: uppercase; letter-spacing: 0.3px; }
 .ios-ss .ss-acc-title { font: inherit; color: inherit; letter-spacing: inherit; }
 .ios-ss .ss-acc-badge { margin-left: auto; font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
 .ios-ss .ss-acc-body { border-top: 0.5px solid var(--ios-sep); padding: 12px; }

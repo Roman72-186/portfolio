@@ -2873,6 +2873,7 @@ def superadmin_user_save_tags(
     tariff: str = Form(""),
     about: str = Form(""),
     cohort_tag: str = Form(""),
+    tariff_correction: str = Form(""),
 ):
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
@@ -2916,7 +2917,8 @@ def superadmin_user_save_tags(
     target.curator_id = curator_id_v
     target.curator_tag = curator_tag_v
     if tariff_v or clear_tariff:
-        apply_tariff_change(db, user["user_id"], target, tariff_v)
+        apply_tariff_change(db, user["user_id"], target, tariff_v,
+                            correction=tariff_correction == "1")
     target.cohort_tag = cohort_tag_v
     db.commit()
 
@@ -2977,8 +2979,12 @@ def superadmin_user_set_tariff(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     tariff: str = Form(""),
+    correction: str = Form(""),
 ):
-    """Quick endpoint for changing a student's tariff from the users list."""
+    """Quick endpoint for changing a student's tariff from the users list.
+
+    `correction=1` — галочка «Исправление ошибки, не переход» в блоке
+    «Управление» карточки ученика (`apply_tariff_change(correction=True)`)."""
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
@@ -2994,7 +3000,7 @@ def superadmin_user_set_tariff(
     if tariff_v and tariff_v not in tariff_choices(target.tariff):
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
-    if apply_tariff_change(db, user["user_id"], target, tariff_v):
+    if apply_tariff_change(db, user["user_id"], target, tariff_v, correction=correction == "1"):
         db.commit()
         _invalidate_user_sessions(db, target.id)
 

@@ -221,9 +221,18 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
 
     - «Пришёл» — момент, когда у ученика впервые появился действующий тариф:
       создание аккаунта с ним или первая запись журнала «без тарифа → тариф».
-    - «Ушёл» — архив, удаление или блокировка (по журналу, если блокировка
-      держится и сейчас), пока он был на действующем тарифе.
-    - «Перешёл» — запись журнала с одного действующего тарифа на другой.
+    - «Ушёл» — архив, удаление, блокировка (по журналу, если блокировка
+      держится и сейчас) или наступивший срок доступа: уходящим школа
+      закрывает доступ сроком (`access_state.access_left_at`, Александрия
+      26.10.2026 — без срока отчёт видел одного ушедшего из шести).
+    - «Перешёл» — запись журнала с одного действующего тарифа на другой,
+      схлопнутая по месяцу: сравниваются тариф до первой смены месяца и
+      после последней, туда-обратно за месяц — не переход. Ушедший в этом
+      месяце числится только в «Ушли».
+    - Исправление (`(исправление)` в журнале, галочка при смене тарифа) —
+      не переход: исправленный тариф действует с прошлой настоящей смены
+      или с создания аккаунта, «пришёл» — сразу с ним (Александрия
+      26.10.2026: ученик по ошибке выбрал «Я с вами», школа поправила).
 
     Ученики — `report_scope.flow_students_q`: годовой курс вместе с ушедшими,
     без служебных. Тариф в любой момент восстанавливается по журналу: до
@@ -234,13 +243,15 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
     from app.constants import TARIFF_DISPLAY, TARIFFS_CURRENT
     from app.services.contacts import normalize_tg_username
     from app.services.program import MONTH_NAMES
+    from app.services.access_state import access_left_at
     from app.services.report_scope import flow_students_q
+    from app.services.user_management import TARIFF_CORRECTION_MARK
 
     now = _utc(now) or datetime.now(timezone.utc)
     real = set(TARIFFS_CURRENT)
     students = flow_students_q(db).all()
     ids = [s.id for s in students]
-    changes: dict[int, list[tuple[datetime, str, str]]] = defaultdict(list)
+    changes: dict[int, list[tuple[datetime, str, str, bool]]] = defaultdict(list)
     block_toggles: dict[int, tuple[str, datetime]] = {}
     if ids:
         for row in (
@@ -255,9 +266,10 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
             if row.action == "tariff_change":
                 match = _TARIFF_DETAILS_RE.match(row.details or "")
                 if match:
-                    changes[row.target_user_id].append(
-                        (at, _tariff_from_log(match.group(1)), _tariff_from_log(match.group(2)))
-                    )
+                    changes[row.target_user_id].append((
+                        at, _tariff_from_log(match.group(1)), _tariff_from_log(match.group(2)),
+                        TARIFF_CORRECTION_MARK in (row.details or ""),
+                    ))
             else:
                 block_toggles[row.target_user_id] = (row.action, at)
 
@@ -266,11 +278,18 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
         own = changes.get(student.id, [])
         created = _utc(student.created_at)
         initial = own[0][1] if own else (student.tariff or "").strip()
-        if initial in real:
-            came = (created, initial)
-        else:
-            came = next(((at, new) for at, old, new in own if new in real and old not in real), None)
-        left_marks = [_utc(student.archived_at), _utc(student.deleted_at)]
+        # Исправление переписывает текущий отрезок истории, настоящая смена
+        # открывает новый.
+        timeline = [[created, initial]]
+        for at, _old, new, correction in own:
+            if correction:
+                timeline[-1][1] = new
+            else:
+                timeline.append([at, new])
+        came = next(((at, value) for at, value in timeline if value in real), None)
+        left_marks = [
+            _utc(student.archived_at), _utc(student.deleted_at), access_left_at(student, now),
+        ]
         toggle = block_toggles.get(student.id)
         if not student.is_active and toggle and toggle[0] == "user_block":
             left_marks.append(toggle[1])
@@ -278,12 +297,14 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
         people.append({
             "name": _student_name(student.first_name, student.last_name, student.name),
             "nick": f"@{nick}" if nick else "(нет username)",
-            "timeline": [(created, initial)] + [(at, new) for at, _old, new in own],
+            "timeline": [(at, value) for at, value in timeline],
             "came": came,
             "left_at": min((mark for mark in left_marks if mark), default=None),
             "switches": [
-                (at, old, new) for at, old, new in own
-                if old in real and new in real and old != new
+                (timeline[i][0], timeline[i - 1][1], timeline[i][1])
+                for i in range(1, len(timeline))
+                if timeline[i - 1][1] in real and timeline[i][1] in real
+                and timeline[i - 1][1] != timeline[i][1]
             ],
         })
 
@@ -327,13 +348,15 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
             if came and start <= came[0] < end:
                 came_rows.append(row(person, came[0], tariff=came[1]))
             left_at = person["left_at"]
-            if left_at and start <= left_at < end and came and came[0] <= left_at:
+            left_now = bool(left_at and start <= left_at < end and came and came[0] <= left_at)
+            if left_now:
                 value = tariff_at(person, left_at)
                 if value in real:
                     left_rows.append(row(person, left_at, tariff=value))
-            for at, old, new in person["switches"]:
-                if start <= at < end:
-                    switch_rows.append(row(person, at, **{"from": old, "to": new}))
+            inside = [item for item in person["switches"] if start <= item[0] < end]
+            # Туда-обратно за месяц — не переход; ушедший — только в «Ушли».
+            if inside and not left_now and inside[0][1] != inside[-1][2]:
+                switch_rows.append(row(person, inside[-1][0], **{"from": inside[0][1], "to": inside[-1][2]}))
         before = counts(start - timedelta(microseconds=1))
         after = counts(min(end, now) - timedelta(microseconds=1))
         came_by = {t: sum(1 for r in came_rows if r["tariff"] == t) for t in TARIFFS_CURRENT}

@@ -286,11 +286,18 @@ def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) 
     return not (old_tariff or "").strip() and bool((new_tariff or "").strip())
 
 
+# Пометка журнала: смена тарифа — исправление ошибки, а не переход. Её
+# читает отчёт месяца по тарифам (`activity_stats.get_month_tariff_flow`).
+TARIFF_CORRECTION_MARK = "(исправление)"
+
+
 def apply_tariff_change(
     db: DBSession,
     performed_by_id: int,
     student: User,
     new_tariff: str | None,
+    *,
+    correction: bool = False,
 ) -> bool:
     """Меняет тариф ученику: журнал + снятие срока доступа у новенького.
 
@@ -298,6 +305,12 @@ def apply_tariff_change(
     ученика, форма и список суперадмина, добавление по нику). Правило про срок
     доступа живёт здесь, а не в каждом роуте: экранов четыре, и правило,
     размазанное по ним, отстаёт в том, который забыли.
+
+    `correction` — галочка «Исправление ошибки, не переход» (Александрия
+    26.10.2026: ученик по ошибке выбрал «Я с вами», школа поправила на
+    «Уверенный максимум», а отчёт месяца показал переход). В журнал уходит
+    пометка `TARIFF_CORRECTION_MARK`, отчёт считает такую смену
+    тарифом с самого начала, а не переходом.
 
     Возвращает True, если тариф действительно изменился. Не коммитит — запись
     уходит вместе с транзакцией вызывающего кода.
@@ -312,7 +325,8 @@ def apply_tariff_change(
     )
     _log(db, "tariff_change", performed_by_id, student.id,
          f"tariff: {old_value or '—'} → {new_value or '—'}"
-         + (" (срок доступа снят)" if clears_access else ""))
+         + (" (срок доступа снят)" if clears_access else "")
+         + (f" {TARIFF_CORRECTION_MARK}" if correction else ""))
     student.tariff = new_value
     if clears_access:
         student.access_until = None

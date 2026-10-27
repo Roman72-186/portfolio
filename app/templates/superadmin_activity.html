@@ -102,8 +102,9 @@
 {# Список учеников карточки «Отчёт месяца по тарифам» — с ником Telegram. #}
 {% macro flow_people(title, rows, switched=false) %}
     {% if rows %}
-    <div class="ss-sub">
-        <h3 class="ss-sub-head">{{ title }} <span class="ss-sub-count">{{ rows | length }}</span></h3>
+    <details class="ss-acc">
+        <summary><h3 class="ss-acc-title">{{ title }}</h3><span class="ss-acc-badge">{{ rows | length }}</span></summary>
+        <div class="ss-acc-body">
         <div class="ss-table-wrap">
         <table class="ss-table">
             <thead><tr><th>Ученик</th><th>Telegram</th><th>{{ 'Переход' if switched else 'Тариф' }}</th><th>Дата</th></tr></thead>
@@ -119,7 +120,8 @@
             </tbody>
         </table>
         </div>
-    </div>
+        </div>
+    </details>
     {% endif %}
 {% endmacro %}
 
@@ -201,7 +203,7 @@
                     </select>
                 </label>
             </div>
-            <div class="ss-dim-sm">Считаются три действующих тарифа. «Пришли» – ученик впервые получил тариф, процент – доля от всех пришедших за месяц. «Ушли» – архив, удаление или блокировка, процент – от тех, кто был на тарифе в этом месяце.</div>
+            <div class="ss-dim-sm">Считаются три действующих тарифа. «Пришли» – ученик впервые получил тариф, процент – доля от всех пришедших за месяц. «Ушли» – архив, удаление, блокировка или закрытый срок доступа, процент – от тех, кто был на тарифе в этом месяце. Смена тарифа с пометкой «исправление» – не переход; туда и обратно за месяц – тоже; ушедший в этом месяце – только в «Ушли».</div>
             {% for m in tariff_flow.months %}
             <div data-tf-panel="{{ m.key }}"{% if not loop.first %} hidden{% endif %}>
                 <div class="ss-stats-strip">
@@ -210,8 +212,10 @@
                     <div class="ss-stat"><div class="ss-stat-val">{{ m.switched }}</div><div class="ss-stat-lbl">Сменили тариф</div></div>
                     <div class="ss-stat"><div class="ss-stat-val">{{ m.start }}<span class="ss-suffix-dim"> → {{ m.end }}</span></div><div class="ss-stat-lbl">Учеников на начало и конец месяца</div></div>
                 </div>
-                <div class="ss-sub">
-                    <h3 class="ss-sub-head">По тарифам</h3>
+                {# Каждый список свёрнут отдельно (Александрия 27.10.2026). #}
+                <details class="ss-acc">
+                    <summary><h3 class="ss-acc-title">По тарифам</h3></summary>
+                    <div class="ss-acc-body">
                     <div class="ss-table-wrap">
                     <table class="ss-table">
                         <thead><tr><th>Тариф</th><th class="ss-ta-r">На начало</th><th class="ss-ta-r">Пришли</th><th class="ss-ta-r">Ушли</th><th class="ss-ta-r">На конец</th></tr></thead>
@@ -228,10 +232,12 @@
                         </tbody>
                     </table>
                     </div>
-                </div>
+                    </div>
+                </details>
                 {% if m.pairs %}
-                <div class="ss-sub">
-                    <h3 class="ss-sub-head">Переходы между тарифами</h3>
+                <details class="ss-acc">
+                    <summary><h3 class="ss-acc-title">Переходы между тарифами</h3><span class="ss-acc-badge">{{ m.switched }}</span></summary>
+                    <div class="ss-acc-body">
                     <div class="ss-table-wrap">
                     <table class="ss-table">
                         <thead><tr><th>Был</th><th>Стал</th><th class="ss-ta-r">Учеников</th></tr></thead>
@@ -242,7 +248,8 @@
                         </tbody>
                     </table>
                     </div>
-                </div>
+                    </div>
+                </details>
                 {% endif %}
                 {{ flow_people("Пришли", m.came_rows) }}
                 {{ flow_people("Ушли", m.left_rows) }}
