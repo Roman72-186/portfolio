@@ -237,3 +237,18 @@ def test_tariff_route_writes_correction_mark(admin_client, db, user_factory):
         f"tariff: {TARIFF_WITH_YOU} → {TARIFF_CONFIDENT_MAX} (исправление)",
         f"tariff: {TARIFF_CONFIDENT_MAX} → {TARIFF_SELF}",
     ]
+
+
+def test_activity_page_cards_in_alexandria_order(admin_client, db, user_factory):
+    """Порядок карточек — по списку Александрии 27.10.2026: отчёт месяца,
+    «Ученики поимённо», оплаты, контрольные, баллы, пробник, регистрации."""
+    client, _ = admin_client
+    _student(user_factory, db, 840_060, "Сам", TARIFF_SELF, datetime.now(timezone.utc))
+
+    html = client.get("/cabinet/superadmin/activity").text
+    titles = ["Отчёт месяца по тарифам", "Ученики поимённо", "Контрольные на время",
+              "Баллы за задания", "Поведение на пробнике", "Циклы Пробника",
+              "Регистрации по тарифам", "Диагностика АРХИ-ПРОФИЛЯ", "Давно не заходили"]
+    positions = [html.index(f'<h2 class="ss-acc-title">{title}</h2>') for title in titles]
+
+    assert positions == sorted(positions)

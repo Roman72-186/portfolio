@@ -271,6 +271,11 @@
     </script>
     {% endif %}
 
+    {# Порядок карточек — по списку Александрии 27.10.2026: отчёт месяца,
+       «Ученики поимённо», оплаты, контрольные, баллы, пробник, регистрации,
+       дальше остальные. Каникулярные карточки — в своём режиме, сразу под
+       отчётом (он только у годового курса). #}
+
     {# Каникулярный набор поимённо (владелец 19.10.2026: «кто вошёл, по каким
        трекам, что купил, на каком месте находятся… сдал, не сдал») —
        `activity_stats.get_holiday_overview`. Только в режиме «Каникулярный курс». #}
@@ -333,13 +338,6 @@
     </details>
     {% endif %}
 
-    <!-- Поимённая сводка: входы, портфолио, теория и практика по циклам. Первая под плитками (владелец 03.10.2026; Александрия 22.10.2026) -->
-    {% include "partials/students_by_name.html" %}
-
-    {# Оплаты (владелец 14.10.2026: «перенести оплату в статистику»). Итоги
-       месяца и сводка — payment_board.stats_card, тот же расчёт, что у экрана
-       «Оплаты»; поимённый список с фильтром и кнопками — на экране, ссылки
-       ведут туда. Карточку видят только те, кому открыта оплата. #}
     {# Оплаты треков каникулярного набора — итоги, подробно на экране «Оплаты»
        в том же режиме (`payment_board.holiday_board`). #}
     {% if holiday_payment_stats %}
@@ -358,6 +356,13 @@
     </details>
     {% endif %}
 
+    <!-- Поимённая сводка: входы, портфолио, теория и практика по циклам. Первая под плитками (владелец 03.10.2026; Александрия 22.10.2026) -->
+    {% include "partials/students_by_name.html" %}
+
+    {# Оплаты (владелец 14.10.2026: «перенести оплату в статистику»). Итоги
+       месяца и сводка — payment_board.stats_card, тот же расчёт, что у экрана
+       «Оплаты»; поимённый список с фильтром и кнопками — на экране, ссылки
+       ведут туда. Карточку видят только те, кому открыта оплата. #}
     {% if payment_stats %}
     <details class="ss-acc" data-payment-card>
         <summary><h2 class="ss-acc-title">Оплаты</h2><span class="ss-acc-badge">{{ payment_stats.month_title }}: оплатили {{ payment_stats.paid_count }}, не оплатили {{ payment_stats.unpaid_count }}</span></summary>
@@ -396,6 +401,187 @@
         </div>
     </details>
     {% endif %}
+
+    <!-- Контрольные на время: таймер и срок (владелец 30.09.2026) -->
+    <details class="ss-acc" data-timed>
+        <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">{{ timed.submitted }} сдано · {{ timed.overrun }} превысили время · {{ timed.late }} после срока</span></summary>
+        <div class="ss-acc-body">
+            {# Фильтры, крупные проценты и список по алфавиту (Александрия
+               22.10.2026, этап 4): каждая попытка — `get_timed_stats().attempts`,
+               статус один на попытку, проценты складываются в 100. #}
+            {% if timed.attempts %}
+            <div class="ss-filters">
+                <label for="tm-month">Месяц<select id="tm-month" data-tm-filter="month_id"><option value="">Все месяцы</option></select></label>
+                <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
+                <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
+                <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
+                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option></select></label>
+                <label for="tm-search">Имя или ник<input type="search" id="tm-search" data-tm-search placeholder="Фамилия или @ник" autocomplete="off"></label>
+            </div>
+            <div class="ss-stats-strip" data-tm-big></div>
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Ученики по алфавиту <span class="ss-sub-count" data-tm-count></span></h3>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th></tr></thead>
+                        <tbody data-tm-rows></tbody>
+                    </table>
+                </div>
+            </div>
+            <script>
+            (function () {
+                const root = document.querySelector('[data-timed]');
+                if (!root) return;
+                const attempts = {{ timed.attempts | tojson }};
+                const LABELS = { in_time: 'Уложились', overrun: 'Превысили время', late: 'После срока',
+                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас' };
+                const DANGER = { overrun: true, late: true, running_over: true };
+                const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
+                const search = root.querySelector('[data-tm-search]');
+                const big = root.querySelector('[data-tm-big]');
+                const body = root.querySelector('[data-tm-rows]');
+                const count = root.querySelector('[data-tm-count]');
+
+                function addOptions(select, pairs) {
+                    pairs.forEach(function (pair) {
+                        const node = document.createElement('option');
+                        node.value = pair[0];
+                        node.textContent = pair[1];
+                        select.appendChild(node);
+                    });
+                }
+                function unique(key, label) {
+                    const seen = new Map();
+                    attempts.forEach(function (a) { if (a[key] !== '' && !seen.has(String(a[key]))) seen.set(String(a[key]), a[label || key]); });
+                    return Array.from(seen.entries());
+                }
+                addOptions(root.querySelector('#tm-month'), unique('month_id', 'month'));
+                addOptions(root.querySelector('#tm-tariff'), unique('tariff').sort());
+                addOptions(root.querySelector('#tm-subject'), unique('subject').sort());
+
+                function passes(a) {
+                    for (let i = 0; i < filters.length; i += 1) {
+                        const value = filters[i].value;
+                        const key = filters[i].dataset.tmFilter;
+                        if (!value) continue;
+                        if (key === 'level') {
+                            if (value === 'none' ? a.level : String(a.level) !== value) return false;
+                        } else if (String(a[key]) !== value) {
+                            return false;
+                        }
+                    }
+                    return window.studentMatchesQuery(search.value, String(a.student_id), a.name + ' ' + a.nick);
+                }
+                function tile(value, label) {
+                    const node = document.createElement('div');
+                    node.className = 'ss-stat';
+                    const val = document.createElement('div');
+                    val.className = 'ss-stat-val';
+                    val.textContent = value;
+                    const lbl = document.createElement('div');
+                    lbl.className = 'ss-stat-lbl';
+                    lbl.textContent = label;
+                    node.append(val, lbl);
+                    return node;
+                }
+                function cell(label, text, className) {
+                    const td = document.createElement('td');
+                    td.dataset.label = label;
+                    if (className) td.className = className;
+                    td.textContent = text;
+                    return td;
+                }
+                function render() {
+                    const shown = attempts.filter(passes);
+                    // Проценты — по сдавшим и тем, у кого время вышло без работы:
+                    // «пишет сейчас» ещё не результат.
+                    const counted = shown.filter(function (a) { return a.status !== 'running'; });
+                    const by = { in_time: 0, overrun: 0, late: 0, running_over: 0 };
+                    counted.forEach(function (a) { by[a.status] += 1; });
+                    const pct = function (n) { return counted.length ? Math.round(n * 100 / counted.length) + '%' : '—'; };
+                    big.replaceChildren(
+                        tile(pct(by.in_time), 'уложились · ' + by.in_time),
+                        tile(pct(by.overrun), 'превысили время · ' + by.overrun),
+                        tile(pct(by.late), 'после срока · ' + by.late),
+                        tile(pct(by.running_over), 'время вышло, работы нет · ' + by.running_over)
+                    );
+                    body.replaceChildren.apply(body, shown.map(function (a) {
+                        const tr = document.createElement('tr');
+                        const who = document.createElement('td');
+                        who.dataset.label = 'Ученик';
+                        const name = document.createElement('span');
+                        name.className = 'ss-bold';
+                        name.textContent = a.name;
+                        const meta = document.createElement('span');
+                        meta.className = 'ss-dim-sm';
+                        meta.textContent = (a.nick || '(нет username)') + ' · ' + a.tariff + (a.level ? ' · уровень ' + a.level : '');
+                        who.append(name, document.createElement('br'), meta);
+                        const status = document.createElement('td');
+                        status.dataset.label = 'Статус';
+                        const badge = document.createElement('span');
+                        badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
+                        badge.textContent = LABELS[a.status];
+                        status.appendChild(badge);
+                        tr.append(
+                            who,
+                            cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
+                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—'), 'ss-ta-r'),
+                            status
+                        );
+                        return tr;
+                    }));
+                    count.textContent = shown.length;
+                }
+                filters.forEach(function (select) { select.addEventListener('change', render); });
+                search.addEventListener('input', render);
+                render();
+            })();
+            </script>
+            {% endif %}
+            {% if timed.blocks %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Контрольная</th><th class="ss-ta-r">Лимит, мин</th><th class="ss-ta-r">Начали</th><th class="ss-ta-r">Сдали</th><th class="ss-ta-r">Уложились</th><th class="ss-ta-r">Превысили время</th><th class="ss-ta-r">После срока</th><th class="ss-ta-r">Время вышло, работы нет</th></tr></thead>
+                    <tbody>
+                    {% for row in timed.blocks %}
+                    <tr>
+                        <td data-label="Контрольная" class="ss-bold">{{ row.title }}</td>
+                        <td data-label="Лимит, мин" class="ss-ta-r">{{ row.limit or "—" }}</td>
+                        <td data-label="Начали" class="ss-ta-r">{{ row.started }}</td>
+                        <td data-label="Сдали" class="ss-ta-r">{{ row.submitted }}</td>
+                        <td data-label="Уложились" class="ss-ta-r">{{ row.in_time }}</td>
+                        <td data-label="Превысили время" class="ss-ta-r">{{ row.overrun }}</td>
+                        <td data-label="После срока" class="ss-ta-r">{{ row.late }}</td>
+                        <td data-label="Время вышло, работы нет" class="ss-ta-r">{{ row.running_over }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if timed.students %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">Превысили время или сдали после срока</div>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th>Тариф</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Отметка</th></tr></thead>
+                        <tbody>
+                        {% for row in timed.students %}
+                        <tr>
+                            <td data-label="Ученик" class="ss-bold">{{ row.name }}</td>
+                            <td data-label="Тариф">{{ row.tariff or "—" }}</td>
+                            <td data-label="Контрольная">{{ row.title }}</td>
+                            <td data-label="Работал, мин" class="ss-ta-r">{% if row.minutes is not none %}{{ row.minutes }} из {{ row.limit }}{% else %}—{% endif %}</td>
+                            <td data-label="Отметка">{% if row.overrun %}<span class="act-badge ab-danger">время превышено</span> {% endif %}{% if row.late %}<span class="act-badge ab-danger">после срока</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+            {% else %}<div class="ss-empty">Контрольные на время ещё никто не начинал</div>{% endif %}
+        </div>
+    </details>
 
     {# Баллы за задание (владелец 03.10.2026, вопрос Лизы «сколько людей на 55,
        сколько на 65»): распределение по баллам и поимённо. Данные —
@@ -450,37 +636,45 @@
         </div>
     </details>
 
-    {# Диагностика — под «Учениками поимённо» (владелец 03.10.2026; до этого первая под плитками, 25.09.2026).
-       Все карточки страницы свёрнуты по умолчанию (владелец 03.10.2026); раскрывается сама
-       только карточка регистраций — после «Применить» в её фильтре. #}
+    <!-- Поведение на пробнике -->
     <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
+        <summary><h2 class="ss-acc-title">Поведение на пробнике</h2><span class="ss-acc-badge">{{ mock_attempts.completed_count }} / {{ mock_attempts.total }} сдано{% if mock_attempts.avg_text %} · среднее {{ mock_attempts.avg_text }}{% endif %}</span></summary>
         <div class="ss-acc-body">
-            {% if diagnostics %}
-            {% for diag in diagnostics %}
-            <div class="ss-sub">
-                <h3 class="ss-sub-head">{{ diag.task.title }} <span class="ss-sub-count">{{ diag.status_counts.finished }} / {{ diag.total }} закончили{% if diag.profile_counts %} · топ: {{ diag.profile_counts[0][0] }} ({{ diag.profile_counts[0][1] }}){% endif %}</span></h3>
-                {% if diag.rows %}
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Истёк срок сдачи (не сдано за 4 ч.)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
+            </div>
+            {% if mock_attempts.by_subject %}
+            <div class="ss-table-wrap">
                 <table class="ss-table">
-                    <thead><tr><th>Ученик</th><th>Тариф</th><th>Статус</th><th>Начал</th><th>Закончил</th><th class="ss-ta-r">За сколько</th><th>Профиль</th></tr></thead>
+                    <thead><tr><th>Предмет</th><th class="ss-ta-r">Получено</th><th class="ss-ta-r">Сдано</th><th class="ss-ta-r">Среднее время</th></tr></thead>
                     <tbody>
-                    {% for row in diag.rows %}
+                    {% for subj, s in mock_attempts.by_subject.items() %}
                     <tr>
-                        <td data-label="Ученик" class="ss-bold">{{ row.student.name or row.student.tg_username or ('Ученик #' ~ row.student.id) }}</td>
-                        <td data-label="Тариф">{{ row.student.tariff|tariff_label or "—" }}</td>
-                        <td data-label="Статус">{{ row.status_label }}</td>
-                        <td data-label="Начал" class="ss-dim">{{ row.started_at_text or "—" }}</td>
-                        <td data-label="Закончил" class="ss-dim">{{ row.finished_at_text or "—" }}</td>
-                        <td data-label="За сколько" class="ss-ta-r">{{ row.duration_text or "—" }}</td>
-                        <td data-label="Профиль">{{ row.profile.title if row.profile else "—" }}</td>
+                        <td data-label="Предмет" class="ss-bold">{{ subj }}</td>
+                        <td data-label="Получено" class="ss-ta-r">{{ s.total }}</td>
+                        <td data-label="Сдано" class="ss-ta-r">{{ s.completed }}</td>
+                        <td data-label="Среднее время" class="ss-ta-r">{{ s.avg_text or "—" }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
                 </table>
-                {% else %}<div class="ss-empty">Аудитория пуста — диагностика никому не адресована или не опубликована</div>{% endif %}
             </div>
-            {% endfor %}
-            {% else %}<div class="ss-empty">Опубликованных диагностик пока нет</div>{% endif %}
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- Циклы пробника -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Циклы Пробника</h2><span class="ss-acc-badge">{{ cycles.open_count }} открыто · {{ cycles.closed_count }} закрыто{% if cycles.avg_text %} · длится {{ cycles.avg_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.open_count }}</div><div class="ss-stat-lbl">Открыто сейчас</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.closed_count }}</div><div class="ss-stat-lbl">Закрыто (оценено)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.avg_text or "—" }}</div><div class="ss-stat-lbl">Средняя длительность цикла</div></div>
+            </div>
         </div>
     </details>
 
@@ -529,6 +723,40 @@
         </div>
     </details>
     {% endif %}
+
+    {# Диагностика — после регистраций (Александрия 27.10.2026; с 03.10.2026 стояла под «Учениками поимённо»).
+       Все карточки страницы свёрнуты по умолчанию (владелец 03.10.2026); раскрывается сама
+       только карточка регистраций — после «Применить» в её фильтре. #}
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
+        <div class="ss-acc-body">
+            {% if diagnostics %}
+            {% for diag in diagnostics %}
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">{{ diag.task.title }} <span class="ss-sub-count">{{ diag.status_counts.finished }} / {{ diag.total }} закончили{% if diag.profile_counts %} · топ: {{ diag.profile_counts[0][0] }} ({{ diag.profile_counts[0][1] }}){% endif %}</span></h3>
+                {% if diag.rows %}
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Тариф</th><th>Статус</th><th>Начал</th><th>Закончил</th><th class="ss-ta-r">За сколько</th><th>Профиль</th></tr></thead>
+                    <tbody>
+                    {% for row in diag.rows %}
+                    <tr>
+                        <td data-label="Ученик" class="ss-bold">{{ row.student.name or row.student.tg_username or ('Ученик #' ~ row.student.id) }}</td>
+                        <td data-label="Тариф">{{ row.student.tariff|tariff_label or "—" }}</td>
+                        <td data-label="Статус">{{ row.status_label }}</td>
+                        <td data-label="Начал" class="ss-dim">{{ row.started_at_text or "—" }}</td>
+                        <td data-label="Закончил" class="ss-dim">{{ row.finished_at_text or "—" }}</td>
+                        <td data-label="За сколько" class="ss-ta-r">{{ row.duration_text or "—" }}</td>
+                        <td data-label="Профиль">{{ row.profile.title if row.profile else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="ss-empty">Аудитория пуста — диагностика никому не адресована или не опубликована</div>{% endif %}
+            </div>
+            {% endfor %}
+            {% else %}<div class="ss-empty">Опубликованных диагностик пока нет</div>{% endif %}
+        </div>
+    </details>
 
     <!-- Журнал действий учеников -->
     <details class="ss-acc">
@@ -766,187 +994,6 @@
         </div>
     </details>
 
-    <!-- Контрольные на время: таймер и срок (владелец 30.09.2026) -->
-    <details class="ss-acc" data-timed>
-        <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">{{ timed.submitted }} сдано · {{ timed.overrun }} превысили время · {{ timed.late }} после срока</span></summary>
-        <div class="ss-acc-body">
-            {# Фильтры, крупные проценты и список по алфавиту (Александрия
-               22.10.2026, этап 4): каждая попытка — `get_timed_stats().attempts`,
-               статус один на попытку, проценты складываются в 100. #}
-            {% if timed.attempts %}
-            <div class="ss-filters">
-                <label for="tm-month">Месяц<select id="tm-month" data-tm-filter="month_id"><option value="">Все месяцы</option></select></label>
-                <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
-                <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
-                <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
-                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option></select></label>
-                <label for="tm-search">Имя или ник<input type="search" id="tm-search" data-tm-search placeholder="Фамилия или @ник" autocomplete="off"></label>
-            </div>
-            <div class="ss-stats-strip" data-tm-big></div>
-            <div class="ss-sub">
-                <h3 class="ss-sub-head">Ученики по алфавиту <span class="ss-sub-count" data-tm-count></span></h3>
-                <div class="ss-table-wrap">
-                    <table class="ss-table">
-                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th></tr></thead>
-                        <tbody data-tm-rows></tbody>
-                    </table>
-                </div>
-            </div>
-            <script>
-            (function () {
-                const root = document.querySelector('[data-timed]');
-                if (!root) return;
-                const attempts = {{ timed.attempts | tojson }};
-                const LABELS = { in_time: 'Уложились', overrun: 'Превысили время', late: 'После срока',
-                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас' };
-                const DANGER = { overrun: true, late: true, running_over: true };
-                const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
-                const search = root.querySelector('[data-tm-search]');
-                const big = root.querySelector('[data-tm-big]');
-                const body = root.querySelector('[data-tm-rows]');
-                const count = root.querySelector('[data-tm-count]');
-
-                function addOptions(select, pairs) {
-                    pairs.forEach(function (pair) {
-                        const node = document.createElement('option');
-                        node.value = pair[0];
-                        node.textContent = pair[1];
-                        select.appendChild(node);
-                    });
-                }
-                function unique(key, label) {
-                    const seen = new Map();
-                    attempts.forEach(function (a) { if (a[key] !== '' && !seen.has(String(a[key]))) seen.set(String(a[key]), a[label || key]); });
-                    return Array.from(seen.entries());
-                }
-                addOptions(root.querySelector('#tm-month'), unique('month_id', 'month'));
-                addOptions(root.querySelector('#tm-tariff'), unique('tariff').sort());
-                addOptions(root.querySelector('#tm-subject'), unique('subject').sort());
-
-                function passes(a) {
-                    for (let i = 0; i < filters.length; i += 1) {
-                        const value = filters[i].value;
-                        const key = filters[i].dataset.tmFilter;
-                        if (!value) continue;
-                        if (key === 'level') {
-                            if (value === 'none' ? a.level : String(a.level) !== value) return false;
-                        } else if (String(a[key]) !== value) {
-                            return false;
-                        }
-                    }
-                    return window.studentMatchesQuery(search.value, String(a.student_id), a.name + ' ' + a.nick);
-                }
-                function tile(value, label) {
-                    const node = document.createElement('div');
-                    node.className = 'ss-stat';
-                    const val = document.createElement('div');
-                    val.className = 'ss-stat-val';
-                    val.textContent = value;
-                    const lbl = document.createElement('div');
-                    lbl.className = 'ss-stat-lbl';
-                    lbl.textContent = label;
-                    node.append(val, lbl);
-                    return node;
-                }
-                function cell(label, text, className) {
-                    const td = document.createElement('td');
-                    td.dataset.label = label;
-                    if (className) td.className = className;
-                    td.textContent = text;
-                    return td;
-                }
-                function render() {
-                    const shown = attempts.filter(passes);
-                    // Проценты — по сдавшим и тем, у кого время вышло без работы:
-                    // «пишет сейчас» ещё не результат.
-                    const counted = shown.filter(function (a) { return a.status !== 'running'; });
-                    const by = { in_time: 0, overrun: 0, late: 0, running_over: 0 };
-                    counted.forEach(function (a) { by[a.status] += 1; });
-                    const pct = function (n) { return counted.length ? Math.round(n * 100 / counted.length) + '%' : '—'; };
-                    big.replaceChildren(
-                        tile(pct(by.in_time), 'уложились · ' + by.in_time),
-                        tile(pct(by.overrun), 'превысили время · ' + by.overrun),
-                        tile(pct(by.late), 'после срока · ' + by.late),
-                        tile(pct(by.running_over), 'время вышло, работы нет · ' + by.running_over)
-                    );
-                    body.replaceChildren.apply(body, shown.map(function (a) {
-                        const tr = document.createElement('tr');
-                        const who = document.createElement('td');
-                        who.dataset.label = 'Ученик';
-                        const name = document.createElement('span');
-                        name.className = 'ss-bold';
-                        name.textContent = a.name;
-                        const meta = document.createElement('span');
-                        meta.className = 'ss-dim-sm';
-                        meta.textContent = (a.nick || '(нет username)') + ' · ' + a.tariff + (a.level ? ' · уровень ' + a.level : '');
-                        who.append(name, document.createElement('br'), meta);
-                        const status = document.createElement('td');
-                        status.dataset.label = 'Статус';
-                        const badge = document.createElement('span');
-                        badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
-                        badge.textContent = LABELS[a.status];
-                        status.appendChild(badge);
-                        tr.append(
-                            who,
-                            cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
-                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—'), 'ss-ta-r'),
-                            status
-                        );
-                        return tr;
-                    }));
-                    count.textContent = shown.length;
-                }
-                filters.forEach(function (select) { select.addEventListener('change', render); });
-                search.addEventListener('input', render);
-                render();
-            })();
-            </script>
-            {% endif %}
-            {% if timed.blocks %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Контрольная</th><th class="ss-ta-r">Лимит, мин</th><th class="ss-ta-r">Начали</th><th class="ss-ta-r">Сдали</th><th class="ss-ta-r">Уложились</th><th class="ss-ta-r">Превысили время</th><th class="ss-ta-r">После срока</th><th class="ss-ta-r">Время вышло, работы нет</th></tr></thead>
-                    <tbody>
-                    {% for row in timed.blocks %}
-                    <tr>
-                        <td data-label="Контрольная" class="ss-bold">{{ row.title }}</td>
-                        <td data-label="Лимит, мин" class="ss-ta-r">{{ row.limit or "—" }}</td>
-                        <td data-label="Начали" class="ss-ta-r">{{ row.started }}</td>
-                        <td data-label="Сдали" class="ss-ta-r">{{ row.submitted }}</td>
-                        <td data-label="Уложились" class="ss-ta-r">{{ row.in_time }}</td>
-                        <td data-label="Превысили время" class="ss-ta-r">{{ row.overrun }}</td>
-                        <td data-label="После срока" class="ss-ta-r">{{ row.late }}</td>
-                        <td data-label="Время вышло, работы нет" class="ss-ta-r">{{ row.running_over }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% if timed.students %}
-            <div class="ss-sub">
-                <div class="ss-sub-head">Превысили время или сдали после срока</div>
-                <div class="ss-table-wrap">
-                    <table class="ss-table">
-                        <thead><tr><th>Ученик</th><th>Тариф</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Отметка</th></tr></thead>
-                        <tbody>
-                        {% for row in timed.students %}
-                        <tr>
-                            <td data-label="Ученик" class="ss-bold">{{ row.name }}</td>
-                            <td data-label="Тариф">{{ row.tariff or "—" }}</td>
-                            <td data-label="Контрольная">{{ row.title }}</td>
-                            <td data-label="Работал, мин" class="ss-ta-r">{% if row.minutes is not none %}{{ row.minutes }} из {{ row.limit }}{% else %}—{% endif %}</td>
-                            <td data-label="Отметка">{% if row.overrun %}<span class="act-badge ab-danger">время превышено</span> {% endif %}{% if row.late %}<span class="act-badge ab-danger">после срока</span>{% endif %}</td>
-                        </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% endif %}
-            {% else %}<div class="ss-empty">Контрольные на время ещё никто не начинал</div>{% endif %}
-        </div>
-    </details>
-
     <!-- Сдачи в заданиях -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Сдачи работ в заданиях</h2><span class="ss-acc-badge">{{ submissions.blocks_waiting }} ждут проверки</span></summary>
@@ -964,48 +1011,6 @@
                 <div class="ss-stat"><div class="ss-stat-val">{{ submissions.homework.accepted }}</div><div class="ss-stat-lbl">Самостоятельных принято</div></div>
             </div>
             {% endif %}
-        </div>
-    </details>
-
-    <!-- Поведение на пробнике -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Поведение на пробнике</h2><span class="ss-acc-badge">{{ mock_attempts.completed_count }} / {{ mock_attempts.total }} сдано{% if mock_attempts.avg_text %} · среднее {{ mock_attempts.avg_text }}{% endif %}</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip">
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Истёк срок сдачи (не сдано за 4 ч.)</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
-            </div>
-            {% if mock_attempts.by_subject %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Предмет</th><th class="ss-ta-r">Получено</th><th class="ss-ta-r">Сдано</th><th class="ss-ta-r">Среднее время</th></tr></thead>
-                    <tbody>
-                    {% for subj, s in mock_attempts.by_subject.items() %}
-                    <tr>
-                        <td data-label="Предмет" class="ss-bold">{{ subj }}</td>
-                        <td data-label="Получено" class="ss-ta-r">{{ s.total }}</td>
-                        <td data-label="Сдано" class="ss-ta-r">{{ s.completed }}</td>
-                        <td data-label="Среднее время" class="ss-ta-r">{{ s.avg_text or "—" }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-        </div>
-    </details>
-
-    <!-- Циклы пробника -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Циклы Пробника</h2><span class="ss-acc-badge">{{ cycles.open_count }} открыто · {{ cycles.closed_count }} закрыто{% if cycles.avg_text %} · длится {{ cycles.avg_text }}{% endif %}</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.open_count }}</div><div class="ss-stat-lbl">Открыто сейчас</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.closed_count }}</div><div class="ss-stat-lbl">Закрыто (оценено)</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.avg_text or "—" }}</div><div class="ss-stat-lbl">Средняя длительность цикла</div></div>
-            </div>
         </div>
     </details>
 
