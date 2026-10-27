@@ -12,6 +12,10 @@
    кто посмотрел / сдал / нажимал и когда. «Нажимал» — открыл ссылку, а не
    «был на занятии»: сколько ученик пробыл в Zoom, платформа не видит. Сверху крупно «20 из 90 · 22%» и по тарифам,
    если тариф не выбран, — плитками `ss-stats-strip`, как «Баллы за задания».
+   Цикл выбран, а видео или задание нет — итог цикла (Александрия 27.10.2026):
+   «сдали всё в «3 неделя»» крупно, у каждого «сдано 3 из 4 · не сдано: …»,
+   статусы «сдали всё / не сдали всё / срок прошёл». «Все циклы месяца» —
+   тот же итог за месяц. Считается в браузере по тем же `eligible`/`submitted`.
 
    У куратора (`curator_view`, Александрия 24.10.2026) карточка открывается
    «По ученику»: у «Уверенного максимума» — время, «на чём остановился», видео
@@ -131,6 +135,15 @@
         meetings: { item: 'Ссылка', pick: 'Выберите ссылку', done: 'нажимали', statuses: [
             ['all', 'Все'], ['submitted', 'Нажимали'], ['missing', 'Не нажимали']] },
     };
+    // Итог цикла — выбран цикл, а видео или задание нет (Александрия 27.10.2026:
+    // «выбирая неделю, видеть по ней итог», не заходя в каждое задание).
+    const CYCLE_WORDS = {
+        theory: { done: 'посмотрели всё', count: 'Посмотрено', missing: 'не посмотрено', statuses: [
+            ['all', 'Все'], ['closed', 'Посмотрели всё'], ['open', 'Не посмотрели всё']] },
+        practice: { done: 'сдали всё', count: 'Сдано', missing: 'не сдано', statuses: [
+            ['all', 'Все'], ['closed', 'Сдали всё'], ['open', 'Не сдали всё'],
+            ['overdue', 'Не сдали всё, срок прошёл']] },
+    };
     const $ = function (selector) { return root.querySelector(selector); };
     const tariffSelect = $('[data-sbn-tariff]');
     const levelSelect = $('[data-sbn-level]');
@@ -202,24 +215,69 @@
         return labels;
     }
 
-    function fillItems() {
-        if (mode === 'student') return;
+    function selectedCycleIds() {
         const month = currentMonth();
-        const cycleIds = cycleSelect.value
+        return cycleSelect.value
             ? [Number(cycleSelect.value)]
             : (month ? month.cycles.map(function (cycle) { return cycle.id; }) : []);
-        const labels = cycleLabels();
-        const items = sources[mode]
+    }
+
+    // Видео или задания выбранного цикла (всех циклов месяца) по порядку.
+    function periodItems() {
+        if (mode === 'all' || mode === 'student') return [];
+        const cycleIds = selectedCycleIds();
+        return sources[mode]
             .filter(function (item) { return cycleIds.indexOf(item.topic_id || 0) !== -1; })
             .sort(function (a, b) {
                 return cycleIds.indexOf(a.topic_id || 0) - cycleIds.indexOf(b.topic_id || 0) || byOrder(a, b);
             });
+    }
+
+    function fillItems() {
+        if (mode === 'student') return;
+        const labels = cycleLabels();
+        const items = periodItems();
         // «Все циклы месяца» — к названию добавляется цикл, иначе два
         // одинаковых ролика из разных циклов не различить.
         fill(itemSelect, [['', WORDS[mode].pick]].concat(items.map(function (item) {
             const prefix = cycleSelect.value ? '' : (labels.get(item.topic_id || 0) || '') + ' · ';
             return [String(item.id), prefix + item.label];
         })));
+        fillStatuses();
+    }
+
+    // У задания свои статусы, у итога цикла — свои; выбранный сохраняется,
+    // если он есть в новом списке.
+    function fillStatuses() {
+        if (!WORDS[mode]) return;
+        const pairs = !itemSelect.value && CYCLE_WORDS[mode] ? CYCLE_WORDS[mode].statuses : WORDS[mode].statuses;
+        const kept = statusSelect.value;
+        fill(statusSelect, pairs);
+        if (pairs.some(function (pair) { return pair[0] === kept; })) statusSelect.value = kept;
+    }
+
+    // Итог цикла по ученику: сколько ему положено, сколько сделано, что не
+    // сделано и прошёл ли срок у несделанного.
+    function cycleSummary(items, userId) {
+        const own = items.filter(function (item) { return item.eligible.indexOf(userId) !== -1; });
+        const missing = own.filter(function (item) { return item.submitted.indexOf(userId) === -1; });
+        return {
+            total: own.length,
+            done: own.length - missing.length,
+            missing: missing.map(function (item) { return item.label; }),
+            overdue: missing.some(function (item) { return (item.overdue || []).indexOf(userId) !== -1; }),
+        };
+    }
+
+    function cycleSummaryText(summary) {
+        const words = CYCLE_WORDS[mode];
+        return words.count + ' ' + summary.done + ' из ' + summary.total
+            + (summary.missing.length ? ' · ' + words.missing + ': ' + summary.missing.join('; ') : '');
+    }
+
+    function periodTitle() {
+        const option = cycleSelect.options[cycleSelect.selectedIndex];
+        return cycleSelect.value && option ? 'в «' + option.textContent + '»' : 'за месяц';
     }
 
     function fillCycles() {
@@ -246,7 +304,7 @@
             fill(monthSelect, available.map(function (month) { return [String(month.id), month.label]; }));
             if (mode !== 'student') {
                 itemLabel.textContent = WORDS[mode].item;
-                fill(statusSelect, WORDS[mode].statuses);
+                statusSelect.value = 'all';
             }
             fillCycles();
         } else {
@@ -345,6 +403,39 @@
         }
     }
 
+    // Крупно по итогу цикла: «30 из 86 · 35% сдали всё в «3 неделя»» и по тарифам.
+    function renderCycleBig(summaries, baseRows) {
+        const byTariff = new Map();
+        let total = 0;
+        let closed = 0;
+        let overdue = 0;
+        baseRows.forEach(function (row) {
+            const summary = summaries.get(Number(row.dataset.studentId));
+            if (!summary || !summary.total) return;
+            const counts = byTariff.get(row.dataset.studentTariff) || { done: 0, total: 0 };
+            counts.total += 1;
+            total += 1;
+            if (summary.done === summary.total) { counts.done += 1; closed += 1; }
+            else if (summary.overdue) overdue += 1;
+            byTariff.set(row.dataset.studentTariff, counts);
+        });
+        const words = CYCLE_WORDS[mode];
+        const tiles = [tile(closed + ' из ' + total, percent(closed, total) + ' ' + words.done + ' ' + periodTitle())];
+        if (!tariffSelect.value) {
+            Array.from(tariffSelect.options).forEach(function (opt) {
+                const counts = byTariff.get(opt.value);
+                if (!opt.value || !counts) return;
+                tiles.push(tile(counts.done + ' / ' + counts.total, opt.value + ' · ' + percent(counts.done, counts.total)));
+            });
+        }
+        big.replaceChildren.apply(big, tiles);
+        big.hidden = false;
+        stats.textContent = mode === 'practice'
+            ? 'Не сдали всё: ' + (total - closed) + ' (срок прошёл: ' + overdue + ', срок не наступил: ' + (total - closed - overdue) + ')'
+            : 'Не посмотрели всё: ' + (total - closed);
+        stats.hidden = false;
+    }
+
     // «По ученику» (Александрия 22.10.2026, этап 3 плана): за выбранный цикл
     // или весь месяц — время на платформе, видео и работы с ✅/❌.
     function periodCycles() {
@@ -417,8 +508,11 @@
 
     function applyFilter() {
         const item = selectedItem();
-        statusSelect.disabled = !item;
-        if (!item) statusSelect.value = 'all';
+        const cycleItems = !item && CYCLE_WORDS[mode] ? periodItems() : [];
+        const cycleMode = cycleItems.length > 0;
+        const summaries = new Map();
+        statusSelect.disabled = !item && !cycleMode;
+        if (!item && !cycleMode) statusSelect.value = 'all';
         const eligible = item ? new Set(item.eligible) : null;
         const done = item ? new Set(item.submitted) : null;
         const overdue = item ? new Set(item.overdue) : null;
@@ -437,8 +531,21 @@
             } else if (item) {
                 const when = item.done_at[userId];
                 state.textContent = (item.notes[userId] || '') + (when ? ' · ' + when : '');
+            } else if (cycleMode) {
+                const summary = cycleSummary(cycleItems, userId);
+                summaries.set(userId, summary);
+                state.textContent = summary.total ? cycleSummaryText(summary) : '—';
             } else {
                 state.textContent = mode === 'all' ? '—' : WORDS[mode].pick;
+            }
+            if (cycleMode) {
+                const summary = summaries.get(userId);
+                const closed = summary.total > 0 && summary.done === summary.total;
+                row.hidden = !base || !summary.total
+                    || (statusMode === 'closed' && !closed)
+                    || (statusMode === 'open' && closed)
+                    || (statusMode === 'overdue' && (closed || !summary.overdue));
+                return;
             }
             const hasDone = done && done.has(userId);
             row.hidden = !base
@@ -449,7 +556,8 @@
                 || (item && statusMode === 'started' && !started.has(userId))
                 || (item && statusMode === 'pending' && overdue.has(userId));
         });
-        renderBig(item, baseRows);
+        if (cycleMode) renderCycleBig(summaries, baseRows);
+        else renderBig(item, baseRows);
         const visible = rows.filter(function (row) { return !row.hidden; }).length;
         count.textContent = visible;
         empty.hidden = visible !== 0;
@@ -467,7 +575,7 @@
             const parts = [row.dataset.studentName + ' ' + username, row.dataset.studentTariff];
             if (mode === 'student') {
                 parts.push((studentLinesById.get(Number(row.dataset.studentId)) || []).join('; '));
-            } else if (item) {
+            } else if (item || (CYCLE_WORDS[mode] && periodItems().length)) {
                 parts.push(row.querySelector('[data-assignment-state]').textContent);
             }
             return parts.join(' – ');
@@ -486,7 +594,8 @@
     });
     monthSelect.addEventListener('change', function () { fillCycles(); applyFilter(); });
     cycleSelect.addEventListener('change', function () { fillItems(); applyFilter(); });
-    [tariffSelect, levelSelect, portfolioSelect, itemSelect, statusSelect].forEach(function (select) {
+    itemSelect.addEventListener('change', function () { fillStatuses(); applyFilter(); });
+    [tariffSelect, levelSelect, portfolioSelect, statusSelect].forEach(function (select) {
         select.addEventListener('change', applyFilter);
     });
     searchInput.addEventListener('input', applyFilter);
