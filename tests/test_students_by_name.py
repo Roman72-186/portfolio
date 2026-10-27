@@ -5,6 +5,7 @@
 посмотрел — видео-блок закрыт. Куратор видит ту же карточку только по своим
 ученикам (`/cabinet/curator/statistics`).
 """
+import json
 import re
 import shutil
 import subprocess
@@ -390,3 +391,67 @@ def test_curator_card_script_parses(curator_client, db, user_factory, tmp_path):
     path.write_text(card[0], encoding="utf-8")
     result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+# ── «Занятия»: кто нажимал кнопку «Ссылка» (владелец 27.10.2026) ────────────
+
+def _cycle_with_link(db):
+    stage, cycle, _block, _upload = _cycle_with_video(db)
+    task = TrackerTask(title="Занятие 18.10", topic_id=cycle.id, kind="material",
+                       is_published=True)
+    db.add(task)
+    db.flush()
+    link = TaskBlock(task_id=task.id, block_type="link", title="Подключение к занятию",
+                     url="https://zoom.us/j/1")
+    db.add(link)
+    db.commit()
+    return stage, cycle, link
+
+
+def test_meetings_mode_lists_who_pressed_link_with_date(db, user_factory):
+    from app.models.activity_event import StudentActivityEvent
+    from app.services.meeting_joins import EVENT_MEETING_JOIN
+
+    pressed = user_factory(vk_id=820_200, name="Pressed", tariff=TARIFF_SELF)
+    missed = user_factory(vk_id=820_201, name="Missed", tariff=TARIFF_CONFIDENT_MAX)
+    _stage, cycle, link = _cycle_with_link(db)
+    db.add(StudentActivityEvent(
+        user_id=pressed.id, event_type=EVENT_MEETING_JOIN, details=f"block:{link.id}",
+        created_at=datetime(2026, 10, 27, 16, 5, tzinfo=timezone.utc),
+    ))
+    db.commit()
+
+    overview = get_student_activity_overview(db, include_assignments=True)
+    [item] = overview["meetings"]
+
+    assert item["id"] == link.id
+    assert item["label"] == "Занятие 18.10 · Подключение к занятию"
+    assert item["topic_id"] == cycle.id
+    assert set(item["eligible"]) == {pressed.id, missed.id}
+    assert item["submitted"] == [pressed.id]
+    assert item["pending"] == [missed.id]
+    assert item["notes"] == {pressed.id: "Нажимал", missed.id: "Не нажимал"}
+    assert item["done_at"] == {pressed.id: "27.10.2026 в 19:05"}
+    # Ссылка — не работа и не видео.
+    assert link.id not in [i["id"] for i in overview["assignments"] + overview["videos"]]
+
+
+def test_students_by_name_has_meetings_mode_and_script_parses(
+    admin_client, db, user_factory, tmp_path,
+):
+    client, _ = admin_client
+    user_factory(vk_id=820_202, name="Student", tariff=TARIFF_SELF)
+    _cycle_with_link(db)
+
+    html = client.get("/cabinet/superadmin/activity").text
+
+    assert 'data-sbn-mode="meetings"' in html
+    # Данные вшиты `tojson`, кириллица в нём экранирована.
+    assert json.dumps("Подключение к занятию")[1:-1] in html
+    if shutil.which("node"):
+        [card] = [s for s in re.findall(r"<script>(.*?)</script>", html, re.S)
+                  if "data-activity-portfolio" in s]
+        path = tmp_path / "card.js"
+        path.write_text(card, encoding="utf-8")
+        result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr

@@ -7,8 +7,10 @@
    Фильтры: тариф (у каникулярного курса — трек, `group_label`), уровень точки А
    (у каникулярного его нет, `show_level`), имя или ник (`studentMatchesQuery` из
    student-search.js — одно правило поиска на все списки), портфолио. Режимы:
-   «Теория» — месяц → цикл → видео, «Практика» — месяц → цикл → задание; ниже
-   кто посмотрел / сдал и когда. Сверху крупно «20 из 90 · 22%» и по тарифам,
+   «Теория» — месяц → цикл → видео, «Практика» — месяц → цикл → задание,
+   «Занятия» — месяц → цикл → кнопка «Ссылка» (владелец 27.10.2026); ниже
+   кто посмотрел / сдал / нажимал и когда. «Нажимал» — открыл ссылку, а не
+   «был на занятии»: сколько ученик пробыл в Zoom, платформа не видит. Сверху крупно «20 из 90 · 22%» и по тарифам,
    если тариф не выбран, — плитками `ss-stats-strip`, как «Баллы за задания».
 
    У куратора (`curator_view`, Александрия 24.10.2026) карточка открывается
@@ -54,6 +56,7 @@
             <button type="button" class="nav-pill-item active" aria-pressed="true" data-sbn-mode="all">Все ученики</button>
             <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="theory">Теория</button>
             <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="practice">Практика</button>
+            <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="meetings">Занятия</button>
             <button type="button" class="nav-pill-item" aria-pressed="false" data-sbn-mode="student">По ученику</button>
         </div>
 
@@ -111,6 +114,7 @@
     const sources = {
         practice: {{ (student_activity.assignments or []) | tojson }},
         theory: {{ (student_activity.videos or []) | tojson }},
+        meetings: {{ (student_activity.meetings or []) | tojson }},
     };
     const months = {{ (student_activity.months or []) | tojson }};
     // Секунды на платформе по дням: {ученик: {"2026-10-26": 1800}} — «По ученику».
@@ -124,6 +128,8 @@
         practice: { item: 'Задание', pick: 'Выберите задание', done: 'сдали', statuses: [
             ['all', 'Все'], ['submitted', 'Сдали'], ['missing', 'Не сдали'],
             ['overdue', 'Не сдали, срок прошёл'], ['pending', 'Не сдали, срок не наступил']] },
+        meetings: { item: 'Ссылка', pick: 'Выберите ссылку', done: 'нажимали', statuses: [
+            ['all', 'Все'], ['submitted', 'Нажимали'], ['missing', 'Не нажимали']] },
     };
     const $ = function (selector) { return root.querySelector(selector); };
     const tariffSelect = $('[data-sbn-tariff]');
@@ -171,7 +177,9 @@
 
     // Месяцы и циклы, где в этом режиме есть хоть одно видео / задание.
     function modeItems() {
-        return mode === 'student' ? sources.theory.concat(sources.practice) : sources[mode];
+        return mode === 'student'
+            ? sources.theory.concat(sources.practice, sources.meetings)
+            : sources[mode];
     }
 
     function cyclesWithItems() {
@@ -325,6 +333,10 @@
             stats.textContent = 'Не сдали: ' + (total - doneCount)
                 + ' (срок прошёл: ' + overdue + ', срок не наступил: ' + (total - doneCount - overdue) + ')';
             stats.hidden = false;
+        } else if (mode === 'meetings') {
+            stats.textContent = 'Не нажимали: ' + (total - doneCount)
+                + '. Видно только нажатие кнопки, сколько ученик пробыл в Zoom – нет. Нажатия записываются с 27.10.2026.';
+            stats.hidden = false;
         } else {
             // «Смотрел 27 из 40 мин» — у каждого в списке, здесь итог.
             stats.textContent = 'Не посмотрели: ' + (total - doneCount)
@@ -372,7 +384,8 @@
             lines.push('На платформе за период: ' + minutesText(secondsIn(userId, cycles)));
             lines.push('Последнее действие: ' + (row.dataset.studentLastStep || 'пока нет'));
         }
-        (worksOnly ? [['practice', 'Работы']] : [['theory', 'Видео'], ['practice', 'Работы']]).forEach(function (pair) {
+        (worksOnly ? [['practice', 'Работы']]
+            : [['theory', 'Видео'], ['practice', 'Работы'], ['meetings', 'Занятия']]).forEach(function (pair) {
             const items = sources[pair[0]].filter(function (item) {
                 return ids.indexOf(item.topic_id || 0) !== -1 && item.eligible.indexOf(userId) !== -1;
             }).sort(function (a, b) {

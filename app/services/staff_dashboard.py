@@ -13,7 +13,7 @@ from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.video_progress import VideoProgress
-from app.models.task_block import BLOCK_TIMED, BLOCK_VIDEO, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
+from app.models.task_block import BLOCK_LINK, BLOCK_TIMED, BLOCK_VIDEO, TaskBlock, TaskBlockState, TaskBlockSubmission, SUBMISSION_BLOCK_TYPES
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.constants import (
     MOCK_SUBJECTS, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, STUDY_MODE_LABELS, TARIFF_CONFIDENT_MAX,
@@ -23,6 +23,7 @@ from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
+from app.services.meeting_joins import link_opens
 from app.services.point_a import student_point_a_level
 from app.services.presence import daily_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
@@ -332,7 +333,9 @@ _ACTIVITY_LABELS = {
 }
 
 
-def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = False) -> list[dict]:
+def _assignment_activity(
+    db: DBSession, students: list[User], *, theory: bool = False, links: bool = False,
+) -> list[dict]:
     """Открытые блоки сдачи работы (домашка и контрольная на время): кому
     положено сдавать, кто сдал, а у несдавших — прошёл ли срок.
 
@@ -345,6 +348,12 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
     досмотрел: «Смотрел 27 из 40 мин» (Александрия 23.10.2026) — покрытие
     текущего прохода `VideoProgress.covered_seconds`, то же, по которому
     засчитывается просмотр; такие ученики ещё и в `started`.
+
+    `links=True` — то же по блокам «Ссылка» (Zoom на занятие): режим «Занятия»
+    (владелец 27.10.2026: «выбираем кнопку… фильтр нажимал или не нажимал»).
+    «Нажимал» — запись о переходе (`meeting_joins.link_opens`), а не
+    `TaskBlockState`: у ссылки своего «сделано» нет. Это «открыл ссылку», а не
+    «был на занятии». Срока нет — все ненажавшие в `pending`.
 
     У каждого задания ещё `topic_id` (цикл — для выбора «месяц → цикл») и
     `done_at` — когда сдал или посмотрел, по Москве.
@@ -364,11 +373,13 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
     а статистика числила должниками.
     """
     now = datetime.now(timezone.utc)
-    kind_filter = (
-        (TaskBlock.block_type == BLOCK_VIDEO, TaskBlock.video_id.isnot(None),
-         TrackerTask.kind != ITEM_MOCK_EXAM)
-        if theory else (TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),)
-    )
+    if links:
+        kind_filter = (TaskBlock.block_type == BLOCK_LINK, TaskBlock.url.isnot(None))
+    elif theory:
+        kind_filter = (TaskBlock.block_type == BLOCK_VIDEO, TaskBlock.video_id.isnot(None),
+                       TrackerTask.kind != ITEM_MOCK_EXAM)
+    else:
+        kind_filter = (TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),)
     candidates = (
         db.query(TaskBlock, TrackerTask)
         .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
@@ -415,7 +426,8 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
             TaskBlockState.block_id.in_(block_ids),
             TaskBlockState.status == STATUS_DONE,
         )
-    }
+    } if not links else {}
+    opened = link_opens(db, block_ids) if links else {}
 
     videos = {
         video.id: video
@@ -441,6 +453,16 @@ def _assignment_activity(db: DBSession, students: list[User], *, theory: bool = 
         )
         submitted, overdue, pending, started, notes, done_at = [], [], [], [], {}, {}
         for uid in eligible:
+            if links:
+                opened_at = opened.get((block.id, uid))
+                if opened_at is None:
+                    pending.append(uid)
+                    notes[uid] = "Не нажимал"
+                else:
+                    submitted.append(uid)
+                    done_at[uid] = msk_text(opened_at)
+                    notes[uid] = "Нажимал"
+                continue
             tariff = learners[uid].tariff
             state = done.get((block.id, uid))
             if state is not None:
@@ -657,7 +679,8 @@ def get_student_activity_overview(
     Александрия 22.10.2026: «чтобы видели ситуацию только по своей группе».
     `tariffs` — только эти тарифы (куратору — `CURATOR_STATS_TARIFFS`).
 
-    С `include_assignments` ещё «Теория» (`videos` — видео-блоки), выбор
+    С `include_assignments` ещё «Теория» (`videos` — видео-блоки), «Занятия»
+    (`meetings` — блоки «Ссылка», кто нажимал), выбор
     «месяц → цикл» (`months`), уровень точки А и «на чём остановился»
     (`last_step`) у каждого ученика.
     """
@@ -671,7 +694,7 @@ def get_student_activity_overview(
     curator_view = curator_id is not None
     if not student_ids:
         return {"students": [], "events": [], "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": [], "activity_days": {},
+                "videos": [], "meetings": [], "months": [], "tariffs": [], "activity_days": {},
                 "curator_view": curator_view}
 
     login_rows = (
@@ -764,19 +787,21 @@ def get_student_activity_overview(
     ]
     if not include_assignments:
         return {"students": overview, "events": journal, "assignments": [], "scores": [],
-                "videos": [], "months": [], "tariffs": [], "activity_days": {},
+                "videos": [], "meetings": [], "months": [], "tariffs": [], "activity_days": {},
                 "curator_view": curator_view}
     last_steps = _last_steps(db, student_ids)
     for row in overview:
         row["last_step"] = last_steps.get(row["id"])
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
+    meetings = _assignment_activity(db, students, links=True)
     # В выбор «месяц → цикл → задание» — только то, что положено хоть одному
     # ученику выборки: в каникулярном режиме иначе шли все задания годового
     # курса (23.10.2026). Баллы считают по полному списку: сдавший сохраняет
     # балл, даже если задание ему больше не адресовано.
     shown = [item for item in assignments if item["eligible"]]
     shown_videos = [item for item in videos if item["eligible"]]
+    shown_meetings = [item for item in meetings if item["eligible"]]
     holiday = current_report_program() == PROGRAM_HOLIDAY
     if holiday:
         # У каникулярного тарифа нет — фильтр идёт по треку, тегу группы
@@ -796,7 +821,7 @@ def get_student_activity_overview(
         # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).
         groups = sorted({row["tariff"] for row in overview},
                         key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
-    months = _program_months(db, shown + shown_videos)
+    months = _program_months(db, shown + shown_videos + shown_meetings)
     # Время на платформе по дням — таблица «По ученику» суммирует его за
     # выбранный цикл в браузере (Александрия 22.10.2026, этап 3 плана).
     starts = [cycle["start"] for month in months for cycle in month["cycles"] if cycle.get("start")]
@@ -805,7 +830,7 @@ def get_student_activity_overview(
     )
     return {"students": overview, "events": journal, "assignments": shown,
             "scores": _assignment_scores(db, student_ids, assignments),
-            "videos": shown_videos, "months": months,
+            "videos": shown_videos, "meetings": shown_meetings, "months": months,
             "tariffs": groups, "group_label": "Трек" if holiday else "Тариф",
             "show_level": not holiday, "activity_days": activity_days,
             "curator_view": curator_view,

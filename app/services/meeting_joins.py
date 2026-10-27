@@ -118,6 +118,30 @@ def record_link_open(db: Session, *, user_id: int, block: TaskBlock) -> bool:
     return _record_first(db, user_id=user_id, details=f"{_BLOCK_PREFIX}{block.id}")
 
 
+def link_opens(db: Session, block_ids) -> dict[tuple[int, int], datetime]:
+    """Первые переходы по блокам «Ссылка»: (блок, ученик) → когда, в UTC.
+
+    Режим «Занятия» в «Учениках поимённо» (`staff_dashboard._assignment_activity`):
+    кто из адресатов ссылки нажимал её, а кто нет."""
+    details = {f"{_BLOCK_PREFIX}{block_id}" for block_id in block_ids}
+    if not details:
+        return {}
+    result: dict[tuple[int, int], datetime] = {}
+    for user_id, raw, created_at in (
+        db.query(
+            StudentActivityEvent.user_id,
+            StudentActivityEvent.details,
+            StudentActivityEvent.created_at,
+        )
+        .filter(
+            StudentActivityEvent.event_type == EVENT_MEETING_JOIN,
+            StudentActivityEvent.details.in_(details),
+        )
+    ):
+        result[(block_id_from_details(raw), user_id)] = created_at
+    return result
+
+
 def event_titles(db: Session, event_ids) -> dict[int, str]:
     """«Занятие по рисунку · 21 октября, 10:00–11:30» по номеру события."""
     ids = {i for i in event_ids if i is not None}
