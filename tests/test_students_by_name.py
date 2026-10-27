@@ -439,7 +439,7 @@ def test_meetings_mode_lists_who_pressed_link_without_time(db, user_factory):
     assert set(item["eligible"]) == {pressed.id, missed.id}
     assert item["submitted"] == [pressed.id]
     assert item["pending"] == [missed.id]
-    assert item["notes"] == {pressed.id: "Нажимал", missed.id: "Не нажимал"}
+    assert item["notes"] == {pressed.id: "Был на занятии (нажал кнопку)", missed.id: "Не был"}
     # Время нажатия не показываем (владелец 27.10.2026), ленты действий — тоже.
     assert item["done_at"] == {}
     assert overview["events"] == []

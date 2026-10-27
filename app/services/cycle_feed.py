@@ -42,6 +42,7 @@ from app.services.task_blocks import (
     BlockViewer,
     autoclose_steps,
     block_still_doable,
+    attended_links_for,
     close_block_for_user,
     get_audiences,
     get_blocks,
@@ -330,8 +331,10 @@ def build_cycle_feed(
         )
         # Флаг задания над флагами блоков, опрос, диагностика — одно правило
         # с `feed_state` и кнопкой «Завершить задание».
+        # Запись занятия — только тем, кто на нём не был (27.10.2026).
         required_by_block.update(required_by_block_for_task(
-            task, task_blocks, is_intake_student=is_intake_student
+            task, task_blocks, is_intake_student=is_intake_student,
+            attended_link_ids=attended_links_for(db, user_id, task_blocks),
         ))
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)

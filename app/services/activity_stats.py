@@ -42,6 +42,7 @@ from app.models.video_watch_segment import VideoWatchSegment
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.meeting_joins import (
+    ATTENDED_PRESSED,
     EVENT_MEETING_JOIN,
     student_meeting_joins,
 )
@@ -901,6 +902,8 @@ def get_self_score_stats(db: DBSession) -> dict:
 
 _AUDIT_LABELS = {
     "curator_assign": "Смена куратора",
+    # Отметка «был / не был на занятии» (владелец 27.10.2026).
+    "lesson_attendance": "Отметка посещения занятия",
     "tariff_change": "Смена тарифа",
     "user_rename": "Смена имени",
     "user_delete": "Удаление",
@@ -2030,7 +2033,7 @@ _STUDENT_EVENT_FEED_LABELS = {
 _STUDENT_AUDIT_ACTIONS = (
     "curator_assign", "tariff_change", "access_until_change", "payment_settings_change",
     "user_block", "user_unblock", "user_archive", "user_unarchive",
-    "impersonate_start", "impersonate_stop",
+    "impersonate_start", "impersonate_stop", "lesson_attendance",
 )
 
 
@@ -2193,10 +2196,13 @@ def student_activity(
         # Переходы по ссылкам занятий — «Подключиться» в дайджесте и блок
         # «Ссылка» в задании (`services/meeting_joins.py`): открыл ссылку,
         # а не «просидел занятие».
+        # Занятия, на которых был (нажал кнопку или отметил преподаватель),
+        # без времени (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
         "meetings": {
-            "recent": counts.get(EVENT_MEETING_JOIN, 0),
-            # Только что открывал, без времени (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
-            "joins": [{"event": j["event"]} for j in student_meeting_joins(db, student.id)],
+            "joins": [
+                {"event": j["event"], "by_staff": j["source"] != ATTENDED_PRESSED}
+                for j in student_meeting_joins(db, student.id)
+            ],
         },
         "video": {
             "started": started or 0,

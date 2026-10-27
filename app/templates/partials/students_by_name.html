@@ -130,6 +130,9 @@
     };
     const months = {{ (student_activity.months or []) | tojson }};
     const curatorView = {{ 'true' if student_activity.curator_view else 'false' }};
+    // Отметка «был / не был на занятии» — ГП и суперадмин (владелец 27.10.2026),
+    // роут `cabinet_students_shared.mark_lesson_attendance`.
+    const canMarkAttendance = {{ 'true' if student_activity.can_mark_attendance else 'false' }};
     const worksOnlyTariffs = {{ (student_activity.works_only_tariffs or []) | tojson }};
     const WORDS = {
         theory: { item: 'Видео', pick: 'Выберите видео', done: 'посмотрели', statuses: [
@@ -138,8 +141,8 @@
         practice: { item: 'Задание', pick: 'Выберите задание', done: 'сдали', statuses: [
             ['all', 'Все'], ['submitted', 'Сдали'], ['missing', 'Не сдали'],
             ['overdue', 'Не сдали, срок прошёл'], ['pending', 'Не сдали, срок не наступил']] },
-        meetings: { item: 'Ссылка', pick: 'Выберите ссылку', done: 'нажимали', statuses: [
-            ['all', 'Все'], ['submitted', 'Нажимали'], ['missing', 'Не нажимали']] },
+        meetings: { item: 'Занятие', pick: 'Выберите занятие', done: 'были на занятии', statuses: [
+            ['all', 'Все'], ['submitted', 'Были'], ['missing', 'Не были']] },
     };
     // Итог цикла — выбран цикл, а видео или задание нет (Александрия 27.10.2026:
     // «выбирая неделю, видеть по ней итог», не заходя в каждое задание).
@@ -400,8 +403,8 @@
                 + ' (срок прошёл: ' + overdue + ', срок не наступил: ' + (total - doneCount - overdue) + ')';
             stats.hidden = false;
         } else if (mode === 'meetings') {
-            stats.textContent = 'Не нажимали: ' + (total - doneCount)
-                + '. Видно только нажатие кнопки, сколько ученик пробыл в Zoom – нет. Нажатия записываются с 18.10.2026.';
+            stats.textContent = 'Не были: ' + (total - doneCount)
+                + '. Был на занятии – нажал кнопку «Подключиться» или отметил преподаватель. Сколько ученик пробыл в Zoom, платформа не видит.';
             stats.hidden = false;
         } else {
             // «Смотрел 27 из 40 мин» — у каждого в списке, здесь итог.
@@ -555,6 +558,38 @@
         state.replaceChildren.apply(state, parts);
     }
 
+    // Кнопка в строке «Занятий»: ставит обратное текущему. Ответ сервера
+    // меняет только этот элемент списка, без перезагрузки страницы.
+    function attendanceButton(item, userId) {
+        const was = item.submitted.indexOf(userId) !== -1;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn-outline';
+        button.textContent = was ? 'Отметить: не был' : 'Отметить: был';
+        button.addEventListener('click', function () {
+            button.disabled = true;
+            window.csrfFetch('/cabinet/students/' + userId + '/lesson-links/' + item.id + '/attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ attended: !was }),
+            }).then(function (resp) {
+                return resp.json().catch(function () { return {}; }).then(function (data) {
+                    if (!resp.ok) throw { status: resp.status, data: data };
+                });
+            }).then(function () {
+                item.submitted = item.submitted.filter(function (id) { return id !== userId; });
+                item.pending = item.pending.filter(function (id) { return id !== userId; });
+                (was ? item.pending : item.submitted).push(userId);
+                item.notes[userId] = was ? 'Не был (отметил преподаватель)' : 'Был на занятии (отметил преподаватель)';
+                applyFilter();
+            }).catch(function (error) {
+                button.disabled = false;
+                alert(window.csrfFailure(error && error.status, error && error.data, 'Не удалось сохранить отметку'));
+            });
+        });
+        return button;
+    }
+
     function applyFilter() {
         const item = selectedItem();
         const cycleItems = !item && CYCLE_WORDS[mode] ? periodItems() : [];
@@ -588,6 +623,9 @@
             } else if (item) {
                 const when = item.done_at[userId];
                 state.textContent = (item.notes[userId] || '') + (when ? ' · ' + when : '');
+                if (mode === 'meetings' && canMarkAttendance && item.eligible.indexOf(userId) !== -1) {
+                    state.append(' ', attendanceButton(item, userId));
+                }
             } else if (cycleMode) {
                 const summary = cycleSummary(cycleItems, userId);
                 summaries.set(userId, summary);

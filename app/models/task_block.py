@@ -385,6 +385,15 @@ class TaskBlock(Base):
         Boolean, nullable=False, default=True
     )
 
+    # Запись занятия обязательна только тем, кто на нём не был (Александрия
+    # 27.10.2026: «те, кто был на занятии… видео с занятия им становится
+    # необязательным»). «Был» — ближайшая кнопка «Ссылка» выше в этом же
+    # задании нажата или отмечена преподавателем (`meeting_joins.attended_link_ids`).
+    # Только у видео; без ссылки выше флаг ни на что не влияет.
+    optional_if_attended: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
     # Предмет блока — «Рисунок»|«Композиция»|None (доступен обоим). Зеркало
     # TrackerTask.subject, значения — app.constants.MOCK_SUBJECTS. Нужен
     # именно на блоке, а не на всём задании: предобучение часть цикла ведёт
@@ -853,6 +862,32 @@ class TaskBlockRequiredTariff(Base):
         ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
     )
     tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+
+class LessonAttendanceMark(Base):
+    """Отметка преподавателя «был / не был на занятии» по кнопке «Ссылка»
+    (владелец 27.10.2026: ставят ГП и суперадмин в «Учениках поимённо →
+    Занятия»). Перекрывает нажатие в обе стороны: ребёнок зашёл в Zoom мимо
+    кнопки — «был», нажал и не пришёл — «не был». Нет строки — решает нажатие
+    (`StudentActivityEvent` `meeting_join`). Правило — `meeting_joins`.
+    """
+
+    __tablename__ = "lesson_attendance_marks"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    attended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    marked_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    marked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class TaskBlockDialogTariff(Base):

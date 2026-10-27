@@ -843,6 +843,17 @@ function blockSettingsHTML(type) {
             '<input type="number" min="1" max="8760" step="1" value="72" data-b-portfolio-window-hours'
             + ' data-sum="" data-sum-unit=" ч" aria-label="Сколько часов ученик может загружать портфолио">'
         ) : '')
+        // Запись занятия — только тем, кто на нём не был (Александрия
+        // 27.10.2026). «Был» — нажал кнопку «Ссылка» выше в этом задании или
+        // отметил преподаватель; правило — task_blocks.required_by_block_for_task.
+        + (type === 'video' ? settingItemHTML(
+            'Запись занятия',
+            'Кто был на занятии – нажал кнопку «Ссылка» выше в этом задании или отмечен преподавателем, – смотрит запись по желанию. Остальным она обязательна и закрывает всё ниже. Без кнопки «Ссылка» выше галочка не действует.',
+            'для всех одинаково',
+            '<label class="prg-field prg-field--row">'
+            + '<input type="checkbox" data-b-optional-if-attended data-sum-on="обязательна тем, кто не был">'
+            + '<span>Обязательно только тем, кто не был на занятии</span></label>'
+        ) : '')
         + settingItemHTML(
             'Срок сдачи',
             submitHint,
@@ -1458,6 +1469,8 @@ function fillBlockRow(row, block) {
     if (requiredForIntakeBox) {
         requiredForIntakeBox.checked = block.is_required_for_intake !== false;
     }
+    var attendedBox = row.querySelector('[data-b-optional-if-attended]');
+    if (attendedBox) attendedBox.checked = !!block.optional_if_attended;
     var opensAt = row.querySelector('[data-b-opens]');
     if (opensAt) opensAt.value = block.opens_at || '';
     var closesAt = row.querySelector('[data-b-closes]');
@@ -1691,6 +1704,8 @@ function collectFormBlocks(form) {
         var requiredForIntakeBox = row.querySelector('[data-b-required-for-intake]');
         item.is_required_for_intake = requiredForIntakeBox
             ? requiredForIntakeBox.checked : false;
+        var attendedBox = row.querySelector('[data-b-optional-if-attended]');
+        item.optional_if_attended = !!(attendedBox && attendedBox.checked);
         var opensAt = row.querySelector('[data-b-opens]');
         item.opens_at = (opensAt && opensAt.value) ? opensAt.value : null;
         var closesAt = row.querySelector('[data-b-closes]');

@@ -774,6 +774,7 @@ def required_steps_for_student(
     required_by_block = required_by_block_for_task(
         task, blocks,
         is_intake_student=bool(student and student.access_until is not None),
+        attended_link_ids=attended_links_for(db, user_id, blocks),
     )
     candidates = [block for block in blocks if required_by_block[block.id]]
     if not candidates:
@@ -1653,6 +1654,9 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.is_required_for_intake = bool(
             item.get("is_required_for_intake", True)
             if block_type == BLOCK_PORTFOLIO else False
+        )
+        row.optional_if_attended = bool(
+            block_type == BLOCK_VIDEO and item.get("optional_if_attended")
         )
         subject = _clean(item.get("subject"), 50)
         row.subject = subject if subject in MOCK_SUBJECTS else None
@@ -2811,8 +2815,39 @@ def is_block_required_for_user(
     return block.is_required
 
 
+def attendance_links(blocks: list[TaskBlock]) -> dict[int, int]:
+    """Видео «обязательно только тем, кто не был на занятии» → кнопка
+    «Ссылка», по которой решается «был»: ближайшая выше в том же списке блоков
+    задания. Видео без ссылки выше в ответ не попадает — флаг ему не действует."""
+    result: dict[int, int] = {}
+    link_id: int | None = None
+    for block in blocks:
+        if block.block_type == BLOCK_LINK:
+            link_id = block.id
+        elif (
+            block.block_type == BLOCK_VIDEO
+            and getattr(block, "optional_if_attended", False)
+            and link_id is not None
+        ):
+            result[block.id] = link_id
+    return result
+
+
+def attended_links_for(db: DBSession, user_id: int, blocks: list[TaskBlock]) -> set[int]:
+    """Кнопки «Ссылка» из `blocks`, по которым ученик был на занятии, — то,
+    что ждёт `required_by_block_for_task`. Читает журнал, только если в
+    `blocks` есть видео с флагом."""
+    links = set(attendance_links(blocks).values())
+    if not links:
+        return set()
+    from app.services.meeting_joins import attended_link_ids
+
+    return attended_link_ids(db, user_id, links)
+
+
 def required_by_block_for_task(
-    task, blocks: list[TaskBlock], *, is_intake_student: bool
+    task, blocks: list[TaskBlock], *, is_intake_student: bool,
+    attended_link_ids: set[int] | frozenset = frozenset(),
 ) -> dict[int, bool]:
     """Обязателен ли этому ученику каждый блок задания `task`.
 
@@ -2825,6 +2860,13 @@ def required_by_block_for_task(
     месяц, а не учебную ленту. Внутри опроса обязателен только последний
     вопрос (`poll_inner_block_ids`), у диагностики АРХИ-ПРОФИЛЯ — только
     последний блок.
+
+    Видео «обязательно только тем, кто не был на занятии»
+    (`optional_if_attended`, Александрия 27.10.2026) обязательно, пока
+    ближайшая кнопка «Ссылка» выше него не в `attended_link_ids`; галочка
+    «Блокирует дальнейшую выдачу» ему не нужна. «Был» — нажал кнопку или
+    отметил преподаватель (`meeting_joins.attended_link_ids`, вызывающие
+    берут через `attended_links_for`). Нет ссылки выше — флаг не действует.
     """
     from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM
 
@@ -2834,12 +2876,15 @@ def required_by_block_for_task(
             block.id: bool(progress and block is blocks[-1]) for block in blocks
         }
     poll_inner = poll_inner_block_ids(blocks)
+    lesson_link = attendance_links(blocks)
+
+    def own_flag(block: TaskBlock) -> bool:
+        if block.id in lesson_link:
+            return lesson_link[block.id] not in attended_link_ids
+        return is_block_required_for_user(block, is_intake_student=is_intake_student)
+
     return {
-        block.id: bool(
-            progress
-            and block.id not in poll_inner
-            and is_block_required_for_user(block, is_intake_student=is_intake_student)
-        )
+        block.id: bool(progress and block.id not in poll_inner and own_flag(block))
         for block in blocks
     }
 
@@ -2882,6 +2927,7 @@ def feed_state(
     required_by_block = required_by_block_for_task(
         task, blocks,
         is_intake_student=bool(student and student.access_until is not None),
+        attended_link_ids=attended_links_for(db, user_id, blocks),
     )
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)

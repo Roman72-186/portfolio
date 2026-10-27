@@ -1489,6 +1489,12 @@ def _activity_page(request, user, db, *, holiday, program_switch,
     )
 
     student_activity = get_student_activity_overview(db, include_assignments=True)
+    # Отметка «был / не был на занятии» — ГП и суперадмин (владелец 27.10.2026):
+    # по родному рангу, не по поднятому в открытом разделе; модератору
+    # изменения закрыты белым списком.
+    student_activity["can_mark_attendance"] = (
+        user.get("nav_rank", 0) >= 4 and user.get("role_name") != MODERATOR_ROLE_NAME
+    )
     return templates.TemplateResponse(request, "superadmin_activity.html", {
         "request": request,
         "user": user,

@@ -660,6 +660,7 @@ def _edit_payloads(
                 "poll_intro": b.poll_intro,
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
+                "optional_if_attended": b.optional_if_attended,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),
@@ -1947,6 +1948,9 @@ class BlockItem(BaseModel):
     # Отдельная обязательность для новичка по ссылке «Проба».
     # Сервис учитывает её только у блока загрузки портфолио.
     is_required_for_intake: bool = True
+    # Видео «обязательно только тем, кто не был на занятии» (27.10.2026).
+    # Сервис сохраняет его только у видео.
+    optional_if_attended: bool = False
     subject: str | None = Field(default=None, max_length=50)
     tariffs: list[str] = Field(default_factory=list, max_length=10)
     # Кого обязать выполнить, если блок обязательный — отдельная ось от
@@ -2958,6 +2962,7 @@ def blocks_source_content(
             "hidden_until_done": b.hidden_until_done,
             "is_required": b.is_required,
             "is_required_for_intake": b.is_required_for_intake,
+            "optional_if_attended": b.optional_if_attended,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
             # Уровень и ученики копируются, как тарифы: без них блок «только

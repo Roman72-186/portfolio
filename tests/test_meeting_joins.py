@@ -135,9 +135,8 @@ def test_card_statistics_lists_joins_without_time(db, user_factory):
 
     data = student_activity(db, student, today=today_msk())
 
-    assert data["meetings"]["recent"] == 1
     [join] = data["meetings"]["joins"]
-    assert join == {"event": join["event"]}
+    assert join == {"event": join["event"], "by_staff": False}
     assert join["event"].startswith("Разбор композиции · ")
     assert data["feed"] == []
 
@@ -210,9 +209,8 @@ def test_link_block_open_is_recorded_once_and_shown_in_card(auth_client, db):
     assert second.status_code == 302
     assert len(_joins(db, student.id)) == 1
     data = student_activity(db, student, today=today_msk())
-    assert data["meetings"]["recent"] == 1
     [join] = data["meetings"]["joins"]
-    assert join == {"event": "Подключение к занятию · Занятие 18.10"}
+    assert join == {"event": "Подключение к занятию · Занятие 18.10", "by_staff": False}
     assert data["feed"] == []
 
 

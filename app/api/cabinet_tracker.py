@@ -115,6 +115,8 @@ from app.services.task_blocks import (
     mark_submitted as mark_task_block_submitted,
     get_blocks as get_task_blocks,
     get_required_tariffs,
+    attended_links_for,
+    maybe_close_task_by_blocks,
     required_by_block_for_task,
     get_blocks_for_tasks as get_task_blocks_for_tasks,
     task_content_label,
@@ -727,8 +729,10 @@ def _video_block_requires_completion(
         return False
     # «Проба» меняет обязательность только у загрузки портфолио, видео-блока
     # она не касается — отсюда `is_intake_student=False`.
+    blocks = get_task_blocks(db, task.id)
     required = required_by_block_for_task(
-        task, get_task_blocks(db, task.id), is_intake_student=False,
+        task, blocks, is_intake_student=False,
+        attended_link_ids=attended_links_for(db, user["user_id"], blocks),
     ).get(block.id, False)
     required_tariffs = get_required_tariffs(db, [block.id]).get(block.id)
     if not required or (required_tariffs and user.get("tariff") not in required_tariffs):
@@ -1397,7 +1401,10 @@ def go_link_block(
     # школа ставит сюда, а не в дайджест). Сотрудник под собой и вход
     # «глазами» не пишутся — правило `cabinet_tracker_meeting_join`.
     if user.get("role_rank", 0) <= STUDENT_ROLE_RANK and not user.get("impersonated_by_id"):
-        record_link_open(db, user_id=user["user_id"], block=block)
+        if record_link_open(db, user_id=user["user_id"], block=block):
+            # «Был на занятии» снимает обязательность записи (27.10.2026):
+            # если она одна оставалась, задание закрывается сразу.
+            maybe_close_task_by_blocks(db, block.task_id, user["user_id"])
         db.commit()
     return RedirectResponse(
         block.url,

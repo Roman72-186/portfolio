@@ -52,6 +52,10 @@ from app.services.report_scope import report_program_switch
 from app.services.login_ips import distinct_ips_by_user, recent_logins_json
 from app.services.activity_stats import student_statistics
 from app.services.video_credit import credit_video_block, student_video_blocks
+from app.services.meeting_joins import set_attendance
+from app.services.tracker import task_audience_user_ids
+from app.models.task_block import BLOCK_LINK, TaskBlock
+from pydantic import BaseModel, ConfigDict
 from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
@@ -1195,6 +1199,43 @@ def credit_student_video(
         student_id, block_id, user["user_id"],
     )
     return JSONResponse({"ok": True, "video_credit": student_video_blocks(db, student)})
+
+
+class LessonAttendanceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attended: bool
+
+
+@router.post("/students/{student_id}/lesson-links/{block_id}/attendance")
+def mark_lesson_attendance(
+    student_id: int,
+    block_id: int,
+    payload: LessonAttendanceIn,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """«Был / не был на занятии» в «Учениках поимённо → Занятия» — ГП и
+    суперадмин (владелец 27.10.2026). Перекрывает нажатие кнопки «Ссылка»;
+    правило и последствия (обязательность записи) — `services/meeting_joins.py`.
+    Только по кнопке, которая этому ученику адресована."""
+    student = _check_access(student_id, user, db)
+    block = db.get(TaskBlock, block_id)
+    if (
+        block is None or block.block_type != BLOCK_LINK or not block.url
+        or student.id not in task_audience_user_ids(db, block.task_id)
+    ):
+        raise HTTPException(status_code=404, detail="У ученика нет такого занятия")
+    set_attendance(
+        db, block=block, student_id=student.id, attended=payload.attended,
+        staff_id=user["user_id"],
+    )
+    db.commit()
+    logger.info(
+        "Посещение занятия отмечено | student=%s | block=%s | attended=%s | staff=%s",
+        student_id, block_id, payload.attended, user["user_id"],
+    )
+    return JSONResponse({"ok": True})
 
 
 # ── POST: оценить работу ──────────────────────────────────────────────────────

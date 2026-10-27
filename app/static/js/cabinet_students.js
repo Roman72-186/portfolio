@@ -1791,24 +1791,22 @@ function buildRecentLogins(rows) {
     }).join('') + '</ul>';
 }
 
-// Переходы по ссылкам занятий: «Подключиться» в дайджесте (с 20.10.2026) и
-// кнопка блока «Ссылка» в задании (с 27.10.2026), сервер —
-// services/meeting_joins.py. Нажатие — это «открыл ссылку занятия»: сколько
-// ученик пробыл на созвоне, платформа не видит, поэтому подпись говорит про
-// ссылку, а не про присутствие. Времени нажатия нет (владелец 27.10.2026:
-// «время нажатия вообще нужно убрать»).
+// Занятия, на которых ученик был: нажал «Подключиться» (дайджест или кнопка
+// «Ссылка» в задании) или отметил преподаватель — правило школы 27.10.2026,
+// сервер — services/meeting_joins.py. Сколько ученик пробыл в Zoom, платформа
+// не видит. Времени нет (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
 function buildStatsMeetings(a) {
     var m = a.meetings || {};
     var joins = m.joins || [];
     var html = '<div class="section-title">Занятия</div><div class="activity-tiles">'
-        + activityTile('Открывал ссылку занятия за ' + a.days + ' дней', m.recent || 0)
+        + activityTile('Был на занятиях', joins.length)
         + '</div>'
-        + '<div class="profile-field-label">Какие ссылки открывал</div>';
+        + '<div class="profile-field-label">На каких занятиях был</div>';
     if (!joins.length) {
-        return html + '<div class="no-works">Ещё не открывал ссылку занятия. Нажатия записываются с 18.10.2026.</div>';
+        return html + '<div class="no-works">Пока не был ни на одном занятии: не нажимал «Подключиться», и преподаватель не отмечал.</div>';
     }
     return html + '<ul class="activity-feed">' + joins.map(function(j) {
-        return statsRow(j.event, '');
+        return statsRow(j.event, statsBadge(j.by_staff ? 'отметил преподаватель' : 'нажал кнопку'));
     }).join('') + '</ul>';
 }
 

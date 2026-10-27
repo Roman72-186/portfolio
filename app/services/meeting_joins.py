@@ -22,7 +22,7 @@
 повторные тапы по той же кнопке лишь размножили бы строки ленты. Название
 берётся при показе, поэтому правка названия видна и в старых записях.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -142,6 +142,93 @@ def link_opens(db: Session, block_ids) -> dict[tuple[int, int], datetime]:
     return result
 
 
+# Откуда «был / не был» по кнопке «Ссылка» — для подписей в статистике.
+ATTENDED_PRESSED = "pressed"
+ATTENDED_STAFF = "staff_yes"
+ABSENT_STAFF = "staff_no"
+
+AUDIT_LESSON_ATTENDANCE = "lesson_attendance"
+
+
+def attendance_by_block(db: Session, block_ids) -> dict[tuple[int, int], str]:
+    """Кто был на занятии по каждой кнопке «Ссылка»: (блок, ученик) → откуда.
+
+    Александрия 27.10.2026: нажал «Подключиться к занятию» — был на занятии.
+    Отметка преподавателя (`LessonAttendanceMark`, владелец 27.10.2026)
+    перекрывает нажатие в обе стороны, поэтому «не был» тоже бывает в ответе
+    (`ABSENT_STAFF`). Нет ни нажатия, ни отметки — пары в ответе нет.
+    **Единственное место правила**: лента (`attended_link_ids`), режим
+    «Занятия» и карточка ученика читают его отсюда."""
+    from app.models.task_block import LessonAttendanceMark
+
+    ids = {block_id for block_id in block_ids if block_id is not None}
+    if not ids:
+        return {}
+    result = {key: ATTENDED_PRESSED for key in link_opens(db, ids)}
+    for mark in db.query(LessonAttendanceMark).filter(LessonAttendanceMark.block_id.in_(ids)):
+        result[(mark.block_id, mark.user_id)] = ATTENDED_STAFF if mark.attended else ABSENT_STAFF
+    return result
+
+
+def attended_link_ids(db: Session, user_id: int, block_ids) -> set[int]:
+    """Кнопки «Ссылка», по которым ученик был на занятии, — для обязательности
+    записи (`task_blocks.required_by_block_for_task`). Одно чтение на набор."""
+    from app.models.task_block import LessonAttendanceMark
+
+    ids = {block_id for block_id in block_ids if block_id is not None}
+    if not ids:
+        return set()
+    pressed = (
+        db.query(StudentActivityEvent.details)
+        .filter(
+            StudentActivityEvent.user_id == user_id,
+            StudentActivityEvent.event_type == EVENT_MEETING_JOIN,
+            StudentActivityEvent.details.in_({f"{_BLOCK_PREFIX}{i}" for i in ids}),
+        )
+        .all()
+    )
+    attended = {block_id_from_details(details) for (details,) in pressed}
+    for mark in db.query(LessonAttendanceMark).filter(
+        LessonAttendanceMark.user_id == user_id,
+        LessonAttendanceMark.block_id.in_(ids),
+    ):
+        if mark.attended:
+            attended.add(mark.block_id)
+        else:
+            attended.discard(mark.block_id)
+    return attended
+
+
+def set_attendance(
+    db: Session, *, block: TaskBlock, student_id: int, attended: bool, staff_id: int,
+) -> None:
+    """Отметка преподавателя «был / не был на занятии» (владелец 27.10.2026).
+
+    Пишет журнал аудита и пересчитывает задание: «был» снимает обязательность
+    записи, и если она одна оставалась — задание закрывается сразу, а не при
+    следующем шаге ученика. Доступ проверяет вызывающий роут."""
+    from app.models.audit_log import AuditLog
+    from app.models.task_block import LessonAttendanceMark
+    from app.services.task_blocks import maybe_close_task_by_blocks
+
+    mark = db.get(LessonAttendanceMark, (block.id, student_id))
+    if mark is None:
+        mark = LessonAttendanceMark(block_id=block.id, user_id=student_id)
+        db.add(mark)
+    mark.attended = attended
+    mark.marked_by_id = staff_id
+    mark.marked_at = datetime.now(timezone.utc)
+    title = _block_titles(db, [block.id]).get(block.id, UNTITLED_BLOCK_TITLE)
+    db.add(AuditLog(
+        action=AUDIT_LESSON_ATTENDANCE,
+        performed_by_id=staff_id,
+        target_user_id=student_id,
+        details=f"{'Был' if attended else 'Не был'} на занятии: {title}"[:1000],
+    ))
+    db.flush()
+    maybe_close_task_by_blocks(db, block.task_id, student_id)
+
+
 def event_titles(db: Session, event_ids) -> dict[int, str]:
     """«Занятие по рисунку · 21 октября, 10:00–11:30» по номеру события."""
     ids = {i for i in event_ids if i is not None}
@@ -193,10 +280,18 @@ def join_titles(db: Session, details) -> dict[str, str]:
 
 
 def student_meeting_joins(db: Session, student_id: int) -> list[dict]:
-    """Переходы ученика по ссылкам занятий, свежие сверху: что и когда.
+    """Занятия, на которых ученик был, свежие сверху: подпись и откуда «был».
 
-    `joined_at` — время в UTC, переводит в Москву вызывающий, как остальные
-    поля карточки (`activity_stats._when`)."""
+    «Был» — по тому же правилу, что лента и «Ученики поимённо»: нажатие или
+    отметка преподавателя, и «не был» преподавателя убирает нажатие
+    (владелец 27.10.2026). `joined_at` — время в UTC; карточка его не
+    показывает («время нажатия вообще нужно убрать»)."""
+    from app.models.task_block import LessonAttendanceMark
+
+    marks = {
+        mark.block_id: mark
+        for mark in db.query(LessonAttendanceMark).filter(LessonAttendanceMark.user_id == student_id)
+    }
     rows = (
         db.query(StudentActivityEvent)
         .filter(
@@ -207,12 +302,24 @@ def student_meeting_joins(db: Session, student_id: int) -> list[dict]:
         .limit(JOINS_LIMIT)
         .all()
     )
-    titles = join_titles(db, (r.details for r in rows))
-    result: list[dict] = []
+    entries: list[tuple[str, datetime, str]] = []
     for row in rows:
-        joined_at: datetime = row.created_at
-        result.append({
-            "event": titles.get(row.details, DELETED_EVENT_TITLE),
-            "joined_at": joined_at,
-        })
-    return result
+        mark = marks.get(block_id_from_details(row.details))
+        if mark is not None and not mark.attended:
+            continue
+        entries.append((row.details, row.created_at, ATTENDED_PRESSED))
+    pressed = {details for details, _, _ in entries}
+    for block_id, mark in marks.items():
+        details = f"{_BLOCK_PREFIX}{block_id}"
+        if mark.attended and details not in pressed:
+            entries.append((details, mark.marked_at, ATTENDED_STAFF))
+    # Нажатие и отметка — из разных таблиц: сравниваем в UTC, наивное — как UTC.
+    entries.sort(
+        key=lambda entry: entry[1] if entry[1].tzinfo else entry[1].replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    titles = join_titles(db, (details for details, _, _ in entries))
+    return [
+        {"event": titles.get(details, DELETED_EVENT_TITLE), "joined_at": at, "source": source}
+        for details, at, source in entries[:JOINS_LIMIT]
+    ]

@@ -23,13 +23,16 @@ from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
-from app.services.meeting_joins import EVENT_MEETING_JOIN, link_opens
+from app.services.meeting_joins import (
+    ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, EVENT_MEETING_JOIN, attendance_by_block,
+)
 from app.services.point_a import student_point_a_level
 from app.services.presence import last_visit_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
-    BlockViewer, completed_after_deadline, feed_visible_blocks, get_audiences,
+    BlockViewer, attendance_links, completed_after_deadline, feed_visible_blocks,
+    get_audiences, get_blocks_for_tasks,
     get_submit_deadlines, get_task_submit_deadlines,
 )
 from app.services.tracker import (
@@ -333,6 +336,15 @@ _ACTIVITY_LABELS = {
 }
 
 
+# Подписи режима «Занятия» (владелец 27.10.2026): откуда «был / не был».
+_ATTENDANCE_NOTES = {
+    ATTENDED_PRESSED: "Был на занятии (нажал кнопку)",
+    ATTENDED_STAFF: "Был на занятии (отметил преподаватель)",
+    ABSENT_STAFF: "Не был (отметил преподаватель)",
+    None: "Не был",
+}
+
+
 def _assignment_activity(
     db: DBSession, students: list[User], *, theory: bool = False, links: bool = False,
 ) -> list[dict]:
@@ -351,10 +363,15 @@ def _assignment_activity(
 
     `links=True` — то же по блокам «Ссылка» (Zoom на занятие): режим «Занятия»
     (владелец 27.10.2026: «выбираем кнопку… фильтр нажимал или не нажимал»).
-    «Нажимал» — запись о переходе (`meeting_joins.link_opens`), а не
-    `TaskBlockState`: у ссылки своего «сделано» нет. Это «открыл ссылку», а не
-    «был на занятии». Срока нет — все ненажавшие в `pending`. Времени нажатия
-    нет ни в подписи, ни в `done_at` (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
+    «Был на занятии» — нажал кнопку или отметил преподаватель
+    (`meeting_joins.attendance_by_block`, Александрия 27.10.2026), а не
+    `TaskBlockState`: у ссылки своего «сделано» нет. Срока нет — все
+    небывшие в `pending`. Времени нажатия нет ни в подписи, ни в `done_at`
+    (владелец 27.10.2026: «время нажатия вообще нужно убрать»).
+
+    В «Теории» у записи «только тем, кто не был на занятии»
+    (`optional_if_attended`) бывшие на занятии не входят в `eligible`: запись
+    им не положена.
 
     У каждого задания ещё `topic_id` (цикл — для выбора «месяц → цикл») и
     `done_at` — когда сдал или посмотрел, по Москве.
@@ -428,7 +445,18 @@ def _assignment_activity(
             TaskBlockState.status == STATUS_DONE,
         )
     } if not links else {}
-    opened = link_opens(db, block_ids) if links else {}
+    # «Был на занятии» — нажал кнопку или отметил преподаватель
+    # (`meeting_joins.attendance_by_block`, Александрия и владелец 27.10.2026).
+    attendance = attendance_by_block(db, block_ids) if links else {}
+    # Запись занятия «только тем, кто не был» (`optional_if_attended`): бывшему
+    # она не положена, в «Не посмотрели» его нет.
+    lesson_link: dict[int, int] = {}
+    if theory:
+        flagged_tasks = [task.id for block, task in candidates if block.optional_if_attended]
+        for task_blocks in get_blocks_for_tasks(db, flagged_tasks).values():
+            lesson_link.update(attendance_links(task_blocks))
+    lesson_attendance = attendance_by_block(db, set(lesson_link.values()))
+    was_there = (ATTENDED_PRESSED, ATTENDED_STAFF)
 
     videos = {
         video.id: video
@@ -451,17 +479,17 @@ def _assignment_activity(
         eligible = sorted(
             uid for uid in audience[task.id]
             if feed_visible_blocks([block], audiences, viewers[uid])
+            and lesson_attendance.get((lesson_link.get(block.id), uid)) not in was_there
         )
         submitted, overdue, pending, started, notes, done_at = [], [], [], [], {}, {}
         for uid in eligible:
             if links:
-                opened_at = opened.get((block.id, uid))
-                if opened_at is None:
-                    pending.append(uid)
-                    notes[uid] = "Не нажимал"
-                else:
+                source = attendance.get((block.id, uid))
+                if source in was_there:
                     submitted.append(uid)
-                    notes[uid] = "Нажимал"
+                else:
+                    pending.append(uid)
+                notes[uid] = _ATTENDANCE_NOTES[source]
                 continue
             tariff = learners[uid].tariff
             state = done.get((block.id, uid))
