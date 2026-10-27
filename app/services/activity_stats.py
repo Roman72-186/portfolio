@@ -228,7 +228,12 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
     - «Перешёл» — запись журнала с одного действующего тарифа на другой,
       схлопнутая по месяцу: сравниваются тариф до первой смены месяца и
       после последней, туда-обратно за месяц — не переход. Ушедший в этом
-      месяце числится только в «Ушли».
+      месяце числится только в «Ушли». Тариф ушедшего — последний
+      действующий до ухода: школа сперва снимает тариф, потом блокирует
+      (Евграфова, Смирнова 26.10.2026).
+    - Старый аккаунт, который ушёл, а у ученика с тем же ником есть
+      аккаунт новее, — дубль, в отчёт не идёт (Кузнецова Полина: прошлый
+      поток в архиве, учится новый аккаунт).
     - Исправление (`(исправление)` в журнале, галочка при смене тарифа) —
       не переход: исправленный тариф действует с прошлой настоящей смены
       или с создания аккаунта, «пришёл» — сразу с ним (Александрия
@@ -297,6 +302,8 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
         people.append({
             "name": _student_name(student.first_name, student.last_name, student.name),
             "nick": f"@{nick}" if nick else "(нет username)",
+            "nick_key": nick.lower(),
+            "created": created,
             "timeline": [(at, value) for at, value in timeline],
             "came": came,
             "left_at": min((mark for mark in left_marks if mark), default=None),
@@ -307,6 +314,27 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
                 and timeline[i - 1][1] != timeline[i][1]
             ],
         })
+
+    newest_by_nick: dict[str, datetime] = {}
+    for person in people:
+        key = person["nick_key"]
+        if key and (key not in newest_by_nick or person["created"] > newest_by_nick[key]):
+            newest_by_nick[key] = person["created"]
+    people = [
+        person for person in people
+        if not (person["left_at"] and person["nick_key"]
+                and newest_by_nick[person["nick_key"]] > person["created"])
+    ]
+
+    def last_real_at(person: dict, moment: datetime) -> str:
+        """Последний действующий тариф на `moment` или до него."""
+        value = ""
+        for at, current in person["timeline"]:
+            if at > moment:
+                break
+            if current in real:
+                value = current
+        return value
 
     def tariff_at(person: dict, moment: datetime) -> str:
         current = ""
@@ -350,8 +378,8 @@ def get_month_tariff_flow(db: DBSession, *, now: datetime | None = None) -> dict
             left_at = person["left_at"]
             left_now = bool(left_at and start <= left_at < end and came and came[0] <= left_at)
             if left_now:
-                value = tariff_at(person, left_at)
-                if value in real:
+                value = last_real_at(person, left_at)
+                if value:
                     left_rows.append(row(person, left_at, tariff=value))
             inside = [item for item in person["switches"] if start <= item[0] < end]
             # Туда-обратно за месяц — не переход; ушедший — только в «Ушли».

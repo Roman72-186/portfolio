@@ -252,3 +252,35 @@ def test_activity_page_cards_in_alexandria_order(admin_client, db, user_factory)
     positions = [html.index(f'<h2 class="ss-acc-title">{title}</h2>') for title in titles]
 
     assert positions == sorted(positions)
+
+
+def test_tariff_removed_then_blocked_leaves_with_last_tariff(db, user_factory):
+    """Евграфова и Смирнова на проде: школа сперва сняла тариф, потом
+    заблокировала — ушли с последним действующим тарифом."""
+    student = _student(user_factory, db, 840_070, "Сняли и заблокировали", TARIFF_WITH_YOU, _at(7, 15))
+    _log(db, student, "tariff_change", f"tariff: {TARIFF_WITH_YOU} → —", _at(10, 16))
+    student.tariff, student.is_active = "", False
+    db.commit()
+    _log(db, student, "user_block", "", _at(10, 19))
+
+    october = _month(get_month_tariff_flow(db, now=NOW), "2026-10")
+
+    assert [(row["name"], row["tariff"], row["at"]) for row in october["left_rows"]] == [
+        ("Сняли и заблокировали", "Я с вами", "19.10.2026")]
+
+
+def test_archived_duplicate_of_newer_account_is_not_in_report(db, user_factory):
+    """Кузнецова Полина на проде: старый аккаунт прошлого потока в архиве,
+    учится новый с тем же ником — ни «пришла», ни «ушла»."""
+    old = _student(user_factory, db, 840_071, "Полина старая", TARIFF_SELF, _at(7, 15))
+    old.tg_username = "yidoyd"
+    old.archived_at, old.is_active = _at(10, 2), False
+    new = _student(user_factory, db, 840_072, "Полина новая", TARIFF_SELF, _at(9, 30))
+    new.tg_username = "@YIDOYD"
+    db.commit()
+
+    flow = get_month_tariff_flow(db, now=NOW)
+
+    assert _month(flow, "2026-10")["left_rows"] == []
+    assert [row["name"] for row in _month(flow, "2026-07")["came_rows"]] == []
+    assert [row["name"] for row in _month(flow, "2026-09")["came_rows"]] == ["Полина новая"]
