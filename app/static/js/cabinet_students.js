@@ -1798,7 +1798,7 @@ function buildStatsMeetings(a) {
         + '</div>'
         + '<div class="profile-field-label">Какие ссылки открывал</div>';
     if (!joins.length) {
-        return html + '<div class="no-works">Ещё не открывал ссылку занятия. Переходы по ссылке в задании записываются с 27.10.2026, по кнопке в дайджесте – с 20.10.2026.</div>';
+        return html + '<div class="no-works">Ещё не открывал ссылку занятия. Нажатия записываются с 18.10.2026.</div>';
     }
     return html + '<ul class="activity-feed">' + joins.map(function(j) {
         return statsRow(j.event, '');
