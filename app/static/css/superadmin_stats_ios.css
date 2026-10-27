@@ -264,7 +264,26 @@
         float: left; margin: 0 12px 0 0; max-width: 55%; text-align: left; line-height: 1.6;
     }
     .ios-ss .ss-table td:not(:first-child)::after { content: ""; display: table; clear: both; }
+    /* Лента «По ученику» — во всю ширину карточки и от левого края: подпись
+       над ней, а не слева от неё. */
+    .ios-ss .ss-table td.sbn-feed-cell { text-align: left !important; }
+    .ios-ss .ss-table td.sbn-feed-cell::before { float: none; max-width: none; margin: 0 0 4px; }
 }
+
+/* «По ученику» по рисунку Александрии (27.10.2026): ученик слева, статус
+   справа — когда был и сколько пробыл, фиолетовым; ниже «Лента последних
+   действий» — номер и название слева, отметка и дата справа. */
+.ios-ss .sbn-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ios-ss .sbn-visit { flex-shrink: 0; text-align: right; }
+.ios-ss .sbn-visit-label { margin-bottom: 4px; font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; }
+.ios-ss .sbn-visit-val { font: 700 14px/1.4 var(--ios-font); color: var(--blue-text); white-space: nowrap; }
+.ios-ss .sbn-feed-head { padding: 8px 0 2px; font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; }
+.ios-ss .sbn-feed-row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 6px 0; border-bottom: 0.5px solid var(--ios-sep); text-align: left;
+}
+.ios-ss .sbn-feed-row:last-child { border-bottom: none; }
+.ios-ss .sbn-feed-mark { flex-shrink: 0; text-align: right; color: var(--ios-label-2); }
 
 /* ── Экран «Доступы» (шаг 3 плана тонких доступов, 04.10.2026): одна роль на
    экран, в строке раздела — уровень сегментами «Нет · Смотреть · Менять».

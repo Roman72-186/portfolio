@@ -25,7 +25,7 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.meeting_joins import EVENT_MEETING_JOIN, link_opens
 from app.services.point_a import student_point_a_level
-from app.services.presence import daily_seconds
+from app.services.presence import last_visit_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
@@ -36,7 +36,7 @@ from app.services.tracker import (
     cycle_bounds, cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
     stage_sibling_cycles, task_audience_user_ids,
 )
-from app.services.tz import msk_date_text, msk_midnight, msk_text
+from app.services.tz import msk_date_text, msk_midnight, msk_short_text, msk_text
 
 
 REGISTRATION_STATS_SINCE = date(2026, 9, 19)
@@ -792,11 +792,16 @@ def get_student_activity_overview(
     ]
     if not include_assignments:
         return {"students": overview, "events": journal, "assignments": [], "scores": [],
-                "videos": [], "meetings": [], "months": [], "tariffs": [], "activity_days": {},
+                "videos": [], "meetings": [], "months": [], "tariffs": [],
                 "curator_view": curator_view}
     last_steps = _last_steps(db, student_ids)
+    # Статус в «По ученику» (Александрия 27.10.2026): «29.10 в 17:45» по
+    # Москве и время на платформе в тот заход.
+    visits = last_visit_seconds(db, students)
     for row in overview:
         row["last_step"] = last_steps.get(row["id"])
+        row["last_seen_short"] = msk_short_text(row["last_login"])
+        row["last_visit_seconds"] = visits.get(row["id"])
     assignments = _assignment_activity(db, students)
     videos = _assignment_activity(db, students, theory=True)
     meetings = _assignment_activity(db, students, links=True)
@@ -827,17 +832,11 @@ def get_student_activity_overview(
         groups = sorted({row["tariff"] for row in overview},
                         key=lambda t: (_tariff_rank("" if t == "Без тарифа" else t), t))
     months = _program_months(db, shown + shown_videos + shown_meetings)
-    # Время на платформе по дням — таблица «По ученику» суммирует его за
-    # выбранный цикл в браузере (Александрия 22.10.2026, этап 3 плана).
-    starts = [cycle["start"] for month in months for cycle in month["cycles"] if cycle.get("start")]
-    activity_days = (
-        daily_seconds(db, student_ids, since=date.fromisoformat(min(starts))) if starts else {}
-    )
     return {"students": overview, "events": journal, "assignments": shown,
             "scores": _assignment_scores(db, student_ids, assignments),
             "videos": shown_videos, "meetings": shown_meetings, "months": months,
             "tariffs": groups, "group_label": "Трек" if holiday else "Тариф",
-            "show_level": not holiday, "activity_days": activity_days,
+            "show_level": not holiday,
             "curator_view": curator_view,
             "works_only_tariffs": list(CURATOR_WORKS_ONLY_TARIFFS) if curator_view else []}
 

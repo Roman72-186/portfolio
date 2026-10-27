@@ -47,6 +47,14 @@ def msk_text(value: datetime | None) -> str:
     return _as_utc(value).astimezone(MSK_TZ).strftime("%d.%m.%Y в %H:%M")
 
 
+def msk_short_text(value: datetime | None) -> str:
+    """Момент без года: «27.09 в 23:30» по Москве — где год и так ясен
+    (статус ученика в «Учениках поимённо», Александрия 27.10.2026)."""
+    if value is None:
+        return ""
+    return _as_utc(value).astimezone(MSK_TZ).strftime("%d.%m в %H:%M")
+
+
 def msk_date_text(value: datetime | None) -> str:
     """Дата момента по Москве для человека: «27.09.2026»."""
     if value is None:

@@ -22,6 +22,12 @@
    и работы, у тарифов из `works_only_tariffs` («Я с вами») — только работы с
    датой и временем и счёт «сдано N из M».
 
+   «По ученику» — по рисунку Александрии 27.10.2026: справа от ученика статус
+   («26.10 в 22:33» и минуты того захода, фиолетовым, `presence.last_visit_seconds`),
+   ниже «Лента последних действий» по программе со сквозными номерами.
+   «Был на платформе», входы и загрузки (`data-sbn-extra`) в этом режиме
+   спрятаны, регистрация остаётся.
+
    Странице нужны: `student_activity` (с `include_assignments=True`),
    superadmin_stats_ios.css и обёртка `.ios-ss`, copy.js. #}
 {% from "components/tg_copy.html" import tg_copy %}
@@ -90,18 +96,20 @@
 
         <div class="ss-table-wrap">
             <table class="ss-table">
-                <thead><tr><th>Ученик</th><th>Статус</th><th>Регистрация</th><th>Был на платформе</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th></tr></thead>
+                <thead><tr><th>Ученик</th><th data-sbn-status-head>Статус</th><th>Регистрация</th><th data-sbn-extra>Был на платформе</th><th class="ss-ta-r" data-sbn-extra>Входов</th><th class="ss-ta-r" data-sbn-extra>Загрузок портфолио</th><th data-sbn-extra>Последняя загрузка</th></tr></thead>
                 <tbody>
                 {% for student in student_activity.students %}
                 {% set username = student.username if student.username.startswith('@') else '' %}
-                <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}" data-student-last-step="{{ student.last_step or '' }}">
-                    <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></td>
+                <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}" data-student-last-step="{{ student.last_step or '' }}" data-student-seen="{{ student.last_seen_short or '' }}" data-student-visit-seconds="{{ student.last_visit_seconds or '' }}">
+                    {# Даты — по Москве (`msk_text`): до 27.10.2026 печатались
+                       `strftime` от UTC и отставали на три часа. #}
+                    <td data-label="Ученик"><div class="sbn-head"><div><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></div><div class="sbn-visit" data-sbn-visit hidden></div></div></td>
                     <td data-label="Статус" data-assignment-state>—</td>
-                    <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
-                    <td data-label="Был на платформе" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
-                    <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
-                    <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
-                    <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
+                    <td data-label="Регистрация" class="ss-dim">{{ student.registered_at | msk_text or '—' }}</td>
+                    <td data-label="Был на платформе" class="ss-dim" data-sbn-extra>{{ student.last_login | msk_text or 'Не заходил' }}</td>
+                    <td data-label="Входов" class="ss-ta-r" data-sbn-extra>{{ student.login_count }}</td>
+                    <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold" data-sbn-extra>{{ student.upload_count }}</td>
+                    <td data-label="Последняя загрузка" class="ss-dim" data-sbn-extra>{{ student.last_upload | msk_text or 'Не загружал' }}</td>
                 </tr>
                 {% endfor %}
                 <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
@@ -121,8 +129,6 @@
         meetings: {{ (student_activity.meetings or []) | tojson }},
     };
     const months = {{ (student_activity.months or []) | tojson }};
-    // Секунды на платформе по дням: {ученик: {"2026-10-26": 1800}} — «По ученику».
-    const activityDays = {{ (student_activity.activity_days or {}) | tojson }};
     const curatorView = {{ 'true' if student_activity.curator_view else 'false' }};
     const worksOnlyTariffs = {{ (student_activity.works_only_tariffs or []) | tojson }};
     const WORDS = {
@@ -166,6 +172,8 @@
     const empty = $('[data-activity-empty]');
     const copyButton = $('[data-activity-copy]');
     const copyStatus = $('[data-activity-copy-status]');
+    const extraCells = Array.from(root.querySelectorAll('[data-sbn-extra]'));
+    const statusHead = $('[data-sbn-status-head]');
     let mode = 'all';
     // Строки «По ученику» для копии списка: в ячейке они разложены по строкам.
     const studentLinesById = new Map();
@@ -453,57 +461,98 @@
         return hours ? hours + ' ч ' + (minutes % 60) + ' мин' : minutes + ' мин';
     }
 
-    function secondsIn(userId, cycles) {
-        const days = activityDays[userId] || {};
-        let total = 0;
-        Object.keys(days).forEach(function (day) {
-            const inside = cycles.some(function (cycle) {
-                return cycle.start && day >= cycle.start && day <= cycle.end;
+    // Лента «По ученику» по программе (Александрия 27.10.2026, её рисунок):
+    // цикл за циклом, внутри видео, работы, занятия; номера сквозные.
+    // Элемент — заголовок `{head}` или пункт `{label, done, when, watched}`.
+    function studentFeed(row, cycles) {
+        const userId = Number(row.dataset.studentId);
+        // «Я с вами» у куратора — только сдачи (Александрия 24.10.2026).
+        const kinds = isWorksOnly(row) ? [['practice', 'Работы']]
+            : [['theory', 'Видео'], ['practice', 'Работы'], ['meetings', 'Занятия']];
+        const entries = [];
+        cycles.forEach(function (cycle) {
+            const inCycle = [];
+            kinds.forEach(function (pair) {
+                const items = sources[pair[0]].filter(function (item) {
+                    return (item.topic_id || 0) === cycle.id && item.eligible.indexOf(userId) !== -1;
+                }).sort(byOrder);
+                if (!items.length) return;
+                const doneCount = items.filter(function (item) { return item.submitted.indexOf(userId) !== -1; }).length;
+                inCycle.push({ head: pair[0] === 'practice'
+                    ? pair[1] + ' – сдано ' + doneCount + ' из ' + items.length : pair[1] });
+                items.forEach(function (item) {
+                    const done = item.submitted.indexOf(userId) !== -1;
+                    const note = item.notes[userId] || '';
+                    inCycle.push({ label: item.label, done: done, when: done ? (item.done_at[userId] || '') : '',
+                                   watched: !done && note.indexOf('Смотрел') === 0 ? note : '' });
+                });
             });
-            if (inside) total += days[day];
+            if (inCycle.length && cycles.length > 1) entries.push({ head: cycle.label });
+            entries.push.apply(entries, inCycle);
         });
-        return total;
+        return entries;
     }
 
-    function studentLines(row, cycles) {
-        const userId = Number(row.dataset.studentId);
-        const ids = cycles.map(function (cycle) { return cycle.id; });
-        // «Я с вами» у куратора — только сдачи (Александрия 24.10.2026).
-        const worksOnly = worksOnlyTariffs.indexOf(row.dataset.studentTariff) !== -1;
+    function isWorksOnly(row) {
+        return worksOnlyTariffs.indexOf(row.dataset.studentTariff) !== -1;
+    }
+
+    // Те же данные строками — для «Скопировать список».
+    function studentLines(row, entries) {
         const lines = [];
-        if (!worksOnly) {
-            lines.push('На платформе за период: ' + minutesText(secondsIn(userId, cycles)));
+        if (!isWorksOnly(row)) {
+            const seconds = Number(row.dataset.studentVisitSeconds || 0);
+            lines.push('Был на платформе: ' + (row.dataset.studentSeen || 'не заходил')
+                + (seconds ? ', ' + minutesText(seconds) : ''));
             lines.push('Последнее действие: ' + (row.dataset.studentLastStep || 'пока нет'));
         }
-        (worksOnly ? [['practice', 'Работы']]
-            : [['theory', 'Видео'], ['practice', 'Работы'], ['meetings', 'Занятия']]).forEach(function (pair) {
-            const items = sources[pair[0]].filter(function (item) {
-                return ids.indexOf(item.topic_id || 0) !== -1 && item.eligible.indexOf(userId) !== -1;
-            }).sort(function (a, b) {
-                return ids.indexOf(a.topic_id || 0) - ids.indexOf(b.topic_id || 0) || byOrder(a, b);
-            });
-            if (!items.length) return;
-            const doneCount = items.filter(function (item) { return item.submitted.indexOf(userId) !== -1; }).length;
-            lines.push(pair[0] === 'practice'
-                ? pair[1] + ' – сдано ' + doneCount + ' из ' + items.length + ':'
-                : pair[1] + ':');
-            items.forEach(function (item) {
-                const done = item.submitted.indexOf(userId) !== -1;
-                const when = item.done_at[userId];
-                const note = item.notes[userId] || '';
-                const watched = !done && note.indexOf('Смотрел') === 0 ? ' (' + note + ')' : '';
-                lines.push((done ? '✅ ' : '❌ ') + item.label + (done && when ? ' · ' + when : '') + watched);
-            });
+        let number = 0;
+        entries.forEach(function (entry) {
+            if (entry.head) { lines.push(entry.head + ':'); return; }
+            number += 1;
+            lines.push(number + '. ' + (entry.done ? '✅ ' : '❌ ') + entry.label
+                + (entry.when ? ' · ' + entry.when : '') + (entry.watched ? ' (' + entry.watched + ')' : ''));
         });
         return lines;
     }
 
-    function renderStudentState(state, lines) {
-        state.replaceChildren.apply(state, lines.map(function (line) {
-            const node = document.createElement('div');
-            node.textContent = line;
-            return node;
-        }));
+    function node(tag, className, text) {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
+    }
+
+    // Статус справа от ученика: когда был и сколько пробыл в тот заход —
+    // фиолетовым. У «Я с вами» в кабинете куратора статуса нет.
+    function renderVisit(row, show) {
+        const visit = row.querySelector('[data-sbn-visit]');
+        visit.hidden = !show;
+        if (!show) return;
+        const seconds = Number(row.dataset.studentVisitSeconds || 0);
+        const parts = [node('div', 'sbn-visit-label', 'Статус'),
+                       node('div', 'sbn-visit-val', row.dataset.studentSeen || 'Не заходил')];
+        if (seconds) parts.push(node('div', 'sbn-visit-val', minutesText(seconds)));
+        visit.replaceChildren.apply(visit, parts);
+    }
+
+    function renderFeed(state, row, entries) {
+        const parts = [];
+        if (!isWorksOnly(row) && row.dataset.studentLastStep) {
+            parts.push(node('div', 'ss-dim-sm', 'На чём остановился: ' + row.dataset.studentLastStep));
+        }
+        let number = 0;
+        entries.forEach(function (entry) {
+            if (entry.head) { parts.push(node('div', 'sbn-feed-head', entry.head)); return; }
+            number += 1;
+            const line = node('div', 'sbn-feed-row');
+            line.append(
+                node('span', '', number + '. ' + entry.label + (entry.watched ? ' (' + entry.watched + ')' : '')),
+                node('span', 'sbn-feed-mark', (entry.done ? '✅' : '❌') + (entry.when ? ' ' + entry.when : '')));
+            parts.push(line);
+        });
+        if (!number) parts.push(node('div', 'ss-dim-sm', 'В этом периоде заданий нет'));
+        state.replaceChildren.apply(state, parts);
     }
 
     function applyFilter() {
@@ -518,16 +567,24 @@
         const overdue = item ? new Set(item.overdue) : null;
         const started = item ? new Set(item.started || []) : null;
         const statusMode = statusSelect.value || 'all';
+        const studentMode = mode === 'student';
+        // «По ученику» — без «Был на платформе», входов и загрузок: время
+        // визита уже в статусе (Александрия 27.10.2026).
+        extraCells.forEach(function (cell) { cell.hidden = studentMode; });
+        statusHead.textContent = studentMode ? 'Лента последних действий' : 'Статус';
         const baseRows = [];
         rows.forEach(function (row) {
             const userId = Number(row.dataset.studentId);
             const base = passesBase(row);
             if (base) baseRows.push(row);
             const state = row.querySelector('[data-assignment-state]');
-            if (mode === 'student') {
-                const lines = studentLines(row, periodCycles());
-                studentLinesById.set(userId, lines);
-                renderStudentState(state, lines);
+            state.dataset.label = studentMode ? 'Лента последних действий' : 'Статус';
+            state.classList.toggle('sbn-feed-cell', studentMode);
+            renderVisit(row, studentMode && !isWorksOnly(row));
+            if (studentMode) {
+                const entries = studentFeed(row, periodCycles());
+                studentLinesById.set(userId, studentLines(row, entries));
+                renderFeed(state, row, entries);
             } else if (item) {
                 const when = item.done_at[userId];
                 state.textContent = (item.notes[userId] || '') + (when ? ' · ' + when : '');

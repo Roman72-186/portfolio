@@ -275,26 +275,32 @@ def test_holiday_mode_filters_by_track_and_hides_foreign_tasks(db, user_factory)
 
 # ── Этап 3: «По ученику» ────────────────────────────────────────────────────
 
-def test_overview_has_daily_time_from_first_cycle(db, user_factory):
-    """Время на платформе по дням с начала самого раннего цикла выбора —
-    браузер суммирует его за выбранный цикл."""
+def test_overview_has_last_visit_by_moscow_day(db, user_factory):
+    """Статус «По ученику» (Александрия 27.10.2026): когда был — по Москве без
+    года, и сколько пробыл в тот заход — секунды за день последнего захода по
+    Москве, а не за день по UTC."""
     from datetime import date
 
     from app.models.user import UserActivityDay
 
     student = user_factory(vk_id=820_080, name="Student", tariff=TARIFF_SELF)
-    _cycle_with_video(db)  # неделя 28.09–04.10
+    never = user_factory(vk_id=820_081, name="Never", tariff=TARIFF_SELF)
+    _cycle_with_video(db)
+    # 21:30 UTC 28.10 — уже 29.10 по Москве.
+    student.last_seen_at = datetime(2026, 10, 28, 21, 30, tzinfo=timezone.utc)
     db.add_all([
-        UserActivityDay(user_id=student.id, day=date(2026, 9, 27), seconds=600,
+        UserActivityDay(user_id=student.id, day=date(2026, 10, 28), seconds=600,
                         first_seen_at=OPENS, last_seen_at=OPENS),
-        UserActivityDay(user_id=student.id, day=date(2026, 9, 29), seconds=1800,
+        UserActivityDay(user_id=student.id, day=date(2026, 10, 29), seconds=2100,
                         first_seen_at=OPENS, last_seen_at=OPENS),
     ])
     db.commit()
 
-    overview = get_student_activity_overview(db, include_assignments=True)
+    rows = {row["id"]: row for row in get_student_activity_overview(db, include_assignments=True)["students"]}
 
-    assert overview["activity_days"] == {student.id: {"2026-09-29": 1800}}
+    assert rows[student.id]["last_seen_short"] == "29.10 в 00:30"
+    assert rows[student.id]["last_visit_seconds"] == 2100
+    assert rows[never.id]["last_seen_short"] == "" and rows[never.id]["last_visit_seconds"] is None
 
 
 def test_students_by_name_has_student_mode(admin_client, db, user_factory):
@@ -305,7 +311,10 @@ def test_students_by_name_has_student_mode(admin_client, db, user_factory):
     html = client.get("/cabinet/superadmin/activity").text
 
     assert 'data-sbn-mode="student"' in html
-    assert "const activityDays = {" in html
+    # Статус справа от ученика и столбцы, которые «По ученику» прячет
+    # (Александрия 27.10.2026): был на платформе, входов, загрузки.
+    assert "data-sbn-visit" in html and 'data-student-seen=""' in html
+    assert html.count(" data-sbn-extra>") == 8  # 4 заголовка + 4 ячейки одного ученика
 
 
 # ── Кураторы, ответы Александрии 24.10.2026 ─────────────────────────────────

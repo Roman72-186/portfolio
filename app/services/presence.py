@@ -74,19 +74,25 @@ def _day_row(db: DBSession, user_id: int, day: date) -> UserActivityDay | None:
     )
 
 
-def daily_seconds(db: DBSession, user_ids: list[int], *, since: date) -> dict[int, dict[str, int]]:
-    """Секунды на платформе по дням с `since`: `{ученик: {"2026-10-26": 1800}}`.
-    Для таблицы «По ученику», где период — выбранный в браузере цикл."""
-    result: dict[int, dict[str, int]] = {}
-    if not user_ids:
-        return result
-    for row in (
-        db.query(UserActivityDay)
-        .filter(UserActivityDay.user_id.in_(user_ids), UserActivityDay.day >= since)
-    ):
-        if row.seconds:
-            result.setdefault(row.user_id, {})[row.day.isoformat()] = row.seconds
-    return result
+def last_visit_seconds(db: DBSession, students: list[User]) -> dict[int, int]:
+    """Секунды на платформе в последний заход: за день `last_seen_at` по
+    Москве (Александрия 27.10.2026: «время пребывания на платформе в последний
+    вход»). Заходом считается день — отдельных визитов пинг не различает.
+    Ученика без `last_seen_at` или без строки дня в ответе нет."""
+    days = {
+        student.id: _as_utc(student.last_seen_at).astimezone(MSK_TZ).date()
+        for student in students if student.last_seen_at
+    }
+    if not days:
+        return {}
+    return {
+        row.user_id: row.seconds or 0
+        for row in db.query(UserActivityDay).filter(
+            UserActivityDay.user_id.in_(list(days)),
+            UserActivityDay.day.in_(set(days.values())),
+        )
+        if days.get(row.user_id) == row.day
+    }
 
 
 def seconds_on_platform(
