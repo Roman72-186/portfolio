@@ -1784,18 +1784,20 @@ function buildRecentLogins(rows) {
     }).join('') + '</ul>';
 }
 
-// Нажатия «Подключиться» у событий дайджеста (владелец 20.10.2026). Нажатие —
-// это «открыл ссылку занятия»: сколько ученик пробыл на созвоне, платформа
-// не видит, поэтому подпись говорит про ссылку, а не про присутствие.
+// Переходы по ссылкам занятий: «Подключиться» в дайджесте (с 20.10.2026) и
+// кнопка блока «Ссылка» в задании (с 27.10.2026), сервер —
+// services/meeting_joins.py. Нажатие — это «открыл ссылку занятия»: сколько
+// ученик пробыл на созвоне, платформа не видит, поэтому подпись говорит про
+// ссылку, а не про присутствие.
 function buildStatsMeetings(a) {
     var m = a.meetings || {};
     var joins = m.joins || [];
     var html = '<div class="section-title">Занятия</div><div class="activity-tiles">'
         + activityTile('Открывал ссылку занятия за ' + a.days + ' дней', m.recent || 0)
         + '</div>'
-        + '<div class="profile-field-label">Когда нажимал «Подключиться»</div>';
+        + '<div class="profile-field-label">Когда открывал ссылку</div>';
     if (!joins.length) {
-        return html + '<div class="no-works">Ещё не нажимал «Подключиться» у занятий в дайджесте. Нажатия пишутся с 20.10.2026.</div>';
+        return html + '<div class="no-works">Ещё не открывал ссылку занятия. Переходы по ссылке в задании записываются с 27.10.2026, по кнопке в дайджесте – с 20.10.2026.</div>';
     }
     return html + '<ul class="activity-feed">' + joins.map(function(j) {
         return statsRow(j.event, statsBadge(j.joined_at));

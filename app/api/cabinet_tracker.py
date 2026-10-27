@@ -161,7 +161,11 @@ from app.services.tracker import (
     task_done_for_user,
     task_status,
 )
-from app.services.meeting_joins import record_meeting_join, visible_meeting_event
+from app.services.meeting_joins import (
+    record_link_open,
+    record_meeting_join,
+    visible_meeting_event,
+)
 from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
@@ -1389,6 +1393,12 @@ def go_link_block(
         task=task, block_id=block.id, today=today_msk(),
     ):
         raise HTTPException(status_code=403, detail=LINK_LOCKED_DETAIL)
+    # Переход — в «Занятия» статистики ученика (Александрия 27.10.2026: Zoom
+    # школа ставит сюда, а не в дайджест). Сотрудник под собой и вход
+    # «глазами» не пишутся — правило `cabinet_tracker_meeting_join`.
+    if user.get("role_rank", 0) <= STUDENT_ROLE_RANK and not user.get("impersonated_by_id"):
+        record_link_open(db, user_id=user["user_id"], block=block)
+        db.commit()
     return RedirectResponse(
         block.url,
         status_code=302,

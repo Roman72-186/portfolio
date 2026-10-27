@@ -43,8 +43,7 @@ from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.meeting_joins import (
     EVENT_MEETING_JOIN,
-    event_id_from_details,
-    event_titles,
+    join_titles,
     student_meeting_joins,
 )
 from app.services.presence import seconds_on_platform
@@ -964,7 +963,7 @@ _EVENT_LABELS = {
     "login": "Входы в кабинет",
     "portfolio_upload": "Загрузки портфолио",
     "work_upload": "Загрузки работ",
-    EVENT_MEETING_JOIN: "Нажатия «Подключиться» у занятий",
+    EVENT_MEETING_JOIN: "Переходы по ссылкам занятий",
 }
 
 # Что сводка «Действия учеников» считает загрузкой. Остальное (подключения
@@ -1971,7 +1970,7 @@ _STUDENT_EVENT_FEED_LABELS = {
     "login": "Вошёл в кабинет",
     "portfolio_upload": "Загрузил работы в портфолио",
     "work_upload": "Загрузил работы",
-    EVENT_MEETING_JOIN: "Нажал «Подключиться»",
+    EVENT_MEETING_JOIN: "Открыл ссылку занятия",
 }
 
 # Действия сотрудников над учеником, которые попадают в его ленту. Остальные
@@ -2068,17 +2067,16 @@ def student_activity(
         .limit(FEED_LIMIT)
         .all()
     )
-    # У подключения в журнале номер события — в ленту идёт его название.
-    meeting_titles = event_titles(db, (
-        event_id_from_details(e.details)
-        for e in student_events if e.event_type == EVENT_MEETING_JOIN
+    # У подключения в журнале номер события или блока — в ленту идёт название.
+    meeting_titles = join_titles(db, (
+        e.details for e in student_events if e.event_type == EVENT_MEETING_JOIN
     ))
 
     def _feed_details(e: StudentActivityEvent) -> str | None:
         if e.event_type == "login":
             return None
         if e.event_type == EVENT_MEETING_JOIN:
-            return meeting_titles.get(event_id_from_details(e.details))
+            return meeting_titles.get(e.details)
         return e.details
 
     feed: list[dict] = [
@@ -2142,8 +2140,9 @@ def student_activity(
         ),
         "logins": counts.get("login", 0),
         "uploads": counts.get("portfolio_upload", 0) + counts.get("work_upload", 0),
-        # Нажатия «Подключиться» у событий дайджеста (владелец 20.10.2026):
-        # открыл ссылку занятия, а не «просидел занятие».
+        # Переходы по ссылкам занятий — «Подключиться» в дайджесте и блок
+        # «Ссылка» в задании (`services/meeting_joins.py`): открыл ссылку,
+        # а не «просидел занятие».
         "meetings": {
             "recent": counts.get(EVENT_MEETING_JOIN, 0),
             "joins": [

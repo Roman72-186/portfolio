@@ -1,14 +1,20 @@
-"""Нажатия «Подключиться» у событий дайджеста — в статистике карточки ученика
-(владелец 20.10.2026, `services/meeting_joins.py`)."""
+"""Переходы по ссылкам занятий в статистике карточки ученика: «Подключиться»
+у событий дайджеста (владелец 20.10.2026) и кнопка блока «Ссылка» в задании
+(Александрия 27.10.2026), `services/meeting_joins.py`."""
+
+from datetime import timedelta
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.session import Session as DbSession
+from app.models.task_block import BLOCK_LINK, BLOCK_UPLOAD, TaskBlock
 from app.services.activity_stats import get_student_event_stats, student_activity
 from app.services.meeting_joins import EVENT_MEETING_JOIN
+from app.services.program import day_bounds
 from app.services.schedule_event_types import create_type
 from app.services.tracker import (
     create_digest,
     create_event,
+    create_task,
     delete_event,
     publish_digest,
     set_event_tariffs,
@@ -132,7 +138,7 @@ def test_card_statistics_lists_joins_and_feed_names_event(db, user_factory):
     assert join["event"].startswith("Разбор композиции · ")
     assert join["joined_at"]
     [item] = data["feed"]
-    assert item["label"] == "Нажал «Подключиться»"
+    assert item["label"] == "Открыл ссылку занятия"
     assert item["details"].startswith("Разбор композиции · ")
 
 
@@ -161,4 +167,91 @@ def test_school_summary_does_not_count_join_as_upload(db, user_factory):
     [row] = [r for r in stats["top"] if r["student_name"]]
     assert row["uploads"] == 0
     [by_type] = stats["by_type"]
-    assert by_type["label"] == "Нажатия «Подключиться» у занятий"
+    assert by_type["label"] == "Переходы по ссылкам занятий"
+
+
+# --- Блок «Ссылка» в задании (Александрия 27.10.2026) ---
+# Zoom школа ставит сюда, а не в дайджест: на 27.10.2026 ни у одного события
+# дайджеста ссылки не было, и «Занятия» в карточке стояли пустыми у всех.
+
+ZOOM = "https://zoom.us/j/123456789"
+GO = "/cabinet/tracker/blocks/{}/go"
+
+
+def _lesson(db, author_id, *, title="Занятие 18.10", homework_before=False):
+    task = create_task(
+        db, title=title, user_id=author_id,
+        due_at=day_bounds(today_msk())[1] - timedelta(minutes=1),
+        assign_to_all=True, kind="homework", is_required=True,
+    )
+    task.is_published = True
+    if homework_before:
+        db.add(TaskBlock(
+            task_id=task.id, block_type=BLOCK_UPLOAD, body="Сдай работу",
+            sort_order=0, is_required=True,
+        ))
+    link = TaskBlock(
+        task_id=task.id, block_type=BLOCK_LINK, title="Подключение к занятию",
+        url=ZOOM, sort_order=1, is_required=False,
+    )
+    db.add(link)
+    db.commit()
+    return link
+
+
+def test_link_block_open_is_recorded_once_and_shown_in_card(auth_client, db):
+    client, student = auth_client
+    link = _lesson(db, student.id)
+
+    first = client.get(GO.format(link.id), follow_redirects=False)
+    second = client.get(GO.format(link.id), follow_redirects=False)
+
+    assert first.status_code == 302 and first.headers["location"] == ZOOM
+    assert second.status_code == 302
+    assert len(_joins(db, student.id)) == 1
+    data = student_activity(db, student, today=today_msk())
+    assert data["meetings"]["recent"] == 1
+    [join] = data["meetings"]["joins"]
+    assert join["event"] == "Подключение к занятию · Занятие 18.10"
+    [item] = data["feed"]
+    assert item["label"] == "Открыл ссылку занятия"
+    assert item["details"] == "Подключение к занятию · Занятие 18.10"
+
+
+def test_locked_link_block_is_not_recorded(auth_client, db):
+    """Шаг закрыт несданной домашкой — сервер не пустил в Zoom, и перехода
+    в статистике нет."""
+    client, student = auth_client
+    link = _lesson(db, student.id, homework_before=True)
+
+    assert client.get(GO.format(link.id), follow_redirects=False).status_code == 403
+    assert _joins(db, student.id) == []
+
+
+def test_link_block_open_under_impersonation_is_not_recorded(
+    client, db, user_factory, session_factory,
+):
+    student = user_factory(vk_id=470_010, name="Ученик", role_name="ученик")
+    admin = user_factory(vk_id=470_011, name="Админ", role_name="суперадмин", is_admin=True)
+    session = session_factory(student)
+    session.impersonated_by_id = admin.id
+    db.commit()
+    client.cookies.set("session_id", session.id)
+    link = _lesson(db, admin.id)
+
+    assert client.get(GO.format(link.id), follow_redirects=False).status_code == 302
+    assert _joins(db, student.id) == []
+
+
+def test_deleted_link_block_keeps_join_with_placeholder(db, user_factory):
+    student = user_factory(vk_id=470_012, name="Ученик", role_name="ученик")
+    link = _lesson(db, student.id)
+    db.add(StudentActivityEvent(
+        user_id=student.id, event_type=EVENT_MEETING_JOIN, details=f"block:{link.id}",
+    ))
+    db.delete(link)
+    db.commit()
+
+    [join] = student_activity(db, student, today=today_msk())["meetings"]["joins"]
+
+    assert join["event"] == "ссылка удалена из задания"
