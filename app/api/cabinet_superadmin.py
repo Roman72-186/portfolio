@@ -1436,30 +1436,53 @@ def superadmin_activity(
     registration_to: str | None = Query(None),
     registration_tariff: str = Query(""),
     program: str = Query(""),
+    cohort: str = Query(""),
 ):
     """Статистика активности, разложенная по вкладкам ролей: ученики
     (диагностика, входы, видео, задания, сдачи, пробник), кураторы, Главные
     преподаватели с модераторами, суперадмин (журнал изменений). Во вкладку
     строку кладёт поле role_group из activity_stats.role_group()."""
     from app.constants import PROGRAM_HOLIDAY
-    from app.services.report_scope import parse_report_program, report_program, report_program_switch
+    from app.services.report_scope import (
+        REPORT_NEWCOMERS, newcomer_cohorts, parse_report_program, report_program,
+        report_program_switch,
+    )
 
-    # Переключатель «Годовой курс / Каникулярный курс» (владелец 19.10.2026):
-    # программу учёта на время запроса держит `report_scope`, и все карточки,
-    # которые считают через него, переключаются вместе.
-    program = parse_report_program(program)
+    # Переключатель «Годовой курс / Каникулярный курс / Вход в продукт»
+    # (владелец 19.10 и 29.10.2026): программу учёта на время запроса держит
+    # `report_scope`, и все карточки, которые считают через него,
+    # переключаются вместе.
+    program = parse_report_program(program, newcomers=True)
     holiday = program == PROGRAM_HOLIDAY
-    program_switch = report_program_switch(request.url.path, program)
-    with report_program(program):
+    program_switch = report_program_switch(request.url.path, program, newcomers=True)
+    # «Вход в продукт» — новенькие одного месяца прихода, по умолчанию последнего.
+    cohort_switch = None
+    if program == REPORT_NEWCOMERS:
+        cohorts = newcomer_cohorts(db)
+        values = [item["value"] for item in cohorts]
+        cohort = cohort if cohort in values else (values[0] if values else "")
+        cohort_switch = {
+            "current": cohort,
+            "aria_label": "Месяц прихода",
+            "options": [
+                {"value": item["value"], "label": f'{item["label"]} · {item["count"]}',
+                 "href": f"{request.url.path}?program={REPORT_NEWCOMERS}&cohort={item['value']}"}
+                for item in cohorts
+            ],
+        }
+    with report_program(program, cohort or None):
         return _activity_page(request, user, db, holiday=holiday, program_switch=program_switch,
+                              annual=program not in (PROGRAM_HOLIDAY, REPORT_NEWCOMERS),
+                              cohort_switch=cohort_switch,
                               registration_from=registration_from, registration_to=registration_to,
                               registration_tariff=registration_tariff)
 
 
-def _activity_page(request, user, db, *, holiday, program_switch,
+def _activity_page(request, user, db, *, holiday, program_switch, annual, cohort_switch,
                    registration_from, registration_to, registration_tariff):
     """Тело «Статистики активности» — внутри программы учёта, которую
-    выставил `superadmin_activity`."""
+    выставил `superadmin_activity`. `annual` — весь годовой курс: отчёт месяца,
+    регистрации и оплаты считают школу целиком и в срезах не показываются."""
     from app.services.activity_stats import (
         get_audit_feed,
         get_curator_review_speed,
@@ -1499,12 +1522,15 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         "request": request,
         "user": user,
         "program_switch": program_switch,
+        "cohort_switch": cohort_switch,
+        "newcomers": cohort_switch is not None,
         "holiday": holiday,
         # Каникулярный набор поимённо и оплата треков — только в своём режиме.
         "holiday_overview": get_holiday_overview(db) if holiday else None,
         "logins": get_login_stats(db),
-        # Отчёт месяца по тарифам — только годовой курс: у каникулярного треки.
-        "tariff_flow": None if holiday else get_month_tariff_flow(db),
+        # Отчёт месяца по тарифам — только годовой курс: у каникулярного треки,
+        # а новеньких он и так показывает в «Пришли».
+        "tariff_flow": get_month_tariff_flow(db) if annual else None,
         "review_speed": get_curator_review_speed(db),
         "feedback_curators": get_feedback_curator_stats(db),
         # Средняя оценка ОС куратора по каждому заданию цикла (О19, 01.10.2026).
@@ -1538,7 +1564,7 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         # 25.09.2026. Считает их staff_dashboard.py, а не activity_stats.py:
         # те же функции кормят CSV-выгрузку и дашборд сотрудника.
         # Регистрации по тарифам и месячная оплата — про годовой курс.
-        "tariff_registration_stats": None if holiday else get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
+        "tariff_registration_stats": None if not annual else get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
         "student_activity": student_activity,
         # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
@@ -1546,7 +1572,7 @@ def _activity_page(request, user, db, *, holiday, program_switch,
         # карточку видят только те, кому открыта оплата.
         "payment_stats": (
             payment_board.stats_card(db, datetime.now(timezone.utc))
-            if payments.is_payments_viewer(user) and not holiday else None
+            if payments.is_payments_viewer(user) and annual else None
         ),
         "holiday_payment_stats": (
             payment_board.holiday_board(db)

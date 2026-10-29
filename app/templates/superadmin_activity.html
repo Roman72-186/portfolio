@@ -150,6 +150,16 @@
        считают выбранную программу. Общий партиал переключателя. #}
     {% include "partials/program_switch.html" %}
 
+    {# «Вход в продукт» (владелец 29.10.2026): новенькие одного месяца прихода —
+       `report_scope.newcomer_cohorts`; тот же партиал, другие данные. #}
+    {% if newcomers %}
+    {% if cohort_switch.options %}
+    {% with program_switch = cohort_switch %}{% include "partials/program_switch.html" %}{% endwith %}
+    {% else %}
+    <div class="ss-empty">Новеньких пока нет: тег «Новенькие» ставится сам при заведении ученика годового курса</div>
+    {% endif %}
+    {% endif %}
+
     {# Переключатель ролей — общий .nav-pill из base.css, та же разметка, что
        «Задачи / Дайджест» в трекере ученика: кнопки с aria-pressed, а не
        role="tab" (tablist обязан ходить по стрелкам с roving tabindex).

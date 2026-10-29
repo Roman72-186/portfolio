@@ -40,6 +40,15 @@
 живёт в `ContextVar` и сбрасывается по выходу из `with`: в остальных
 запросах учёт годовой.
 
+**«Вход в продукт»** (Александрия 24.10.2026, владелец 29.10.2026) — третий
+пункт переключателя только у «Статистики активности». Это не программа
+аккаунта (`User.program` его не принимает), а срез годового курса: всё
+правило годового учёта плюс тег «Новенькие» (`ANNUAL_NEWCOMER_TAG`, ставится
+сам при заведении) и месяц прихода — по Москве месяц `program_access_from`
+(у аккаунтов без отметки — `created_at`). Тег вечный, поэтому без месяца
+новенькие октября и ноября смешались бы. После адаптации новенький
+по-прежнему считается и в годовом курсе: срез его оттуда не забирает.
+
 Не для карточки одного ученика: её открывают и у архивного, там считается
 он сам (`activity_stats._scope_ids`). Не для очередей проверки, подбора
 получателей и аудиторий заданий — это не учёт, у них свои правила.
@@ -50,25 +59,40 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, PROGRAMS, REPORT_EXCLUDED_USER_IDS
+from app.constants import (
+    ANNUAL_NEWCOMER_TAG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY, PROGRAMS, REPORT_EXCLUDED_USER_IDS,
+)
 from app.models.role import Role
+from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.services.access_state import not_left_clause
+from app.services.program import MONTH_NAMES
+from app.services.tz import MSK_TZ
 
+
+# Срез «Вход в продукт» — только для учёта, у аккаунта такой программы нет.
+REPORT_NEWCOMERS = "newcomers"
+REPORT_PROGRAMS = (*PROGRAMS, REPORT_NEWCOMERS)
 
 _REPORT_PROGRAM: ContextVar[str] = ContextVar("report_program", default=PROGRAM_ANNUAL)
+# Месяц прихода новеньких «ГГГГ-ММ» — только при `REPORT_NEWCOMERS`.
+_REPORT_COHORT: ContextVar[str | None] = ContextVar("report_cohort", default=None)
 
 
 @contextmanager
-def report_program(program: str):
+def report_program(program: str, cohort: str | None = None):
     """Программа учёта на время блока `with` — переключатель страницы
-    статистики. Незнакомое значение — годовой курс."""
-    token = _REPORT_PROGRAM.set(program if program in PROGRAMS else PROGRAM_ANNUAL)
+    статистики. Незнакомое значение — годовой курс. `cohort` — месяц прихода
+    для «Входа в продукт»; без него срез пуст, а не «все новенькие»."""
+    token = _REPORT_PROGRAM.set(program if program in REPORT_PROGRAMS else PROGRAM_ANNUAL)
+    cohort_token = _REPORT_COHORT.set(cohort if program == REPORT_NEWCOMERS else None)
     try:
         yield
     finally:
+        _REPORT_COHORT.reset(cohort_token)
         _REPORT_PROGRAM.reset(token)
 
 
@@ -76,23 +100,84 @@ def current_report_program() -> str:
     return _REPORT_PROGRAM.get()
 
 
-REPORT_PROGRAM_LABELS = {PROGRAM_ANNUAL: "Годовой курс", PROGRAM_HOLIDAY: "Каникулярный курс"}
+REPORT_PROGRAM_LABELS = {
+    PROGRAM_ANNUAL: "Годовой курс",
+    PROGRAM_HOLIDAY: "Каникулярный курс",
+    REPORT_NEWCOMERS: "Вход в продукт",
+}
 
 
-def parse_report_program(raw: str | None) -> str:
-    return raw if raw in PROGRAMS else PROGRAM_ANNUAL
+def parse_report_program(raw: str | None, *, newcomers: bool = False) -> str:
+    """`newcomers` — страница знает срез «Вход в продукт» (пока только
+    «Статистика активности»); остальным он — годовой курс."""
+    allowed = REPORT_PROGRAMS if newcomers else PROGRAMS
+    return raw if raw in allowed else PROGRAM_ANNUAL
 
 
-def report_program_switch(path: str, program: str) -> dict:
+def report_program_switch(path: str, program: str, *, newcomers: bool = False) -> dict:
     """Данные переключателя «Годовой курс / Каникулярный курс» над страницей
     статистики и экраном «Оплаты» — общий `partials/program_switch.html`."""
+    values = REPORT_PROGRAMS if newcomers else PROGRAMS
     return {
         "current": program,
         "options": [
             {"value": value, "label": REPORT_PROGRAM_LABELS[value], "href": f"{path}?program={value}"}
-            for value in PROGRAMS
+            for value in values
         ],
     }
+
+
+def _cohort_key(moment: datetime) -> str:
+    if moment.tzinfo is None:  # SQLite в тестах отдаёт время без зоны — это UTC
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(MSK_TZ).strftime("%Y-%m")
+
+
+def _cohort_bounds(cohort: str) -> tuple[datetime, datetime] | None:
+    """Месяц «ГГГГ-ММ» → [начало, начало следующего) по Москве."""
+    try:
+        year, month = (int(part) for part in cohort.split("-"))
+        start = datetime(year, month, 1, tzinfo=MSK_TZ)
+    except (AttributeError, ValueError):
+        return None
+    end = datetime(year + month // 12, month % 12 + 1, 1, tzinfo=MSK_TZ)
+    # В UTC: так же сравнивают время остальные выборки (и SQLite в тестах).
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _newcomer_ids():
+    """Подзапрос id учеников с тегом «Новенькие»."""
+    return (
+        select(UserTag.user_id)
+        .join(Tag, Tag.id == UserTag.tag_id)
+        .where(Tag.name == ANNUAL_NEWCOMER_TAG)
+        .scalar_subquery()
+    )
+
+
+_ARRIVED_AT = func.coalesce(User.program_access_from, User.created_at)
+
+
+def newcomer_cohorts(db: Session, now: datetime | None = None) -> list[dict]:
+    """Месяцы прихода новеньких, что сейчас в годовом учёте, — новые первыми:
+    `[{"value": "2026-10", "label": "Октябрь 2026", "count": 7}]`."""
+    with report_program(PROGRAM_ANNUAL):
+        rows = (
+            reportable_students_q(db, now)
+            .filter(User.id.in_(_newcomer_ids()))
+            .with_entities(_ARRIVED_AT)
+            .all()
+        )
+    counts: dict[str, int] = {}
+    for (arrived_at,) in rows:
+        if arrived_at is not None:
+            key = _cohort_key(arrived_at)
+            counts[key] = counts.get(key, 0) + 1
+    return [
+        {"value": key, "count": counts[key],
+         "label": f"{MONTH_NAMES[int(key[5:]) - 1].capitalize()} {key[:4]}"}
+        for key in sorted(counts, reverse=True)
+    ]
 
 
 def reportable_students_q(
@@ -125,6 +210,16 @@ def reportable_students_q(
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
+    if _REPORT_PROGRAM.get() == REPORT_NEWCOMERS:
+        bounds = _cohort_bounds(_REPORT_COHORT.get() or "")
+        if bounds is None:
+            return q.filter(False)
+        return q.filter(
+            User.program != PROGRAM_HOLIDAY,
+            User.id.in_(_newcomer_ids()),
+            _ARRIVED_AT >= bounds[0],
+            _ARRIVED_AT < bounds[1],
+        )
     return q if include_holiday else q.filter(User.program != PROGRAM_HOLIDAY)
 
 
