@@ -34,6 +34,9 @@ def _login_as(client, session_factory, user):
         "/cabinet/staff/notifications",
         "/csrf",
         "/static/css/base.css",
+        # Плеер в просмотре АОП «глазами ученика» (29.10.2026).
+        "/cabinet/videos/5/embed",
+        "/cabinet/videos/5/player-url",
     ],
 )
 def test_policy_opens_reading_of_observer_pages(path):
@@ -55,6 +58,8 @@ def test_policy_opens_reading_of_observer_pages(path):
         "/cabinet/curator/reports",
         "/cabinet/admin/mock-check",
         "/3dlab",
+        "/cabinet/videos",  # каталог роликов — нет, только плеер
+        "/cabinet/videos/5",
     ],
 )
 def test_policy_closes_everything_else(path):
@@ -69,6 +74,8 @@ def test_policy_closes_everything_else(path):
         ("DELETE", "/cabinet/students/5/works/7"),
         ("PATCH", "/cabinet/students/5/portfolio/month"),
         ("POST", "/cabinet/superadmin/activity"),
+        ("POST", "/cabinet/videos/5/embed"),
+        ("DELETE", "/cabinet/videos/5/progress"),
     ],
 )
 def test_policy_closes_any_change_inside_open_sections(method, path):
@@ -78,6 +85,8 @@ def test_policy_closes_any_change_inside_open_sections(method, path):
 def test_policy_keeps_logout_and_own_notifications():
     assert is_moderator_request_allowed("POST", "/logout")
     assert is_moderator_request_allowed("POST", "/cabinet/notifications/mark-read")
+    # Место просмотра ролика пишется на самого модератора (29.10.2026).
+    assert is_moderator_request_allowed("POST", "/cabinet/videos/5/progress")
 
 
 # ── Живые запросы через get_current_user ─────────────────────────────────────
@@ -371,3 +380,70 @@ def test_moderator_writes_only_where_level_is_edit():
     # Положенные модератору разделы на уровне по умолчанию белый список не
     # обходят: «Смотреть» там и так его уровень.
     assert not raised("GET", "/cabinet/admin/students", {"students": "view"})
+
+
+def test_moderator_with_program_view_sees_cycle_as_student_with_player(
+    client, db, user_factory, session_factory, monkeypatch,
+):
+    """Модератору с «Смотреть» в АОП — то же, что куратору (владелец
+    29.10.2026, кураторам — созвон 13.10.2026): экран цикла с «Весь цикл
+    глазами ученика», в выборе ученика имя без ника, ролик играет настоящим
+    плеером и сохраняет место просмотра; правка программы — отказ."""
+    import json
+    import re
+
+    from app.models.section_access import SectionAccessRule
+    from app.models.video_progress import VideoProgress
+    from tests.test_routes_program_cycle_items import _csrf_client, _make_cycle
+    from tests.test_routes_video_embed import _configure_bunny, _video_open_to_all
+
+    named = user_factory(vk_id=990_330, name="Названная", role_name="ученик")
+    named.last_name, named.first_name, named.tg_username = "Иванова", "Маша", "masha_nick"
+    db.commit()
+
+    admin = _csrf_client(client, user_factory, session_factory, vk_id=990_331)
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Введение", "is_required": True, "blocks": [
+            {"block_type": "text", "title": "Теория", "body": "Текст",
+             "student_ids": [named.id]},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    _configure_bunny(monkeypatch)
+    video = _video_open_to_all(db, admin.id)
+
+    moderator = user_factory(vk_id=990_332, name="Модератор АОП", role_name="модератор")
+    db.add(SectionAccessRule(section_key="program", user_id=moderator.id, level="view"))
+    db.commit()
+    _login_as(client, session_factory, moderator)
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}", follow_redirects=False)
+    assert page.status_code == 200
+    assert "Весь цикл глазами ученика" in page.text
+    raw = re.search(r"var BLOCK_STUDENTS = (.*?);\n", page.text).group(1)
+    assert [(row["id"], row["username"]) for row in json.loads(raw)] == [(named.id, "")]
+    assert "masha_nick" not in page.text
+
+    embed = client.get(f"/cabinet/videos/{video.id}/embed")
+    assert embed.status_code == 200, embed.text
+    assert embed.json()["ok"] is True
+    assert client.get(f"/cabinet/videos/{video.id}/player-url").status_code == 200
+    saved = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 30, "duration_seconds": 600},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert saved.status_code == 200, saved.text
+    rows = db.query(VideoProgress).filter(VideoProgress.user_id == moderator.id).count()
+    assert rows == 1
+
+    write = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Ещё", "is_required": True, "blocks": []},
+        headers={"X-CSRF-Token": "x", "Accept": "application/json"},
+    )
+    assert write.status_code == 403
+    assert client.get("/cabinet/videos", follow_redirects=False).status_code == 403

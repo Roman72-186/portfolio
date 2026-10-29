@@ -125,8 +125,15 @@ _MODERATOR_READ_EXACT = frozenset({
 })
 
 # Статистика цикла — единственная страница из «Программ», остальной раздел закрыт.
+# Плеер ролика — для просмотра АОП «глазами ученика» (владелец 29.10.2026:
+# модераторам то же, что кураторам 13.10.2026): «Весь цикл глазами ученика» и
+# экран дня берут ролик через `/cabinet/videos/{id}/embed`. В раздел `program`
+# эти адреса не входят: видео встроено в задания и открывается из разных
+# экранов, а общие адреса в разделы не кладут (`docs/invariants/cabinet.md`).
+# Каталог `/cabinet/videos` и страница урока модератору по-прежнему закрыты.
 _MODERATOR_READ_PATTERNS = (
     re.compile(r"^/cabinet/staff/program/cycles/\d+/stats$"),
+    re.compile(r"^/cabinet/videos/\d+/(embed|player-url)$"),
 )
 
 # Изменения, без которых кабинет не работает: выход и отметка своих же
@@ -140,6 +147,13 @@ _MODERATOR_WRITE_EXACT = frozenset({
     "/cabinet/tariff-view/exit",
 })
 
+# Место просмотра ролика в том же плеере (29.10.2026). Пишется на самого
+# модератора, как у куратора; статистика берёт только учеников. Без адреса
+# плеер на первом же сохранении показывал бы «Обнови страницу».
+_MODERATOR_WRITE_PATTERNS = (
+    re.compile(r"^/cabinet/videos/\d+/progress$"),
+)
+
 
 def _in_section(path: str, section: str) -> bool:
     return path == section or path.startswith(section + "/")
@@ -147,14 +161,16 @@ def _in_section(path: str, section: str) -> bool:
 
 def is_moderator_request_allowed(method: str, path: str) -> bool:
     """Открыт ли модератору этот запрос. Чтение — только из белого списка,
-    изменение — только выход и свои уведомления."""
+    изменение — только выход, свои уведомления и место просмотра ролика."""
     if method in ("GET", "HEAD"):
         return (
             path in _MODERATOR_READ_EXACT
             or any(_in_section(path, s) for s in _MODERATOR_READ_SECTIONS)
             or any(p.match(path) for p in _MODERATOR_READ_PATTERNS)
         )
-    return path in _MODERATOR_WRITE_EXACT
+    return path in _MODERATOR_WRITE_EXACT or (
+        method == "POST" and any(p.match(path) for p in _MODERATOR_WRITE_PATTERNS)
+    )
 
 
 def seed_roles_and_permissions(db: DBSession) -> None:
