@@ -532,6 +532,12 @@ def _assignment_activity(
                     f"Не сдал · срок до {msk_text(deadline)}" if deadline is not None
                     else "Не сдал · срок не задан"
                 )
+        # Заголовок группы и короткое имя шага — только для выпадающего списка
+        # (владелец 29.10.2026): «Подготовка к контрольной работе по рисунку ·
+        # Контрольная работа_уровень 1» одной строкой читалась как подготовка,
+        # контрольную не находили. Теперь шаги стоят под заголовком задания.
+        # `label` остаётся полным: он идёт в копию списка и итог цикла.
+        group = short = None
         if theory:
             # Видео узнают по названию ролика; задание — уточнение, если
             # называется иначе (в одном задании бывает несколько роликов).
@@ -540,14 +546,20 @@ def _assignment_activity(
                 label += f" · {task.title}"
         else:
             label = task.title
-            if block.title and block.title.strip() and block.title.strip().casefold() != task.title.casefold():
-                label += f" · {block.title.strip()}"
+            step = (block.title or "").strip()
+            if step and step.casefold() != task.title.casefold():
+                label += f" · {step}"
+                group, short = task.title, step
             # Предмет — подпись в выпадающем списке, на подсчёт не влияет. Стоит
             # первым: на телефоне длинное название обрезается справа.
             subject = block.subject or task.subject
             if subject:
                 label = f"{subject}: {label}"
+                if group:
+                    group = f"{subject}: {group}"
         assignments.append({
+            "group": group,
+            "short": short,
             "id": block.id,
             "label": label,
             "topic_id": task.topic_id,

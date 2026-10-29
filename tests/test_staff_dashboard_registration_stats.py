@@ -328,6 +328,9 @@ def test_missing_students_are_split_by_deadline(db, user_factory):
     assignment = get_student_activity_overview(db, include_assignments=True)["assignments"][0]
 
     assert assignment["label"] == "Рисунок: Контрольная по рисунку · Локация с дверью"
+    # В выпадающем списке шаг стоит под заголовком задания (владелец 29.10.2026).
+    assert assignment["group"] == "Рисунок: Контрольная по рисунку"
+    assert assignment["short"] == "Локация с дверью"
     assert assignment["submitted"] == [done.id]
     assert assignment["overdue"] == [overdue.id]
     assert assignment["pending"] == [pending.id]

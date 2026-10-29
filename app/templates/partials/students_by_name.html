@@ -250,10 +250,29 @@
         const items = periodItems();
         // «Все циклы месяца» — к названию добавляется цикл, иначе два
         // одинаковых ролика из разных циклов не различить.
-        fill(itemSelect, [['', WORDS[mode].pick]].concat(items.map(function (item) {
+        // Шаги одного задания (`group`) — под его заголовком, пункт — короткое
+        // имя шага: иначе «Подготовка к контрольной… · Контрольная работа»
+        // читалась как подготовка (владелец 29.10.2026).
+        const nodes = [option('', WORDS[mode].pick)];
+        let group = null;
+        let groupKey = null;
+        items.forEach(function (item) {
             const prefix = cycleSelect.value ? '' : (labels.get(item.topic_id || 0) || '') + ' · ';
-            return [String(item.id), prefix + item.label];
-        })));
+            if (!item.group) {
+                group = groupKey = null;
+                nodes.push(option(String(item.id), prefix + item.label));
+                return;
+            }
+            const key = prefix + item.group;
+            if (key !== groupKey) {
+                group = document.createElement('optgroup');
+                group.label = key;
+                groupKey = key;
+                nodes.push(group);
+            }
+            group.appendChild(option(String(item.id), item.short));
+        });
+        itemSelect.replaceChildren.apply(itemSelect, nodes);
         fillStatuses();
     }
 
