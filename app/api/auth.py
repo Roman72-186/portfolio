@@ -1231,7 +1231,7 @@ async def _handle_broadcast_callback(callback: _TgCallback) -> None:
 
 
 def _lab3d_closed_redirect(user: dict) -> RedirectResponse:
-    """Ученика, пока лаборатория закрыта (`LAB3D_OPEN_FOR_STUDENTS`), — в ленту:
+    """Ученика без открытых фигур — в ленту:
     `/denied` говорит «только участникам закрытого сообщества», а ученик в нём
     состоит, и текст читался бы как ошибка. Постороннему — прежний `/denied`."""
     if user.get("role_rank", 0) == 1:
@@ -1250,6 +1250,7 @@ def lab3d_page(
     return templates.TemplateResponse(request, "3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
+        "lab_open_card_ids": sorted(user.get("lab3d_open_card_ids", [])) if user.get("role_rank") == 1 else None,
     })
 
 

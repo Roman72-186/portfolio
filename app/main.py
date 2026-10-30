@@ -28,6 +28,7 @@ from app.api import payments as payments_router
 from app.api import cabinet_payment_import
 from app.api import cabinet_payments_admin
 from app.api import lab_assets
+from app.api import lab_admin
 from app.api import student_review
 from app.api import task_block_feedback
 from app.api import cabinet_point_a
@@ -417,6 +418,7 @@ app.include_router(cabinet_program.router)
 app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)
 app.include_router(lab_assets.router)
+app.include_router(lab_admin.router)
 app.include_router(student_review.router)
 app.include_router(task_block_feedback.router)
 app.include_router(cabinet_point_a.router)

@@ -284,6 +284,11 @@ _RULES: tuple[_Rule, ...] = (
     # «program» в владельцах кнопка не работала бы у сотрудника, которому
     # открыт только АОП.
     _rule(("exams", "program"), _exact("/cabinet/upload-ticket-image")),
+    # У этого POST своё право в роуте: раздел lab3d остаётся «Смотреть» в
+    # исторической матрице, запись доступна только ГП/СА. Событие открытия
+    # пишет ученик, поэтому тоже не является правкой раздела сотрудником.
+    _rule((), _exact("/cabinet/3dlab/figures"), ("POST",)),
+    _rule((), _exact("/lab/event"), ("POST",)),
     _rule("lab3d", _exact("/3dlab")),
     _rule("lab3d", _tree("/cabinet/3dlab")),
     _rule("lab3d", _tree("/lab")),

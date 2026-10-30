@@ -249,8 +249,7 @@ def test_3dlab_enter_lab3d_not_configured_returns_503(admin_client):
 
 
 def test_3dlab_enter_student_redirected_to_learning_while_lab_closed(auth_client, db):
-    """Лаборатория закрыта ученикам на сентябрь 2026 (`LAB3D_OPEN_FOR_STUDENTS`):
-    SSO-токен ученику не выдаётся."""
+    """Без открытой фигуры SSO-токен ученику не выдаётся."""
     client, _ = auth_client
     with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"), \
          patch.object(_app_settings, "sso_token_ttl_minutes", 2):
@@ -287,11 +286,13 @@ def test_embedded_3dlab_available_for_admin(admin_client):
 
 
 def test_embedded_3dlab_available_for_student_outside_vk_group(client, db, user_factory, session_factory, monkeypatch):
-    """Since 2026-07-05, an assigned student role grants 3D Lab access —
-    когда лаборатория открыта ученикам (`LAB3D_OPEN_FOR_STUDENTS`)."""
-    from app.services import navigation
-    monkeypatch.setattr(navigation, "LAB3D_OPEN_FOR_STUDENTS", True)
+    """Одна открытая фигура даёт ученику доступ к лаборатории."""
+    from app.models.lab_access import LabCardAccess, LabCardStudent
+    from app.services.lab_access import visible_cards
     user = user_factory(is_group_member=False)
+    card_id = next(iter(visible_cards()))
+    db.add_all([LabCardAccess(card_id=card_id), LabCardStudent(card_id=card_id, user_id=user.id)])
+    db.commit()
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
     resp = client.get("/3dlab", follow_redirects=False)
@@ -306,9 +307,12 @@ def test_denied_page_exists(client):
 
 
 def test_3dlab_enter_student_outside_vk_group_redirects_with_token(client, db, user_factory, session_factory, monkeypatch):
-    from app.services import navigation
-    monkeypatch.setattr(navigation, "LAB3D_OPEN_FOR_STUDENTS", True)
+    from app.models.lab_access import LabCardAccess, LabCardStudent
+    from app.services.lab_access import visible_cards
     user = user_factory(is_group_member=False)
+    card_id = next(iter(visible_cards()))
+    db.add_all([LabCardAccess(card_id=card_id), LabCardStudent(card_id=card_id, user_id=user.id)])
+    db.commit()
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
     with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"), \

@@ -807,6 +807,22 @@
         </div>
     </details>
 
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">3Dlab: что открывают</h2><span class="ss-acc-badge">за 30 дней</span></summary>
+        <div class="ss-acc-body">
+            {% if lab_top_cards %}
+            <div class="ss-table-wrap"><table class="ss-table">
+                <thead><tr><th>Фигура</th><th class="ss-ta-r">Открытий</th><th class="ss-ta-r">Учеников</th></tr></thead>
+                <tbody>{% for card in lab_top_cards %}<tr>
+                    <td data-label="Фигура">{{ card.path }}</td>
+                    <td data-label="Открытий" class="ss-ta-r">{{ card.opens }}</td>
+                    <td data-label="Учеников" class="ss-ta-r">{{ card.students }}</td>
+                </tr>{% endfor %}</tbody>
+            </table></div>
+            {% else %}<div class="ss-empty">За 30 дней открытий фигур нет</div>{% endif %}
+        </div>
+    </details>
+
     <!-- Лента действий: последние 200 событий по времени (с «Пользователей» 25.09.2026) -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Лента действий учеников</h2><span class="ss-acc-badge">последние {{ student_activity.events | length }}</span></summary>

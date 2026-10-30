@@ -17,20 +17,15 @@ from app.services.section_access import closed_nav_keys, granted_nav_keys
 # его как не показывали, так и не показывают.
 LEARNING_SPACE_LABEL = "Актуальное образовательное пространство"
 
-# 3D-лаборатория закрыта ученикам на сентябрь 2026 (созвон 16.09.2026: «на
-# сентябрь лабораторию для детей отключить, с октября будем открывать часть
-# карточек»). Закрыто и в меню, и по прямой ссылке — страница, SSO-вход и
-# файлы моделей проверяют один и тот же `can_open_3dlab`. Персонал и
-# участники сообщества без роли ученика лабораторию видят как раньше.
-# Открыть обратно — поставить True.
-LAB3D_OPEN_FOR_STUDENTS = False
-
-
 def can_open_3dlab(user: dict) -> bool:
-    """Пускать ли пользователя в 3D-лабораторию: страница, SSO и ассеты."""
+    """Пускать ли пользователя в 3D-лабораторию: страница, SSO и ассеты.
+
+    Ученик входит, когда ему открыта хотя бы одна фигура; без правил доступ
+    закрыт. Персонал и участники сообщества вне роли ученика видят всё.
+    """
     role_rank = user.get("role_rank", 0)
-    if role_rank == 1 and not LAB3D_OPEN_FOR_STUDENTS:
-        return False
+    if role_rank == 1:
+        return bool(user.get("lab3d_open_card_ids"))
     return bool(user.get("is_group_member") or user.get("is_admin") or role_rank >= 1)
 
 
@@ -293,6 +288,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="3dlab",
     ),
     StaffNavItem(
+        key="3dlab_figures",
+        href="/cabinet/3dlab/figures",
+        sidebar_label="Фигуры 3Dlab",
+        pill_label="Фигуры",
+        aria_label="Доступ к фигурам 3Dlab",
+        tooltip="Какие фигуры открыты ученикам",
+        icon="3dlab",
+        min_rank=4,
+    ),
+    StaffNavItem(
         key="reports",
         href="/cabinet/curator/reports",
         sidebar_label="Видео-отчёты",
@@ -373,7 +378,7 @@ LIMITED_CABINET_NAV_KEYS = ("learning", "portfolio", "personal")
 
 
 def student_nav_items(
-    access_expired: bool = False, limited: bool = False,
+    access_expired: bool = False, limited: bool = False, lab3d_open: bool = False,
 ) -> tuple[StudentNavItem, ...]:
     """У ученика с истёкшим сроком доступа (`User.access_until`) в меню
     остаётся только «Личная информация» — остальные разделы ему всё равно
@@ -385,7 +390,7 @@ def student_nav_items(
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key == "personal")
     if limited:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key in LIMITED_CABINET_NAV_KEYS)
-    if not LAB3D_OPEN_FOR_STUDENTS:
+    if not lab3d_open:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key != "3dlab")
     return STUDENT_NAV_ITEMS
 

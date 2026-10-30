@@ -18,14 +18,46 @@ import mimetypes
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.csrf import validate_csrf_token
 from app.dependencies import get_current_user
 from app.services.navigation import can_open_3dlab
+from app.services.lab_access import may_read_asset, visible_cards
+from app.services.lab_stats import record_open
+from app.db.database import get_db
+from sqlalchemy.orm import Session as DBSession
 
 router = APIRouter()
+
+
+class LabOpenEvent(BaseModel):
+    card_id: str
+    csrf_token: str
+
+
+@router.post("/lab/event")
+def lab_event(
+    payload: LabOpenEvent,
+    request: Request,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    if not validate_csrf_token(request.cookies.get("session_id", ""), payload.csrf_token):
+        raise HTTPException(status_code=403, detail="Неверный CSRF-токен")
+    if payload.card_id not in visible_cards():
+        raise HTTPException(status_code=404, detail="Фигура не найдена")
+    if not can_open_3dlab(user) or (
+        user.get("role_rank") == 1
+        and payload.card_id not in user.get("lab3d_open_card_ids", set())
+    ):
+        raise HTTPException(status_code=403, detail="Нет доступа к фигуре")
+    if user.get("role_rank") != 1 or user.get("impersonated_by_id"):
+        return {"recorded": False}
+    return {"recorded": record_open(db, user_id=user["user_id"], card_id=payload.card_id)}
 
 # mimetypes про эти расширения не знает, а без верного типа Three.js ругается на
 # glTF, и <video> может отказаться играть.
@@ -66,6 +98,8 @@ def lab_asset(
     """
     if not can_open_3dlab(user):
         raise HTTPException(status_code=403, detail="Нет доступа к 3D-лаборатории")
+    if user.get("role_rank") == 1 and not may_read_asset(asset_path, user.get("lab3d_open_card_ids", set())):
+        raise HTTPException(status_code=403, detail="Нет доступа к фигуре")
 
     file_path = _resolve_asset(asset_path)
     suffix = file_path.suffix.lower()

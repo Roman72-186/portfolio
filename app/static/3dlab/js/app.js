@@ -16,6 +16,11 @@ import { getCardById } from "./content/cardResolver.js";
 import { VIEWER_PROFILES } from "./content/viewerProfiles.js";
 import { initUniversalViewer } from "./universalViewer.js";
 import { configureUniversalRenderer } from "./universalRenderer.js";
+const OPEN_CARD_IDS = Array.isArray(window.LAB_OPEN_CARD_IDS)
+  ? new Set(window.LAB_OPEN_CARD_IDS) : null;
+function labNodeVisible(node) {
+  return !OPEN_CARD_IDS || node.type !== NODE_TYPES.CARD || OPEN_CARD_IDS.has(node.id);
+}
 const SECTION_FLAGS = {
   arch: true,
   insets: true,
@@ -493,7 +498,7 @@ function nodeToGalleryItem(node) {
   if (!node) return false;
 
   if (node.type === NODE_TYPES.CARD) {
-    return Boolean(node.ref && getCardById(node.ref));
+    return Boolean(labNodeVisible(node) && node.ref && getCardById(node.ref));
   }
 
   const children = Array.isArray(node.children)
@@ -527,7 +532,7 @@ function getCurrentCardNodes() {
   return children.filter(
     (node) =>
       node.type === NODE_TYPES.CARD &&
-      !node.hidden
+      !node.hidden && labNodeVisible(node)
   );
 }
 
@@ -589,9 +594,9 @@ let children = Array.isArray(currentNode.children)
   ? currentNode.children
   : [];
 
-children = children.filter((node) => !node.hidden);
+children = children.filter((node) => !node.hidden && labNodeVisible(node));
 
-if (DEMO_HIDE_EMPTY_BRANCHES) {
+if (DEMO_HIDE_EMPTY_BRANCHES || OPEN_CARD_IDS) {
   children = children.filter(hasVisibleContent);
 }
 
@@ -612,7 +617,7 @@ function handleNodeSelect(nodeId) {
     : [];
 
   const node = children.find((child) => child.id === nodeId);
-  if (!node) return;
+  if (!node || !labNodeVisible(node)) return;
 
   if (node.type === NODE_TYPES.CATEGORY) {
     navStack.push(currentNode);
@@ -627,7 +632,11 @@ function handleNodeSelect(nodeId) {
 }
 
 function openTreeCard(node) {
+  if (!labNodeVisible(node)) return;
   const card = node.ref ? getCardById(node.ref) : null;
+  if (card && OPEN_CARD_IDS && navigator.sendBeacon) {
+    navigator.sendBeacon("/lab/event", new Blob([JSON.stringify({ card_id: node.id, csrf_token: window.LAB_CSRF_TOKEN })], { type: "application/json" }));
+  }
 if (card?.viewerProfile === VIEWER_PROFILES.BASE) {
   viewer.openContentCard(card);
 }

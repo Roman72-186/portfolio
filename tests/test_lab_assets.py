@@ -79,8 +79,7 @@ def test_missing_file_is_404(client, assets_dir, admin_user, session_factory):
 
 
 def test_student_gets_403_while_lab_closed(client, assets_dir, regular_user, session_factory):
-    """Лаборатория закрыта ученикам на сентябрь 2026 (`LAB3D_OPEN_FOR_STUDENTS`):
-    файлы моделей по прямой ссылке ученик тоже не получает."""
+    """Без открытых фигур ученик не получает модели по прямой ссылке."""
     _login(client, session_factory, regular_user)
     r = client.get("/lab/asset/models/doric.gltf", follow_redirects=False)
     assert r.status_code == 403

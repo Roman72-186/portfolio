@@ -1,0 +1,23 @@
+.lab-config { max-width: 1160px; margin: 0 auto; padding: 28px 24px 72px; color: var(--text); }
+.lab-config-head { margin: 18px 0 26px; max-width: 75ch; }
+.lab-config-head h1 { margin: 0 0 8px; color: var(--ink); font: 800 clamp(1.6rem, 3vw, 2.2rem) Manrope, sans-serif; }
+.lab-config-head p { margin: 0; color: var(--muted); line-height: 1.5; }
+.lab-config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.lab-config-panel { min-width: 0; padding: 24px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.lab-config-panel h2 { margin: 0 0 18px; color: var(--ink); font: 700 1.2rem Manrope, sans-serif; }
+.lab-config-panel > label { display: block; margin: 18px 0 7px; font-weight: 700; }
+.lab-config-panel input[type="search"], .lab-config-panel select { width: 100%; min-width: 0; padding: 10px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.lab-config-panel select[size], .lab-config-panel select[multiple] { padding: 4px; }
+#lab-card { height: 390px; }
+#lab-students { height: 200px; }
+.lab-config-panel option { padding: 7px 9px; white-space: normal; }
+.lab-config-hint { color: var(--dim); font-size: .92rem; line-height: 1.45; }
+.lab-config-panel fieldset { margin: 20px 0; padding: 0; border: 0; }
+.lab-config-panel legend { margin-bottom: 8px; font-weight: 700; }
+.lab-config-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.lab-config-checks label { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.lab-config-checks label:has(input:checked) { border-color: var(--blue-deep); background: var(--blue-soft); color: var(--blue-ink); }
+.lab-config-checks input { accent-color: var(--blue-deep); }
+.lab-config-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 24px; }
+.lab-config :focus-visible { outline: 3px solid var(--blue-deep); outline-offset: 2px; }
+@media (max-width: 760px) { .lab-config { padding: 20px 16px 64px; } .lab-config-grid { grid-template-columns: 1fr; } .lab-config-panel { padding: 18px; } #lab-card { height: 280px; } }

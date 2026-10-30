@@ -1,0 +1,887 @@
+{
+  "cards": [
+    {
+      "id": "drawing_interiors_base_node",
+      "ref": "room_0",
+      "title": "База по рисунку СПБГАСУ",
+      "path": "Рисунок → Интерьеры СПБГАСУ → База по рисунку СПБГАСУ",
+      "hidden": true,
+      "assets": [
+        "textures/0/arch/s1.jpg",
+        "textures/0/arch/v1.mp4",
+        "textures/0/arch/v2.mp4",
+        "textures/0/arch/v3.mp4",
+        "textures/0/arch/v4.mp4"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_1_location_1",
+      "ref": "auditorium_1_location_1",
+      "title": "Локация 1",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 1 → Локация 1",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_1/location_1/model/location_1.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_1_location_2",
+      "ref": "auditorium_1_location_2",
+      "title": "Локация 2",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 1 → Локация 2",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_1/location_2/model/location_2.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_1_location_3",
+      "ref": "auditorium_1_location_3",
+      "title": "Локация 3",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 1 → Локация 3",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_1/location_3/model/location_3.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_2_location_4",
+      "ref": "auditorium_2_location_4",
+      "title": "Локация 4",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 2 → Локация 4",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_2/location_4/model/location_4.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_2_location_5",
+      "ref": "auditorium_2_location_5",
+      "title": "Локация 5",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 2 → Локация 5",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_2/location_5/model/location_5.1.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_2_location_6",
+      "ref": "auditorium_2_location_6",
+      "title": "Локация 6",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 2 → Локация 6",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_2/location_6/model/location_6.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_3_location_7",
+      "ref": "auditorium_3_location_7",
+      "title": "Локация 7",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 3 → Локация 7",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_3/location_7/model/location_7.1.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_3_location_8",
+      "ref": "auditorium_3_location_8",
+      "title": "Локация 8",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 3 → Локация 8",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_3/location_8/model/location_8.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_3_location_9",
+      "ref": "auditorium_3_location_9",
+      "title": "Локация 9",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 3 → Локация 9",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_3/location_9/model/location_9.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_4_location_10",
+      "ref": "auditorium_4_location_10",
+      "title": "Локация 10",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 4 → Локация 10",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_4/location_10/model/location_10.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_4_location_11",
+      "ref": "auditorium_4_location_11",
+      "title": "Локация 11",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 4 → Локация 11",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_4/location_11/model/location_11.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_4_location_12",
+      "ref": "auditorium_4_location_12",
+      "title": "Локация 12",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 4 → Локация 12",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_4/location_12/model/location_12.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_5_location_13",
+      "ref": "auditorium_5_location_13",
+      "title": "Локация 13",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 5 → Локация 13",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_5/location_13/model/location_13.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_5_location_14",
+      "ref": "auditorium_5_location_14",
+      "title": "Локация 14",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 5 → Локация 14",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_5/location_14/model/location_14.glb"
+      ]
+    },
+    {
+      "id": "drawing_interiors_auditorium_6_location_15",
+      "ref": "auditorium_6_location_15",
+      "title": "Локация 15",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 6 → Локация 15",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_6/location_15/model/location_15.glb"
+      ]
+    },
+    {
+      "id": "drawing_arch_base_node",
+      "ref": "arch_0",
+      "title": "База по архитектурным деталям СПБГАСУ",
+      "path": "Рисунок → Архитектурные детали → База по архитектурным деталям СПБГАСУ",
+      "hidden": true,
+      "assets": [
+        "textures/0/arch/s1.jpg",
+        "textures/0/arch/v1.mp4",
+        "textures/0/arch/v2.mp4",
+        "textures/0/arch/v3.mp4",
+        "textures/0/arch/v4.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_base_universal_node",
+      "ref": "arch_0_universal",
+      "title": "База по архитектурным деталям СПБГАСУ",
+      "path": "Рисунок → Архитектурные детали → База по архитектурным деталям СПБГАСУ",
+      "hidden": false,
+      "assets": [
+        "content/arch/arch_0/schemes/s1.jpg",
+        "content/arch/arch_0/videos/v1.mp4",
+        "content/arch/arch_0/videos/v2.mp4",
+        "content/arch/arch_0/videos/v3.mp4",
+        "content/arch/arch_0/videos/v4.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_vase1_node",
+      "ref": "vase1",
+      "title": "Малая ваза",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Малая ваза",
+      "hidden": true,
+      "assets": [
+        "models/vase1.bin",
+        "models/vase1.gltf",
+        "textures/vase1/s1.jpg",
+        "textures/vase1/s2.jpg",
+        "textures/vase1/v1.mp4",
+        "textures/vase1/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_vase1_universal_node",
+      "ref": "vase1_universal",
+      "title": "Малая ваза",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Малая ваза",
+      "hidden": false,
+      "assets": [
+        "content/arch/vase1/model/vase1.bin",
+        "content/arch/vase1/model/vase1.gltf",
+        "content/arch/vase1/schemes/s1.jpg",
+        "content/arch/vase1/schemes/s2.jpg",
+        "content/arch/vase1/videos/drawing/v2.mp4",
+        "content/arch/vase1/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_kapitel2_node",
+      "ref": "kapitel2",
+      "title": "Малая капитель",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Малая капитель",
+      "hidden": true,
+      "assets": [
+        "models/kapitel2.bin",
+        "models/kapitel2.gltf",
+        "textures/kapitel2/s1.jpg",
+        "textures/kapitel2/s2.jpg",
+        "textures/kapitel2/v1.mp4",
+        "textures/kapitel2/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_kapitel2_universal_node",
+      "ref": "kapitel2_universal",
+      "title": "Малая капитель",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Малая капитель",
+      "hidden": false,
+      "assets": [
+        "content/arch/kapitel2/model/kapitel2.bin",
+        "content/arch/kapitel2/model/kapitel2.gltf",
+        "content/arch/kapitel2/schemes/s1.jpg",
+        "content/arch/kapitel2/schemes/s2.jpg",
+        "content/arch/kapitel2/videos/drawing/v2.mp4",
+        "content/arch/kapitel2/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_vase2_node",
+      "ref": "vase2",
+      "title": "Большая ваза",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Большая ваза",
+      "hidden": true,
+      "assets": [
+        "models/vase2.bin",
+        "models/vase2.gltf",
+        "textures/vase2/s1.jpg",
+        "textures/vase2/s2.jpg",
+        "textures/vase2/s3.jpg",
+        "textures/vase2/v1.mp4",
+        "textures/vase2/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_vase2_universal_node",
+      "ref": "vase2_universal",
+      "title": "Большая ваза",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Большая ваза",
+      "hidden": false,
+      "assets": [
+        "content/arch/vase2/model/vase2.bin",
+        "content/arch/vase2/model/vase2.gltf",
+        "content/arch/vase2/schemes/s1.jpg",
+        "content/arch/vase2/schemes/s2.jpg",
+        "content/arch/vase2/schemes/s3.jpg",
+        "content/arch/vase2/videos/drawing/v2.mp4",
+        "content/arch/vase2/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_kapitel1_node",
+      "ref": "kapitel1",
+      "title": "Большая капитель",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Большая капитель",
+      "hidden": true,
+      "assets": [
+        "models/kapitel1.bin",
+        "models/kapitel1.gltf",
+        "textures/kapitel1/s1.jpg",
+        "textures/kapitel1/s2.jpg",
+        "textures/kapitel1/v1.mp4",
+        "textures/kapitel1/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_kapitel1_universal_node",
+      "ref": "kapitel1_universal",
+      "title": "Большая капитель",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Большая капитель",
+      "hidden": false,
+      "assets": [
+        "content/arch/kapitel1/model/kapitel1.bin",
+        "content/arch/kapitel1/model/kapitel1.gltf",
+        "content/arch/kapitel1/schemes/s1.jpg",
+        "content/arch/kapitel1/schemes/s2.jpg",
+        "content/arch/kapitel1/videos/drawing/v2.mp4",
+        "content/arch/kapitel1/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_chair1_node",
+      "ref": "chair1",
+      "title": "Табурет квадратный",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Табурет квадратный",
+      "hidden": true,
+      "assets": [
+        "models/chair1.bin",
+        "models/chair1.gltf",
+        "textures/chair1/s1.jpg",
+        "textures/chair1/s2.jpg",
+        "textures/chair1/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_chair1_universal_node",
+      "ref": "chair1_universal",
+      "title": "Табурет квадратный",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Табурет квадратный",
+      "hidden": false,
+      "assets": [
+        "content/arch/chair1/model/chair1.bin",
+        "content/arch/chair1/model/chair1.gltf",
+        "content/arch/chair1/schemes/s1.jpg",
+        "content/arch/chair1/schemes/s2.jpg",
+        "content/arch/chair1/videos/drawing/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_chair2_node",
+      "ref": "chair2",
+      "title": "Табурет круглый",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Табурет круглый",
+      "hidden": true,
+      "assets": [
+        "models/chair2.bin",
+        "models/chair2.gltf",
+        "textures/chair1/v1.mp4",
+        "textures/chair2/s1.jpg",
+        "textures/chair2/s2.jpg"
+      ]
+    },
+    {
+      "id": "drawing_arch_simple_chair2_universal_node",
+      "ref": "chair2_universal",
+      "title": "Табурет круглый",
+      "path": "Рисунок → Архитектурные детали → Простые архитектурные детали → Табурет круглый",
+      "hidden": false,
+      "assets": [
+        "content/arch/chair1/videos/drawing/v1.mp4",
+        "content/arch/chair2/model/chair2.bin",
+        "content/arch/chair2/model/chair2.gltf",
+        "content/arch/chair2/schemes/s1.jpg",
+        "content/arch/chair2/schemes/s2.jpg"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_ionic_node",
+      "ref": "ionic",
+      "title": "Ионическая капитель",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Ионическая капитель",
+      "hidden": true,
+      "assets": [
+        "models/ionic.bin",
+        "models/ionic.gltf",
+        "textures/ionic/s1.jpg",
+        "textures/ionic/s2.jpg",
+        "textures/ionic/s3.jpg",
+        "textures/ionic/s4.jpg",
+        "textures/ionic/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_ionic_universal_node",
+      "ref": "ionic_universal",
+      "title": "Ионическая капитель",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Ионическая капитель",
+      "hidden": false,
+      "assets": [
+        "content/arch/ionic/model/ionic.bin",
+        "content/arch/ionic/model/ionic.gltf",
+        "content/arch/ionic/schemes/s1.jpg",
+        "content/arch/ionic/schemes/s2.jpg",
+        "content/arch/ionic/schemes/s3.jpg",
+        "content/arch/ionic/schemes/s4.jpg",
+        "content/arch/ionic/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_doric_node",
+      "ref": "doric",
+      "title": "Дорическая капитель",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Дорическая капитель",
+      "hidden": true,
+      "assets": [
+        "models/doric.bin",
+        "models/doric.gltf",
+        "textures/doric/s1.jpg",
+        "textures/doric/s2.jpg",
+        "textures/doric/s3.jpg",
+        "textures/doric/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_doric_universal_node",
+      "ref": "doric_universal",
+      "title": "Дорическая капитель",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Дорическая капитель",
+      "hidden": false,
+      "assets": [
+        "content/arch/doric/model/doric.bin",
+        "content/arch/doric/model/doric.gltf",
+        "content/arch/doric/schemes/s1.jpg",
+        "content/arch/doric/schemes/s2.jpg",
+        "content/arch/doric/schemes/s3.jpg",
+        "content/arch/doric/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_balyasina2_node",
+      "ref": "balyasina2",
+      "title": "Балясина шаровидная",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Балясина шаровидная",
+      "hidden": true,
+      "assets": [
+        "models/balyasina2.bin",
+        "models/balyasina2.gltf",
+        "textures/balyasina2/s1.jpg",
+        "textures/balyasina2/s2.jpg",
+        "textures/balyasina2/s3.jpg",
+        "textures/balyasina2/v1.mp4",
+        "textures/balyasina2/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_balyasina2_universal_node",
+      "ref": "balyasina2_universal",
+      "title": "Балясина шаровидная",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Балясина шаровидная",
+      "hidden": false,
+      "assets": [
+        "content/arch/balyasina2/model/balyasina2.bin",
+        "content/arch/balyasina2/model/balyasina2.gltf",
+        "content/arch/balyasina2/schemes/s1.jpg",
+        "content/arch/balyasina2/schemes/s2.jpg",
+        "content/arch/balyasina2/schemes/s3.jpg",
+        "content/arch/balyasina2/videos/drawing/v2.mp4",
+        "content/arch/balyasina2/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_balyasina1_node",
+      "ref": "balyasina1",
+      "title": "Балясина с лепестками",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Балясина с лепестками",
+      "hidden": true,
+      "assets": [
+        "models/balyasina1.bin",
+        "models/balyasina1.gltf",
+        "textures/balyasina1/s1.jpg",
+        "textures/balyasina1/s2.jpg",
+        "textures/balyasina1/v1.mp4",
+        "textures/balyasina1/v2.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_balyasina1_universal_node",
+      "ref": "balyasina1_universal",
+      "title": "Балясина с лепестками",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Балясина с лепестками",
+      "hidden": false,
+      "assets": [
+        "content/arch/balyasina1/model/balyasina1.bin",
+        "content/arch/balyasina1/model/balyasina1.gltf",
+        "content/arch/balyasina1/schemes/s1.jpg",
+        "content/arch/balyasina1/schemes/s2.jpg",
+        "content/arch/balyasina1/videos/drawing/v2.mp4",
+        "content/arch/balyasina1/videos/scheme/v1.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_molbert_node",
+      "ref": "molbert",
+      "title": "Мольберт",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Мольберт",
+      "hidden": true,
+      "assets": [
+        "models/molbert.bin",
+        "models/molbert.gltf",
+        "textures/molbert/v1.mp4",
+        "textures/molbert/v2.mp4",
+        "textures/molbert/v3.mp4"
+      ]
+    },
+    {
+      "id": "drawing_arch_complex_molbert_universal_node",
+      "ref": "molbert_universal",
+      "title": "Мольберт",
+      "path": "Рисунок → Архитектурные детали → Сложные архитектурные детали → Мольберт",
+      "hidden": false,
+      "assets": [
+        "content/arch/molbert/model/molbert.bin",
+        "content/arch/molbert/model/molbert.gltf",
+        "content/arch/molbert/videos/drawing/v1.mp4",
+        "content/arch/molbert/videos/drawing/v2.mp4",
+        "content/arch/molbert/videos/scheme/v3.mp4"
+      ]
+    },
+    {
+      "id": "composition_insets_base_node",
+      "ref": "inset_0",
+      "title": "Базовая информация про врезки",
+      "path": "Композиция → Фигуры и врезки → Врезки → Базовая информация про врезки",
+      "hidden": true,
+      "assets": [
+        "textures/0/vrez/v1.mp4",
+        "textures/0/vrez/v2.mp4",
+        "textures/0/vrez/v3.mp4",
+        "textures/0/vrez/v5.mp4",
+        "textures/0/vrez/v8.mp4"
+      ]
+    },
+    {
+      "id": "composition_insets_base_universal_node",
+      "ref": "inset_0_universal",
+      "title": "Базовая информация про врезки",
+      "path": "Композиция → Фигуры и врезки → Врезки → Базовая информация про врезки",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_0/videos/v2.mp4",
+        "content/insets/inset_0/videos/v5.mp4"
+      ]
+    },
+    {
+      "id": "composition_insets_simple_inset_1_universal_node",
+      "ref": "inset_1_universal",
+      "title": "Куб и конус",
+      "path": "Композиция → Фигуры и врезки → Врезки → Простые врезки → Куб и конус",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_1/model/1.1.bin",
+        "content/insets/inset_1/model/1.1.gltf",
+        "content/insets/inset_1/schemes/S1.jpg",
+        "content/insets/inset_1/schemes/S2.jpg",
+        "content/insets/inset_1/schemes/S3.jpg",
+        "content/insets/inset_1/schemes/S4.jpg",
+        "content/insets/inset_1/schemes/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_simple_inset_2_universal_node",
+      "ref": "inset_2_universal",
+      "title": "Горизонтальная треугольная призма и конус",
+      "path": "Композиция → Фигуры и врезки → Врезки → Простые врезки → Горизонтальная треугольная призма и конус",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_2/model/2.3.bin",
+        "content/insets/inset_2/model/2.3.gltf",
+        "content/insets/inset_2/schemes/S1.jpg",
+        "content/insets/inset_2/schemes/S2.jpg",
+        "content/insets/inset_2/schemes/S3.jpg",
+        "content/insets/inset_2/schemes/S4.jpg",
+        "content/insets/inset_2/schemes/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_3_node",
+      "ref": "inset_3",
+      "title": "Пирамида и горизонтальная треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Пирамида и горизонтальная треугольная призма",
+      "hidden": true,
+      "assets": [
+        "models/3.bin",
+        "models/3.gltf",
+        "textures/3/SS1.jpg",
+        "textures/3/SS2.jpg",
+        "textures/3/SS3.jpg",
+        "textures/3/SS4.jpg",
+        "textures/3/SS5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_3_universal_node",
+      "ref": "inset_3_universal",
+      "title": "Пирамида и горизонтальная треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Пирамида и горизонтальная треугольная призма",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_3/model/3.bin",
+        "content/insets/inset_3/model/3.gltf",
+        "content/insets/inset_3/schemes/SS1.jpg",
+        "content/insets/inset_3/schemes/SS2.jpg",
+        "content/insets/inset_3/schemes/SS3.jpg",
+        "content/insets/inset_3/schemes/SS4.jpg",
+        "content/insets/inset_3/schemes/SS5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_13_node",
+      "ref": "inset_13",
+      "title": "Вертикальная пирамида и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная пирамида и треугольная призма",
+      "hidden": true,
+      "assets": [
+        "models/13.bin",
+        "models/13.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_13_universal_node",
+      "ref": "inset_13_universal",
+      "title": "Вертикальная пирамида и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная пирамида и треугольная призма",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_13/model/13.bin",
+        "content/insets/inset_13/model/13.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_12_node",
+      "ref": "inset_12",
+      "title": "Пирамида и горизонтальный шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Пирамида и горизонтальный шестигранник",
+      "hidden": true,
+      "assets": [
+        "models/12.bin",
+        "models/12.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_12_universal_node",
+      "ref": "inset_12_universal",
+      "title": "Пирамида и горизонтальный шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Пирамида и горизонтальный шестигранник",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_12/model/12.bin",
+        "content/insets/inset_12/model/12.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_4_node",
+      "ref": "inset_4",
+      "title": "Треугольная призма и шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Треугольная призма и шестигранник",
+      "hidden": true,
+      "assets": [
+        "models/4.bin",
+        "models/4.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_4_universal_node",
+      "ref": "inset_4_universal",
+      "title": "Треугольная призма и шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Треугольная призма и шестигранник",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_4/model/4.bin",
+        "content/insets/inset_4/model/4.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_8_node",
+      "ref": "inset_8",
+      "title": "Вертикальная треугольная призма и цилиндр",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная треугольная призма и цилиндр",
+      "hidden": true,
+      "assets": [
+        "models/8.bin",
+        "models/8.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_8_universal_node",
+      "ref": "inset_8_universal",
+      "title": "Вертикальная треугольная призма и цилиндр",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная треугольная призма и цилиндр",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_8/model/8.bin",
+        "content/insets/inset_8/model/8.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_9_node",
+      "ref": "inset_9",
+      "title": "Вертикальный цилиндр и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальный цилиндр и треугольная призма",
+      "hidden": true,
+      "assets": [
+        "models/9.bin",
+        "models/9.gltf",
+        "textures/9/S1.jpg",
+        "textures/9/S2.jpg",
+        "textures/9/S3.jpg",
+        "textures/9/S4.jpg",
+        "textures/9/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_9_universal_node",
+      "ref": "inset_9_universal",
+      "title": "Вертикальный цилиндр и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальный цилиндр и треугольная призма",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_9/model/9.bin",
+        "content/insets/inset_9/model/9.gltf",
+        "content/insets/inset_9/schemes/S1.jpg",
+        "content/insets/inset_9/schemes/S2.jpg",
+        "content/insets/inset_9/schemes/S3.jpg",
+        "content/insets/inset_9/schemes/S4.jpg",
+        "content/insets/inset_9/schemes/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_7_node",
+      "ref": "inset_7",
+      "title": "Горизонтальный цилиндр и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Горизонтальный цилиндр и треугольная призма",
+      "hidden": true,
+      "assets": [
+        "models/7.1.bin",
+        "models/7.1.gltf",
+        "textures/7/S1.jpg",
+        "textures/7/S2.jpg",
+        "textures/7/S3.jpg",
+        "textures/7/S4.jpg",
+        "textures/7/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_7_universal_node",
+      "ref": "inset_7_universal",
+      "title": "Горизонтальный цилиндр и треугольная призма",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Горизонтальный цилиндр и треугольная призма",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_7/model/7.1.bin",
+        "content/insets/inset_7/model/7.1.gltf",
+        "content/insets/inset_7/schemes/S1.jpg",
+        "content/insets/inset_7/schemes/S2.jpg",
+        "content/insets/inset_7/schemes/S3.jpg",
+        "content/insets/inset_7/schemes/S4.jpg",
+        "content/insets/inset_7/schemes/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_5_node",
+      "ref": "inset_5",
+      "title": "Горизонтальный цилиндр и пирамида",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Горизонтальный цилиндр и пирамида",
+      "hidden": true,
+      "assets": [
+        "models/5.1.bin",
+        "models/5.1.gltf",
+        "textures/5/S1.jpg",
+        "textures/5/S2.jpg",
+        "textures/5/S3.jpg",
+        "textures/5/S4.jpg",
+        "textures/5/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_5_universal_node",
+      "ref": "inset_5_universal",
+      "title": "Горизонтальный цилиндр и пирамида",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Горизонтальный цилиндр и пирамида",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_5/model/5.1.bin",
+        "content/insets/inset_5/model/5.1.gltf",
+        "content/insets/inset_5/schemes/S1.jpg",
+        "content/insets/inset_5/schemes/S2.jpg",
+        "content/insets/inset_5/schemes/S3.jpg",
+        "content/insets/inset_5/schemes/S4.jpg",
+        "content/insets/inset_5/schemes/S5.jpg"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_14_node",
+      "ref": "inset_14",
+      "title": "Вертикальная треугольная призма и конус",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная треугольная призма и конус",
+      "hidden": true,
+      "assets": [
+        "models/14.bin",
+        "models/14.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_medium_inset_14_universal_node",
+      "ref": "inset_14_universal",
+      "title": "Вертикальная треугольная призма и конус",
+      "path": "Композиция → Фигуры и врезки → Врезки → Врезки средней сложности → Вертикальная треугольная призма и конус",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_14/model/14.bin",
+        "content/insets/inset_14/model/14.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_11_node",
+      "ref": "inset_11",
+      "title": "Вертикальный цилиндр и пирамида",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Вертикальный цилиндр и пирамида",
+      "hidden": true,
+      "assets": [
+        "models/11.bin",
+        "models/11.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_11_universal_node",
+      "ref": "inset_11_universal",
+      "title": "Вертикальный цилиндр и пирамида",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Вертикальный цилиндр и пирамида",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_11/model/11.bin",
+        "content/insets/inset_11/model/11.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_6_node",
+      "ref": "inset_6",
+      "title": "Два горизонтальных шестигранника",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Два горизонтальных шестигранника",
+      "hidden": true,
+      "assets": [
+        "models/6.2.bin",
+        "models/6.2.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_6_universal_node",
+      "ref": "inset_6_universal",
+      "title": "Два горизонтальных шестигранника",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Два горизонтальных шестигранника",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_6/model/6.2.bin",
+        "content/insets/inset_6/model/6.2.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_10_node",
+      "ref": "inset_10",
+      "title": "Горизонтальный цилиндр и шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Горизонтальный цилиндр и шестигранник",
+      "hidden": true,
+      "assets": [
+        "models/10.bin",
+        "models/10.gltf"
+      ]
+    },
+    {
+      "id": "composition_insets_complex_inset_10_universal_node",
+      "ref": "inset_10_universal",
+      "title": "Горизонтальный цилиндр и шестигранник",
+      "path": "Композиция → Фигуры и врезки → Врезки → Сложные врезки → Горизонтальный цилиндр и шестигранник",
+      "hidden": false,
+      "assets": [
+        "content/insets/inset_10/model/10.bin",
+        "content/insets/inset_10/model/10.gltf"
+      ]
+    }
+  ]
+}

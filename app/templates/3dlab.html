@@ -1198,17 +1198,21 @@ body.inset-mode #insetOpacityRow {
      ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ
      ============================ -->
 <script id="lab-user-json" type="application/json">{{ lab_user | tojson }}</script>
+<script id="lab-open-cards-json" type="application/json">{{ lab_open_card_ids | tojson }}</script>
+<script id="lab-csrf-json" type="application/json">{{ csrf_token(request) | tojson }}</script>
 <script>
 (function () {
   try {
     const raw = document.getElementById("lab-user-json")?.textContent?.trim() || "";
     window.LAB_USER = JSON.parse(raw);
+    window.LAB_OPEN_CARD_IDS = JSON.parse(document.getElementById("lab-open-cards-json").textContent);
+    window.LAB_CSRF_TOKEN = JSON.parse(document.getElementById("lab-csrf-json").textContent);
   } catch (e) {
     window.LAB_USER = null;
   }
 })();
 </script>
-<script type="module" src="/static/3dlab/js/app.js?v=20261010-domain"></script>
+<script type="module" src="/static/3dlab/js/app.js?v=20261030-card-access"></script>
   <script>
 (function () {
   function isVisibleButton(el) {

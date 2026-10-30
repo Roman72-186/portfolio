@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}3Dlab: фигуры{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/lab_figures.css?v=2">{% endblock %}
+{% block content %}
+<main class="lab-config">
+    <a href="/cabinet" class="back-link">← Дашборд</a>
+    <header class="lab-config-head">
+        <h1>3Dlab: фигуры</h1>
+        <p>Выбери фигуру или целый раздел, затем отметь, кому открыть доступ. Пустой выбор закрывает фигуры для учеников. Сотрудники видят всё.</p>
+    </header>
+    <div class="lab-config-grid">
+        <section class="lab-config-panel" aria-labelledby="lab-pick-title">
+            <h2 id="lab-pick-title">Что открыть</h2>
+            <label for="lab-card-search">Найти фигуру</label>
+            <input id="lab-card-search" type="search" placeholder="Название или раздел" autocomplete="off">
+            <label for="lab-card">Фигура</label>
+            <select id="lab-card" size="12" aria-describedby="lab-selected-summary">
+                {% for card in cards %}<option value="{{ card.id }}">{{ card.path }}</option>{% endfor %}
+            </select>
+            <p id="lab-selected-summary" class="lab-config-hint" aria-live="polite"></p>
+            <label for="lab-section">Или весь раздел</label>
+            <select id="lab-section"><option value="">Одна фигура</option></select>
+        </section>
+        <section class="lab-config-panel" aria-labelledby="lab-access-title">
+            <h2 id="lab-access-title">Кому открыта</h2>
+            <p class="lab-config-hint">Ученику достаточно быть выбранным поимённо. Если отмечены тариф, уровень и трек, он должен подходить под каждый выбранный пункт.</p>
+            <fieldset><legend>Тарифы</legend>
+                <div class="lab-config-checks">{% for tariff in tariffs %}<label><input type="checkbox" name="tariff" value="{{ tariff }}">{{ tariff }}</label>{% endfor %}</div>
+            </fieldset>
+            <fieldset><legend>Уровень точки А</legend>
+                <div class="lab-config-checks"><label><input type="checkbox" name="level" value="1">Уровень 1</label><label><input type="checkbox" name="level" value="2">Уровень 2</label></div>
+            </fieldset>
+            <fieldset><legend>Треки</legend>
+                <div class="lab-config-checks">{% for tag in tags %}<label><input type="checkbox" name="tag" value="{{ tag.id }}">{{ tag.name }}</label>{% endfor %}</div>
+            </fieldset>
+            <label for="lab-student-search">Ученики поимённо</label>
+            <input id="lab-student-search" type="search" placeholder="Найти ученика" autocomplete="off">
+            <select id="lab-students" multiple size="7" aria-label="Выбрать учеников поимённо">
+                {% for student in students %}<option value="{{ student.id }}">{{ student.name }}</option>{% endfor %}
+            </select>
+            <p class="lab-config-hint">Для нескольких учеников удерживай Ctrl или ⌘. На телефоне список выбора откроется отдельно.</p>
+            <div class="lab-config-actions"><button type="button" id="lab-save" class="btn-blue">Сохранить доступ</button><span id="lab-save-status" role="status" aria-live="polite"></span></div>
+        </section>
+    </div>
+</main>
+<script id="lab-cards-data" type="application/json">{{ cards | tojson }}</script>
+<script src="/static/js/lab_figures.js?v=3" defer></script>
+{% endblock %}

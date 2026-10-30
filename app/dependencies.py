@@ -479,6 +479,9 @@ def get_current_user(
         "section_levels": levels,
     }
 
+    if role_rank == 1:
+        from app.services.lab_access import open_card_ids
+        result["lab3d_open_card_ids"] = open_card_ids(db, result)
     return result
 
 
