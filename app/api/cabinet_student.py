@@ -934,7 +934,9 @@ async def cabinet_portfolio(
     # экзамены» на этой странице больше нет. Сборка именно для своей страницы
     # ученика — `student_portfolio_after_groups`, не общая `after_gallery_groups`
     # (та осталась прежней ради staff-карточки, см. её докстринг).
-    after_groups = student_portfolio_after_groups(db, user["user_id"])
+    after_groups = student_portfolio_after_groups(
+        db, user["user_id"], include_score_comparisons=True,
+    )
     after_works = [w for g in after_groups for w in g["works"]]
 
     # Fetch Drive thumbnail URLs for works that came from Drive (no s3_url)
@@ -962,6 +964,7 @@ async def cabinet_portfolio(
             "month": group["month"],
             "total": group["total"],
             "works": [serialize_work(w) for w in group["works"]],
+            "score_comparisons": group.get("score_comparisons", []),
         }
 
     return templates.TemplateResponse(request, "cabinet_portfolio.html", {
@@ -991,7 +994,7 @@ def _collect_cycle_works(
 
     closed_only=True — только финалы из ЗАКРЫТЫХ циклов (для Портфолио →
     Пробные экзамены: показываем уже оценённые/завершённые).
-    include_peers=True — добавляет score_neighbors: анонимную подборку 2+2 чужих
+    include_peers=True — добавляет score_neighbors: анонимную подборку до 5+5 чужих
     работ того же билета с соседними баллами (владелец 11.09.2026, только для
     /cabinet/portfolio — см. cabinet_portfolio()). Не влияет на два других
     вызывающих места (render_cycle_calendar, staff-портфолио), они его не передают.

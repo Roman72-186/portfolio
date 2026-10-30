@@ -26,6 +26,7 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.tracker import ITEM_MOCK_EXAM, SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.user import User
+from app.models.role import Role
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services import s3 as s3_service
 from app.services.mock_exam_access import (
@@ -784,7 +785,7 @@ def get_score_neighbor_candidates(
     work_type: str,
     ticket_ids: list[int],
 ) -> dict[int, list[tuple[float, int]]]:
-    """Батч чужих оценённых финалов по списку ticket_id: {ticket_id: [(score, work_id), ...]}.
+    """Батч чужих оценённых финалов по ticket_id: один последний финал на ученика.
 
     Один запрос на все билеты страницы (не N+1 на работу). work_type фильтруется
     явно: Отработка может делить cycle_id/ticket_id с исходным Пробником
@@ -792,13 +793,15 @@ def get_score_neighbor_candidates(
     сравнивать «пробник с пробником», а не подмешивать отработки.
     Возвращает только (score, work_id) — user_id/фото сюда намеренно не идёт,
     чтобы карточки соседей оставались анонимными; фото резолвится отдельно
-    через прокси-эндпоинт и только для уже отобранных ≤4 соседей.
+    через прокси-эндпоинт и только для уже отобранных ≤10 соседей.
     """
     if not ticket_ids:
         return {}
     rows = (
-        db.query(Work.score, Work.id, ExamCycle.ticket_id)
+        db.query(Work.score, Work.id, ExamCycle.ticket_id, Work.user_id)
         .join(ExamCycle, Work.cycle_id == ExamCycle.id)
+        .join(User, Work.user_id == User.id)
+        .join(Role, User.role_id == Role.id)
         .filter(
             ExamCycle.ticket_id.in_(ticket_ids),
             Work.user_id != exclude_user_id,
@@ -806,11 +809,20 @@ def get_score_neighbor_candidates(
             Work.status == "success",
             Work.score.isnot(None),
             Work.parent_work_id.is_(None),
+            Work.needs_revision.is_(False),
+            User.deleted_at.is_(None),
+            Role.name == "ученик",
         )
+        .order_by(Work.scored_at.desc(), Work.created_at.desc(), Work.id.desc())
         .all()
     )
     out: dict[int, list[tuple[float, int]]] = {}
-    for score, work_id, ticket_id in rows:
+    seen: set[tuple[int, int]] = set()
+    for score, work_id, ticket_id, peer_user_id in rows:
+        key = (ticket_id, peer_user_id)
+        if key in seen:
+            continue
+        seen.add(key)
         out.setdefault(ticket_id, []).append((float(score), work_id))
     return out
 
@@ -819,22 +831,19 @@ def pick_score_neighbors(
     own_score: float,
     candidates: list[tuple[float, int]],
 ) -> dict[str, list[tuple[float, int]]]:
-    """2 ближайших с баллом <= own_score + 2 ближайших с баллом > own_score.
+    """До пяти ближайших работ с баллом ниже и до пяти с баллом выше.
 
-    Равный балл — «снизу» (<=), не отбрасывается: при округлении баллов в
-    небольшой когорте совпадения — обычное дело, молчаливое исключение
-    противоречило бы правилу «показывать сколько есть». Вторичная сортировка
-    по work_id делает выбор детерминированным при нескольких кандидатах
-    с одинаковым баллом.
+    Равный балл не относится ни к «лучше», ни к «хуже». Вторичная сортировка
+    по work_id делает выбор детерминированным при нескольких кандидатах.
     Возвращает {"below": [(score, work_id), ...] по возрастанию, "above": [...]}.
     """
     below = sorted(
-        (c for c in candidates if c[0] <= own_score),
+        (c for c in candidates if c[0] < own_score),
         key=lambda c: (-c[0], c[1]),
-    )[:2]
+    )[:5]
     below.sort(key=lambda c: (c[0], c[1]))
     above = sorted(
         (c for c in candidates if c[0] > own_score),
         key=lambda c: (c[0], c[1]),
-    )[:2]
+    )[:5]
     return {"below": below, "above": above}

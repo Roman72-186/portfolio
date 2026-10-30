@@ -4,7 +4,7 @@
 пользователь сдает в заданиях». Слияние только на показ — в базе сдачи
 остаются в `task_block_submissions`, копий в `works` не появляется.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.models.task_block import (
     BLOCK_UPLOAD,
@@ -13,20 +13,29 @@ from app.models.task_block import (
     TaskBlockSubmissionImage,
 )
 from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
+from app.models.exam_assignment import ExamAssignment, ExamTicket
+from app.models.exam_cycle import ExamCycle
+from app.models.user import User
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK
-from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_RETAKE, Work
+from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
 from app.services.portfolio import (
     SOURCE_SUBMISSION,
     SOURCE_WORK,
     after_gallery_groups,
     portfolio_item_count,
     student_portfolio_after_groups,
+    _peer_name,
 )
 from app.services.program import day_bounds
 from app.services.tracker import create_homework, create_task
 from app.services.tz import today_msk
 
 TODAY = today_msk()
+
+
+def test_peer_name_fallback_uses_surname_after_patronymic():
+    student = User(vk_id=1, name="Мария Ивановна Соколова")
+    assert _peer_name(student) == "Мария С."
 
 
 def _utc(value):
@@ -140,6 +149,85 @@ def test_student_portfolio_page_shows_submitted_work(auth_client, db):
 
     assert resp.status_code == 200
     assert f"submission-{submission.id}-0.jpg" in resp.text
+    assert "Твой балл:" not in resp.text
+
+
+def test_scored_assignment_shows_five_named_neighbors_per_side_once(auth_client, db, user_factory):
+    client, student = auth_client
+    own = _submission(db, student, submitted_at=_january(), images=2)
+    own.score = 70
+    db.commit()
+    for n, score in enumerate([60, 61, 62, 63, 64, 65, 70, 71, 72, 73, 74, 75, 76]):
+        peer = user_factory(vk_id=710_000 + n, name=f"Имя{n} Фамилия")
+        peer.first_name = f"Имя{n}"
+        peer.last_name = "Фамилия"
+        db.add(TaskBlockSubmission(
+            block_id=own.block_id, user_id=peer.id,
+            submitted_at=_utc(_january()), score=score,
+        ))
+    staff = user_factory(vk_id=710_100, name="Сотрудник Школы", role_name="куратор")
+    db.add(TaskBlockSubmission(
+        block_id=own.block_id, user_id=staff.id,
+        submitted_at=_utc(_january()), score=69,
+    ))
+    other_task_student = user_factory(vk_id=710_101, name="Другой Ученик")
+    other_task = _submission(db, other_task_student, submitted_at=_january())
+    other_task.score = 69
+    db.commit()
+
+    groups = student_portfolio_after_groups(db, student.id, include_score_comparisons=True)
+    comparisons = groups[0]["score_comparisons"]
+    assert len(comparisons) == 1  # два фото одной сдачи
+    assert [p["score"] for p in comparisons[0]["below"]] == [65, 64, 63, 62, 61]
+    assert [p["score"] for p in comparisons[0]["above"]] == [71, 72, 73, 74, 75]
+    assert comparisons[0]["above"][0]["name"] == "Имя7 Ф."
+
+    response = client.get("/cabinet/portfolio")
+    assert response.status_code == 200
+    assert response.text.count("Твой балл: 70 / 100") == 1
+    assert "Имя7 Ф." in response.text
+    assert "Имя6 Ф." not in response.text  # равный балл не объявляем ниже
+    assert "Сотрудник" not in response.text
+    assert "Другой У." not in response.text
+
+
+def test_scored_mock_exam_shows_names_from_same_ticket(auth_client, db, user_factory):
+    client, student = auth_client
+    assignment = ExamAssignment(
+        title="Пробник", subject="Рисунок", created_by_id=student.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Капитель",
+        start_date=date(2026, 1, 1), end_date=date(2026, 1, 31), assign_to_all=True,
+    )
+    db.add(ticket)
+    db.flush()
+    peer = user_factory(vk_id=720_001, name="Мария Соколова")
+    peer.first_name = "Мария"
+    peer.last_name = "Соколова"
+    db.flush()
+    for author, score in ((student, 70), (peer, 80)):
+        cycle = ExamCycle(
+            user_id=author.id, subject="Рисунок", ticket_id=ticket.id,
+            started_at=date(2026, 1, 5),
+        )
+        db.add(cycle)
+        db.flush()
+        db.add(Work(
+            user_id=author.id, work_type=WORK_TYPE_MOCK_EXAM,
+            month="январь", year=2026, filename=f"mock-{author.id}.jpg",
+            s3_url=f"https://s3.example/mock-{author.id}.jpg", status="success",
+            subject="Рисунок", cycle_id=cycle.id, score=score,
+        ))
+    db.commit()
+
+    response = client.get("/cabinet/portfolio")
+    assert response.status_code == 200
+    assert "Капитель" in response.text
+    assert "Мария С." in response.text
+    assert "Твой балл: 70 / 100" in response.text
 
 
 def test_staff_json_marks_the_source_of_every_photo(client, db, user_factory, session_factory):

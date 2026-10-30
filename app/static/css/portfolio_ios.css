@@ -80,7 +80,8 @@
 }
 .ios-portfolio .pf-mblock.open .pf-mhead { border-bottom: 0.5px solid var(--ios-sep); }
 .ios-portfolio .pf-mhead:hover { background: rgba(60,60,67,0.04); }
-.ios-portfolio .pf-mblock:not(.open) .pf-mgrid { display: none; }
+.ios-portfolio .pf-mblock:not(.open) .pf-mgrid,
+.ios-portfolio .pf-mblock:not(.open) .pf-score-comparisons { display: none; }
 .ios-portfolio .pf-mtoggle {
     display: inline-flex; align-items: center; gap: 10px;
     background: transparent; border: 0; padding: 0; font-family: inherit;
@@ -106,6 +107,49 @@
     display: block; transition: opacity 0.15s;
 }
 .ios-portfolio .pf-work-card:hover img { opacity: 0.85; }
+
+/* Оценённые работы и ближайшие баллы по тому же заданию или билету. */
+.ios-portfolio .pf-score-comparisons {
+    display: grid; gap: 10px; padding: 0 12px 14px;
+}
+.ios-portfolio .pf-score-comparison {
+    border: 1px solid var(--ios-sep); border-radius: 12px;
+    padding: 12px; background: var(--ios-card-bg);
+}
+.ios-portfolio .pf-score-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 4px 12px;
+}
+.ios-portfolio .pf-score-title {
+    font: 600 14px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-portfolio .pf-score-own {
+    font: 600 14px/1.4 var(--ios-font); color: var(--ios-blue);
+}
+.ios-portfolio .pf-score-sides {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px; margin-top: 10px;
+}
+.ios-portfolio .pf-score-side-title {
+    margin: 0 0 5px; font: 600 12px/1.3 var(--ios-font);
+    color: var(--ios-label-2);
+}
+.ios-portfolio .pf-score-side ol { margin: 0; padding: 0; list-style: none; }
+.ios-portfolio .pf-score-side li {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; padding: 3px 0;
+    font: 400 13px/1.35 var(--ios-font); color: var(--ios-label);
+}
+.ios-portfolio .pf-score-side li span { min-width: 0; overflow-wrap: anywhere; }
+.ios-portfolio .pf-score-side li strong { flex: 0 0 auto; font-weight: 600; }
+.ios-portfolio .pf-score-side p,
+.ios-portfolio .pf-score-empty {
+    margin: 5px 0 0; font: 400 13px/1.4 var(--ios-font);
+    color: var(--ios-label-2);
+}
+@media (max-width: 340px) {
+    .ios-portfolio .pf-score-sides { grid-template-columns: 1fr; }
+}
 
 /* ── Пустое состояние ── */
 .ios-portfolio .empty-state { text-align: center; padding: 36px 20px; }

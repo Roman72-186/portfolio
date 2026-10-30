@@ -29,7 +29,12 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MONTHS
 from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
-from app.models.task_block import TaskBlockSubmission, TaskBlockSubmissionImage
+from app.models.exam_assignment import ExamTicket
+from app.models.exam_cycle import ExamCycle
+from app.models.role import Role
+from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockSubmissionImage
+from app.models.tracker import TrackerTask
+from app.models.user import User
 from app.models.work import (
     WORK_TYPE_AFTER,
     WORK_TYPE_BEFORE,
@@ -38,6 +43,7 @@ from app.models.work import (
     Work,
 )
 from app.services.program import msk_date
+from app.services.exam_cycle import get_score_neighbor_candidates, pick_score_neighbors
 from app.services.utils import group_works
 
 # Источник элемента галереи. Ушедшее наружу поле: экраны staff по нему
@@ -101,6 +107,7 @@ class SubmissionPhoto:
     score: None = None
     drive_file_id: None = None
     source: str = SOURCE_SUBMISSION
+    task_submission_id: int | None = None
 
 
 def _submission_photos(db: DBSession, user_id: int, *, limit: int) -> list[SubmissionPhoto]:
@@ -134,6 +141,7 @@ def _submission_photos(db: DBSession, user_id: int, *, limit: int) -> list[Submi
             year=day.year,
             month=MONTHS[day.month - 1],
             created_at=submission.submitted_at,
+            task_submission_id=submission.id,
         ))
     return photos
 
@@ -238,6 +246,7 @@ def student_portfolio_after_groups(
     work_limit: int = 300,
     submission_limit: int = 300,
     mock_limit: int = 300,
+    include_score_comparisons: bool = False,
 ) -> list[dict]:
     """То же, что `after_gallery_groups`, плюс оценённые финалы пробников и
     финалы отработок — только для собственной страницы «Портфолио» ученика
@@ -284,7 +293,153 @@ def student_portfolio_after_groups(
         .limit(mock_limit)
         .all()
     )
-    return group_works(items + mock_works + retake_finals)
+    groups = group_works(items + mock_works + retake_finals)
+    if include_score_comparisons:
+        _attach_score_comparisons(db, user_id, groups)
+    return groups
+
+
+def _peer_name(user: User) -> str:
+    """Имя и первая буква фамилии для ученического сравнения баллов."""
+    parts = (user.name or "").split()
+    first = (user.first_name or "").strip() or (parts[0] if parts else "Ученик")
+    last = (user.last_name or "").strip() or (parts[-1] if len(parts) > 1 else "")
+    return f"{first} {last[0]}." if last else first
+
+
+def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -> None:
+    """Соседние оценки по тому же билету или блоку сдачи, одним батчем на страницу.
+
+    В портфолио фотографии одной сдачи идут отдельными плитками, а сравнение
+    относится к работе целиком. Поэтому ниже каждая сдача появляется один раз.
+    """
+    mock_works: list[Work] = []
+    submission_ids: set[int] = set()
+    for group in groups:
+        for item in group["works"]:
+            if isinstance(item, Work) and item.work_type == WORK_TYPE_MOCK_EXAM and item.score is not None:
+                mock_works.append(item)
+            elif isinstance(item, SubmissionPhoto) and item.task_submission_id is not None:
+                submission_ids.add(item.task_submission_id)
+
+    own_submissions = {}
+    if submission_ids:
+        own_submissions = {
+            row.id: (row, task.title)
+            for row, task in (
+                db.query(TaskBlockSubmission, TrackerTask)
+                .join(TaskBlock, TaskBlockSubmission.block_id == TaskBlock.id)
+                .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
+                .filter(
+                    TaskBlockSubmission.id.in_(submission_ids),
+                    TaskBlockSubmission.user_id == user_id,
+                    TaskBlockSubmission.submitted_at.isnot(None),
+                    TaskBlockSubmission.score.isnot(None),
+                    TaskBlockSubmission.needs_revision.is_(False),
+                )
+                .all()
+            )
+        }
+
+    cycle_ids = {work.cycle_id for work in mock_works if work.cycle_id}
+    cycles = (
+        {cycle.id: cycle for cycle in db.query(ExamCycle).filter(ExamCycle.id.in_(cycle_ids)).all()}
+        if cycle_ids else {}
+    )
+    ticket_ids = {cycle.ticket_id for cycle in cycles.values() if cycle.ticket_id}
+    ticket_titles = (
+        {ticket.id: ticket.title for ticket in db.query(ExamTicket).filter(ExamTicket.id.in_(ticket_ids)).all()}
+        if ticket_ids else {}
+    )
+    mock_candidates = get_score_neighbor_candidates(
+        db, exclude_user_id=user_id, work_type=WORK_TYPE_MOCK_EXAM,
+        ticket_ids=list(ticket_ids),
+    )
+
+    block_ids = {row.block_id for row, _title in own_submissions.values()}
+    block_candidates: dict[int, list[tuple[float, int]]] = {}
+    if block_ids:
+        rows = (
+            db.query(TaskBlockSubmission.score, TaskBlockSubmission.id, TaskBlockSubmission.block_id)
+            .join(User, TaskBlockSubmission.user_id == User.id)
+            .join(Role, User.role_id == Role.id)
+            .filter(
+                TaskBlockSubmission.block_id.in_(block_ids),
+                TaskBlockSubmission.user_id != user_id,
+                TaskBlockSubmission.submitted_at.isnot(None),
+                TaskBlockSubmission.score.isnot(None),
+                TaskBlockSubmission.needs_revision.is_(False),
+                User.deleted_at.is_(None),
+                Role.name == "ученик",
+            )
+            .all()
+        )
+        for score, submission_id, block_id in rows:
+            block_candidates.setdefault(block_id, []).append((float(score), submission_id))
+
+    selected_mock: set[int] = set()
+    selected_submissions: set[int] = set()
+    picked_by_work: dict[int, dict] = {}
+    picked_by_submission: dict[int, dict] = {}
+    for work in mock_works:
+        cycle = cycles.get(work.cycle_id)
+        if cycle and cycle.ticket_id:
+            picked = pick_score_neighbors(float(work.score), mock_candidates.get(cycle.ticket_id, []))
+            picked_by_work[work.id] = picked
+            selected_mock.update(peer_id for side in picked.values() for _score, peer_id in side)
+    for submission, _title in own_submissions.values():
+        picked = pick_score_neighbors(float(submission.score), block_candidates.get(submission.block_id, []))
+        picked_by_submission[submission.id] = picked
+        selected_submissions.update(peer_id for side in picked.values() for _score, peer_id in side)
+
+    peer_names: dict[tuple[str, int], str] = {}
+    if selected_mock:
+        for work, student in (
+            db.query(Work, User).join(User, Work.user_id == User.id)
+            .filter(Work.id.in_(selected_mock)).all()
+        ):
+            peer_names[("mock", work.id)] = _peer_name(student)
+    if selected_submissions:
+        for submission, student in (
+            db.query(TaskBlockSubmission, User)
+            .join(User, TaskBlockSubmission.user_id == User.id)
+            .filter(TaskBlockSubmission.id.in_(selected_submissions)).all()
+        ):
+            peer_names[("submission", submission.id)] = _peer_name(student)
+
+    def neighbors(picked: dict, kind: str) -> dict[str, list[dict]]:
+        return {
+            side: [
+                {"name": peer_names[(kind, peer_id)], "score": score}
+                for score, peer_id in (reversed(picked[side]) if side == "below" else picked[side])
+                if (kind, peer_id) in peer_names
+            ]
+            for side in ("above", "below")
+        }
+
+    for group in groups:
+        comparisons: list[dict] = []
+        seen_submissions: set[int] = set()
+        for item in group["works"]:
+            if isinstance(item, Work) and item.id in picked_by_work:
+                cycle = cycles[item.cycle_id]
+                comparisons.append({
+                    "title": ticket_titles.get(cycle.ticket_id, "Пробный экзамен"),
+                    "score": float(item.score),
+                    **neighbors(picked_by_work[item.id], "mock"),
+                })
+            elif isinstance(item, SubmissionPhoto) and item.task_submission_id in own_submissions:
+                submission_id = item.task_submission_id
+                if submission_id in seen_submissions:
+                    continue
+                seen_submissions.add(submission_id)
+                submission, title = own_submissions[submission_id]
+                comparisons.append({
+                    "title": title,
+                    "score": float(submission.score),
+                    **neighbors(picked_by_submission[submission_id], "submission"),
+                })
+        group["score_comparisons"] = comparisons
 
 
 def item_source(item) -> str:

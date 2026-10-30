@@ -312,27 +312,27 @@ def test_pick_score_neighbors_empty_candidates():
 
 
 def test_pick_score_neighbors_picks_nearest_not_extremes():
-    """Ближайшие 2 по обе стороны, а не абсолютный минимум/максимум пула."""
+    """Ближайшие пять по обе стороны, а не абсолютный минимум/максимум пула."""
     candidates = [(50, 1), (65, 2), (68, 3), (72, 4), (75, 5), (95, 6)]
     picked = pick_score_neighbors(70, candidates)
-    assert [c[0] for c in picked["below"]] == [65, 68]
-    assert [c[0] for c in picked["above"]] == [72, 75]
+    assert [c[0] for c in picked["below"]] == [50, 65, 68]
+    assert [c[0] for c in picked["above"]] == [72, 75, 95]
 
 
-def test_pick_score_neighbors_equal_score_goes_below():
+def test_pick_score_neighbors_equal_score_is_neither_better_nor_worse():
     candidates = [(70, 1), (60, 2)]
     picked = pick_score_neighbors(70, candidates)
-    assert (70, 1) in picked["below"]
+    assert picked["below"] == [(60, 2)]
     assert picked["above"] == []
 
 
-def test_pick_score_neighbors_caps_at_two_and_deterministic():
-    """3 кандидата с одинаковым баллом — берём только 2, порядок стабилен
+def test_pick_score_neighbors_caps_at_five_and_deterministic():
+    """7 кандидатов с одинаковым баллом — берём только 5, порядок стабилен
     независимо от порядка кандидатов на входе (сортировка по work_id)."""
-    candidates = [(70, 3), (70, 1), (70, 2)]
+    candidates = [(65, i) for i in range(7, 0, -1)]
     picked1 = pick_score_neighbors(70, candidates)
     picked2 = pick_score_neighbors(70, list(reversed(candidates)))
-    assert len(picked1["below"]) == 2
+    assert len(picked1["below"]) == 5
     assert picked1["below"] == picked2["below"]
 
 
@@ -346,6 +346,19 @@ def test_get_score_neighbor_candidates_excludes_own_user(db, regular_user, user_
         db, exclude_user_id=regular_user.id, work_type=WORK_TYPE_MOCK_EXAM, ticket_ids=[ticket.id],
     )
     assert [c[0] for c in result.get(ticket.id, [])] == [65]
+
+
+def test_get_score_neighbor_candidates_uses_one_latest_work_per_student(db, regular_user, user_factory):
+    ticket = _make_ticket(db, creator_id=regular_user.id)
+    other = user_factory(vk_id=800_010, name="Other")
+    _make_scored_final(db, user_id=other.id, ticket_id=ticket.id, subject="Рисунок", score=50)
+    _make_scored_final(db, user_id=other.id, ticket_id=ticket.id, subject="Рисунок", score=65)
+
+    result = get_score_neighbor_candidates(
+        db, exclude_user_id=regular_user.id,
+        work_type=WORK_TYPE_MOCK_EXAM, ticket_ids=[ticket.id],
+    )
+    assert [score for score, _work_id in result[ticket.id]] == [65]
 
 
 def test_get_score_neighbor_candidates_no_cross_ticket_leak(db, regular_user, user_factory):

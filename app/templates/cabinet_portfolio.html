@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Моё портфолио{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=7">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
@@ -51,6 +51,36 @@
             {% endif %}
             {% endfor %}
         </div>
+        {% if g.score_comparisons %}
+        <div class="pf-score-comparisons">
+            {% for c in g.score_comparisons %}
+            <section class="pf-score-comparison" aria-label="Сравнение по работе {{ c.title }}">
+                <div class="pf-score-head">
+                    <span class="pf-score-title">{{ c.title }}</span>
+                    <strong class="pf-score-own">Твой балл: {{ c.score|int }} / 100</strong>
+                </div>
+                {% if c.above or c.below %}
+                <div class="pf-score-sides">
+                    <div class="pf-score-side">
+                        <div class="pf-score-side-title">Балл выше</div>
+                        {% if c.above %}
+                        <ol>{% for peer in c.above %}<li><span>{{ peer.name }}</span><strong>{{ peer.score|int }}</strong></li>{% endfor %}</ol>
+                        {% else %}<p>Пока никого</p>{% endif %}
+                    </div>
+                    <div class="pf-score-side">
+                        <div class="pf-score-side-title">Балл ниже</div>
+                        {% if c.below %}
+                        <ol>{% for peer in c.below %}<li><span>{{ peer.name }}</span><strong>{{ peer.score|int }}</strong></li>{% endfor %}</ol>
+                        {% else %}<p>Пока никого</p>{% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="pf-score-empty">Другие работы по этому заданию пока не оценены.</p>
+                {% endif %}
+            </section>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
   {% else %}
