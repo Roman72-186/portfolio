@@ -24,6 +24,7 @@
         <section class="lab-config-panel" aria-labelledby="lab-access-title">
             <h2 id="lab-access-title">Кому открыта</h2>
             <p class="lab-config-hint">Ученику достаточно быть выбранным поимённо. Если отмечены тариф, уровень и трек, он должен подходить под каждый выбранный пункт.</p>
+            <label><input type="checkbox" id="lab-everyone">Всем ученикам, включая новых</label>
             <fieldset><legend>Тарифы</legend>
                 <div class="lab-config-checks">{% for tariff in tariffs %}<label><input type="checkbox" name="tariff" value="{{ tariff }}">{{ tariff }}</label>{% endfor %}</div>
             </fieldset>
@@ -44,5 +45,5 @@
     </div>
 </main>
 <script id="lab-cards-data" type="application/json">{{ cards | tojson }}</script>
-<script src="/static/js/lab_figures.js?v=3" defer></script>
+<script src="/static/js/lab_figures.js?v=4" defer></script>
 {% endblock %}

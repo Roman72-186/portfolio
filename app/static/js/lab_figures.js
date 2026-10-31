@@ -7,6 +7,7 @@
   const cardSearch = document.getElementById('lab-card-search');
   const studentSearch = document.getElementById('lab-student-search');
   const studentSelect = document.getElementById('lab-students');
+  const everyone = document.getElementById('lab-everyone');
   const tagNames = new Map([...document.querySelectorAll('input[name="tag"]')]
     .map(input => [Number(input.value), input.parentElement.textContent.trim()]));
   const sections = new Set();
@@ -31,12 +32,15 @@
     const card = byId.get(cardSelect.value);
     if (!card) return;
     const audience = card.audience;
+    everyone.checked = audience.everyone;
     setChecked('tariff', audience.tariffs);
     setChecked('level', audience.levels);
     setChecked('tag', audience.tag_ids);
     const users = new Set(audience.user_ids.map(String));
     [...studentSelect.options].forEach(option => { option.selected = users.has(option.value); });
+    syncEveryone();
     document.getElementById('lab-selected-summary').textContent =
+      audience.everyone ? 'Открыта всем ученикам' :
       audience.tariffs.length + audience.levels.length + audience.tag_ids.length + audience.user_ids.length
         ? `Открыта: ${[...audience.tariffs, ...audience.levels.map(v => `уровень ${v}`),
             ...audience.tag_ids.map(v => tagNames.get(v) || `трек ${v}`),
@@ -44,6 +48,17 @@
         : 'Для учеников закрыта';
     status.textContent = '';
   }
+  function syncEveryone() {
+    if (everyone.checked) {
+      for (const name of ['tariff', 'level', 'tag']) setChecked(name, []);
+      [...studentSelect.options].forEach(option => { option.selected = false; });
+    }
+    document.querySelectorAll('input[name="tariff"], input[name="level"], input[name="tag"]')
+      .forEach(input => { input.disabled = everyone.checked; });
+    studentSelect.disabled = everyone.checked;
+    studentSearch.disabled = everyone.checked;
+  }
+  everyone.addEventListener('change', syncEveryone);
   cardSelect.addEventListener('change', () => { sectionSelect.value = ''; loadCard(); });
   sectionSelect.addEventListener('change', () => {
     const path = sectionSelect.value;
@@ -65,7 +80,7 @@
     const ids = prefix ? cards.filter(card => card.path.startsWith(prefix + ' → ')).map(card => card.id)
       : cardSelect.value ? [cardSelect.value] : [];
     if (!ids.length) { status.textContent = 'Выбери фигуру или раздел.'; return; }
-    const payload = { card_ids: ids, tariffs: checked('tariff'), levels: checked('level').map(Number),
+    const payload = { card_ids: ids, everyone: everyone.checked, tariffs: checked('tariff'), levels: checked('level').map(Number),
       tag_ids: checked('tag').map(Number), user_ids: [...studentSelect.selectedOptions].map(option => Number(option.value)) };
     this.disabled = true;
     status.textContent = 'Сохраняем…';
@@ -74,7 +89,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error(`Ошибка ${response.status}. Обнови страницу и попробуй снова.`);
-      for (const id of ids) byId.get(id).audience = { tariffs: payload.tariffs, levels: payload.levels,
+      for (const id of ids) byId.get(id).audience = { everyone: payload.everyone, tariffs: payload.tariffs, levels: payload.levels,
         tag_ids: payload.tag_ids, user_ids: payload.user_ids };
       if (!prefix) loadCard();
       status.textContent = `Сохранено: ${countWord(ids.length, 'фигура', 'фигуры', 'фигур')}.`;

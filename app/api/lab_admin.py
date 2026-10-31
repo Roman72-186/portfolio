@@ -29,6 +29,7 @@ def _editor(user: dict) -> dict:
 
 class LabAudiencePayload(BaseModel):
     card_ids: list[str] = Field(min_length=1, max_length=1000)
+    everyone: bool = False
     tariffs: list[str] = Field(default_factory=list)
     levels: list[int] = Field(default_factory=list)
     tag_ids: list[int] = Field(default_factory=list)
@@ -45,6 +46,7 @@ def figures_page(
     rules = audiences(db)
     cards = [
         {**card, "audience": {
+            "everyone": card_id in rules and rules[card_id].is_everyone,
             "tariffs": sorted(rules[card_id].tariffs) if card_id in rules else [],
             "levels": sorted(rules[card_id].levels) if card_id in rules else [],
             "tag_ids": sorted(rules[card_id].tag_ids) if card_id in rules else [],
@@ -78,6 +80,8 @@ def save_figures(
     levels = set(payload.levels)
     tags = set(payload.tag_ids)
     students = set(payload.user_ids)
+    if payload.everyone and (tariffs or levels or tags or students):
+        raise HTTPException(status_code=422, detail="Доступ всем ученикам нельзя сочетать с фильтрами")
     if not tariffs <= set(TARIFFS) or not levels <= {1, 2}:
         raise HTTPException(status_code=422, detail="Неверный тариф или уровень")
     if tags and {row.id for row in db.query(Tag.id).filter(Tag.id.in_(tags))} != tags:
@@ -89,7 +93,7 @@ def save_figures(
     for card_id in ids:
         for model in (LabCardTariff, LabCardLevel, LabCardTag, LabCardStudent):
             db.query(model).filter(model.card_id == card_id).delete(synchronize_session=False)
-        if not (tariffs or levels or tags or students):
+        if not (payload.everyone or tariffs or levels or tags or students):
             db.query(LabCardAccess).filter(LabCardAccess.card_id == card_id).delete(synchronize_session=False)
         else:
             if db.get(LabCardAccess, card_id) is None:
@@ -102,7 +106,7 @@ def save_figures(
     for card_id in ids:
         db.add(AuditLog(
             action="lab_card_access", performed_by_id=user["user_id"],
-            details=f"card:{card_id};tariffs:{','.join(sorted(tariffs))};levels:{','.join(map(str, sorted(levels)))};tags:{','.join(map(str, sorted(tags)))};users:{','.join(map(str, sorted(students)))}"[:1000],
+            details=f"card:{card_id};everyone:{int(payload.everyone)};tariffs:{','.join(sorted(tariffs))};levels:{','.join(map(str, sorted(levels)))};tags:{','.join(map(str, sorted(tags)))};users:{','.join(map(str, sorted(students)))}"[:1000],
         ))
     db.commit()
     return {"updated": len(ids)}

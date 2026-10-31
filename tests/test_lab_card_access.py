@@ -94,3 +94,38 @@ def test_student_cannot_edit_figures_or_record_staff_event(client, db, user_fact
         json={"card_id": card_id, "csrf_token": generate_csrf_token(session.id)},
     ).status_code == 403
     assert db.query(StudentActivityEvent).filter(StudentActivityEvent.event_type == EVENT_LAB_CARD_OPEN).count() == 0
+
+
+def test_everyone_rule_opens_visible_cards_to_new_students(client, db, user_factory, session_factory):
+    from app.services.lab_access import open_card_ids
+
+    head = user_factory(vk_id=800_003, role_name="админ", is_admin=True)
+    session = session_factory(head)
+    client.cookies.set("session_id", session.id)
+    ids = list(visible_cards())
+    token = generate_csrf_token(session.id)
+    response = client.post(
+        "/cabinet/3dlab/figures",
+        json={"card_ids": ids, "everyone": True},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.json() == {"updated": len(ids)}
+    assert db.query(LabCardAccess).count() == len(ids)
+    assert '"everyone": true' in client.get("/cabinet/3dlab/figures").text
+    rejected = client.post(
+        "/cabinet/3dlab/figures",
+        json={"card_ids": ids, "everyone": True, "tariffs": [head.tariff]},
+        headers={"X-CSRF-Token": token},
+    )
+    assert rejected.status_code == 422
+
+    new_student = user_factory(vk_id=800_004)
+    assert open_card_ids(db, {"role_rank": 1, "user_id": new_student.id, "tariff": new_student.tariff}) == set(ids)
+    student_session = session_factory(new_student)
+    client.cookies.clear()
+    client.cookies.set("session_id", student_session.id)
+    assert client.get("/3dlab").status_code == 200
+    assert client.post(
+        "/lab/event",
+        json={"card_id": ids[0], "csrf_token": generate_csrf_token(student_session.id)},
+    ).json() == {"recorded": True}

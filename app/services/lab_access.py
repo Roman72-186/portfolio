@@ -50,7 +50,7 @@ def open_card_ids(db: Session, user: dict) -> set[str]:
     rules = audiences(db)
     return {
         key for key in cards
-        if key in rules and not rules[key].is_everyone and is_block_open_to(rules[key], viewer)
+        if key in rules and is_block_open_to(rules[key], viewer)
     }
 
 
