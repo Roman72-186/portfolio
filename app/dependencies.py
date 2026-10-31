@@ -78,8 +78,12 @@ ACCESS_EXPIRED_ALLOWED_PREFIXES = (
 )
 
 
+def is_lab3d_content_path(path: str) -> bool:
+    return path in ("/3dlab", "/cabinet/3dlab/enter", "/lab/event") or path.startswith("/lab/asset/")
+
+
 def is_path_allowed_when_access_expired(path: str) -> bool:
-    return path.startswith(ACCESS_EXPIRED_ALLOWED_PREFIXES)
+    return is_lab3d_content_path(path) or path.startswith(ACCESS_EXPIRED_ALLOWED_PREFIXES)
 
 
 # Урезанный кабинет каникулярного набора (`User.program == 'holiday'`, созвон
@@ -120,7 +124,7 @@ HOLIDAY_UNPAID_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES + ("/csrf",)
 
 
 def is_path_allowed_when_holiday_unpaid(path: str) -> bool:
-    return path.startswith(HOLIDAY_UNPAID_ALLOWED_PREFIXES)
+    return is_lab3d_content_path(path) or path.startswith(HOLIDAY_UNPAID_ALLOWED_PREFIXES)
 
 
 # Трек оплачен, но программа ещё не открылась (`HOLIDAY_PROGRAM_OPENS_AT`,
@@ -142,11 +146,11 @@ HOLIDAY_WAITING_ALLOWED_PREFIXES = HOLIDAY_UNPAID_ALLOWED_PREFIXES + (
 
 
 def is_path_allowed_when_holiday_waiting(path: str) -> bool:
-    return path in HOLIDAY_WAITING_ALLOWED_EXACT or path.startswith(HOLIDAY_WAITING_ALLOWED_PREFIXES)
+    return is_lab3d_content_path(path) or path in HOLIDAY_WAITING_ALLOWED_EXACT or path.startswith(HOLIDAY_WAITING_ALLOWED_PREFIXES)
 
 
 def is_path_allowed_in_limited_cabinet(path: str) -> bool:
-    return path in LIMITED_CABINET_ALLOWED_EXACT or path.startswith(LIMITED_CABINET_ALLOWED_PREFIXES)
+    return is_lab3d_content_path(path) or path in LIMITED_CABINET_ALLOWED_EXACT or path.startswith(LIMITED_CABINET_ALLOWED_PREFIXES)
 
 
 # Маркер отказа по расхождению Telegram-ника (`User.tg_username_mismatch`,
@@ -161,7 +165,7 @@ TG_MISMATCH_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES
 
 
 def is_path_allowed_when_tg_mismatch(path: str) -> bool:
-    return path.startswith(TG_MISMATCH_ALLOWED_PREFIXES)
+    return is_lab3d_content_path(path) or path.startswith(TG_MISMATCH_ALLOWED_PREFIXES)
 
 
 # Маркер отказа по несданному портфолио «До» (`User.portfolio_do_completed`,
@@ -191,7 +195,9 @@ PORTFOLIO_GATE_BLOCKED_PREFIXES = (
 
 
 def is_path_blocked_by_portfolio_gate(path: str) -> bool:
-    return path in PORTFOLIO_GATE_BLOCKED_EXACT or path.startswith(PORTFOLIO_GATE_BLOCKED_PREFIXES)
+    return not is_lab3d_content_path(path) and (
+        path in PORTFOLIO_GATE_BLOCKED_EXACT or path.startswith(PORTFOLIO_GATE_BLOCKED_PREFIXES)
+    )
 
 
 def _log_access_refusal(user_id: int, role_name: str | None, request: Request, reason: str) -> None:

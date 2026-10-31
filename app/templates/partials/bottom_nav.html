@@ -340,7 +340,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.desk-nav-item[data-nav-key]'), function (link) {
         if (link.classList.contains('nav-disabled')) return;
         var navKey = link.getAttribute('data-nav-key');
-        if (navKey === 'learning' || navKey === 'archive' || navKey === 'personal') return;
+        if (navKey === 'learning' || navKey === 'archive' || navKey === 'personal' || navKey === '3dlab') return;
         link.addEventListener('click', openGate);
     });
 })();

@@ -1,12 +1,17 @@
 """Card rules guard the page, key files, events, and statistics together."""
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from app.config import settings
+from app.constants import ANNUAL_NEWCOMER_TAG, PROGRAM_HOLIDAY
 from app.csrf import generate_csrf_token
 from app.models.activity_event import StudentActivityEvent
 from app.models.lab_access import LabCardAccess, LabCardStudent
 from app.services.lab_access import asset_owners, visible_cards
 from app.services.lab_stats import EVENT_LAB_CARD_OPEN, top_cards
+from app.services.tags import add_tag_to_user, get_or_create_tag
 
 
 def test_student_sees_only_open_card_and_records_once(
@@ -129,3 +134,37 @@ def test_everyone_rule_opens_visible_cards_to_new_students(client, db, user_fact
         "/lab/event",
         json={"card_id": ids[0], "csrf_token": generate_csrf_token(student_session.id)},
     ).json() == {"recorded": True}
+
+
+@pytest.mark.parametrize("scenario", ["holiday", "adaptation", "expired"])
+def test_everyone_rule_reaches_all_student_courses(
+    scenario, client, db, user_factory, session_factory, tmp_path, monkeypatch,
+):
+    card = next(iter(visible_cards().values()))
+    root = tmp_path / "lab"
+    target = root / card["assets"][0]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"model")
+    monkeypatch.setattr(settings, "lab_assets_dir", str(root))
+    asset_owners.cache_clear()
+    db.add(LabCardAccess(card_id=card["id"]))
+    student = user_factory()
+    if scenario == "holiday":
+        student.program = PROGRAM_HOLIDAY
+    elif scenario == "adaptation":
+        student.profile_completed = True
+        student.portfolio_do_completed = False
+        tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
+        add_tag_to_user(db, student.id, tag.id)
+    else:
+        student.access_until = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    session = session_factory(student)
+    client.cookies.set("session_id", session.id)
+
+    assert client.get("/3dlab").status_code == 200
+    assert client.get(f"/lab/asset/{card['assets'][0]}").status_code == 200
+    assert client.post("/lab/event", json={
+        "card_id": card["id"], "csrf_token": generate_csrf_token(session.id),
+    }).json() == {"recorded": True}
+    assert 'data-nav-key="3dlab"' in client.get("/cabinet/personal").text

@@ -387,9 +387,13 @@ def student_nav_items(
     закрытый доступ. У каникулярного набора (`limited`) по той же причине —
     только АОП, портфолио и «Личная информация»."""
     if access_expired:
-        return tuple(item for item in STUDENT_NAV_ITEMS if item.key == "personal")
+        allowed = {"personal", "3dlab"} if lab3d_open else {"personal"}
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
     if limited:
-        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in LIMITED_CABINET_NAV_KEYS)
+        allowed = set(LIMITED_CABINET_NAV_KEYS)
+        if lab3d_open:
+            allowed.add("3dlab")
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
     if not lab3d_open:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key != "3dlab")
     return STUDENT_NAV_ITEMS

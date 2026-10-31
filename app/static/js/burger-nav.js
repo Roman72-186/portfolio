@@ -54,7 +54,7 @@
             // window.openPortfolioGate определена, только когда гейт активен, и к
             // моменту клика уже выполнена. У персонала её нет — ветка не срабатывает.
             var navKey = link.getAttribute('data-nav-key');
-            if (window.openPortfolioGate && navKey !== 'learning' && navKey !== 'archive' && navKey !== 'personal') {
+            if (window.openPortfolioGate && navKey !== 'learning' && navKey !== 'archive' && navKey !== 'personal' && navKey !== '3dlab') {
                 e.preventDefault();
                 setOpen(false);
                 window.openPortfolioGate();
