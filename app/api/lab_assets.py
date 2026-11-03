@@ -27,7 +27,7 @@ from app.csrf import validate_csrf_token
 from app.dependencies import get_current_user
 from app.services.navigation import can_open_3dlab
 from app.services.lab_access import may_read_asset, visible_cards
-from app.services.lab_stats import record_open
+from app.services.lab_stats import record_open, record_model_result
 from app.db.database import get_db
 from sqlalchemy.orm import Session as DBSession
 
@@ -37,6 +37,7 @@ router = APIRouter()
 class LabOpenEvent(BaseModel):
     card_id: str
     csrf_token: str
+    model_result: str | None = None
 
 
 @router.post("/lab/event")
@@ -57,6 +58,13 @@ def lab_event(
         raise HTTPException(status_code=403, detail="Нет доступа к фигуре")
     if user.get("role_rank") != 1 or user.get("impersonated_by_id"):
         return {"recorded": False}
+    if payload.model_result is not None:
+        if payload.model_result not in {"loaded", "failed"}:
+            raise HTTPException(status_code=422, detail="Неверный результат загрузки")
+        return {"recorded": record_model_result(
+            db, user_id=user["user_id"], card_id=payload.card_id,
+            loaded=payload.model_result == "loaded",
+        )}
     return {"recorded": record_open(db, user_id=user["user_id"], card_id=payload.card_id)}
 
 # mimetypes про эти расширения не знает, а без верного типа Three.js ругается на

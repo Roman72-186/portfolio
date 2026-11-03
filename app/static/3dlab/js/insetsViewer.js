@@ -20,6 +20,7 @@ import {
   setSectionEdgesAlpha
 } from "./threeViewer.js";
 import { loadModel } from "./models.js";
+import { reportModelResult } from "./labTelemetry.js";
 import { INSETS, getInsetMeta } from "./insetsModels.js";
 import { resolveAssetUrl } from "./assetUrl.js";
 import { initScheme, setSchemeImages, activateScheme, deactivateScheme, resetSchemeView } from "./scheme.js";
@@ -786,6 +787,7 @@ function openInsetMeta(meta) {
   enterInsetMode();
 
   const mySeq = ++insetLoadSeq;
+  const cardId = window.LAB_ACTIVE_CARD_ID;
 
   if (dom?.schemeOverlayEl) dom.schemeOverlayEl.style.display = "none";
   if (dom?.videoOverlayEl) dom.videoOverlayEl.style.display = "none";
@@ -897,12 +899,14 @@ function openInsetMeta(meta) {
 
       hideLoading();
       setViewMode(startView);
+      reportModelResult("loaded", cardId);
     })
     .catch((err) => {
       if (mySeq !== insetLoadSeq) return;
       if (!document.body.classList.contains("inset-mode")) return;
 
       console.error(err);
+      reportModelResult("failed", cardId);
       hideLoading();
       setStatus("Ошибка загрузки");
     });

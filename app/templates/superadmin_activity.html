@@ -810,6 +810,17 @@
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">3Dlab: что открывают</h2><span class="ss-acc-badge">за 30 дней</span></summary>
         <div class="ss-acc-body">
+            <p>В 3Dlab заходили {{ lab_model_results.visited_students }} учеников. Модель загрузилась у {{ lab_model_results.loaded_students }}{% if lab_model_results.loaded_share is not none %} ({{ lab_model_results.loaded_share }}% входивших){% endif %}. У {{ lab_model_results.failed_students }} была хотя бы одна ошибка. У {{ lab_model_results.no_result_students }} результата загрузки нет: они могли не открыть фигуру или выйти раньше. Один ученик может попасть и в успешные загрузки, и в ошибки.</p>
+            {% if lab_model_results.failures %}
+            <div class="ss-table-wrap"><table class="ss-table">
+                <thead><tr><th>Ученик с ошибкой</th><th>Последняя проблемная фигура</th><th>Когда</th></tr></thead>
+                <tbody>{% for failure in lab_model_results.failures %}<tr>
+                    <td data-label="Ученик с ошибкой">{{ failure.name }}</td>
+                    <td data-label="Последняя проблемная фигура">{{ failure.card }}</td>
+                    <td data-label="Когда">{{ failure.at.strftime('%d.%m.%Y %H:%M') }}</td>
+                </tr>{% endfor %}</tbody>
+            </table></div>
+            {% endif %}
             {% if lab_top_cards %}
             <div class="ss-table-wrap"><table class="ss-table">
                 <thead><tr><th>Фигура</th><th class="ss-ta-r">Открытий</th><th class="ss-ta-r">Учеников</th></tr></thead>

@@ -10,7 +10,10 @@ from app.csrf import generate_csrf_token
 from app.models.activity_event import StudentActivityEvent
 from app.models.lab_access import LabCardAccess, LabCardStudent
 from app.services.lab_access import asset_owners, visible_cards
-from app.services.lab_stats import EVENT_LAB_CARD_OPEN, top_cards
+from app.services.lab_stats import (
+    EVENT_LAB_CARD_OPEN, EVENT_LAB_MODEL_FAILED, EVENT_LAB_MODEL_LOADED, EVENT_LAB_PAGE_OPEN,
+    model_result_stats, top_cards,
+)
 from app.services.tags import add_tag_to_user, get_or_create_tag
 
 
@@ -38,6 +41,8 @@ def test_student_sees_only_open_card_and_records_once(
     assert page.status_code == 200
     assert first["id"] in page.text
     assert second["id"] not in page.text
+    assert db.query(StudentActivityEvent).filter(StudentActivityEvent.event_type == EVENT_LAB_PAGE_OPEN).count() == 1
+    assert model_result_stats(db)["no_result_students"] == 1
     assert client.get(f"/lab/asset/{first['assets'][0]}").status_code == 200
     assert client.get(f"/lab/asset/{second['assets'][0]}").status_code == 403
 
@@ -50,6 +55,30 @@ def test_student_sees_only_open_card_and_records_once(
     assert len(rows) == 1
     assert rows[0].details == f"card:{first['id']}"
     assert top_cards(db)[0]["students"] == 1
+
+
+def test_model_result_tracks_loaded_and_failed_students_without_exposing_closed_cards(
+    client, db, user_factory, session_factory,
+):
+    first, second = list(visible_cards())[:2]
+    student = user_factory()
+    db.add(LabCardAccess(card_id=first))
+    db.commit()
+    session = session_factory(student)
+    client.cookies.set("session_id", session.id)
+    payload = {"card_id": first, "csrf_token": generate_csrf_token(session.id)}
+
+    assert client.post("/lab/event", json={**payload, "model_result": "failed"}).json() == {"recorded": True}
+    assert client.post("/lab/event", json={**payload, "model_result": "failed"}).json() == {"recorded": False}
+    assert client.post("/lab/event", json={**payload, "model_result": "loaded"}).json() == {"recorded": True}
+    assert client.post("/lab/event", json={**payload, "model_result": "unknown"}).status_code == 422
+    assert client.post("/lab/event", json={**payload, "card_id": second, "model_result": "failed"}).status_code == 403
+
+    assert db.query(StudentActivityEvent).filter(StudentActivityEvent.event_type == EVENT_LAB_MODEL_FAILED).count() == 1
+    assert db.query(StudentActivityEvent).filter(StudentActivityEvent.event_type == EVENT_LAB_MODEL_LOADED).count() == 1
+    stats = model_result_stats(db)
+    assert (stats["attempted_students"], stats["loaded_students"], stats["failed_students"]) == (1, 1, 1)
+    assert stats["failures"][0]["name"] == student.name
 
 
 def test_head_teacher_can_set_card_access_and_audits_change(

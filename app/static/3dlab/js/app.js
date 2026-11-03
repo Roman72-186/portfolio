@@ -633,6 +633,7 @@ function handleNodeSelect(nodeId) {
 
 function openTreeCard(node) {
   if (!labNodeVisible(node)) return;
+  window.LAB_ACTIVE_CARD_ID = node.id;
   const card = node.ref ? getCardById(node.ref) : null;
   if (card && OPEN_CARD_IDS && navigator.sendBeacon) {
     navigator.sendBeacon("/lab/event", new Blob([JSON.stringify({ card_id: node.id, csrf_token: window.LAB_CSRF_TOKEN })], { type: "application/json" }));

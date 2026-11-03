@@ -1512,7 +1512,7 @@ def _activity_page(request, user, db, *, holiday, program_switch, annual, cohort
     )
 
     student_activity = get_student_activity_overview(db, include_assignments=True)
-    from app.services.lab_stats import top_cards
+    from app.services.lab_stats import top_cards, model_result_stats
     # Отметка «был / не был на занятии» — ГП и суперадмин (владелец 27.10.2026):
     # по родному рангу, не по поднятому в открытом разделе; модератору
     # изменения закрыты белым списком.
@@ -1569,6 +1569,7 @@ def _activity_page(request, user, db, *, holiday, program_switch, annual, cohort
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
         "student_activity": student_activity,
         "lab_top_cards": top_cards(db),
+        "lab_model_results": model_result_stats(db),
         # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
         # Считает payment_board.py — тот же расчёт, что у экрана «Оплаты»;
         # карточку видят только те, кому открыта оплата.

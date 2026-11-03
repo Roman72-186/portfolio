@@ -1243,10 +1243,14 @@ def _lab3d_closed_redirect(user: dict) -> RedirectResponse:
 def lab3d_page(
     request: Request,
     user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
 ):
     """Serve the 3D Lab app for VK group members, students, and staff."""
     if not can_open_3dlab(user):
         return _lab3d_closed_redirect(user)
+    if user.get("role_rank") == 1 and not user.get("impersonated_by_id"):
+        from app.services.lab_stats import record_page_open
+        record_page_open(db, user_id=user["user_id"])
     return templates.TemplateResponse(request, "3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},

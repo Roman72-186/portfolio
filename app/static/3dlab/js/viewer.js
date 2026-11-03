@@ -6,6 +6,7 @@
 
 import { MODELS, loadModel, getModelMeta } from "./models.js";
 import { initThree, setModel as threeSetModel, clearModel as threeClearModel, resize as threeResize } from "./threeViewer.js";
+import { reportModelResult } from "./labTelemetry.js";
 import { initScheme, setSchemeImages, activateScheme, deactivateScheme, resetSchemeView } from "./scheme.js";
 import { initVideo, setVideoList, activateVideo, deactivateVideo } from "./video.js";
 import { resolveAssetUrl } from "./assetUrl.js";
@@ -417,6 +418,7 @@ if (!has3d) {
 function startModelLoading(meta) {
   if (isInsetModeActive() || isRoomsModeActive()) return;
 const mySeq = ++archLoadSeq; // ✅ номер этой загрузки
+const cardId = window.LAB_ACTIVE_CARD_ID;
 threeClearModel();
 showLoading("Загрузка…", 0);
 setStatus("Загрузка: " + meta.name);
@@ -436,6 +438,7 @@ setStatus("Загрузка: " + meta.name);
   if (isInsetModeActive()) return;       // ✅ уже в "Врезках"
 
   threeSetModel(root);
+  reportModelResult("loaded", cardId);
   hideLoading();
   setViewMode("3d");
 })
@@ -444,6 +447,7 @@ setStatus("Загрузка: " + meta.name);
   if (isInsetModeActive()) return;   // ✅ уже в "Врезках"
 
   console.error("Ошибка загрузки модели:", err);
+  reportModelResult("failed", cardId);
   hideLoading();
   setStatus("Ошибка загрузки модели");
 });

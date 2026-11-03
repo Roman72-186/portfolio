@@ -1,4 +1,5 @@
 // js/threeViewer.js
+import { reportModelResult } from "./labTelemetry.js";
 // Камера и управление — 100% поведение 8.html.
 
 import * as THREE from "three";
@@ -1324,6 +1325,7 @@ function getRoomTextureForKey(key) {
     : `${roomTexturesDir}/`;
 
   const url = normalizeRoomTextureUrl(`${cleanDir}${key}.jpg`);
+  const cardId = window.LAB_ACTIVE_CARD_ID;
 
 console.log("[rooms texture] loading:", key, url);
 
@@ -1335,6 +1337,7 @@ const tex = new THREE.TextureLoader().load(
   undefined,
   (err) => {
     console.warn("[rooms texture] failed:", key, url, err);
+    reportModelResult("failed", cardId);
   }
 );
 

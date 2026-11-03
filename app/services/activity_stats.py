@@ -1014,6 +1014,9 @@ def get_diagnostic_stats(db: DBSession, *, student_id: int | None = None) -> lis
 
 _EVENT_LABELS = {
     "lab_card_open": "Открытия фигур 3Dlab",
+    "lab_page_open": "Входы в 3Dlab",
+    "lab_model_loaded": "Загрузки моделей 3Dlab",
+    "lab_model_failed": "Ошибки загрузки 3Dlab",
     "login": "Входы в кабинет",
     "portfolio_upload": "Загрузки портфолио",
     "work_upload": "Загрузки работ",
@@ -2025,6 +2028,9 @@ FEED_LIMIT = 20
 
 _STUDENT_EVENT_FEED_LABELS = {
     "lab_card_open": "Открыл в 3Dlab",
+    "lab_page_open": "Вошёл в 3Dlab",
+    "lab_model_loaded": "Загрузил модель в 3Dlab",
+    "lab_model_failed": "Ошибка загрузки модели в 3Dlab",
     "login": "Вошёл в кабинет",
     "portfolio_upload": "Загрузил работы в портфолио",
     "work_upload": "Загрузил работы",
@@ -2132,7 +2138,7 @@ def student_activity(
     def _feed_details(e: StudentActivityEvent) -> str | None:
         if e.event_type == "login":
             return None
-        if e.event_type == "lab_card_open" and e.details and e.details.startswith("card:"):
+        if e.event_type in {"lab_card_open", "lab_model_loaded", "lab_model_failed"} and e.details and e.details.startswith("card:"):
             from app.services.lab_stats import card_label
             return card_label(e.details.removeprefix("card:"))
         return e.details

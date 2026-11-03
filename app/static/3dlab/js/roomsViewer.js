@@ -5,6 +5,7 @@
 // а не на MODELS.
 
 import { loadModel } from "./models.js";
+import { reportModelResult } from "./labTelemetry.js";
 import {
   setModel as threeSetModel,
   clearModel as threeClearModel,
@@ -449,6 +450,7 @@ function startRoomLoading(meta) {
   if (isInsetModeActive()) return;
 
   const mySeq = ++roomLoadSeq;
+  const cardId = window.LAB_ACTIVE_CARD_ID;
   threeClearModel();
   showLoading("Загрузка…", 0);
   setStatus("Загрузка: " + meta.name);
@@ -479,6 +481,7 @@ setRoomsFlatMode(true);
 setRoomTexturesDir(meta.texturesDir || "");
 threeSetModel(root);
 setRoomsFlatMode(true, root);
+reportModelResult("loaded", cardId);
 
       hideLoading();
       setViewMode("3d");
@@ -488,6 +491,7 @@ setRoomsFlatMode(true, root);
       if (isInsetModeActive()) return;
 
       console.error("Ошибка загрузки room-модели:", err);
+      reportModelResult("failed", cardId);
       hideLoading();
       setStatus("Ошибка загрузки модели");
     });
