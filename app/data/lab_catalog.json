@@ -165,6 +165,16 @@
       ]
     },
     {
+      "id": "drawing_interiors_auditorium_6_location_16",
+      "ref": "auditorium_6_location_16",
+      "title": "Локация 16",
+      "path": "Рисунок → Интерьеры СПБГАСУ → Аудитория 6 → Локация 16",
+      "hidden": false,
+      "assets": [
+        "content/rooms/auditorium_6/location_16/model/location_16.glb"
+      ]
+    },
+    {
       "id": "drawing_arch_base_node",
       "ref": "arch_0",
       "title": "База по архитектурным деталям СПБГАСУ",

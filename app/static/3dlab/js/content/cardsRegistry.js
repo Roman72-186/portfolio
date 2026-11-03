@@ -1971,5 +1971,29 @@ inset_0_universal: {
       }
     }
   }
+},
+  auditorium_6_location_16: {
+  id: "auditorium_6_location_16",
+  title: "Локация 16",
+  preview: "content/rooms/auditorium_6/location_16/preview/preview.png",
+
+  viewerProfile: "rooms",
+
+  blocks: {
+    [BLOCKS.MODEL_3D]: {
+      subblocks: {
+        [SUBBLOCKS.MODEL_3D]: {
+          type: CONTENT_TYPES.MODEL,
+          items: [
+            {
+              id: "auditorium_6_location_16",
+              sourcePath: "content/rooms/auditorium_6/location_16/model/location_16.glb",
+              texturesDir: "content/rooms/auditorium_6/location_16/textures/"
+            }
+          ]
+        }
+      }
+    }
+  }
 }
 };

@@ -14,5 +14,10 @@ def test_catalog_matches_browser_modules():
         pytest.skip("Node is required to check the JavaScript card catalog")
     root = Path(__file__).resolve().parents[1]
     subprocess.run([node, "scripts/build_lab_catalog.js", "--check"], cwd=root, check=True)
-    assert len(catalog()) == 68
+    assert len(catalog()) == 69
+    location_16 = catalog()["drawing_interiors_auditorium_6_location_16"]
+    assert location_16["ref"] == "auditorium_6_location_16"
+    assert location_16["assets"] == [
+        "content/rooms/auditorium_6/location_16/model/location_16.glb"
+    ]
     assert all(card["id"] and card["title"] and card["path"] for card in catalog().values())
