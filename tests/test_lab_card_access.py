@@ -191,9 +191,13 @@ def test_everyone_rule_reaches_all_student_courses(
     session = session_factory(student)
     client.cookies.set("session_id", session.id)
 
-    assert client.get("/3dlab").status_code == 200
-    assert client.get(f"/lab/asset/{card['assets'][0]}").status_code == 200
-    assert client.post("/lab/event", json={
+    blocked = scenario in {"holiday", "expired"}
+    assert client.get("/3dlab", follow_redirects=False).status_code == (302 if blocked else 200)
+    assert client.get(f"/lab/asset/{card['assets'][0]}").status_code == (403 if blocked else 200)
+    event = client.post("/lab/event", json={
         "card_id": card["id"], "csrf_token": generate_csrf_token(session.id),
-    }).json() == {"recorded": True}
-    assert 'data-nav-key="3dlab"' in client.get("/cabinet/personal").text
+    })
+    assert event.status_code == (403 if blocked else 200)
+    if not blocked:
+        assert event.json() == {"recorded": True}
+    assert ('data-nav-key="3dlab"' in client.get("/cabinet/personal").text) is not blocked

@@ -25,6 +25,8 @@ def can_open_3dlab(user: dict) -> bool:
     """
     role_rank = user.get("role_rank", 0)
     if role_rank == 1:
+        if user.get("access_expired") or user.get("holiday_unpaid"):
+            return False
         return bool(user.get("lab3d_open_card_ids"))
     return bool(user.get("is_group_member") or user.get("is_admin") or role_rank >= 1)
 
@@ -387,7 +389,7 @@ def student_nav_items(
     закрытый доступ. У каникулярного набора (`limited`) по той же причине —
     только АОП, портфолио и «Личная информация»."""
     if access_expired:
-        allowed = {"personal", "3dlab"} if lab3d_open else {"personal"}
+        allowed = {"personal"}
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
     if limited:
         allowed = set(LIMITED_CABINET_NAV_KEYS)
