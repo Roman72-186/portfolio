@@ -30,6 +30,26 @@ def test_personal_shows_own_contacts(auth_client, db):
     assert "@self_view" in resp.text
 
 
+def test_personal_hides_empty_rows_but_keeps_contact_editor(auth_client, db):
+    client, user = auth_client
+    for field in ("phone", "parent_phone", "tg_username", "city", "email",
+                  "sdek_address", "parent_name", "birth_date"):
+        setattr(user, field, None)
+    user.timezone = "0"
+    db.commit()
+
+    response = client.get("/cabinet/personal")
+    assert response.status_code == 200
+    sections = response.text.split('<summary>Контакты</summary>')[1].split(
+        '<div class="prs-section-title">Часто задаваемые вопросы</div>'
+    )[0]
+    assert "Не указано" not in sections
+    assert 'prs-row-label">Телефон<' not in sections
+    assert 'prs-row-label">Дата рождения<' not in sections
+    assert "МСК" in sections
+    assert 'href="/cabinet/personal/contacts"' in sections
+
+
 def test_personal_shows_anketa_data(auth_client, db):
     """Личная информация показывает поля анкеты первого входа (12-13.09.2026:
     дата рождения, город, часовой пояс, email, родитель, СДЭК),
@@ -44,6 +64,8 @@ def test_personal_shows_anketa_data(auth_client, db):
     user.email = "anna@example.com"
     user.vk_profile_url = "https://vk.com/anna_smirnova"
     user.parent_name = "Смирнова Мария Петровна"
+    user.university_year = 2028
+    user.school_grade = "grade10"
     user.sdek_address = "Казань, ул. Ленина, 1"
     db.add(user)
     db.commit()
@@ -56,6 +78,8 @@ def test_personal_shows_anketa_data(auth_client, db):
     assert "anna@example.com" in resp.text
     assert "vk.com" not in resp.text
     assert "Смирнова Мария Петровна" in resp.text
+    assert 'prs-row-value">2028<' in resp.text
+    assert "10 класс" in resp.text
     assert "Казань, ул. Ленина, 1" in resp.text
 
 

@@ -262,7 +262,7 @@ function renderProfile(data) {
     }
     // Тариф, куратор и срок доступа у ГП и суперадмина стоят в «Управлении».
     if (!s.manage) {
-        html += profileField('Тариф', s.tariff_label || s.tariff);
+        html += profileField('Тариф', s.tariff === '—' ? null : (s.tariff_label || s.tariff));
         html += profileField('Куратор', s.curator_name);
     }
     html += profileField('Начало обучения', s.enrollment_year);
@@ -566,10 +566,13 @@ function bumpSidebarPending(sid, delta) {
     filterSidebar();
 }
 
-function profileField(label, value, fullWidth) {
+function profileField(label, value, fullWidth, showEmpty) {
+    var hasValue = value != null && String(value).trim() !== '';
+    // Просмотр анкеты показывает только заполненные поля; окно доступа сохраняет заглушки.
+    if (!hasValue && !showEmpty) return '';
     var cls = 'profile-field' + (fullWidth ? ' full-width' : '');
-    var valCls = value != null && value !== '' ? 'profile-field-value' : 'profile-field-value empty';
-    var display = value != null && value !== '' ? esc(String(value)) : 'Не указано';
+    var valCls = hasValue ? 'profile-field-value' : 'profile-field-value empty';
+    var display = hasValue ? esc(String(value)) : 'Не указано';
     return '<div class="' + cls + '">'
         + '<div class="profile-field-label">' + esc(label) + '</div>'
         + '<div class="' + valCls + '">' + display + '</div></div>';
@@ -1471,7 +1474,7 @@ function openAccessModal(title, rows, hint) {
     document.getElementById('access-modal-title').textContent = title;
     document.getElementById('access-modal-body').innerHTML =
         '<div class="profile-grid">'
-        + rows.map(function(r) { return profileField(r[0], r[1], true); }).join('')
+        + rows.map(function(r) { return profileField(r[0], r[1], true, true); }).join('')
         + '</div>'
         + (hint ? '<div class="field-hint">' + esc(hint) + '</div>' : '')
         + '<div class="modal-actions">'

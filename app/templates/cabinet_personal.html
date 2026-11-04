@@ -109,46 +109,63 @@
     <details class="prs-expand">
     <summary>Контакты</summary>
     <div class="prs-group">
+        {% if user.phone and user.phone|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Телефон</span>
             <span class="prs-row-value {{ '' if user.phone else 'empty' }}">{{ user.phone or 'Не указано' }}</span>
         </div>
+        {% endif %}
         {% if not holiday_form %}
+        {% if user.parent_phone and user.parent_phone|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Телефон родителя</span>
             <span class="prs-row-value {{ '' if user.parent_phone else 'empty' }}">{{ user.parent_phone or 'Не указано' }}</span>
         </div>
         {% endif %}
+        {% endif %}
+        {% if user.tg_username and user.tg_username|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Telegram</span>
             <span class="prs-row-value {{ '' if user.tg_username else 'empty' }}">{{ '@' + user.tg_username if user.tg_username else 'Не указано' }}</span>
         </div>
-        {% if holiday_form %}
+        {% endif %}
+        {% if school_grade_label and school_grade_label|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Где учишься</span>
             <span class="prs-row-value {{ '' if school_grade_label else 'empty' }}">{{ school_grade_label or 'Не указано' }}</span>
         </div>
-        {% else %}
+        {% endif %}
+        {% if not holiday_form %}
+        {% if user.tariff and user.tariff|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Тариф</span>
             <span class="prs-row-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff|tariff_label or 'Не указано' }}</span>
         </div>
+        {% endif %}
+        {% if user.city and user.city|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Город</span>
             <span class="prs-row-value {{ '' if user.city else 'empty' }}">{{ user.city or 'Не указано' }}</span>
         </div>
+        {% endif %}
+        {% if user.timezone and user.timezone|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Часовой пояс</span>
             <span class="prs-row-value {{ '' if user.timezone else 'empty' }}">{{ user.timezone|timezone_label or 'Не указано' }}</span>
         </div>
+        {% endif %}
+        {% if user.email and user.email|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Электронная почта</span>
             <span class="prs-row-value {{ '' if user.email else 'empty' }}">{{ user.email or 'Не указано' }}</span>
         </div>
+        {% endif %}
+        {% if user.sdek_address and user.sdek_address|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Адрес СДЭК</span>
             <span class="prs-row-value {{ '' if user.sdek_address else 'empty' }}">{{ user.sdek_address or 'Не указано' }}</span>
         </div>
+        {% endif %}
         {% endif %}
         <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить личные данные</span></a>
     </div>
@@ -159,19 +176,31 @@
     <details class="prs-expand">
     <summary>Данные анкеты</summary>
     <div class="prs-group">
+        {% if user.university_year %}
+        <div class="prs-row">
+            <span class="prs-row-label">Год поступления в вуз</span>
+            <span class="prs-row-value">{{ user.university_year }}</span>
+        </div>
+        {% endif %}
+        {% if user.name and user.name|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Фамилия и имя</span>
             <span class="prs-row-value {{ '' if user.name else 'empty' }}">{{ user.name or 'Не указано' }}</span>
         </div>
+        {% endif %}
         {% if not holiday_form %}
+        {% if user.birth_date and user.birth_date|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Дата рождения</span>
             <span class="prs-row-value {{ '' if user.birth_date else 'empty' }}">{{ user.birth_date.strftime('%d.%m.%Y') if user.birth_date else 'Не указано' }}</span>
         </div>
+        {% endif %}
+        {% if user.parent_name and user.parent_name|string|trim %}
         <div class="prs-row">
             <span class="prs-row-label">Имя и отчество родителя</span>
             <span class="prs-row-value {{ '' if user.parent_name else 'empty' }}">{{ user.parent_name or 'Не указано' }}</span>
         </div>
+        {% endif %}
         {% endif %}
     </div>
     </details>

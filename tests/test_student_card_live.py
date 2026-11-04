@@ -27,6 +27,24 @@ def _login(client, session_factory, user):
     client.cookies.set("session_id", session_factory(user).id)
 
 
+def test_profile_field_hides_empty_values_and_keeps_access_modal_fallback():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js не установлен")
+    source = (pathlib.Path(__file__).parents[1] / "app/static/js/cabinet_students.js").read_text(encoding="utf-8")
+    function = re.search(r"function profileField\([^\n]*\) \{.*?\n\}", source, re.S).group()
+    script = "const assert = require('node:assert/strict'); function esc(s) { return s; }\n" + function + """
+for (const value of [null, undefined, '', '   ']) {
+    assert.equal(profileField('Email', value), '');
+}
+assert.ok(profileField('Класс', '10 класс').includes('10 класс'));
+assert.ok(profileField('Число', 0).includes('>0<'));
+assert.ok(profileField('Доступ', null, true, true).includes('Не указано'));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+
+
 def _chief(user_factory, vk_id=950_001):
     return user_factory(vk_id=vk_id, name="Главный", is_admin=True, role_name="админ")
 
