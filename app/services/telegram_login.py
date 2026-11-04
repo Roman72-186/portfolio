@@ -62,7 +62,10 @@ class _JWKClient(PyJWKClient):
 
     def fetch_data(self):
         try:
-            resp = httpx.get(self.uri, headers=self.headers, timeout=self.timeout)
+            kwargs = {"headers": self.headers, "timeout": self.timeout}
+            if settings.telegram_proxy_url:
+                kwargs["proxy"] = settings.telegram_proxy_url
+            resp = httpx.get(self.uri, **kwargs)
             resp.raise_for_status()
             jwk_set = resp.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -76,7 +79,7 @@ class _JWKClient(PyJWKClient):
 
 async def init_client() -> None:
     global _client, _jwks_client
-    _client = httpx.AsyncClient(timeout=15.0)
+    _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
     _jwks_client = _JWKClient(_JWKS_URL)
 
 
@@ -90,7 +93,7 @@ async def close_client() -> None:
 async def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=15.0)
+        _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
     return _client
 
 

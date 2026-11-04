@@ -25,6 +25,7 @@ def main() -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
     domain = os.environ.get("DOMAIN", "kodarhitektora.ru")
+    proxy = os.environ.get("TELEGRAM_PROXY_URL") or None
 
     if not token:
         print("ERROR: TELEGRAM_BOT_TOKEN is not set", file=sys.stderr)
@@ -36,6 +37,7 @@ def main() -> None:
     webhook_url = f"https://{domain}/auth/telegram/webhook"
     resp = httpx.post(
         f"https://api.telegram.org/bot{token}/setWebhook",
+        proxy=proxy,
         json={
             "url": webhook_url,
             "secret_token": secret,
@@ -58,13 +60,13 @@ def main() -> None:
     # экране входа (владелец: «запрос делать не в боте, а при входе»), бот его
     # только присылает. Снимаем команду, остальное меню из BotFather не трогаем.
     api = f"https://api.telegram.org/bot{token}"
-    current = httpx.post(f"{api}/getMyCommands", timeout=15.0).json().get("result") or []
+    current = httpx.post(f"{api}/getMyCommands", timeout=15.0, proxy=proxy).json().get("result") or []
     if any(c.get("command") == "vpn" for c in current):
         commands = [c for c in current if c.get("command") != "vpn"]
         if commands:
-            resp = httpx.post(f"{api}/setMyCommands", json={"commands": commands}, timeout=15.0)
+            resp = httpx.post(f"{api}/setMyCommands", json={"commands": commands}, timeout=15.0, proxy=proxy)
         else:
-            resp = httpx.post(f"{api}/deleteMyCommands", timeout=15.0)
+            resp = httpx.post(f"{api}/deleteMyCommands", timeout=15.0, proxy=proxy)
         resp.raise_for_status()
         print("Команда /vpn убрана из меню бота")
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Apparchi Telegram CONNECT relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+ExecStart=/usr/bin/python3 /opt/apparchi-telegram-proxy/telegram_connect_proxy.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

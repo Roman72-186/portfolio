@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""   # для deep-link t.me/<username>?start=...
     telegram_channel_id: int = 0      # закрытый канал, членство проверяет getChatMember
     telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
+    telegram_proxy_url: str = ""  # исходящие запросы Bot API и Telegram Login
 
     # Ежемесячная оплата через Продамус (`app/services/payments.py`). Пусто —
     # кнопки «Оплатить» нет, вебхук отвечает 503. Значения вносит владелец в

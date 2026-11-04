@@ -26,7 +26,7 @@ _client: httpx.AsyncClient | None = None
 
 async def init_client() -> None:
     global _client
-    _client = httpx.AsyncClient(timeout=15.0)
+    _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
 
 
 async def close_client() -> None:
@@ -39,7 +39,7 @@ async def close_client() -> None:
 async def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=15.0)
+        _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
     return _client
 
 

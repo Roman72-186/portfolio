@@ -36,6 +36,8 @@ services:
 
   app:
     build: .
+    environment:
+      TELEGRAM_PROXY_URL: http://201.34.146.181:58443
     expose:
       - "8000"
     env_file: .env
