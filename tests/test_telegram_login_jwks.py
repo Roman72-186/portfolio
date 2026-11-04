@@ -75,3 +75,26 @@ def test_jwks_network_error_is_a_pyjwt_connection_error(monkeypatch):
         pass
     else:
         raise AssertionError("ожидалась ошибка PyJWT")
+
+
+def test_jwks_recovers_after_proxy_disconnect(monkeypatch):
+    token, jwks = _signed_token_and_jwks()
+    calls = []
+
+    def flaky_get(url, **kwargs):
+        calls.append(url)
+        if len(calls) == 1:
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return httpx.Response(
+            200,
+            json=jwks,
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(telegram_login.httpx, "get", flaky_get)
+    monkeypatch.setattr(telegram_login.time, "sleep", lambda _: None)
+    monkeypatch.setattr(telegram_login, "_jwks_client", None)
+    monkeypatch.setattr(settings, "telegram_login_client_id", "123456")
+
+    assert telegram_login.verify_id_token(token)["sub"] == "42"
+    assert len(calls) == 2

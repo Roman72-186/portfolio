@@ -16,6 +16,7 @@ import base64
 import hashlib
 import logging
 import os
+import time
 from urllib.parse import urlencode
 
 import httpx
@@ -61,17 +62,27 @@ class _JWKClient(PyJWKClient):
     """
 
     def fetch_data(self):
-        try:
-            kwargs = {"headers": self.headers, "timeout": self.timeout}
-            if settings.telegram_proxy_url:
-                kwargs["proxy"] = settings.telegram_proxy_url
-            resp = httpx.get(self.uri, **kwargs)
-            resp.raise_for_status()
-            jwk_set = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise jwt.PyJWKClientConnectionError(
-                f'Fail to fetch data from the url, err: "{exc}"'
-            ) from exc
+        kwargs = {"headers": self.headers, "timeout": self.timeout}
+        if settings.telegram_proxy_url:
+            kwargs["proxy"] = settings.telegram_proxy_url
+        for attempt in range(3):
+            try:
+                resp = httpx.get(self.uri, **kwargs)
+                resp.raise_for_status()
+                jwk_set = resp.json()
+                break
+            except httpx.TransportError as exc:
+                # JWKS is a safe GET; a proxy can close one connection without a response.
+                if attempt < 2:
+                    time.sleep(0.25 * (attempt + 1))
+                    continue
+                raise jwt.PyJWKClientConnectionError(
+                    f'Fail to fetch data from the url, err: "{exc}"'
+                ) from exc
+            except (httpx.HTTPStatusError, ValueError) as exc:
+                raise jwt.PyJWKClientConnectionError(
+                    f'Fail to fetch data from the url, err: "{exc}"'
+                ) from exc
         if self.jwk_set_cache is not None:
             self.jwk_set_cache.put(jwk_set)
         return jwk_set
