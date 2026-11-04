@@ -33,6 +33,23 @@ def _profile(client, student) -> dict:
     return resp.json()["student"]
 
 
+@pytest.mark.parametrize("program", ["holiday", "annual"])
+@pytest.mark.parametrize("grade, label", [
+    ("grade9", "9 класс"), ("grade10", "10 класс"), ("grade11", "11 класс"),
+    ("uni12", "1–2 курс вуза"), ("college", "Колледж"), (None, None),
+])
+def test_profile_shows_saved_school_grade(
+    client, db, session_factory, people, program, grade, label,
+):
+    student = people["student"]
+    student.program = program
+    student.school_grade = grade
+    db.commit()
+    _login(client, session_factory, people["chief"])
+
+    assert _profile(client, student)["school_grade_label"] == label
+
+
 def _fake_point_a(monkeypatch, *, is_done, average):
     from app.api import cabinet_students_shared
 

@@ -266,6 +266,7 @@ function renderProfile(data) {
         html += profileField('Куратор', s.curator_name);
     }
     html += profileField('Начало обучения', s.enrollment_year);
+    html += profileField('Класс / место учёбы', s.school_grade_label);
     html += profileField('Год поступления в вуз', s.university_year);
     if (s.past_tariffs) {
         html += profileField('Прошлые тарифы', s.past_tariffs, true);

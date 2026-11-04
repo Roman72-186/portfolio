@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, SCHOOL_GRADE_LABELS
 from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.constants import EXAM_SUBJECT_HINTS, STUDY_MODES, STUDY_MODE_LABELS, tariff_choices
 from app.config import settings
@@ -843,6 +843,7 @@ def get_student_profile(
             "course_periods": student.course_periods,
             "lessons_count": student.lessons_count,
             "enrollment_year": student.enrollment_year,
+            "school_grade_label": SCHOOL_GRADE_LABELS.get(student.school_grade or ""),
             "university_year": student.university_year,
             # Срок доступа для формы карточки: `datetime-local` понимает только
             # местное время без таймзоны, поэтому отдаём московское — в том же
