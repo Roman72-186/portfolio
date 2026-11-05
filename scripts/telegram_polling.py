@@ -15,10 +15,16 @@ async def main():
     api = f"https://api.telegram.org/bot{settings.telegram_bot_token}/"
     async with httpx.AsyncClient(timeout=httpx.Timeout(45, connect=10), proxy=settings.telegram_proxy_url or None) as telegram:
         async with httpx.AsyncClient(timeout=45) as local:
-            response = await telegram.post(api + "deleteWebhook", json={"drop_pending_updates": False})
-            response.raise_for_status()
-            if not response.json().get("ok"):
-                raise RuntimeError("Telegram refused deleteWebhook")
+            while True:
+                try:
+                    response = await telegram.post(api + "deleteWebhook", json={"drop_pending_updates": False})
+                    response.raise_for_status()
+                    if not response.json().get("ok"):
+                        raise RuntimeError("Telegram refused deleteWebhook")
+                    break
+                except (httpx.HTTPError, RuntimeError) as exc:
+                    log.warning("Telegram polling startup retry: %s", type(exc).__name__)
+                    await asyncio.sleep(3)
             log.info("Telegram polling started; pending updates retained")
             offset = None
             while True:
