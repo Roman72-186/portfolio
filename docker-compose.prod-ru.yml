@@ -131,7 +131,7 @@ services:
 
   telegram-poller:
     build: .
-    command: python scripts/telegram_polling.py
+    command: python -m scripts.telegram_polling
     env_file: .env
     environment:
       TELEGRAM_PROXY_URL: http://201.34.146.181:58443
