@@ -7,6 +7,7 @@ import httpx
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
