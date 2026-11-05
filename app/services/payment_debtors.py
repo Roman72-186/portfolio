@@ -261,9 +261,15 @@ async def handle_command(db: DBSession, chat_id: int) -> None:
     """`/neoplata` из чата. Чужим — молчание, как на любой незнакомый текст."""
     user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
     if not can_use_command(user):
+        logger.info("/neoplata: no access or linked account")
         return
-    for text in command_messages(db, datetime.now(timezone.utc)):
-        await telegram_service.send_message(chat_id, text)
+    messages = command_messages(db, datetime.now(timezone.utc))
+    for text in messages:
+        sent = await telegram_service.send_message(chat_id, text)
+        if not sent:
+            logger.warning("/neoplata: send failed for user_id=%s", user.id)
+            return
+    logger.info("/neoplata: sent %s message(s) for user_id=%s", len(messages), user.id)
 
 
 def menu_chat_ids(db: DBSession) -> list[int]:
