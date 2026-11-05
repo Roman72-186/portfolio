@@ -161,6 +161,10 @@ def test_menu_only_in_allowed_chats(db, school, care, user_factory):
     assert pd.menu_chat_ids(db) == sorted([CARE_CHAT, 777_010])
 
 
+def test_current_owner_has_command_access():
+    assert pd.PAYMENT_DEBTORS_COMMAND_EXTRA_IDS == frozenset({311})
+
+
 def test_named_account_gets_command_and_menu(db, school, care, user_factory, monkeypatch):
     """Поимённо — владелец 15.10.2026: «мне нужно 199»; по роли он ученик."""
     owner = user_factory(vk_id=200_199, name="Владелец")
