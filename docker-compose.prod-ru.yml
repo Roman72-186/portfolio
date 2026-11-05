@@ -129,6 +129,17 @@ services:
       db:
         condition: service_healthy
 
+  telegram-poller:
+    build: .
+    command: python scripts/telegram_polling.py
+    env_file: .env
+    environment:
+      TELEGRAM_PROXY_URL: http://201.34.146.181:58443
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+
   redis:
     image: dockerhub.timeweb.cloud/library/redis:7-alpine
     env_file: .env
