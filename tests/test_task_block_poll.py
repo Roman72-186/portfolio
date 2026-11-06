@@ -371,3 +371,93 @@ def test_poll_counts_as_one_step_in_the_progress(db, regular_user):
     feed = feed_for_student(db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY)
 
     assert feed["total_count"] == 2
+
+
+def test_cycle_form_ignores_unmounted_and_independently_saved_scales():
+    """Закрытый тест не получает пустую форму из-за следующих шкал."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js нужен для проверки браузерной логики")
+    script = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+async function check({question, scale, mounted, expected, submit = true}) {
+    const forms = [];
+    const requests = [];
+    const node = () => ({
+        children: [], classList: {add() {}, remove() {}},
+        appendChild(child) { this.children.push(child); return child; },
+        setAttribute() {}, addEventListener(name, fn) { this[name] = fn; }
+    });
+    const bodies = {1: node()};
+    if (mounted) bodies[2] = node();
+    const cards = [1, 2].map(id => ({
+        getAttribute() { return '159'; },
+        querySelector(selector) { return selector === '[data-role="block-body"]' ? bodies[id] : null; }
+    }));
+    const feed = {
+        querySelectorAll(selector) { return selector === '[data-block-id]' ? cards : []; },
+        querySelector(selector) {
+            if (selector === '[data-answer-text="1"]') return {value: 'Новый ответ'};
+            const match = selector.match(/data-block-id="(\d+)"/);
+            return match ? cards[Number(match[1]) - 1] : null;
+        }
+    };
+    const context = vm.createContext({
+        window: {location: {reload() {}}},
+        document: {currentScript: null, querySelector() {return feed;}, createElement: node},
+        fetch(url, options) {
+            if (options.method === 'POST') requests.push(JSON.parse(options.body));
+            return Promise.resolve({ok: true, json: () => Promise.resolve({
+                blocks: [question, scale], has_questions: true, answered: true,
+                submit_endpoint: '/answers'
+            })});
+        }
+    });
+    vm.runInContext(fs.readFileSync('app/static/js/task-blocks-render.js', 'utf8'), context);
+    const api = context.window.lrnBlockRender;
+    // Реальные formOpen и collectAnswers; вместо разметки полей - DOM-заглушка.
+    const renderer = api.create({});
+    renderer.render = () => node();
+    const collectAnswers = renderer.collectAnswers;
+    renderer.collectAnswers = (blocks, scope) => {
+        assert.deepEqual(Array.from(blocks, b => b.id), [1]);
+        return collectAnswers(blocks, scope);
+    };
+    api.create = () => renderer;
+    api.runPoll = () => false; // сохранённый опрос рисуется без мастера
+    api.el = (tag) => {const result = node(); if (tag === 'form') forms.push(result); return result;};
+    vm.runInContext(fs.readFileSync('app/static/js/cycle-feed.js', 'utf8'), context);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(forms.length, expected);
+    if (expected && submit) {
+        forms[0].submit({preventDefault() {}});
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].answers[0].text, 'Новый ответ');
+    }
+}
+(async () => {
+    const closed = {id: 1, block_type: 'question', question_type: 'single',
+        poll_key: 'quiz', answered: true, edit_reason: 'Проверен системой'};
+    const future = {id: 2, block_type: 'scale', answered: false, options: []};
+    await check({question: closed, scale: future, mounted: false, expected: 0});
+    await check({question: closed, scale: {...future, submit_endpoint: '/answers'}, mounted: true, expected: 0});
+    const editable = {...closed, question_type: 'text', edit_reason: null};
+    await check({question: editable, scale: future, mounted: false, expected: 1});
+    // Без мастера неотвеченная шкала опроса всё ещё требует общей формы.
+    await check({question: closed, scale: {...future, poll_key: 'scale-poll',
+        submit_endpoint: '/answers'}, mounted: true, expected: 1, submit: false});
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+    result = subprocess.run(
+        [node, "-e", script], cwd=Path(__file__).resolve().parents[1],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

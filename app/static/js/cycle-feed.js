@@ -176,7 +176,18 @@
         if (data.archi_profile && lastQuestionBody) {
             lastQuestionBody.appendChild(window.lrnBlockRender.profileResult(data.archi_profile));
         }
-        var formBlocks = (data.blocks || []).filter(function (block) { return !wizardIds[block.id]; });
+        var formBlocks = (data.blocks || []).filter(function (block) {
+            if (wizardIds[block.id]) return false;
+            var step = stepFor(taskId, block.id);
+            // Будущие шаги есть в JSON, но их полей ещё нет на экране.
+            // Они не должны включать пустую форму под проверенным опросом.
+            if (!step || !step.querySelector('[data-role="block-body"]')) return false;
+            // У шкалы своя кнопка; неотвеченная шкала опроса сохраняется
+            // мастером или общей формой, если мастер ещё не запущен.
+            if (block.block_type === 'scale' && block.submit_endpoint
+                && !(block.poll_key && !block.answered)) return false;
+            return true;
+        });
         var formOpen = window.lrnBlockRender.formOpen(formBlocks);
         if (data.has_questions && data.submit_endpoint && lastQuestionBody && formOpen) {
             appendSubmit(taskId, data, renderer, lastQuestionBody, formBlocks);
