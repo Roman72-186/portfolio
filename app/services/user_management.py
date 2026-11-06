@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.constants import (
-    ANNUAL_NEWCOMER_TAG, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, tariffs_for_data,
+    ANNUAL_NEWCOMER_TAG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, tariffs_for_data,
 )
 from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
@@ -268,6 +268,40 @@ def tag_annual_newcomer(db: DBSession, user: User) -> None:
         db.flush()
     tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
     add_tag_to_user(db, user.id, tag.id)
+
+
+def move_to_annual(db: DBSession, performed_by_id: int, student: User, reason: str) -> bool:
+    """Каникулярный ученик переходит в годовой курс — оплатил месяц.
+
+    Владелец 26.10.2026: «все после оплаты в месячный и на годовой курс
+    попадут». Зовёт одна `payments.record_paid` (вебхук и ручная отметка), так
+    что переход нельзя получить мимо оплаты. Ученик получает то же, что новый
+    годовой в момент входа: тег «Новенькие» и программу с этого момента
+    (`open_program_from_now`). Закончившееся до перехода ему не видно и долгом
+    не считается, поэтому после 01.11 он идёт по общей программе вместе со
+    всеми (Александрия 26.10.2026), а переведённый раньше видит адаптацию, как
+    любой новичок. Граница «1-е число оплаченного месяца» не годится: недели
+    октября кончаются 01.11 в 23:59, и отметка в конце октября навсегда
+    оставила бы долг по ним.
+
+    Срок трека снимается — иначе кабинет закрылся бы его датой, а годовая
+    анкета спрятала бы шаг «Тариф» (у неё признак пробника — `access_until`).
+    Анкета заново: у каникулярного нет родителя, СДЭК, почты, года
+    поступления. Теги группы, трека и класса остаются историей. Обратно
+    возврат не переводит — решает сотрудник, как с тарифом.
+
+    Возвращает True, если ученик был каникулярным. Не коммитит.
+    """
+    if student.program != PROGRAM_HOLIDAY:
+        return False
+    student.program = PROGRAM_ANNUAL
+    student.access_until = None
+    student.profile_completed = False
+    open_program_from_now(student)
+    tag_annual_newcomer(db, student)
+    _log(db, "program_change", performed_by_id, student.id,
+         f"Каникулярный → годовой курс ({reason})")
+    return True
 
 
 def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) -> bool:

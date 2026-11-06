@@ -143,6 +143,9 @@ def test_student_sees_last_day_of_short_month(db, prices, payer, prodamus):
 
 
 def test_pay_button_only_from_first_day_of_window(payer):
+    # Уже платил (сентябрь): дальше — только по окну. Первая оплата без оплат
+    # доступна сразу — `tests/test_annual_transfer.py` (27.10.2026).
+    payer.paid_until = ps.paid_until_after(payer, date(2026, 9, 1))
     assert not ps.can_pay_now(payer, _msk(2026, 10, 9, 23, 59))
     assert ps.can_pay_now(payer, _msk(2026, 10, 10, 0, 0))
     # После отсечки кнопка остаётся — должнику нечем иначе открыть доступ.
@@ -311,6 +314,7 @@ def test_price_change_cancels_old_link(db, prices, payer, prodamus):
 
 
 def test_link_refused_before_window_and_without_price(db, prices, payer, prodamus):
+    payer.paid_until = ps.paid_until_after(payer, date(2026, 9, 1))
     with pytest.raises(ps.PaymentUnavailable):
         ps.get_or_create_payment(db, payer, _msk(2026, 10, 5), "https://apparchi.ru")
     payer.pay_cohort = ""

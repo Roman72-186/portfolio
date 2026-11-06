@@ -33,7 +33,15 @@
                списка, идёт отдельно – как «{{ no_payment_text|lower }}».</p>
             {% endif %}
         </div>
-        <a class="btn-outline" href="/cabinet/superadmin/activity{% if holiday %}?program=holiday{% endif %}">К статистике</a>
+        {# «Оплата списком» и отсюда: вкладка живёт в «Людях», а Александрии
+           (поимённый доступ к оплатам, 14.10.2026) раздел «Люди» закрыт —
+           без этой ссылки до загрузки ей не дойти (26.10.2026). #}
+        <div class="prg-actions">
+            {% if can_mark and can(user, "people:students") %}
+            <a class="btn-outline" href="/cabinet/superadmin/payment-import">Оплата списком</a>
+            {% endif %}
+            <a class="btn-outline" href="/cabinet/superadmin/activity{% if holiday %}?program=holiday{% endif %}">К статистике</a>
+        </div>
     </div>
     {# Годовой курс / Каникулярный курс (владелец 19.10.2026) —
        `report_scope.report_program_switch`, общий партиал переключателя. #}

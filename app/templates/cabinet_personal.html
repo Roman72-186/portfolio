@@ -63,6 +63,9 @@
         <h2>Оплата за следующий месяц обучения (с 15 по 15)</h2>
         {% if not payment.has_price %}
         <p>Сумма для тебя пока не указана. Напиши в поддержку – её проставят, и здесь появится кнопка оплаты.</p>
+        {% elif payment.first %}
+        {# Первая оплата — сразу, дальше по окну (школа 27.10.2026). #}
+        <p class="prs-pay-due"><strong>Первая оплата – {{ payment.amount_text }}, можно сейчас.</strong> Дальше – каждый месяц {{ payment.window_text }}.</p>
         {% elif payment.overdue %}
         <p class="prs-pay-due"><strong>Окно оплаты закончилось {{ payment.until_text }}.</strong> Оплати {{ payment.amount_text }}, чтобы доступ к урокам не закрылся.</p>
         {% else %}

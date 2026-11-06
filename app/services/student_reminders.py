@@ -66,7 +66,8 @@ from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
 from app.config import settings
-from app.constants import PROGRAM_HOLIDAY
+from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.models.role import Role
 from app.models.homework_submission import HomeworkSubmission
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
@@ -710,6 +711,32 @@ def _without_waiting_holiday(learners: dict[int, User], now: datetime) -> dict[i
     }
 
 
+def _pay_window_students(db: Session, students: dict[int, User]) -> dict[int, User]:
+    """Кому напомнить об окне оплаты: общий отбор плюс каникулярные с окном.
+
+    Каникулярный с окном оплаты месяца (загрузка списка, владелец 26.10.2026)
+    после оплаты перейдёт в годовой курс. Общий отбор его теряет дважды: срок
+    трека к окну обычно уже прошёл (`access_open_clause`), а у трека могут
+    быть выключены напоминания (`_without_silent_holiday`) — а оплатить можно
+    и с закрытым кабинетом («Личная информация»). Без этого кнопка появилась
+    бы молча."""
+    extra = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == 1,
+            User.program == PROGRAM_HOLIDAY,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+            User.archived_at.is_(None),
+            User.pay_window_start.isnot(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
+        .all()
+    )
+    return {**students, **{user.id: user for user in extra}}
+
+
 def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     """Что каждому ученику пора сообщить — без уже отправленного."""
     students = _without_silent_holiday(db, program_students(db, now))
@@ -719,7 +746,7 @@ def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     _collect_deadlines(db, learners, now, raw)
     _collect_access(students, now, raw)
     _collect_cycle_debts(db, learners, now, raw)
-    _collect_pay_window(db, students, now, raw)
+    _collect_pay_window(db, _pay_window_students(db, students), now, raw)
 
     all_items = [item for bucket in raw.values() for item in bucket]
     sent = set()

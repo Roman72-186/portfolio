@@ -20,19 +20,37 @@
 дойдёт до ученика правкой справочника. Не совпала ни с одним — записываем
 своей ценой. Тариф загрузка не меняет: смена тарифа — `apply_tariff_change`
 со своими правилами, а файл заказчика для неё не основание.
+
+Новые ученики (владелец 26.10.2026: «два списка… там в списках будет
+оплата… в какое окно их ставить… и после этой даты вставляется ссылка на
+оплату»). В строке можно дать «Ник», «Окно» и «Первый месяц оплаты»: они
+главнее общих значений формы и так же ложатся только в пустые поля, поэтому
+тот же файл можно загрузить ещё раз — уже настроенных он не тронет. Первый
+месяц — тот, за который ученик заплатит на платформе: оплаченным ставится
+месяц перед ним, и «Оплатить» появится в первый день окна этого месяца.
+Каникулярному тариф из файла пишется в «Тариф после оплаты»: своего тарифа у
+него нет, а оплата месяца сама переведёт его в годовой курс
+(`payments.record_paid` → `user_management.move_to_annual`) и поставит этот
+тариф. Сумма у него всегда своя цена: цена по справочнику считается от
+текущего тарифа, у каникулярного он пустой, и ссылку не из чего было бы
+собрать.
 """
 import io
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFF_DISPLAY, TARIFFS
+from app.constants import (
+    PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, TARIFF_DISPLAY, TARIFFS, TARIFFS_CURRENT,
+)
 from app.models.payment import COHORT_LABELS, COHORTS
 from app.models.role import Role
 from app.models.user import User
 from app.services import payments
+from app.services.contacts import normalize_tg_username
+from app.services.tz import MSK_TZ
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 2000
@@ -66,6 +84,15 @@ class SheetRow:
     tariff: str | None = None     # код тарифа или None, если колонки нет / пусто
     amount_kop: int | None = None
     error: str | None = None
+    nick: str = ""                # ник Telegram без «@», в нижнем регистре
+    window_start: int | None = None
+    window_end: int | None = None
+    first_month: date | None = None   # первый месяц оплаты на платформе
+
+    @property
+    def paid_through(self) -> date | None:
+        """Оплаченным считается месяц перед первым месяцем оплаты."""
+        return payments.add_months(self.first_month, -1) if self.first_month else None
 
 
 @dataclass(frozen=True)
@@ -85,6 +112,8 @@ class Target:
     price_kop: int | None
     paid_through: date | None
     note: str = ""
+    # Тариф после оплаты — только у каникулярного; None — не трогать.
+    next_tariff: str | None = None
 
 
 @dataclass
@@ -144,6 +173,14 @@ def _column_kind(header: str) -> str | None:
         return "tariff"
     if any(word in h for word in ("сумм", "цен", "стоим", "к оплате")):
         return "amount"
+    # После суммы: «Сумма в месяц» — это сумма, а не месяц.
+    if "окно" in h:
+        return "window"
+    if "месяц" in h:
+        return "month"
+    if h.startswith("ник") or any(word in h for word in ("telegram", "телеграм", "username", "юзернейм")) \
+            or h in ("тг", "tg"):
+        return "nick"
     return None
 
 
@@ -155,12 +192,78 @@ def _find_header(rows: list[tuple]) -> tuple[int, dict[str, int]]:
             if kind and kind not in columns:
                 columns[kind] = col
         has_name = "full" in columns or ("first" in columns and "last" in columns)
-        if has_name and "amount" in columns:
+        if (has_name or "nick" in columns) and "amount" in columns:
             return index, columns
     raise ImportFileError(
-        "Не нашлись колонки. Нужны «Имя» и «Фамилия» (или одна «ФИО»), «Тариф» и «Сумма» – "
-        "названия в первой строке таблицы."
+        "Не нашлись колонки. Нужны «Имя» и «Фамилия» (или одна «ФИО», или «Ник»), «Тариф» "
+        "и «Сумма» – названия в первой строке таблицы."
     )
+
+
+# Месяц словом: по началу слова, чтобы «ноябрь», «ноября» и «нояб.» читались одинаково.
+_MONTH_STEMS = (
+    ("янв", 1), ("фев", 2), ("мар", 3), ("апр", 4), ("май", 5), ("мая", 5),
+    ("июн", 6), ("июл", 7), ("авг", 8), ("сен", 9), ("окт", 10), ("ноя", 11), ("дек", 12),
+)
+
+
+def parse_window(value) -> tuple[int, int] | None:
+    """«10–15», «10-15», «с 10 по 15» → (10, 15). Пусто — None, мусор — ValueError.
+
+    Excel превращает набранное «10-15» в дату 15 октября: из такой ячейки
+    берём день и месяц как два дня окна."""
+    if isinstance(value, (datetime, date)):
+        days = sorted((value.day, value.month))
+    else:
+        text = _cell_text(value)
+        if not text:
+            return None
+        found = re.findall(r"\d{1,2}", text)
+        if len(found) != 2:
+            raise ValueError(f"Не разобрать окно «{text}» – нужно как «10–15»")
+        days = [int(found[0]), int(found[1])]
+    error = payments.validate_window(days[0], days[1])
+    if error:
+        raise ValueError(error)
+    return days[0], days[1]
+
+
+def parse_month(value, today: date) -> date | None:
+    """Первый месяц оплаты: «ноябрь», «ноябрь 2026», «11.2026», «2026-11» или
+    дата из Excel → 1-е число месяца. Пусто — None, мусор — ValueError.
+
+    Без года — ближайший такой месяц, начиная с прошлого: в октябре «ноябрь»
+    и «сентябрь» значат этот год, «август» — следующий."""
+    if isinstance(value, datetime):
+        return value.date().replace(day=1)
+    if isinstance(value, date):
+        return value.replace(day=1)
+    text = _cell_text(value).lower().replace("ё", "е")
+    if not text:
+        return None
+    month = year = None
+    year_match = re.search(r"\b(20\d{2})\b", text)
+    if year_match:
+        year = int(year_match.group(1))
+    for stem, number in _MONTH_STEMS:
+        if re.search(rf"\b{stem}", text):
+            month = number
+            break
+    if month is None:
+        numbers = [int(n) for n in re.findall(r"\d{1,4}", text) if len(n) <= 2]
+        # «01.11.2026» — месяц второе число, «11.2026» и «11» — единственное.
+        if len(numbers) == 2:
+            month = numbers[1]
+        elif len(numbers) == 1:
+            month = numbers[0]
+    if month is None or not 1 <= month <= 12:
+        raise ValueError(f"Не разобрать месяц «{_cell_text(value)}» – нужно как «ноябрь» или «11.2026»")
+    if year is None:
+        # Ближайший: от прошлого месяца на десять вперёд. В ноябре «октябрь» —
+        # этот год (первая оплата за месяц, чьё окно уже прошло), «сентябрь» — следующий.
+        start = payments.add_months(today.replace(day=1), -1)
+        year = start.year if month >= start.month else start.year + 1
+    return date(year, month, 1)
 
 
 def parse_tariff(raw: str) -> str | None:
@@ -187,9 +290,14 @@ def parse_amount(value) -> int | None:
     return amount if amount else None
 
 
-def parse_workbook(data: bytes) -> list[SheetRow]:
-    """Строки первого листа. Битый файл и файл без нужных колонок — `ImportFileError`."""
+def parse_workbook(data: bytes, today: date | None = None) -> list[SheetRow]:
+    """Строки первого листа. Битый файл и файл без нужных колонок — `ImportFileError`.
+
+    `today` — от какого месяца считать месяц без года (по Москве)."""
     import openpyxl
+
+    if today is None:
+        today = datetime.now(MSK_TZ).date()
 
     if not data:
         raise ImportFileError("Файл пустой")
@@ -227,9 +335,20 @@ def parse_workbook(data: bytes) -> list[SheetRow]:
             item.tariff = parse_tariff(item.tariff_text)
         raw_amount = cell(row, "amount")
         item.amount_kop = parse_amount(raw_amount)
+        item.nick = normalize_tg_username(_cell_text(cell(row, "nick"))).lower()
+        cell_error = None
+        try:
+            window = parse_window(cell(row, "window"))
+            if window:
+                item.window_start, item.window_end = window
+            item.first_month = parse_month(cell(row, "month"), today)
+        except ValueError as exc:
+            cell_error = str(exc)
 
-        if len(item.tokens) < 2:
-            item.error = "Нужны имя и фамилия"
+        if len(item.tokens) < 2 and not item.nick:
+            item.error = "Нужны имя и фамилия или ник"
+        elif cell_error:
+            item.error = cell_error
         elif item.tariff_text and item.tariff is None:
             item.error = f"Не знаю тариф «{item.tariff_text}»"
         elif item.amount_kop is None:
@@ -314,21 +433,48 @@ def plan_settings(db: DBSession, student: User, amount_kop: int) -> tuple[str, i
     return current, amount_kop
 
 
-def plan_target(db: DBSession, student: User, amount_kop: int, defaults: Defaults) -> Target:
-    """Всё, что строка запишет: сумма из файла плюс общие окно и месяц в пустые поля."""
-    cohort, price_kop = plan_settings(db, student, amount_kop)
-    if payments.has_window(student):
-        start, end = student.pay_window_start, student.pay_window_end
+def row_defaults(row: SheetRow, defaults: Defaults) -> Defaults:
+    """Окно и месяц из строки главнее общих с формы."""
+    if row.window_start:
+        start, end = row.window_start, row.window_end
     else:
         start, end = defaults.window_start, defaults.window_end
+    return Defaults(start, end, row.paid_through or defaults.paid_through)
+
+
+def is_holiday(student: User) -> bool:
+    return student.program == PROGRAM_HOLIDAY
+
+
+def plan_target(db: DBSession, student: User, row: SheetRow, defaults: Defaults) -> Target:
+    """Всё, что строка запишет: сумма из файла плюс окно и месяц (из строки,
+    иначе общие) в пустые поля."""
+    own = row_defaults(row, defaults)
+    cohort, price_kop = plan_settings(db, student, row.amount_kop)
+    notes = []
+    if payments.has_window(student):
+        start, end = student.pay_window_start, student.pay_window_end
+        if row.window_start and (row.window_start, row.window_end) != (start, end):
+            notes.append(f"Окно у ученика уже стоит: {_window_text(start, end)}, загрузка его не меняет")
+    else:
+        start, end = own.window_start, own.window_end
     paid = payments.paid_month(student)
-    note = ""
-    if paid is None and defaults.paid_through:
+    if paid is None and own.paid_through:
         if start and end:
-            paid = defaults.paid_through
+            paid = own.paid_through
         else:
-            note = "Окна оплаты нет – оплаченный месяц не поставлен"
-    return Target(start, end, cohort, price_kop, paid, note)
+            notes.append("Окна оплаты нет – оплаченный месяц не поставлен")
+    next_tariff = None
+    if is_holiday(student):
+        notes.append(HOLIDAY_NOTE)
+        if row.tariff:
+            next_tariff = row.tariff
+        else:
+            notes.append("Тарифа в файле нет – ученик выберет его в анкете после перехода")
+    return Target(start, end, cohort, price_kop, paid, ". ".join(notes), next_tariff)
+
+
+HOLIDAY_NOTE = "Каникулярный набор: после оплаты перейдёт в годовой курс"
 
 
 def _window_text(start: int | None, end: int | None) -> str:
@@ -355,6 +501,10 @@ def _change_texts(student: User, target: Target) -> list[str]:
     if target.paid_through and old_month != target.paid_through:
         old = payments.period_label(old_month) if old_month else "–"
         changes.append(f"оплачено по: {old} → {payments.period_label(target.paid_through)}")
+    if target.next_tariff is not None and target.next_tariff != (student.pay_next_tariff or ""):
+        changes.append(
+            f"тариф после оплаты: {_tariff_text(student.pay_next_tariff)} → {_tariff_text(target.next_tariff)}"
+        )
     return changes
 
 
@@ -366,10 +516,17 @@ def _fill(db: DBSession, result: RowResult, student: User, defaults: Defaults) -
     """Статус и изменения для строки с известным учеником."""
     row = result.row
     result.student = student
-    result.target = plan_target(db, student, row.amount_kop, defaults)
+    result.target = plan_target(db, student, row, defaults)
     result.changes = _change_texts(student, result.target)
-    result.note = result.target.note
-    if row.tariff and row.tariff != student.tariff:
+    result.note = ". ".join(filter(None, [result.note, result.target.note]))
+    if is_holiday(student) and row.tariff and row.tariff not in TARIFFS_CURRENT:
+        # «Тариф после оплаты» принимает только действующий — запись отказала бы.
+        result.status = ROW_ERROR
+        result.note = f"Тариф «{_tariff_text(row.tariff)}» больше не продаётся"
+    elif is_holiday(student):
+        # Своего тарифа у каникулярного нет: тариф из файла — тариф после оплаты.
+        result.status = ROW_READY if result.changes else ROW_SAME
+    elif row.tariff and row.tariff != student.tariff:
         result.status = ROW_TARIFF
         tariff_note = (
             f"В файле тариф «{_tariff_text(row.tariff)}», на платформе – "
@@ -386,6 +543,11 @@ def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defa
     """Что произойдёт с каждой строкой. Ничего не пишет."""
     students = load_students(db)
     index = [(key, s) for s in students for key in _student_keys(s)]
+    by_nick: dict[str, list[User]] = {}
+    for s in students:
+        nick = normalize_tg_username(s.tg_username or "").lower()
+        if nick:
+            by_nick.setdefault(nick, []).append(s)
     taken: set[int] = set()
     results: list[RowResult] = []
     for row in rows:
@@ -394,11 +556,23 @@ def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defa
         if row.error:
             result.note = row.error
             continue
-        matches = _match(row, index)
+        # Ник точнее имени: у каникулярных он обязателен, однофамильцев у него
+        # нет. Не нашёлся — ищем по имени (опечатка в нике), так и пишем.
+        fallback = ""
+        matches = by_nick.get(row.nick, []) if row.nick else []
+        if row.nick and not matches and len(row.tokens) >= 2:
+            matches = _match(row, index)
+            if matches:
+                fallback = f"По нику @{row.nick} не нашёлся – найден по имени"
+        elif not row.nick:
+            matches = _match(row, index)
         writable = [s for s in matches if is_writable(s)]
         if not matches:
             result.status = ROW_NOT_FOUND
-            result.note = "Ученик с таким именем не найден – выберите вручную"
+            result.note = (
+                f"Ученик @{row.nick} не найден – возможно, ещё не заходил на платформу"
+                if row.nick else "Ученик с таким именем не найден – выберите вручную"
+            )
         elif len(writable) > 1:
             result.status = ROW_AMBIGUOUS
             result.candidates = writable
@@ -414,6 +588,8 @@ def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defa
         else:
             taken.add(writable[0].id)
             _fill(db, result, writable[0], defaults)
+        if fallback:
+            result.note = ". ".join(filter(None, [fallback, result.note]))
     return results
 
 
@@ -462,7 +638,7 @@ def apply_import(
             summary.skipped.append(f"Строка {line}: {display_name(student)} уже записан выше")
             continue
         used.add(student.id)
-        target = plan_target(db, student, row.amount_kop, defaults)
+        target = plan_target(db, student, row, defaults)
         try:
             changed = payments.apply_payment_settings(
                 db, performed_by_id, student,
@@ -471,6 +647,7 @@ def apply_import(
                 cohort=target.cohort,
                 price_kop=target.price_kop,
                 paid_through=target.paid_through,
+                next_tariff=target.next_tariff,
             )
         except payments.PaymentSettingsError as exc:
             summary.skipped.append(f"Строка {line}: {exc}")
@@ -489,7 +666,10 @@ def preview_json(results: list[RowResult]) -> list[dict]:
     for r in results:
         item = {
             "line": r.row.line,
-            "name": r.row.name_text,
+            "name": r.row.name_text or (f"@{r.row.nick}" if r.row.nick else ""),
+            "nick": r.row.nick,
+            "window": _window_text(r.row.window_start, r.row.window_end) if r.row.window_start else "",
+            "first_month": payments.period_label(r.row.first_month) if r.row.first_month else "",
             "tariff": r.row.tariff_text,
             "amount": payments.rub_text(r.row.amount_kop) if r.row.amount_kop else "",
             "status": r.status,

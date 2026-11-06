@@ -67,7 +67,7 @@ from app.services import intake_link as intake_link_service
 from app.services.contacts import normalize_tg_username
 from app.services.tags import add_tag_to_user, remove_tag_from_user
 from app.services.tz import MSK_TZ, _as_utc, msk_text
-from app.services.user_management import apply_tariff_change
+from app.services.user_management import apply_tariff_change, move_to_annual
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,16 @@ WINDOW_LAST_DAY_MAX = 31
 ORDER_PREFIX = "ap-"
 # Канал школы в тексте после оплаты (`paid_content`), дословно по школе 12.10.2026.
 SCHOOL_CHANNEL_URL = "https://t.me/creativeanalytic"
+
+# Оплата месяца перевела каникулярного в годовой курс (`record_paid`). Канал
+# «Путь к сотке» платформа не выдаёт — его даёт школа (владелец 26.10.2026),
+# без канала годовой ученик заново не войдёт.
+MOVED_TO_ANNUAL_STAFF_TEXT = (
+    "Перешёл(ла) из каникулярного набора в годовой курс – добавьте в канал «Путь к сотке»."
+)
+MOVED_TO_ANNUAL_STUDENT_TEXT = (
+    "Ты на годовом курсе. Осталось заполнить анкету – она откроется в кабинете."
+)
 
 MONTHS_NOM = (
     "", "январь", "февраль", "март", "апрель", "май", "июнь",
@@ -208,8 +218,11 @@ def due_period(user: User, now: datetime) -> date:
     месяц — тот, в котором лежит последний день окна, за сутки до отсечки
     (сама отсечка приходится на 1-е число, если окно кончается последним днём
     месяца). Сутки, а не час: срок, поставленный при другом `CUTOFF_HOUR_MSK`
-    (до 11.10.2026 — 9:00), должен указывать на тот же месяц. Оплат ещё не
-    было — текущий месяц по Москве.
+    (до 11.10.2026 — 9:00), должен указывать на тот же месяц.
+
+    Оплат ещё не было — текущий месяц по Москве, даже до начала окна.
+    Владелец 06.11.2026: первая оплата сейчас за ноябрь, следующая — в
+    декабрьское окно. Прошлый месяц создал бы повторный платёж в ноябре.
     """
     if user.paid_until is not None:
         last_day_msk = _as_utc(user.paid_until).astimezone(MSK_TZ) - timedelta(days=1)
@@ -221,10 +234,13 @@ def can_pay_now(user: User, now: datetime) -> bool:
     """Показывать ли кнопку «Оплатить»: окно должного месяца открылось.
 
     До окна кнопки нет (решение владельца 30.09.2026). После отсечки кнопка
-    остаётся — иначе должнику нечем открыть доступ.
+    остаётся — иначе должнику нечем открыть доступ. Первая оплата — сразу,
+    следующие — в назначенное окно (владелец 06.11.2026).
     """
     if not has_window(user):
         return False
+    if user.paid_until is None:
+        return True
     return _as_utc(now) >= window_opens_at(user, due_period(user, now))
 
 
@@ -685,12 +701,17 @@ def student_payment_view(db: DBSession, user: User, now: datetime) -> dict | Non
     amount = price_kop(db, user)
     cutoff = window_cutoff(user, period)
     last_day = window_last_day(user, period)
+    # Первая оплата: окно её месяца могло пройти до того, как ученику его
+    # задали, — «окно закончилось» тут неправда (27.10.2026).
+    first = user.paid_until is None
     return {
         "month": MONTHS_NOM[period.month],
         "amount_text": rub_text(amount) if amount else "",
         "has_price": bool(amount),
         "until_text": f"{last_day.day:02d}.{last_day.month:02d}",
-        "overdue": _as_utc(now) >= cutoff,
+        "overdue": not first and _as_utc(now) >= cutoff,
+        "first": first,
+        "window_text": f"с {user.pay_window_start} по {user.pay_window_end} число",
     }
 
 
@@ -967,6 +988,16 @@ def record_paid(
             user.paid_until = new_until
             extended = f", оплачено до {new_until.astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')}"
 
+    # Оплата месяца у каникулярного — переход в годовой курс (владелец
+    # 26.10.2026: «все после оплаты в месячный и на годовой курс попадут»).
+    # До смены тарифа: переход снимает срок трека, и `apply_tariff_change`
+    # не примет ученика за пробника, которому надо открыть программу заново.
+    moved_to_annual = False
+    if user is not None and payment.kind == KIND_MONTH:
+        moved_to_annual = move_to_annual(db, performed_by_id, user, f"оплата #{payment.id}")
+        if moved_to_annual:
+            extended += ", переведён из каникулярного набора в годовой курс"
+
     # Смена тарифа с этой оплаты (владелец 13.10.2026): переключаем только
     # когда оплачен именно новый тариф — не раньше, тариф сразу меняет доступ
     # к материалам. Возврат платежа тариф назад не возвращает — это решает
@@ -999,7 +1030,8 @@ def record_paid(
             # Тот же текст, что Продамус показывает после оплаты, — владелец 12.10.2026.
             title="Оплата принята",
             text=(holiday_thanks_text(track) if payment.kind == KIND_HOLIDAY
-                  else paid_thanks_text(payment.tariff or user.tariff)),
+                  else paid_thanks_text(payment.tariff or user.tariff)
+                  + ("\n\n" + MOVED_TO_ANNUAL_STUDENT_TEXT if moved_to_annual else "")),
         )
         db.add(student_note)
         created.append(student_note)
@@ -1007,7 +1039,8 @@ def record_paid(
         created += _notify_staff(
             db, f"Оплата: {_who(user)}",
             _paid_staff_text(user, payment, paid_sum_kop, how, tariff_from,
-                             subject=payment_subject(db, payment)),
+                             subject=payment_subject(db, payment))
+            + ("\n" + MOVED_TO_ANNUAL_STAFF_TEXT if moved_to_annual else ""),
         )
         if refund_reason:
             created += _notify_staff(
