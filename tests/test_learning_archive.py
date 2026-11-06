@@ -304,20 +304,34 @@ def test_interleaved_stages_of_one_period_are_grouped_once(db, regular_user):
     assert stages["Октябрь"] == [cycles[1].id]
 
 
-def test_hidden_period_is_not_shown_to_student(db, regular_user):
-    """Период со снятой галочкой «Показывать ученикам» ученик не видит и в
-    архиве — этап стоит сам за себя, как до уровня «Период»."""
+@pytest.mark.parametrize("hidden_level", ["period", "stage"])
+def test_hidden_parent_hides_contents_from_archive(db, regular_user, hidden_level):
+    """Скрытие родителя закрывает содержимое, сохраняя сданные работы."""
+    from app.models.task_block import TaskBlock, TaskBlockSubmission
+    from app.models.tracker import TrackerTaskState
+
     period, year, _ = _period_program(db, regular_user)
-    period.is_published = False
+    parent = period if hidden_level == "period" else year
+    parent.is_published = False
     db.commit()
     cycle = _topic(db, regular_user, title="Цикл 1", parent=year,
                    starts_on=TODAY - timedelta(days=30), ends_on=TODAY - timedelta(days=20))
-    _task(db, regular_user, cycle, title="Наброски", done=True)
+    task = _task(db, regular_user, cycle, title="Наброски", done=True)
+    block = TaskBlock(task_id=task.id, block_type="upload")
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=regular_user.id,
+                               comment="Сданная работа", submitted_at=msk_midnight(TODAY)))
+    db.commit()
 
     periods = _archive(db, regular_user)
 
-    assert [p["title"] for p in periods] == ["1 семестр_годовой курс"]
-    assert periods[0]["topic"].id == year.id
+    assert periods == []
+    parent.is_published = True
+    db.commit()
+    assert _archive(db, regular_user)[0]["stages"][0]["cycles"][0]["id"] == cycle.id
+    assert db.query(TaskBlockSubmission).filter_by(block_id=block.id).one().comment == "Сданная работа"
+    assert db.query(TrackerTaskState).filter_by(task_id=task.id, user_id=regular_user.id).one().status == "done"
 
 
 # ── этап уходит в архив у каждого ученика отдельно (владелец 06.10.2026) ────
@@ -460,11 +474,78 @@ def test_feed_header_names_the_period(auth_client, db, rendered):
 
 
 def test_feed_header_hides_unpublished_period(auth_client, db, rendered):
-    """Скрытый период («Показывать ученикам» снята) в шапке не подписан — то же
-    правило, что у архива (`_archive_levels`)."""
+    """Скрытый период закрывает всю ленту и карусель своих циклов."""
     client, user = auth_client
     _running_cycle_in_period(db, user, period_published=False)
 
     assert client.get("/cabinet/learning").status_code == 200
 
-    assert not rendered("cabinet_learning.html")["feed"]["period"]
+    feed = rendered("cabinet_learning.html")["feed"]
+    assert not feed["period"]
+    assert not feed["topic"]
+    assert not feed["steps"]
+    assert not feed["cycles"]
+
+
+@pytest.mark.parametrize("hidden_level", ["period", "stage"])
+def test_hidden_parent_blocks_student_reads_and_writes(
+    auth_client, db, rendered, monkeypatch, hidden_level,
+):
+    from unittest.mock import Mock
+
+    from app.models.task_block import TaskBlock, TaskBlockResponse, TaskBlockSubmission
+    from app.models.tracker import TrackerTask, TrackerTaskState
+    from app.services.video_catalog import is_video_accessible, list_published_videos
+
+    client, user = auth_client
+    period = _running_cycle_in_period(db, user)
+    stage = db.query(LearningTopic).filter_by(parent_id=period.id).one()
+    cycle = db.query(LearningTopic).filter_by(parent_id=stage.id).one()
+    task = db.query(TrackerTask).filter_by(topic_id=cycle.id).one()
+    video = _video(db, "Скрытый урок")
+    sync_blocks(db, task_id=task.id, items=[
+        {"block_type": "question", "question_type": "text", "body": "Как прошло?"},
+        {"block_type": "upload", "title": "Пришлите работу"},
+        {"block_type": "video", "video_id": video.id},
+    ])
+    db.commit()
+    question = db.query(TaskBlock).filter_by(task_id=task.id, block_type="question").one()
+    upload = db.query(TaskBlock).filter_by(task_id=task.id, block_type="upload").one()
+    endpoint = f"/cabinet/tracker/tasks/{task.id}/blocks"
+    assert client.get(endpoint).status_code == 200
+    assert task.title in client.get("/cabinet/tracker").text
+    viewer = {"user_id": user.id, "role_rank": 1, "tariff": user.tariff}
+    assert is_video_accessible(db, video, viewer)
+    parent = period if hidden_level == "period" else stage
+    parent.is_published = False
+    db.commit()
+
+    assert client.get("/cabinet/learning", params={"cycle_id": cycle.id}).status_code == 200
+    feed = rendered("cabinet_learning.html")["feed"]
+    assert not feed["steps"] and not feed["cycles"]
+    tracker = client.get("/cabinet/tracker")
+    assert tracker.status_code == 200
+    assert task.title not in tracker.text
+    assert client.get(endpoint).status_code == 404
+    assert client.post(endpoint, json={"answers": [
+        {"block_id": question.id, "text": "Недоступный ответ"},
+    ]}).status_code == 404
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 404
+    store = Mock()
+    monkeypatch.setattr("app.services.s3.upload_to_s3", store)
+    assert client.post(
+        f"/cabinet/tracker/blocks/{upload.id}/upload",
+        files=[("photos", ("work.jpg", b"fake-bytes", "image/jpeg"))],
+    ).status_code == 404
+    store.assert_not_called()
+    assert db.query(TaskBlockResponse).filter_by(task_id=task.id, user_id=user.id).count() == 0
+    assert db.query(TaskBlockSubmission).filter_by(block_id=upload.id, user_id=user.id).count() == 0
+    assert db.query(TrackerTaskState).filter_by(task_id=task.id, user_id=user.id).count() == 0
+    assert not is_video_accessible(db, video, viewer)
+    assert video not in list_published_videos(db, viewer=viewer)
+    assert is_video_accessible(db, video, {"user_id": user.id, "role_rank": 4})
+
+    parent.is_published = True
+    db.commit()
+    assert client.get(endpoint).status_code == 200
+    assert is_video_accessible(db, video, viewer)

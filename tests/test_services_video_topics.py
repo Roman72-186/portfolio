@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag
 from app.models.tag import Tag, UserTag
 from app.services.tz import now_msk
@@ -18,6 +20,7 @@ from app.services.video_topics import (
     set_topic_assignees,
     set_topic_tags,
     set_topic_tariffs,
+    topic_audience_user_ids,
     unpublish_topic,
     update_topic,
 )
@@ -118,6 +121,60 @@ def test_draft_and_deleted_topics_are_closed(db, regular_user, admin_user):
     db.commit()
 
     assert accessible_topic_ids(db, regular_user.id) == set()
+
+
+@pytest.mark.parametrize("program", ["annual", "holiday"])
+@pytest.mark.parametrize("hidden_level", ["period", "stage"])
+@pytest.mark.parametrize("deleted", [False, True])
+def test_parent_publication_controls_descendants(
+    db, regular_user, admin_user, program, hidden_level, deleted,
+):
+    regular_user.program = program
+    period = _topic(db, admin_user, assign_to_all=True)
+    period.kind, period.program = "period", program
+    stage = _topic(db, admin_user, assign_to_all=True)
+    stage.kind, stage.parent_id = "stage", period.id
+    cycle = _topic(db, admin_user, assign_to_all=True)
+    cycle.parent_id = stage.id
+    draft = _topic(db, admin_user, assign_to_all=True, is_published=False)
+    draft.parent_id = stage.id
+    future = _topic(db, admin_user, assign_to_all=True, opens_in_days=2)
+    future.parent_id = stage.id
+    db.commit()
+
+    assert cycle.id in accessible_topic_ids(db, regular_user.id)
+    assert regular_user.id in topic_audience_user_ids(db, cycle.id)
+    parent = period if hidden_level == "period" else stage
+    if deleted:
+        parent.deleted_at = now_msk()
+    else:
+        parent.is_published = False
+    db.commit()
+
+    for include_upcoming in (False, True):
+        visible = accessible_topic_ids(db, regular_user.id, include_upcoming=include_upcoming)
+        assert not {cycle.id, draft.id, future.id} & visible
+    assert topic_audience_user_ids(db, cycle.id) == set()
+    assert cycle.is_published and future.is_published and not draft.is_published
+
+    parent.is_published, parent.deleted_at = True, None
+    db.commit()
+    assert cycle.id in accessible_topic_ids(db, regular_user.id)
+    assert regular_user.id in topic_audience_user_ids(db, cycle.id)
+    assert draft.id not in accessible_topic_ids(db, regular_user.id, include_upcoming=True)
+    assert future.id in accessible_topic_ids(db, regular_user.id, include_upcoming=True)
+
+
+def test_parent_dates_and_audience_do_not_restrict_child(db, regular_user, admin_user):
+    stage = _topic(db, admin_user, opens_in_days=10, assign_to_all=False)
+    stage.kind = "stage"
+    set_topic_tariffs(db, stage, tariff_restricted=True, tariffs=[])
+    cycle = _topic(db, admin_user, assign_to_all=True)
+    cycle.parent_id = stage.id
+    db.commit()
+
+    assert cycle.id in accessible_topic_ids(db, regular_user.id)
+    assert regular_user.id in topic_audience_user_ids(db, cycle.id)
 
 
 # ---------------------------------------------------------------------------

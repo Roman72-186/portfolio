@@ -74,6 +74,26 @@ def get_topic(
     return topic
 
 
+def _published_topic_clause():
+    """Опубликована сама тема и вся её родительская цепочка.
+
+    Закрытие периода/этапа не переписывает флаги потомков: повторная
+    публикация возвращает только ранее опубликованное содержимое. Один
+    рекурсивный SQL-запрос закрывает потомков без N+1; UNION (не ALL)
+    также не зациклится на ошибочной циклической связи. У тем без родителя
+    сохраняется прежний доступ. Даты и адресацию родителей не наследуем.
+    """
+    blocked = select(LearningTopic.id).where(or_(
+        LearningTopic.is_published.is_(False),
+        LearningTopic.deleted_at.is_not(None),
+    )).cte("unpublished_topics", recursive=True)
+    child = aliased(LearningTopic)
+    blocked = blocked.union(
+        select(child.id).where(child.parent_id == blocked.c.id)
+    )
+    return LearningTopic.id.notin_(select(blocked.c.id))
+
+
 def accessible_topic_ids(
     db: Session, user_id: int, *, include_upcoming: bool = False
 ) -> set[int]:
@@ -83,8 +103,9 @@ def accessible_topic_ids(
     «с» тарифа): остаётся «кому адресовано» — так собирает будущие циклы
     `upcoming_topic_ids`, своей копии адресации у неё нет.
 
-    Тема открыта, если опубликована, наступил её `opens_at`, адресована
-    ученику (флагом «всем», пересечением тегов или поимённо), не скрыта от
+    Тема открыта, если опубликована вместе с родителями, наступил её
+    `opens_at`, адресована ученику (флагом «всем», пересечением тегов или
+    поимённо), не скрыта от
     его тегов (`LearningTopicExcludedTag`, 24.10.2026), не скрыта по
     тарифу, не закончилась до его прихода (`ended_before_arrival_filter`) и
     стоит в его программе — годовой или каникулярной (`program_topic_filter`,
@@ -146,6 +167,7 @@ def accessible_topic_ids(
         .filter(
             LearningTopic.deleted_at.is_(None),
             LearningTopic.is_published.is_(True),
+            _published_topic_clause(),
             *time_filters,
             or_(
                 LearningTopic.assign_to_all.is_(True),
@@ -278,8 +300,10 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
     привязана (`_accessible_task_or_404` в `cabinet_tracker.py` проверяет
     именно `task.topic_id in accessible_topic_ids(...)`).
     """
-    topic = db.get(LearningTopic, topic_id)
-    if topic is None or topic.deleted_at is not None or not topic.is_published:
+    topic = db.query(LearningTopic).filter(
+        LearningTopic.id == topic_id, _published_topic_clause(),
+    ).first()
+    if topic is None:
         return set()
     opens_at = topic.opens_at
     # SQLite в тестах отдаёт наивное время из колонки DateTime(timezone=True) —
