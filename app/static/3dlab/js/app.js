@@ -579,15 +579,18 @@ function updateViewerNavPanel(node) {
 
 function renderCurrentNode() {
   resetAllViewersToGallery();
-  // Возвращаем обычное breadcrumb-поведение
-if (breadcrumbBackBtn) {
-  breadcrumbBackBtn.onclick = null;
-}
 
   const isRoot = currentNode === CONTENT_TREE;
 
   setBrandVisible(isRoot);
-  setBreadcrumbVisible(!isRoot);
+  // На главном экране стрелка выводит из лаборатории в кабинет.
+  setBreadcrumbVisible(true);
+  if (breadcrumbBackBtn) {
+    breadcrumbBackBtn.setAttribute("aria-label", isRoot ? "Назад в кабинет" : "Назад");
+  }
+  if (breadcrumbHomeBtn) {
+    breadcrumbHomeBtn.style.display = isRoot ? "none" : "";
+  }
   setBreadcrumbSection(isRoot ? "" : currentNode.title);
 
 let children = Array.isArray(currentNode.children)
@@ -653,15 +656,8 @@ viewerGalleryContext = {
 };
 
   updateViewerNavPanel(node);
-  // Во viewer breadcrumb-back больше не должен
-// работать как navStack-back
-if (breadcrumbBackBtn) {
-  breadcrumbBackBtn.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    returnToViewerGallery();
-  };
-}
+  // Возврат обрабатывает один bindTap ниже: два обработчика могли
+  // за одно нажатие закрыть viewer и сразу перейти ещё на уровень выше.
 
   // Заглушка для будущих карточек без viewer / без ref
   if (!card) {
@@ -805,6 +801,11 @@ function bindTap(el, handler) {
 bindTap(breadcrumbBackBtn, () => {
   if (viewerWrapperEl.classList.contains("visible")) {
     returnToViewerGallery();
+    return;
+  }
+
+  if (currentNode === CONTENT_TREE) {
+    window.location.assign("/cabinet");
     return;
   }
 
