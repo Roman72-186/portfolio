@@ -6,7 +6,9 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <link rel="icon" type="image/png" sizes="48x48" href="/static/img/favicon.png?v=2" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  {# Вход из кабинета уже авторизован: недоступный Telegram SDK не должен
+     останавливать разбор страницы. Для старого входа без lab_user сохраняем порядок. #}
+  <script id="lab-telegram-sdk"{% if lab_user %} async{% endif %} src="https://telegram.org/js/telegram-web-app.js"></script>
 
     <style>
     * {
@@ -1212,7 +1214,7 @@ body.inset-mode #insetOpacityRow {
   }
 })();
 </script>
-<script type="module" src="/static/3dlab/js/app.js?v=20261106-back"></script>
+<script type="module" src="/static/3dlab/js/app.js?v=20261107-sdk"></script>
   <script>
 (function () {
   function isVisibleButton(el) {

@@ -78,7 +78,7 @@ window.TG_USER = null;
 window.TG_CHAT_INSTANCE = null;
 window.TG_INIT_DATA = "";
 
-(function initTelegramRuntime() {
+function initTelegramRuntime() {
   const tg = window.Telegram?.WebApp;
   if (!tg) return;
 
@@ -98,7 +98,11 @@ window.TG_INIT_DATA = "";
   } catch (e) {
     console.warn("Telegram WebApp init warning:", e);
   }
-})();
+}
+// SDK может загрузиться после модуля: галерея не ждёт Telegram, а его
+// окружение инициализируется, когда SDK станет доступен.
+initTelegramRuntime();
+document.getElementById("lab-telegram-sdk")?.addEventListener("load", initTelegramRuntime, { once: true });
 
 /* ============================================================
    0. ДОСТУП — проверяем window.LAB_USER (устанавливается сервером)
