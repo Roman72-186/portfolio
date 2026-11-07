@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Тарифы годового курса{% endblock %}
-{% block extra_styles %}<link rel="stylesheet" href="/static/css/public_purchase.css?v=1">{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/public_purchase.css?v=2">{% endblock %}
 {% block content %}
 <div class="page-header page-header--stacked">
     <h1 class="page-title">Годовой курс</h1>
@@ -14,7 +14,7 @@
     <h2 class="card-title">{{ item.tariff | tariff_label }}</h2>
     <p>{{ rub_text(item.amount_kop) }} за месяц</p>
     {% if sales_ready %}
-    <a class="btn-blue" href="/purchase/start?tariff={{ item.tariff | urlencode }}">Выбрать тариф</a>
+    <a class="btn-blue purchase-tariff-button purchase-tariff--{{ item.tariff | tariff_slug }}" href="/purchase/start?tariff={{ item.tariff | urlencode }}">Выбрать тариф</a>
     {% endif %}
 </section>
 {% else %}

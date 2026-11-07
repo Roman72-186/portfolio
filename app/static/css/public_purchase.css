@@ -1,3 +1,14 @@
+/* Кнопка использует геометрию Spark и существующую палитру тарифов. */
+.purchase-tariff-button {
+    --blue-fill: var(--purchase-tariff-color);
+    --blue: var(--purchase-tariff-color);
+    --sh-blue: var(--sh-sm);
+}
+
+.purchase-tariff--self { --purchase-tariff-color: var(--tariff-self); }
+.purchase-tariff--with-you { --purchase-tariff-color: var(--tariff-with-you); }
+.purchase-tariff--confident-max { --purchase-tariff-color: var(--tariff-confident-max); }
+
 /* Группы действий идут в том же порядке, что шаги покупки и tab-навигация. */
 .purchase-actions {
     display: flex;
