@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # Закрывать ли кабинет по неоплате (`User.paid_until`). Выключено, пока
     # заказчик не просмотрит первый список должников (план, «Запуск»).
     payments_block_enabled: bool = False
+    # Публичная продажа годового курса: окно и приглашение задаёт школа.
+    public_purchase_enabled: bool = False
+    public_purchase_window_start: int = 0
+    public_purchase_window_end: int = 0
+    public_purchase_invite_url: str = ""
     telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
     # Служебный топик для оценок ОС (ОС, фаза 2; владелец 01.10.2026, О17):
     # общая группа команды без учеников, бот в ней состоит. Значения вносит

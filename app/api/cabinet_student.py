@@ -298,6 +298,7 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "request": request,
         "user": user,
         "show_tariff_step": not _is_intake_student(user) and not holiday,
+        "paid_tariff": user.get("purchase_paid_tariff"),
         "holiday_form": holiday,
         "school_grades": SCHOOL_GRADES,
         "tariffs": TARIFF_LABELS,
@@ -321,6 +322,8 @@ def profile_get(
     # Анкета первого входа уже заполнена — ученику здесь менять нечего, его
     # экран правок это «Контактные данные» (телефоны и Telegram).
     if user["profile_completed"]:
+        if user.get("public_purchase_pending"):
+            return RedirectResponse("/purchase", status_code=302)
         return RedirectResponse("/cabinet/personal/contacts", status_code=302)
 
     return templates.TemplateResponse(request, "profile.html", _profile_template_ctx(request, user))
@@ -364,6 +367,8 @@ def profile_post(
     # на GET: иначе повторный POST этой же формы переписал бы установочные
     # данные в обход правила.
     if user["profile_completed"]:
+        if user.get("public_purchase_pending"):
+            return RedirectResponse("/purchase", status_code=302)
         return RedirectResponse("/cabinet/personal/contacts", status_code=302)
 
     if _is_holiday_student(user):
@@ -458,6 +463,9 @@ def profile_post(
     if intake_student:
         tariff = ""
         past_tariffs = []
+    elif user.get("purchase_paid_tariff"):
+        tariff = user["purchase_paid_tariff"]
+        past_tariffs = []
     elif tariff not in TARIFFS:
         errors.append("Выбери тариф")
 
@@ -535,7 +543,8 @@ def profile_post(
 
     # После первой анкеты показываем единственную вводную инструкцию поверх
     # учебной ленты. Повторно её можно открыть из «Личной информации».
-    return RedirectResponse("/cabinet/learning?welcome=1", status_code=302)
+    return RedirectResponse("/purchase" if user.get("public_purchase_pending")
+                            else "/cabinet/learning?welcome=1", status_code=302)
 
 
 def _enrollment_now() -> tuple[int, datetime]:

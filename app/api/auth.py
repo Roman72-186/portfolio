@@ -326,7 +326,7 @@ async def vpn_key_request(
 
 def telegram_oauth_redirect(
     purpose: str = TG_PURPOSE_LOGIN, guest_token: str | None = None,
-    intake_slug: str | None = None,
+    intake_slug: str | None = None, purchase_tariff: str | None = None,
 ) -> RedirectResponse:
     """Собрать редирект на oauth.telegram.org с PKCE.
 
@@ -345,6 +345,8 @@ def telegram_oauth_redirect(
         extra["guest_token"] = guest_token
     if intake_slug:
         extra["intake_slug"] = intake_slug
+    if purchase_tariff:
+        extra["purchase_tariff"] = purchase_tariff
 
     # TTL 10 минут (не 5, как у VK) — путь через Telegram может уводить в
     # приложение для подтверждения телефона/2FA-пароля и обратно, это дольше,
@@ -629,8 +631,36 @@ async def telegram_login_callback(
     if purpose == TG_PURPOSE_GUEST:
         return _guest_telegram_session(request, db, guest_token, chat_id, claims)
 
+    # Публичный покупатель может вернуться обычным входом. Исключение из
+    # проверки канала даёт только серверная запись покупки, не query-параметр.
+    from app.services import public_purchase
     link = intake_link_service.get_link(db, intake_slug) if intake_slug else None
     existing_user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    enrollment = public_purchase.enrollment_for(db, existing_user.id) if existing_user else None
+    if (enrollment and enrollment.activated_at is None) or (purpose == "purchase" and not existing_user):
+        purchase_tariff = (redis_pkce or cookie_pkce).get("purchase_tariff")
+        if not existing_user and (
+            not public_purchase.sales_ready()
+            or purchase_tariff not in {t["tariff"] for t in public_purchase.catalog(db)}
+        ):
+            return RedirectResponse("/tariffs", status_code=302)
+        if existing_user and (not existing_user.is_active or existing_user.deleted_at is not None):
+            return templates.TemplateResponse(request, "blocked.html", {"request": request}, status_code=403)
+        if not existing_user:
+            from app.models.public_enrollment import PublicEnrollment
+            tg_from = _TgFrom(id=chat_id, username=claims.get("preferred_username"),
+                              first_name=claims.get("given_name"), last_name=claims.get("family_name"))
+            existing_user, created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from,
+                                                          is_group_member=False, new_only=True)
+            if not created:
+                # Другой вход успел завести аккаунт после первого SELECT.
+                # Его тариф, программу и членство покупка не переписывает.
+                return _create_session_response(db, existing_user, request)
+            existing_user.program_access_from = None
+            db.add(PublicEnrollment(user_id=existing_user.id, selected_tariff=purchase_tariff))
+        response = _create_session_response(db, existing_user, request)
+        response.headers["location"] = "/purchase"
+        return response
     if (
         existing_user is None
         and intake_link_service.is_holiday(link)
@@ -961,6 +991,7 @@ def _upsert_telegram_user(
     chat_id: int,
     tg_from: _TgFrom | None,
     is_group_member: bool,
+    new_only: bool = False,
 ) -> tuple[User, bool]:
     """Тариф здесь не спрашиваем — новый ученик попадёт на анкету
     (`/cabinet/profile`, `needs_profile_setup` в cabinet_student.py) сразу
@@ -973,6 +1004,8 @@ def _upsert_telegram_user(
     доступа ставится только новичку (см. telegram_login_callback)."""
     user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
     if user:
+        if new_only:
+            return user, False
         # Удалённый возвращается сам, но блокировка и архив остаются
         # (владелец 13.10.2026) — правило в `user_management`.
         restore_deleted_user(db, user)
@@ -1309,6 +1342,11 @@ def sso_verify(
 
     if error:
         return JSONResponse(status_code=400, content={"ok": False, "reason": error})
+
+    from app.services.public_purchase import enrollment_for
+    enrollment = enrollment_for(db, user.id)
+    if enrollment and enrollment.activated_at is None:
+        return JSONResponse(status_code=403, content={"ok": False, "reason": "purchase_incomplete"})
 
     if not user.is_group_member:
         return JSONResponse(status_code=403, content={"ok": False, "reason": "not_group_member"})

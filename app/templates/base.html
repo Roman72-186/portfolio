@@ -64,7 +64,7 @@
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    {% if user is defined and user and user.role_rank == 1 %}
+    {% if user is defined and user and user.role_rank == 1 and not user.public_purchase_pending %}
     {% include "partials/back_to_learning.html" %}
     {% endif %}
     <!-- Кнопка-переключатель темы (владелец 03.09.2026) — общая обвязка для
@@ -245,13 +245,13 @@
     <script src="/static/js/csrf.js?v=2"></script>
     {# «Был на платформе» и время на платформе — пинг видимой вкладки, только
        ученику и не во входе «глазами» (`services/presence.py`). #}
-    {% if user is defined and user and user.role_rank == 1 and not user.impersonated_by_id %}
+    {% if user is defined and user and user.role_rank == 1 and not user.impersonated_by_id and not user.public_purchase_pending %}
     <script src="/static/js/presence.js?v=1"></script>
     {% endif %}
     {# Поиск ученика по номеру — одно правило на все списки (14.10.2026). #}
     <script src="/static/js/student-search.js?v=2"></script>
     {% include "_includes/impersonation_banner.html" %}
-    {% if user is defined and user %}
+    {% if user is defined and user and not user.public_purchase_pending %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">
         {% set _unread = unread_count_for(user) %}
         <button type="button" class="notif-bell" data-notif-bell aria-haspopup="dialog"

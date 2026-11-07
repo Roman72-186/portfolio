@@ -25,6 +25,7 @@ from app.api import cabinet_digest_admin, cabinet_goal_admin
 from app.api import cabinet_tracker
 from app.api import homework_submission
 from app.api import payments as payments_router
+from app.api import public_purchase as public_purchase_router
 from app.api import cabinet_payment_import
 from app.api import cabinet_payments_admin
 from app.api import lab_assets
@@ -172,6 +173,9 @@ async def forbidden_handler(request: Request, exc):
         detail = getattr(exc, "detail", "Forbidden")
         return JSONResponse(status_code=403, content={"detail": detail})
     detail = getattr(exc, "detail", "")
+    from app.services.public_purchase import PURCHASE_REQUIRED
+    if detail == PURCHASE_REQUIRED:
+        return RedirectResponse("/purchase", status_code=302)
     # Истёкший срок доступа (`User.access_until`) и расхождение Telegram-ника
     # (`User.tg_username_mismatch`) — не тупик, а переадресация: ученику
     # оставлена «Личная информация» с баннером и ссылкой на правку, туда его и
@@ -427,6 +431,7 @@ app.include_router(cabinet_broadcasts.router)
 app.include_router(cabinet_staff_notifications.router)
 app.include_router(cabinet_access_admin.router)
 app.include_router(payments_router.router)
+app.include_router(public_purchase_router.router)
 app.include_router(cabinet_payment_import.router)
 app.include_router(cabinet_payments_admin.router)
 app.include_router(tariff_view_router.router)

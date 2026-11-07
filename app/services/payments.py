@@ -478,7 +478,8 @@ def payment_subject(db: DBSession, payment: Payment) -> str:
     return period_label(payment.period)
 
 
-def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink | None = None) -> str:
+def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink | None = None,
+               public_purchase: bool = False) -> str:
     """Подписанная ссылка на платёжную страницу Продамуса.
 
     Ссылку собираем и подписываем сами (`GET <страница>?…&signature=…`), без
@@ -503,6 +504,10 @@ def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink
         name = f"Годовой онлайн-курс тариф {tariff}" if tariff else "Годовой онлайн-курс"
         thanks = paid_thanks_text(payment.tariff)
         back = f"{base_url}/cabinet/personal"
+    if public_purchase:
+        from app.services.public_purchase import AFTER_PAYMENT_TEXT
+        back = f"{base_url}/purchase"
+        thanks = f"Оплата прошла, спасибо!\n{AFTER_PAYMENT_TEXT}"
     data = {
         "order_id": order_number(payment),
         "products": [{
@@ -532,7 +537,8 @@ def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink
     return f"{form_url}?{query}"
 
 
-def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: str) -> Payment:
+def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: str,
+                          *, public_purchase: bool = False) -> Payment:
     """Строка платежа за должный месяц со свежей ссылкой — для кнопки «Оплатить».
 
     Пока цена та же и ссылка не истекла — отдаём прежнюю: двойное нажатие не
@@ -547,7 +553,8 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
         raise PaymentUnavailable("Для вас ещё не настроено окно оплаты")
     if not can_pay_now(user, now):
         raise PaymentUnavailable("Окно оплаты ещё не открылось")
-    amount = price_kop(db, user)
+    amount = (reference_price_kop(db, tariff_to_pay(user), user.pay_cohort)
+              if public_purchase else price_kop(db, user))
     if not amount:
         raise PaymentUnavailable("Сумма оплаты для вас не задана")
 
@@ -596,7 +603,7 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     )
     db.add(payment)
     db.flush()
-    payment.link_url = build_link(payment, user, base_url)
+    payment.link_url = build_link(payment, user, base_url, public_purchase=public_purchase)
     return payment
 
 
@@ -944,7 +951,15 @@ def record_paid(
     заплатил дважды. Не коммитит; уведомления разослать после commit
     (`notify_many`).
     """
+    from app.services.public_purchase import enrollment_for, AFTER_PAYMENT_TEXT
+    public_enrollment = enrollment_for(db, payment.user_id, lock=True)
     user = db.get(User, payment.user_id)
+    if public_enrollment:
+        # Другой webhook мог завершиться, пока ждали блокировку покупки.
+        db.refresh(payment)
+        if payment.status in (STATUS_PAID, STATUS_REFUNDED):
+            return []
+        user = db.query(User).filter(User.id == payment.user_id).populate_existing().with_for_update().one()
     # Ручную отметку ставит сотрудник, который сам знает, за что деньги.
     refund_reason = track_refund_reason(db, payment, now) if source == SOURCE_PRODAMUS else ""
     payment.status = STATUS_PAID
@@ -1003,7 +1018,17 @@ def record_paid(
     # к материалам. Возврат платежа тариф назад не возвращает — это решает
     # сотрудник в карточке.
     tariff_from = ""
-    if user is not None and user.pay_next_tariff and payment.tariff == user.pay_next_tariff:
+    public_initial = public_enrollment is not None and public_enrollment.activated_at is None
+    if public_initial and payment.kind == KIND_MONTH:
+        # Источник тарифа – оплаченный заказ, даже если другая вкладка уже
+        # создала новую ссылку. Вторая оплата не меняет первый купленный тариф.
+        if public_enrollment.first_payment_id is None:
+            public_enrollment.first_payment_id = payment.id
+            tariff_from = user.tariff or ""
+            apply_tariff_change(db, performed_by_id, user, payment.tariff)
+        user.pay_next_tariff = ""
+    if (not public_initial and user is not None and user.pay_next_tariff
+            and payment.tariff == user.pay_next_tariff):
         tariff_from = user.tariff or ""
         apply_tariff_change(db, performed_by_id, user, user.pay_next_tariff)
         user.pay_next_tariff = ""
@@ -1029,7 +1054,8 @@ def record_paid(
             user_id=user.id,
             # Тот же текст, что Продамус показывает после оплаты, — владелец 12.10.2026.
             title="Оплата принята",
-            text=(holiday_thanks_text(track) if payment.kind == KIND_HOLIDAY
+            text=(("Оплата прошла, спасибо!\n" + AFTER_PAYMENT_TEXT) if public_initial
+                  else holiday_thanks_text(track) if payment.kind == KIND_HOLIDAY
                   else paid_thanks_text(payment.tariff or user.tariff)
                   + ("\n\n" + MOVED_TO_ANNUAL_STUDENT_TEXT if moved_to_annual else "")),
         )

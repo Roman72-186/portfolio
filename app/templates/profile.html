@@ -8,7 +8,11 @@
 <div class="prf-page ios-profile">
     <div class="prf-top">
         <h1>Расскажи о себе</h1>
+        {% if user.public_purchase_pending %}
+        <p>Заполни анкету годового курса, чтобы получить ссылку на канал «Путь к сотке».</p>
+        {% else %}
         <p>Заполни все необходимые поля – и двери на платформу откроются 🚪</p>
+        {% endif %}
     </div>
 
     {% if user.photo_url %}
@@ -163,6 +167,9 @@
         <div class="prf-section-title">Шаг 3 из {{ steps_total }} · Тариф обучения</div>
         <div class="prf-group">
             <div class="prf-row prf-row--single">
+                {% if paid_tariff %}
+                <p>Оплаченный тариф: <strong>{{ paid_tariff | tariff_label }}</strong></p>
+                {% else %}
                 <label class="prf-field-label" for="tariff-select">Выбери свой тариф <span class="prf-required">*</span></label>
                 <select class="prf-field-input" name="tariff" id="tariff-select" required>
                     <option value="" disabled {% if not (form and form.tariff) and not user.tariff %}selected{% endif %}>Выбери тариф</option>
@@ -174,6 +181,7 @@
                     </option>
                     {% endfor %}
                 </select>
+                {% endif %}
             </div>
         </div>
         {% endif %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Тарифы годового курса{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/public_purchase.css?v=1">{% endblock %}
+{% block content %}
+<div class="page-header page-header--stacked">
+    <h1 class="page-title">Годовой курс</h1>
+    <p class="page-subtitle">Выбери тариф. Перед оплатой подтверди свой Telegram – мы сохраним покупку за твоим аккаунтом.</p>
+</div>
+{% if not sales_ready %}
+<p class="alert" role="status">Приём оплат пока закрыт. Если хочешь присоединиться к курсу, напиши в службу заботы.</p>
+{% endif %}
+{% for item in tariffs %}
+<section class="card">
+    <h2 class="card-title">{{ item.tariff | tariff_label }}</h2>
+    <p>{{ rub_text(item.amount_kop) }} за месяц</p>
+    {% if sales_ready %}
+    <a class="btn-blue" href="/purchase/start?tariff={{ item.tariff | urlencode }}">Выбрать тариф</a>
+    {% endif %}
+</section>
+{% else %}
+<p class="empty-text">Тарифы появятся здесь, когда школа настроит цены.</p>
+{% endfor %}
+<div class="purchase-actions">
+    <a class="btn-outline" href="https://t.me/roman_chatbots" target="_blank" rel="noopener noreferrer">Служба заботы</a>
+    <a class="btn-outline" href="/login">Уже учусь – войти</a>
+</div>
+{% endblock %}

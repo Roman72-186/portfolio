@@ -288,6 +288,15 @@ def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
 
+    from app.services import public_purchase
+    enrollment = public_purchase.enrollment_for(db, user.id)
+    public_purchase_pending = enrollment is not None and enrollment.activated_at is None
+    if public_purchase_pending and not public_purchase.allows_path(db, enrollment, request.url.path):
+        raise HTTPException(status_code=403, detail=public_purchase.PURCHASE_REQUIRED)
+    purchase_payment = public_purchase.confirmed_payment(db, enrollment) if public_purchase_pending else None
+    if public_purchase_pending and request.url.path == "/cabinet/profile" and purchase_payment is None:
+        raise HTTPException(status_code=403, detail=public_purchase.PURCHASE_REQUIRED)
+
     role = user.role
     role_name = role.name if role else None
     role_rank = effective_role_rank(role_name, role.rank) if role else 0
@@ -361,7 +370,7 @@ def get_current_user(
     # сотрудника не должна запирать кабинет куратору.
     # Сроков два — пробный (`access_until`) и оплаченный (`paid_until`), правило
     # одно: `services/access_state.py`.
-    access_expired = role_rank == 1 and user_access_expired(user, now)
+    access_expired = role_rank == 1 and not public_purchase_pending and user_access_expired(user, now)
     if access_expired and not is_path_allowed_when_access_expired(request.url.path):
         raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
 
@@ -394,7 +403,7 @@ def get_current_user(
     # и могла бы в теории отметить расхождение раньше, чем анкета заполнена;
     # без этого условия человек застревал бы, не успев даже открыть форму.
     tg_username_mismatch = (
-        role_rank == 1 and user.profile_completed and user.tg_username_mismatch
+        role_rank == 1 and not public_purchase_pending and user.profile_completed and user.tg_username_mismatch
     )
     if tg_username_mismatch and not is_path_allowed_when_tg_mismatch(request.url.path):
         raise HTTPException(status_code=403, detail=TG_MISMATCH_DETAIL)
@@ -409,6 +418,7 @@ def get_current_user(
     )
     portfolio_gate = (
         role_rank == 1
+        and not public_purchase_pending
         and user.profile_completed
         and not user.portfolio_do_completed
         and portfolio_required
@@ -439,6 +449,8 @@ def get_current_user(
         "email": user.email,
         "about": user.about,
         "profile_completed": user.profile_completed,
+        "public_purchase_pending": public_purchase_pending,
+        "purchase_paid_tariff": purchase_payment.tariff if purchase_payment else None,
         "portfolio_do_completed": user.portfolio_do_completed,
         "portfolio_gate": portfolio_gate,
         "drive_folder_id": user.drive_folder_id,

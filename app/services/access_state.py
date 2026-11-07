@@ -24,6 +24,7 @@ from sqlalchemy import or_, true
 
 from app.config import settings
 from app.models.user import User
+from app.models.public_enrollment import PublicEnrollment
 from app.services.tz import _as_utc
 
 
@@ -68,4 +69,11 @@ def access_open_clause(now: datetime):
         if settings.payments_block_enabled
         else true()
     )
-    return not_left_clause(now) & paid_clause
+    # Подтверждённый Telegram ещё не означает допуск к обучению. Пока идёт
+    # покупка/анкета/вступление, учебные уведомления покупателю не отправляем.
+    pending_purchase = (
+        PublicEnrollment.__table__.select()
+        .where(PublicEnrollment.user_id == User.id, PublicEnrollment.activated_at.is_(None))
+        .exists()
+    )
+    return not_left_clause(now) & paid_clause & ~pending_purchase

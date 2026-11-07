@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Покупка годового курса{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/public_purchase.css?v=1">{% endblock %}
+{% block content %}
+<div class="page-header page-header--stacked">
+    <h1 class="page-title">{% if payment %}Оплата прошла, спасибо!{% else %}Оплата годового курса{% endif %}</h1>
+    <p class="page-subtitle">{{ (payment.tariff if payment else enrollment.selected_tariff) | tariff_label }}{% if amount %} · {{ rub_text(amount) }}{% endif %} · {{ period }}</p>
+</div>
+{% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+{% if paid_expired %}
+<p class="alert" role="status">Срок оплаты уже закончился. Напиши в службу заботы, чтобы продолжить обучение.</p>
+{% elif payment and not user.profile_completed %}
+<p>{{ after_payment_text }}</p>
+<a class="btn-blue" href="/cabinet/profile">Заполнить анкету</a>
+{% elif payment and user.profile_completed %}
+<p>Анкета сохранена. Перейди в канал «Путь к сотке», затем вернись сюда и проверь участие.</p>
+{% if invite_url %}
+<div class="purchase-actions">
+    <a class="btn-blue" href="{{ invite_url }}" target="_blank" rel="noopener noreferrer">Перейти в канал</a>
+    <form method="post" action="/purchase/check-channel">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button class="btn-outline" type="submit">Проверить участие</button>
+    </form>
+</div>
+<p class="text-muted">Если вход в канал по заявке, дождись её одобрения и проверь участие ещё раз.</p>
+{% else %}
+<p class="alert">Школа готовит приглашение. Напиши в службу заботы.</p>
+{% endif %}
+{% elif enrollment.first_payment_id %}
+<p class="alert" role="status">Оплата больше не подтверждена. Напиши в службу заботы.</p>
+{% else %}
+<p>После оплаты заполни анкету годового курса – затем получишь ссылку в «Путь к сотке».</p>
+{% if sales_ready and amount %}
+<form method="post" action="/purchase/pay">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button class="btn-blue" type="submit">Оплатить {{ rub_text(amount) }}</button>
+</form>
+<p class="text-muted">Если ты уже оплатил курс, дождись подтверждения и обнови статус.</p>
+{% else %}<p class="alert">Приём оплат пока закрыт.</p>{% endif %}
+{% endif %}
+<div class="purchase-actions">
+    <a class="btn-outline" href="/purchase">Обновить статус</a>
+    <a class="btn-outline" href="https://t.me/roman_chatbots" target="_blank" rel="noopener noreferrer">Служба заботы</a>
+    <form method="post" action="/logout"><button class="btn-outline" type="submit">Выйти</button></form>
+</div>
+{% endblock %}
