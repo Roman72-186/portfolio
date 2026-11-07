@@ -7,14 +7,17 @@
     <p class="page-subtitle">Выбери тариф. Перед оплатой подтверди свой Telegram – мы сохраним покупку за твоим аккаунтом.</p>
 </div>
 {% if not sales_ready %}
-<p class="alert" role="status">Приём оплат пока закрыт. Если хочешь присоединиться к курсу, напиши в службу заботы.</p>
+<p class="alert" role="status" id="public-sales-status">Приём оплат пока закрыт. Если хочешь присоединиться к курсу, напиши в службу заботы.</p>
 {% endif %}
 {% for item in tariffs %}
 <section class="card">
     <h2 class="card-title">{{ item.tariff | tariff_label }}</h2>
     <p>{{ rub_text(item.amount_kop) }} за месяц</p>
+    {% set button_class = "btn-blue purchase-tariff-button purchase-tariff--" ~ (item.tariff | tariff_slug) %}
     {% if sales_ready %}
-    <a class="btn-blue purchase-tariff-button purchase-tariff--{{ item.tariff | tariff_slug }}" href="/purchase/start?tariff={{ item.tariff | urlencode }}">Выбрать тариф</a>
+    <a class="{{ button_class }}" href="/purchase/start?tariff={{ item.tariff | urlencode }}">Выбрать тариф</a>
+    {% else %}
+    <button class="{{ button_class }}" type="button" disabled aria-describedby="public-sales-status">Выбрать тариф</button>
     {% endif %}
 </section>
 {% else %}
