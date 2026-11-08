@@ -1787,12 +1787,12 @@ from app.services.user_management import (
     apply_access_until,
     apply_tariff_change,
     archive_user,
+    assign_curator,
     can_assign_role_rank,
     can_impersonate_by_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
     hard_delete_user,
-    log_curator_change,
     open_program_from_now,
     soft_delete_user,
     tag_annual_newcomer,
@@ -2238,13 +2238,15 @@ def superadmin_create_student(
         raise HTTPException(status_code=400, detail="Роль ученика не найдена")
 
     curator_id_v: int | None = None
+    curator_obj = None
     curator_id_clean = curator_id.strip()
     if curator_id_clean:
         try:
             curator_id_v = int(curator_id_clean)
         except ValueError:
             raise HTTPException(status_code=400, detail="Неверный id куратора")
-        if not get_curator_for_assignment(db, curator_id_v):
+        curator_obj = get_curator_for_assignment(db, curator_id_v)
+        if not curator_obj:
             raise HTTPException(status_code=400, detail="Куратор не найден")
 
     student = _find_student_by_tg_username(db, tg_username_clean)
@@ -2258,8 +2260,7 @@ def superadmin_create_student(
         if tariff_clean:
             apply_tariff_change(db, user["user_id"], student, tariff_clean)
         if curator_id_v is not None:
-            log_curator_change(db, user["user_id"], student.id, student.curator_id, curator_id_v)
-            student.curator_id = curator_id_v
+            assign_curator(db, user["user_id"], student, curator_obj)
         student.role_id = student_role.id
         student.is_active = True
     else:
@@ -2272,7 +2273,6 @@ def superadmin_create_student(
             tg_username=tg_username_clean,
             tariff=tariff_clean,
             role_id=student_role.id,
-            curator_id=curator_id_v,
             is_active=True,
             is_group_member=False,
             profile_completed=False,
@@ -2282,7 +2282,7 @@ def superadmin_create_student(
         db.flush()
         tag_annual_newcomer(db, student)
         if curator_id_v is not None:
-            log_curator_change(db, user["user_id"], student.id, None, curator_id_v)
+            assign_curator(db, user["user_id"], student, curator_obj)
     db.flush()
     issued_creds = _issue_login_password(db, student)
     db.commit()
@@ -2597,8 +2597,7 @@ def superadmin_assign_curator_bulk(
         if student.curator_id == curator.id:
             result["unchanged"] += 1
         else:
-            log_curator_change(db, user["user_id"], student.id, student.curator_id, curator.id)
-            student.curator_id = curator.id
+            assign_curator(db, user["user_id"], student, curator)
             result["assigned"] += 1
         if cohort_tag:
             student.cohort_tag = cohort_tag
@@ -2918,13 +2917,15 @@ def superadmin_user_save_tags(
     labels = _parse_student_labels(exam_dates, exam_subjects, study_mode, is_publishable, about)
 
     curator_id_v: int | None
+    curator_obj = None
     curator_id_clean = curator_id.strip()
     if curator_id_clean:
         try:
             curator_id_v = int(curator_id_clean)
         except ValueError:
             raise HTTPException(status_code=400, detail="Неверный id куратора")
-        if not get_curator_for_assignment(db, curator_id_v):
+        curator_obj = get_curator_for_assignment(db, curator_id_v)
+        if not curator_obj:
             raise HTTPException(status_code=400, detail="Куратор не найден")
     else:
         curator_id_v = None
@@ -2945,12 +2946,14 @@ def superadmin_user_save_tags(
         raise HTTPException(status_code=400, detail="Неверная метка группы")
     cohort_tag_v = cohort_tag_v or None
 
-    log_curator_change(db, user["user_id"], target.id, target.curator_id, curator_id_v)
+    old_curator_tag = target.curator_tag
+    assign_curator(db, user["user_id"], target, curator_obj)
 
     for field, value in labels.items():
         setattr(target, field, value)
-    target.curator_id = curator_id_v
-    target.curator_tag = curator_tag_v
+    # Форма присылает и прежнюю подпись: она не должна затереть синхронизацию.
+    if curator_tag_v != old_curator_tag:
+        target.curator_tag = curator_tag_v
     if tariff_v or clear_tariff:
         apply_tariff_change(db, user["user_id"], target, tariff_v,
                             correction=tariff_correction == "1")
@@ -2982,6 +2985,7 @@ def superadmin_user_set_curator(
     curator_id_clean = curator_id.strip()
     new_curator_id: int | None
     new_curator_name: str | None = None
+    curator_obj = None
     if curator_id_clean:
         try:
             new_curator_id = int(curator_id_clean)
@@ -2994,8 +2998,7 @@ def superadmin_user_set_curator(
     else:
         new_curator_id = None
 
-    log_curator_change(db, user["user_id"], target.id, target.curator_id, new_curator_id)
-    target.curator_id = new_curator_id
+    assign_curator(db, user["user_id"], target, curator_obj)
     db.commit()
     _invalidate_user_sessions(db, target.id)
 
