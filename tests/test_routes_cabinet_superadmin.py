@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.models.audit_log import AuditLog
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.login_token import LoginToken
 from app.models.mock_exam_attempt import MockExamAttempt
@@ -180,6 +181,9 @@ def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username
     existing.first_name = "Мария"
     existing.last_name = "Соколова"
     existing.tg_username = "maria_arch"
+    previous_curator = user_factory(vk_id=900106, name="Прежний куратор", role_name="куратор")
+    existing.curator_id = previous_curator.id
+    existing.curator_tag = "Прежний куратор"
     db.add(existing)
     db.commit()
 
@@ -205,6 +209,7 @@ def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username
     assert existing.staff_login is not None
     assert existing.password_hash is not None
     assert existing.curator_id == curator_user.id
+    assert existing.curator_tag == "Петров Иван"
     assert existing.tariff == "Я С ВАМИ"
     assert existing.profile_completed is True
 
@@ -555,6 +560,9 @@ def test_bulk_assign_curator_by_tg_usernames(superadmin_client, db, user_factory
     student_2 = user_factory(vk_id=900102, name="Student Two")
     student_1.tg_username = "student_one"
     student_2.tg_username = "student_two"
+    previous_curator = user_factory(vk_id=900107, name="Прежний куратор", role_name="куратор")
+    student_1.curator_id = previous_curator.id
+    student_1.curator_tag = "Прежний куратор"
     db.add_all([student_1, student_2])
     db.commit()
 
@@ -573,6 +581,7 @@ def test_bulk_assign_curator_by_tg_usernames(superadmin_client, db, user_factory
     db.refresh(student_2)
     assert student_1.curator_id == curator_user.id
     assert student_2.curator_id == curator_user.id
+    assert student_1.curator_tag == student_2.curator_tag == "Петров Иван"
     assert student_1.cohort_tag == "may"
     assert student_2.cohort_tag == "may"
     assert "missing_user" in resp.text
@@ -613,6 +622,124 @@ def test_superadmin_set_curator_ajax_returns_json(superadmin_client, db, user_fa
     assert data["curator_id"] == curator_user.id
     assert data["curator_name"]
     assert student.curator_id == curator_user.id
+    assert student.curator_tag is None
+
+    # Повторное сохранение назначения не создаёт вторую запись в истории.
+    repeated = client.post(
+        f"/cabinet/superadmin/users/{student.id}/curator",
+        data={"curator_id": str(curator_user.id)},
+    )
+    assert repeated.status_code == 200
+    assert db.query(AuditLog).filter_by(action="curator_assign", target_user_id=student.id).count() == 1
+
+
+@pytest.mark.parametrize("remove", [False, True])
+def test_curator_change_syncs_bulk_name_badge(
+    superadmin_client, db, user_factory, curator_user, remove,
+):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900220, name="Student Badge", role_name="ученик")
+    student.tg_username = "student_badge"
+    db.commit()
+    assigned = client.post(
+        "/cabinet/superadmin/users/assign-curator-bulk",
+        data={"curator_id": str(curator_user.id), "student_usernames": "@student_badge"},
+    )
+    assert assigned.status_code == 200
+    db.refresh(student)
+    assert student.curator_tag == "Петров Иван"
+    replacement = None if remove else user_factory(
+        vk_id=900221, name="Новый куратор", role_name="куратор",
+    )
+
+    changed = client.post(
+        f"/cabinet/superadmin/users/{student.id}/curator",
+        data={"curator_id": str(replacement.id) if replacement else ""},
+    )
+
+    assert changed.status_code == 200
+    db.refresh(student)
+    assert student.curator_id == (replacement.id if replacement else None)
+    assert student.curator_tag == ("Новый куратор" if replacement else None)
+    page = client.get("/cabinet/superadmin/users")
+    assert page.status_code == 200
+    badge = '<span class="tag-pill tag-pill--curator-tag">{}</span>'
+    assert badge.format("Петров Иван") not in page.text
+    assert (badge.format("Новый куратор") in page.text) == (not remove)
+
+
+@pytest.mark.parametrize("remove", [False, True])
+def test_curator_change_preserves_custom_badge(
+    superadmin_client, db, user_factory, curator_user, remove,
+):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900222, name="Student Group", role_name="ученик")
+    student.curator_id = curator_user.id
+    student.curator_tag = "Группа Б"
+    db.commit()
+    replacement = None if remove else user_factory(
+        vk_id=900223, name="Новый куратор", role_name="куратор",
+    )
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/curator",
+        data={"curator_id": str(replacement.id) if replacement else ""},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student)
+    assert student.curator_tag == "Группа Б"
+
+
+def test_curator_change_handles_truncated_auto_badge(
+    superadmin_client, db, user_factory, curator_user,
+):
+    client, _ = superadmin_client
+    curator_user.first_name = "А" * 50
+    curator_user.last_name = "Б" * 50
+    old_name = f"{curator_user.last_name} {curator_user.first_name}"
+    student = user_factory(vk_id=900226, name="Student Long Name", role_name="ученик")
+    student.curator_id = curator_user.id
+    student.curator_tag = old_name[:100]
+    replacement = user_factory(vk_id=900227, name="Long Curator", role_name="куратор")
+    replacement.first_name = "В" * 50
+    replacement.last_name = "Г" * 50
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/curator",
+        data={"curator_id": str(replacement.id)},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student)
+    assert student.curator_tag == f"{replacement.last_name} {replacement.first_name}"[:100]
+
+
+@pytest.mark.parametrize("remove", [False, True])
+@pytest.mark.parametrize("tag", ["Петров Иван", "Группа Б"])
+def test_tags_form_syncs_curator_badge_unless_explicitly_edited(
+    superadmin_client, db, user_factory, curator_user, remove, tag,
+):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900224, name="Student Form", role_name="ученик")
+    student.curator_id = curator_user.id
+    student.curator_tag = "Петров Иван"
+    db.commit()
+    replacement = None if remove else user_factory(
+        vk_id=900225, name="Новый куратор", role_name="куратор",
+    )
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/tags",
+        data={"curator_id": str(replacement.id) if replacement else "", "curator_tag": tag},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    db.refresh(student)
+    expected = "Группа Б" if tag == "Группа Б" else ("Новый куратор" if replacement else None)
+    assert student.curator_tag == expected
 
 
 def test_superadmin_quick_tariff_update_changes_student_tariff(

@@ -155,6 +155,30 @@ def staff_display_name(user: User) -> str:
     return f"{user.last_name or ''} {user.first_name or user.name}".strip()
 
 
+def assign_curator(
+    db: DBSession, performed_by_id: int, student: User, curator: User | None,
+) -> None:
+    """Меняет назначение, аудит и автоматическую подпись одной транзакцией.
+
+    Произвольная метка (например, «Группа Б») от назначения не зависит.
+    Не коммитит; валидация выбранного куратора остаётся у вызывающего кода.
+    """
+    old_curator_id = student.curator_id
+    new_curator_id = curator.id if curator is not None else None
+    if old_curator_id == new_curator_id:
+        return
+
+    old_curator = db.get(User, old_curator_id) if old_curator_id is not None else None
+    if old_curator is not None:
+        old_name = staff_display_name(old_curator)
+        # Массовое назначение копирует имя в curator_tag; колонка длиной 100.
+        if student.curator_tag and student.curator_tag in (old_name, old_name[:100]):
+            student.curator_tag = (staff_display_name(curator)[:100] or None) if curator else None
+
+    log_curator_change(db, performed_by_id, student.id, old_curator_id, new_curator_id)
+    student.curator_id = new_curator_id
+
+
 def validate_staff_name(first_name: str, last_name: str) -> list[str]:
     errors = []
     if not first_name:
