@@ -7,6 +7,8 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
+
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.activity_stats import get_login_stats, get_curator_review_speed
@@ -69,6 +71,38 @@ def test_service_account_is_out(db, user_factory):
     db.commit()
 
     assert service_id not in reportable_student_id_set(db)
+
+
+@pytest.mark.parametrize("program", ["annual", "holiday"])
+def test_recreated_owner_account_is_out_of_statistics(db, user_factory, program):
+    from app.constants import TARIFF_SELF
+    from app.services.activity_stats import get_month_tariff_flow
+    from app.services.report_scope import flow_students_q, report_program
+
+    now = datetime(2026, 11, 9, 12, tzinfo=timezone.utc)
+    student = user_factory(vk_id=950_311, name="Student", tariff=TARIFF_SELF)
+    student.program = program
+    student.created_at = now - timedelta(days=1)
+    owner = User(
+        id=311, vk_id=950_312, name="Service owner", role_id=student.role_id,
+        tariff=TARIFF_SELF, program=program, created_at=now - timedelta(days=1),
+    )
+    db.add(owner)
+    db.commit()
+
+    with report_program(program):
+        assert reportable_student_id_set(db, now) == {student.id}
+        assert get_login_stats(db)["total"] == 1
+
+    # The annual flow includes past accounts, but must still exclude service IDs.
+    expected_ids = {student.id} if program == "annual" else set()
+    assert {u.id for u in flow_students_q(db)} == expected_ids
+    november = get_month_tariff_flow(db, now=now)["months"][0]
+    assert november["came"] == len(expected_ids)
+    assert november["end"] == len(expected_ids)
+    assert [row["name"] for row in november["came_rows"]] == (
+        ["Student"] if expected_ids else []
+    )
 
 
 def test_pages_count_the_same_students(db, user_factory):
