@@ -1248,6 +1248,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (limit) {
                     wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));
                 }
+                wrap.appendChild(el('p', 'video-help', 'После завершения выполнения будет ещё 5 минут на фото и загрузку.'));
                 if (block.done || block.needs_revision) {
                     wrap.appendChild(el(
                         'p',
@@ -1257,6 +1258,9 @@ scope)` и свойством `answered` (одна попытка: после о
                     ));
                     if (block.late && !block.needs_revision) {
                         wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Сдана после срока сдачи'));
+                    }
+                    if (block.upload_overrun && !block.needs_revision) {
+                        wrap.appendChild(el('p', 'lrn-blk-verdict is-wrong', 'Фотографирование и загрузка заняли больше 5 минут'));
                     }
                     // Форму оставляем: до проверки куратором ученик может
                     // догрузить недостающий лист, не открывая ничего заново.
@@ -1294,10 +1298,36 @@ scope)` и свойством `answered` (одна попытка: после о
                     'p', 'video-help',
                     'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
                 ));
+                if (block.work_finished_at) {
+                    wrap.appendChild(el('p', 'video-help', block.overrun
+                        ? 'Выполнение завершено с превышением времени. Теперь загрузи фото.'
+                        : 'Выполнение завершено. Теперь сфотографируй работу и загрузи фото.'));
+                    wrap.appendChild(timedCountdown(block.upload_time_left_seconds, true));
+                    wrap.appendChild(uploadForm(block));
+                    return wrap;
+                }
                 if (typeof block.time_left_seconds === 'number') {
                     wrap.appendChild(timedCountdown(block.time_left_seconds));
                 }
-                wrap.appendChild(uploadForm(block));
+                var finishBtn = el('button', 'btn-blue', 'Завершить выполнение');
+                finishBtn.type = 'button';
+                var finishNote = el('p', 'video-progress-status');
+                finishNote.setAttribute('aria-live', 'polite');
+                finishBtn.addEventListener('click', function () {
+                    finishBtn.disabled = true;
+                    post(block.finish_endpoint, { method: 'POST' }).then(function (resp) {
+                        return resp.json().then(function (body) {
+                            if (!resp.ok) throw new Error(failure(body, 'Не удалось завершить выполнение'));
+                            window.location.reload();
+                        });
+                    }).catch(function (error) {
+                        finishBtn.disabled = false;
+                        finishNote.textContent = error.message || 'Не удалось сохранить. Попробуй ещё раз.';
+                        finishNote.classList.add('is-error');
+                    });
+                });
+                wrap.appendChild(finishBtn);
+                wrap.appendChild(finishNote);
                 return wrap;
             }
 
@@ -1306,7 +1336,7 @@ scope)` и свойством `answered` (одна попытка: после о
             // потом считает сервер (`timed_overrun`). Браузер только тикает
             // от момента загрузки страницы. Время вышло — отправка остаётся:
             // превышение не запрещает сдать, только записывается.
-            function timedCountdown(secondsLeft) {
+            function timedCountdown(secondsLeft, uploading) {
                 var box = el('p', 'video-progress-status');
                 box.setAttribute('role', 'timer');
                 var endsAt = Date.now() + secondsLeft * 1000;
@@ -1315,14 +1345,16 @@ scope)` и свойством `answered` (одна попытка: после о
                 function tick() {
                     var left = Math.round((endsAt - Date.now()) / 1000);
                     if (left <= 0) {
-                        box.textContent = 'Время вышло. Всё равно отправь работу – она запишется как сданная с превышением времени.';
+                        box.textContent = uploading
+                            ? 'Время на фото и загрузку вышло. Отправь работу – задержка загрузки будет отмечена отдельно.'
+                            : 'Время выполнения вышло. Заверши выполнение и загрузи работу – превышение времени будет отмечено.';
                         box.classList.add('is-error');
                         if (handle) window.clearInterval(handle);
                         return;
                     }
                     var h = Math.floor(left / 3600);
                     var m = Math.floor((left % 3600) / 60);
-                    box.textContent = 'Осталось ' + (h ? h + ':' + pad(m) : m) + ':' + pad(left % 60);
+                    box.textContent = (uploading ? 'На фото и загрузку осталось ' : 'Осталось ') + (h ? h + ':' + pad(m) : m) + ':' + pad(left % 60);
                 }
                 tick();
                 if (secondsLeft > 0) handle = window.setInterval(tick, 1000);

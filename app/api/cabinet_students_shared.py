@@ -14,7 +14,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -1205,6 +1205,7 @@ def credit_student_video(
 class LessonAttendanceIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     attended: bool
+    attendance_format: Literal["in_person", "online"] | None = None
 
 
 @router.post("/students/{student_id}/lesson-links/{block_id}/attendance")
@@ -1230,6 +1231,7 @@ def mark_lesson_attendance(
     set_attendance(
         db, block=block, student_id=student.id, attended=payload.attended,
         staff_id=user["user_id"],
+        attendance_format=payload.attendance_format,
     )
     db.commit()
     logger.info(

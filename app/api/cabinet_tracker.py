@@ -137,6 +137,9 @@ from app.services.task_blocks import (
     tasks_closed_to,
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
+    finish_timed_work,
+    timed_upload_seconds_left,
+    timed_upload_overrun,
     timed_overrun as task_block_timed_overrun,
     timed_seconds_left as task_block_timed_seconds_left,
     save_response as save_task_block_response,
@@ -1149,6 +1152,12 @@ def cabinet_tracker_task_blocks(
             # Обратный отсчёт на экране и отметка «после срока» (владелец
             # 30.09.2026): остаток считает сервер, браузер только тикает.
             item["time_left_seconds"] = task_block_timed_seconds_left(block, state)
+            item["work_finished_at"] = (
+                state.work_finished_at.isoformat() if state and state.work_finished_at else None
+            )
+            item["upload_time_left_seconds"] = timed_upload_seconds_left(state)
+            item["upload_overrun"] = timed_upload_overrun(state)
+            item["finish_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/finish"
             item["late"] = task_block_completed_after_deadline(
                 block, task, state, user_tariff=user.get("tariff"),
                 block_overrides=submit_deadlines.get(block.id),
@@ -1441,6 +1450,26 @@ def start_timed_block_route(
         "started_at": state.started_at.isoformat() if state.started_at else None,
         "time_limit_minutes": block.time_limit_minutes,
     })
+
+
+@router.post("/tracker/blocks/{block_id}/finish", response_class=JSONResponse)
+def finish_timed_work_route(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_TIMED:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    _refuse_closed_block(db, user, block, task)
+    try:
+        state = finish_timed_work(db, block=block, user_id=user["user_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    return JSONResponse({"ok": True, "work_finished_at": state.work_finished_at.isoformat()})
 
 
 @router.post("/tracker/blocks/{block_id}/watched", response_class=JSONResponse)

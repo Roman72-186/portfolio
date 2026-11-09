@@ -96,6 +96,122 @@ def _payload(client, task):
     return client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
 
 
+def test_finish_work_starts_upload_timer_without_submitting(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, minutes=45)
+    state = start_timed_block(db, block=block, user_id=user.id)
+    state.started_at = datetime.now(timezone.utc) - timedelta(minutes=44)
+    db.commit()
+
+    response = client.post(f"/cabinet/tracker/blocks/{block.id}/finish")
+    assert response.status_code == 200
+    first = response.json()["work_finished_at"]
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/finish").json()["work_finished_at"] == first
+    payload = _payload(client, task)
+    assert payload["work_finished_at"] == first
+    assert 295 <= payload["upload_time_left_seconds"] <= 300
+    assert payload["done"] is False
+    assert state.completed_at is None
+
+
+def test_finish_requires_a_started_timed_block(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task)
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/finish").status_code == 409
+    other = _block(db, task, block_type=BLOCK_UPLOAD, order=2)
+    assert client.post(f"/cabinet/tracker/blocks/{other.id}/finish").status_code == 404
+
+
+def test_finish_cannot_bypass_block_opening(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task)
+    state = start_timed_block(db, block=block, user_id=user.id)
+    block.opens_at = datetime.now(timezone.utc) + timedelta(days=1)
+    db.commit()
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/finish").status_code == 403
+    db.refresh(state)
+    assert state.work_finished_at is None
+
+
+def test_upload_grace_boundary_and_legacy_attempt(db, regular_user):
+    from app.services.task_blocks import timed_overrun, timed_upload_overrun
+    task = _task(db, regular_user)
+    block = _block(db, task, minutes=45)
+    start = datetime(2026, 11, 9, 8, tzinfo=timezone.utc)
+    state = TaskBlockState(block_id=block.id, user_id=regular_user.id, started_at=start,
+                           work_finished_at=start + timedelta(minutes=45),
+                           completed_at=start + timedelta(minutes=50))
+    assert timed_overrun(block, state) is False
+    assert timed_upload_overrun(state) is False
+    state.completed_at += timedelta(microseconds=1)
+    assert timed_upload_overrun(state) is True
+    state.work_finished_at = None
+    assert timed_overrun(block, state) is True  # Старая сдача сохраняет прежнее измерение.
+    assert timed_upload_overrun(state) is False
+
+
+def test_school_timing_migration_preserves_existing_rows():
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect, text
+
+    path = Path(__file__).parents[1] / "alembic/versions/b72e8a4c190f_timed_work_finish.py"
+    spec = importlib.util.spec_from_file_location("school_timing_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with create_engine("sqlite://").begin() as conn:
+        conn.execute(text("CREATE TABLE task_block_states (id INTEGER PRIMARY KEY, completed_at DATETIME)"))
+        conn.execute(text("INSERT INTO task_block_states VALUES (1, '2026-11-08 10:00:00')"))
+        conn.execute(text("CREATE TABLE lesson_attendance_marks (id INTEGER PRIMARY KEY, attended BOOLEAN)"))
+        conn.execute(text("CREATE TABLE task_blocks (id INTEGER PRIMARY KEY)"))
+        migration.op = Operations(MigrationContext.configure(conn))
+        migration.upgrade()
+        assert conn.execute(text("SELECT completed_at, work_finished_at FROM task_block_states")).one() == ("2026-11-08 10:00:00", None)
+        assert "lesson_ends_at" in {c["name"] for c in inspect(conn).get_columns("task_blocks")}
+        migration.downgrade()
+        assert "work_finished_at" not in {c["name"] for c in inspect(conn).get_columns("task_block_states")}
+
+
+def test_upload_delay_does_not_count_as_work_overrun(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, minutes=45)
+    now = datetime.now(timezone.utc)
+    state = start_timed_block(db, block=block, user_id=user.id)
+    state.started_at = now - timedelta(minutes=52)
+    state.work_finished_at = now - timedelta(minutes=7)  # Ровно 45 минут на работу.
+    db.commit()
+
+    assert _post(client, block.id).status_code == 200
+    payload = _payload(client, task)
+    assert payload["done"] is True
+    assert payload["overrun"] is False
+    assert payload["upload_overrun"] is True
+    attempt = get_timed_stats(db)["attempts"][0]
+    assert attempt["minutes"] == 45
+    assert attempt["upload_minutes"] == 7
+    assert attempt["upload_overrun"] is True
+
+
+def test_finished_work_is_not_reported_as_still_running_over(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _block(db, task, minutes=45)
+    now = datetime.now(timezone.utc)
+    state = start_timed_block(db, block=block, user_id=user.id)
+    state.started_at = now - timedelta(minutes=47)
+    state.work_finished_at = now - timedelta(minutes=2)
+    db.commit()
+    stats = get_timed_stats(db)
+    assert stats["attempts"][0]["status"] == "uploading"
+    assert stats["blocks"][0]["running_over"] == 0
+
+
 # ── приём после срока ───────────────────────────────────────────────────────
 
 def test_timed_work_is_accepted_after_the_deadline(auth_client, db):

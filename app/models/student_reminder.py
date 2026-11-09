@@ -20,6 +20,7 @@ from app.db.database import Base
 
 KIND_NEW_TASK = "new_task"
 KIND_NEW_VIDEO = "new_video"
+KIND_LESSON_MISSED = "lesson_missed"
 KIND_DEADLINE_24H = "deadline_24h"
 KIND_DEADLINE_3H = "deadline_3h"
 KIND_ACCESS_3D = "access_3d"

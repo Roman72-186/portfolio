@@ -44,6 +44,11 @@
    оплате: у короткого окна первый день он же «за день» или последний —
    шлём только более позднее.
 
+7. **Нет отметки посещения** (обращение 08.11.2026) – только для блока ссылки
+   с явно заданным `lesson_ends_at`, спустя час на ручные отметки. Очное
+   присутствие, нажатие онлайн-кнопки и просмотр связанной записи исключают
+   напоминание. Старые занятия вне шестичасового окна не рассылаются.
+
 Повторов нет: каждое отправленное событие оставляет строку `StudentReminder`.
 Ключ срока несёт сам момент — продлили срок, напоминание придёт заново.
 
@@ -80,12 +85,14 @@ from app.models.student_reminder import (
     KIND_DEADLINE_24H,
     KIND_NEW_TASK,
     KIND_NEW_VIDEO,
+    KIND_LESSON_MISSED,
     KIND_PAY_DAY_BEFORE,
     KIND_PAY_LAST_DAY,
     KIND_PAY_WINDOW,
     StudentReminder,
 )
 from app.models.task_block import (
+    BLOCK_LINK,
     LATE_SUBMISSION_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
     TaskBlock,
@@ -109,6 +116,7 @@ from app.services.task_blocks import (
     get_blocks_for_tasks,
     get_submit_deadlines,
     feed_visible_blocks,
+    attendance_links,
     get_task_submit_deadlines,
 )
 from app.models.learning_topic import TOPIC_KIND_WEEK
@@ -134,6 +142,7 @@ logger = logging.getLogger(__name__)
 # (30 минут) с запасом на перезапуск контейнера при деплое; повторы гасит
 # `StudentReminder`, так что запас ничего не дублирует.
 LOOKBACK = timedelta(hours=6)
+LESSON_MARK_GRACE = timedelta(hours=1)
 
 # Сроки сдачи: чем ближе, тем раньше в кортеже — ближайшая ступень главнее.
 DEADLINE_STAGES = (
@@ -195,6 +204,7 @@ class _Item:
     tasks: list[str] | None = None  # долг цикла: незакрытые обязательные
     amount_kop: int | None = None   # окно оплаты: сумма месяца
     holiday: bool = False           # конец доступа каникулярного: продлить нечем
+    task_id: int | None = None
 
 
 # Кто вообще получает — `tracker.program_students` / `program_learners`,
@@ -346,6 +356,79 @@ def _deadline_candidates(db: Session, now: datetime, horizon: datetime) -> list[
         .all()
     ))
     return sorted(ids)
+
+
+def _collect_missed_lessons(
+    db: Session, learners: dict[int, User], now: datetime,
+    items: dict[int, list[_Item]],
+) -> None:
+    """Только явно настроенные занятия, после паузы для очных отметок.
+
+    Не связываем Zoom/названия с расписанием и не рассылаем пропуски за всю
+    историю после первого запуска. Посещение – тем же правилом, что в ленте.
+    """
+    from app.services.meeting_joins import attendance_by_block, ABSENT_STAFF
+
+    rows = (
+        db.query(TaskBlock, TrackerTask, LearningTopic)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .outerjoin(LearningTopic, LearningTopic.id == TrackerTask.topic_id)
+        .filter(
+            TaskBlock.block_type == BLOCK_LINK,
+            TaskBlock.url.isnot(None),
+            TaskBlock.lesson_ends_at > now - LOOKBACK,
+            TaskBlock.lesson_ends_at <= now - LESSON_MARK_GRACE,
+            TrackerTask.is_published.is_(True),
+            TrackerTask.deleted_at.is_(None),
+            TrackerTask.kind != ITEM_MOCK_EXAM,
+        ).all()
+    )
+    if not rows or not learners:
+        return
+    block_ids = [block.id for block, _task, _topic in rows]
+    by_task = get_blocks_for_tasks(db, list({task.id for _, task, _ in rows}))
+    all_blocks = [b for blocks in by_task.values() for b in blocks]
+    audiences = get_audiences(db, [b.id for b in all_blocks])
+    attendance = attendance_by_block(db, block_ids)
+    done = {
+        (s.block_id, s.user_id) for s in db.query(TaskBlockState).filter(
+            TaskBlockState.block_id.in_([b.id for b in all_blocks]),
+            TaskBlockState.status == STATUS_DONE,
+        )
+    }
+    viewers = {}
+    for block, task, topic in rows:
+        if topic is not None and (not topic.is_published or topic.deleted_at is not None):
+            continue
+        ended = _utc(block.lesson_ends_at)
+        if _task_opened_at(task, topic) > ended or (_utc(block.opens_at) and _utc(block.opens_at) > ended):
+            continue
+        # Закрытую ссылку нельзя открывать, но её запись может быть доступна:
+        # проверяем адресацию каждого блока, а не подменяем её доступом к Zoom.
+        audience = task_audience_user_ids(db, task.id) & learners.keys()
+        links = attendance_links(by_task.get(task.id, []))
+        for uid in audience:
+            source = attendance.get((block.id, uid))
+            if source is not None and source != ABSENT_STAFF:
+                continue
+            user = learners[uid]
+            viewer = viewers.setdefault(uid, BlockViewer(
+                db, user_id=uid, tariff=user.tariff, study_subject=user.study_subject,
+            ))
+            if not feed_visible_blocks([block], audiences, viewer):
+                continue
+            recordings = feed_visible_blocks([
+                b for b in by_task[task.id] if links.get(b.id) == block.id
+            ], audiences, viewer)
+            if recordings and all((b.id, uid) in done for b in recordings):
+                continue
+            subject = block.subject or task.subject
+            title = f"{subject}: {task.title}" if subject else task.title
+            if block.title and block.title != task.title:
+                title += f" · {block.title}"
+            items[uid].append(_Item(
+                kind=KIND_LESSON_MISSED, ref=str(block.id), title=title, task_id=task.id,
+            ))
 
 
 def _collect_deadlines(
@@ -673,6 +756,14 @@ def _messages(items: list[_Item]) -> list[tuple[str, str]]:
             out.append(_pay_day_before_message(item))
         elif item.kind == KIND_PAY_LAST_DAY:
             out.append(_pay_last_day_message(item))
+        elif item.kind == KIND_LESSON_MISSED:
+            out.append((
+                f"Нет отметки посещения: «{item.title}»",
+                f"После занятия «{item.title}» у нас нет отметки твоего присутствия. "
+                "Если был очно или подключался мимо кнопки, сообщи преподавателю. "
+                "Если пропустил, посмотри запись в задании, когда она появится.\n"
+                f"https://{settings.domain}/cabinet/learning?task={item.task_id}#learning-task-{item.task_id}",
+            ))
     return out
 
 
@@ -744,6 +835,7 @@ def collect(db: Session, now: datetime) -> dict[int, list[_Item]]:
     raw: dict[int, list[_Item]] = defaultdict(list)
     _collect_new_content(db, learners, now, raw)
     _collect_deadlines(db, learners, now, raw)
+    _collect_missed_lessons(db, learners, now, raw)
     _collect_access(students, now, raw)
     _collect_cycle_debts(db, learners, now, raw)
     _collect_pay_window(db, _pay_window_students(db, students), now, raw)

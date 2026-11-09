@@ -24,7 +24,7 @@ from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.meeting_joins import (
-    ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, EVENT_MEETING_JOIN, attendance_by_block,
+    ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, ATTENDED_IN_PERSON, EVENT_MEETING_JOIN, attendance_by_block,
 )
 from app.services.point_a import student_point_a_level
 from app.services.presence import last_visit_seconds
@@ -338,6 +338,7 @@ _ACTIVITY_LABELS = {
 
 # Подписи режима «Занятия» (владелец 27.10.2026): откуда «был / не был».
 _ATTENDANCE_NOTES = {
+    ATTENDED_IN_PERSON: "Был очно (отметил преподаватель)",
     ATTENDED_PRESSED: "Был на занятии (нажал кнопку)",
     ATTENDED_STAFF: "Был на занятии (отметил преподаватель)",
     ABSENT_STAFF: "Не был (отметил преподаватель)",
@@ -450,13 +451,13 @@ def _assignment_activity(
     attendance = attendance_by_block(db, block_ids) if links else {}
     # Запись занятия «только тем, кто не был» (`optional_if_attended`): бывшему
     # она не положена, в «Не посмотрели» его нет.
-    lesson_link: dict[int, int] = {}
+    lesson_link: dict[int, int | None] = {}
     if theory:
         flagged_tasks = [task.id for block, task in candidates if block.optional_if_attended]
         for task_blocks in get_blocks_for_tasks(db, flagged_tasks).values():
             lesson_link.update(attendance_links(task_blocks))
     lesson_attendance = attendance_by_block(db, set(lesson_link.values()))
-    was_there = (ATTENDED_PRESSED, ATTENDED_STAFF)
+    was_there = (ATTENDED_PRESSED, ATTENDED_STAFF, ATTENDED_IN_PERSON)
 
     videos = {
         video.id: video
@@ -557,6 +558,8 @@ def _assignment_activity(
                 label = f"{subject}: {label}"
                 if group:
                     group = f"{subject}: {group}"
+                if links:
+                    short = f"{subject}: {step or task.title}"
         assignments.append({
             "group": group,
             "short": short,

@@ -661,6 +661,7 @@ def _edit_payloads(
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
                 "optional_if_attended": b.optional_if_attended,
+                "lesson_ends_at": msk_input_value(b.lesson_ends_at) or None,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),
@@ -1974,6 +1975,7 @@ class BlockItem(BaseModel):
     # суток, как и закрытие (владелец: «нужны не только даты, а время»).
     # Конвертацию в UTC делает сервисный слой (`sync_blocks`), не эта схема.
     opens_at: str | None = Field(default=None, max_length=32)
+    lesson_ends_at: str | None = Field(default=None, max_length=32)
     # Закрытие по календарю — обратная сторона `opens_at` (владелец
     # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
     # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой

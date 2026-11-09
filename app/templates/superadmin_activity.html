@@ -425,7 +425,7 @@
                 <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
                 <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
                 <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
-                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option></select></label>
+                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option><option value="uploading">Выполнение завершено, ждём фото</option></select></label>
                 <label for="tm-search">Имя или ник<input type="search" id="tm-search" data-tm-search placeholder="Фамилия или @ник" autocomplete="off"></label>
             </div>
             <div class="ss-stats-strip" data-tm-big></div>
@@ -444,7 +444,7 @@
                 if (!root) return;
                 const attempts = {{ timed.attempts | tojson }};
                 const LABELS = { in_time: 'Уложились', overrun: 'Превысили время', late: 'После срока',
-                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас' };
+                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас', uploading: 'Выполнение завершено, ждём фото' };
                 const DANGER = { overrun: true, late: true, running_over: true };
                 const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
                 const search = root.querySelector('[data-tm-search]');
@@ -505,7 +505,7 @@
                     const shown = attempts.filter(passes);
                     // Проценты — по сдавшим и тем, у кого время вышло без работы:
                     // «пишет сейчас» ещё не результат.
-                    const counted = shown.filter(function (a) { return a.status !== 'running'; });
+                    const counted = shown.filter(function (a) { return a.status !== 'running' && a.status !== 'uploading'; });
                     const by = { in_time: 0, overrun: 0, late: 0, running_over: 0 };
                     counted.forEach(function (a) { by[a.status] += 1; });
                     const pct = function (n) { return counted.length ? Math.round(n * 100 / counted.length) + '%' : '—'; };
@@ -530,12 +530,12 @@
                         status.dataset.label = 'Статус';
                         const badge = document.createElement('span');
                         badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
-                        badge.textContent = LABELS[a.status];
+                        badge.textContent = LABELS[a.status] + (a.upload_overrun ? ' · загрузка дольше 5 минут' : '');
                         status.appendChild(badge);
                         tr.append(
                             who,
                             cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
-                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—'), 'ss-ta-r'),
+                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—') + (a.upload_minutes !== null ? ' · фото и загрузка: ' + a.upload_minutes + ' мин' : ''), 'ss-ta-r'),
                             status
                         );
                         return tr;

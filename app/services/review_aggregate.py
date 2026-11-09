@@ -339,6 +339,8 @@ def _block_work_items(
             title = f"{title} — {row['block_title']}"
         if row["overrun"]:
             title = f"{title} (время превышено)"
+        if row.get("upload_overrun"):
+            title = f"{title} (загрузка дольше 5 минут)"
         if row["late"]:
             title = f"{title} (сдано после срока)"
         if row["group_period"]:

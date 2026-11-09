@@ -142,6 +142,48 @@ def test_flag_without_link_above_changes_nothing(db, user_factory):
     assert video.id not in _required_ids(db, student, task)
 
 
+def test_two_subjects_have_independent_attendance_and_clear_choices(db, user_factory):
+    student = user_factory(vk_id=881_001, name="Ученик", role_name="ученик")
+    task, drawing, drawing_video, _upload = _lesson(db, student)
+    drawing.title = "Подключиться"
+    drawing.subject = drawing_video.subject = "Рисунок"
+    drawing.sort_order = 0
+    composition = TaskBlock(task_id=task.id, block_type=BLOCK_LINK, title="Подключиться",
+                            subject="Композиция", url=ZOOM, sort_order=1)
+    composition_video = TaskBlock(task_id=task.id, block_type=BLOCK_VIDEO, title="Запись композиции",
+                                  subject="Композиция", optional_if_attended=True, sort_order=3)
+    drawing_video.sort_order = 2
+    db.add_all([composition, composition_video])
+    db.commit()
+    _press(db, student, drawing)
+
+    required = _required_ids(db, student, task)
+    assert drawing_video.id not in required
+    assert composition_video.id in required
+    overview = get_student_activity_overview(db, curator_id=None, include_assignments=True)
+    choices = {m["id"]: m["short"] for m in overview["meetings"]}
+    assert "Рисунок" in choices[drawing.id]
+    assert "Композиция" in choices[composition.id]
+
+
+def test_chief_can_mark_in_person_and_remove_recording_requirement(client, db, user_factory, session_factory):
+    from app.services.meeting_joins import ATTENDED_IN_PERSON, attendance_by_block
+
+    chief = user_factory(vk_id=881_002, name="ГП", role_name="админ", is_admin=True)
+    student = user_factory(vk_id=881_003, name="Очница", role_name="ученик")
+    task, link, video, _upload = _lesson(db, chief)
+    _client_as(client, session_factory, chief)
+    response = client.post(f"/cabinet/students/{student.id}/lesson-links/{link.id}/attendance",
+                           json={"attended": True, "attendance_format": "in_person"})
+    assert response.status_code == 200
+    assert attendance_by_block(db, [link.id])[(link.id, student.id)] == ATTENDED_IN_PERSON
+    assert video.id not in _required_ids(db, student, task)
+    response = client.post(f"/cabinet/students/{student.id}/lesson-links/{link.id}/attendance",
+                           json={"attended": False})
+    assert response.status_code == 200
+    assert video.id in _required_ids(db, student, task)
+
+
 def test_pressing_closes_task_when_recording_was_the_last_step(auth_client, db):
     """Загрузка уже сдана, держит только запись: переход по кнопке закрывает
     задание сразу, а не при следующем шаге ученика."""

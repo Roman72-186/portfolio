@@ -97,6 +97,25 @@ def _create_item(client, topic_id, title, blocks):
     return resp.json()["task_id"]
 
 
+def test_lesson_end_roundtrip_and_copy_clears_calendar_time(client, db, user_factory, session_factory):
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Ноябрь")
+    cycle = _cycle_in(db, stage, "1 неделя")
+    task_id = _create_item(client, cycle.id, "Два занятия", [{
+        "block_type": "link", "title": "Подключиться", "url": "https://zoom.us/j/1",
+        "subject": "Рисунок", "lesson_ends_at": "2026-11-09T18:30",
+    }])
+    block = db.query(TaskBlock).filter_by(task_id=task_id).one()
+    assert block.lesson_ends_at.hour == 15  # Поле конструктора задаётся по Москве.
+    page = client.get(f"{PROGRAM}/cycles/{cycle.id}")
+    assert page.status_code == 200
+    html = page.text
+    assert '"lesson_ends_at": "2026-11-09T18:30"' in html
+    copied = client.get(f"{PROGRAM}/blocks-source/{task_id}").json()["blocks"][0]
+    assert not copied.get("lesson_ends_at")
+    assert copied["subject"] == "Рисунок"
+
+
 def _dated_tasks_with_content(db, owner_id, count):
     """Задания дня с блоками, в прошлом и в будущем — как в календаре."""
     base = datetime.now(timezone.utc)

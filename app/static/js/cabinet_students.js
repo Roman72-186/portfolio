@@ -1672,6 +1672,7 @@ function buildStatsTimed(sc) {
             : 'Не сдал';
         var badges = statsBadge(spent, r.overrun ? 'no' : (r.minutes != null ? 'ok' : ''));
         if (r.overrun) badges += statsBadge('Превысил время', 'no');
+        if (r.upload_minutes != null) badges += statsBadge('Фото и загрузка: ' + r.upload_minutes + ' мин', r.upload_overrun ? 'no' : 'ok');
         if (r.late) badges += statsBadge('После срока', 'no');
         return statsRow(r.title, badges);
     }).join('') + '</ul>';

@@ -1772,7 +1772,7 @@ def get_timed_stats(
     from app.models.task_block import BLOCK_TIMED, TaskBlock
     from app.services.task_blocks import (
         completed_after_deadline, get_submit_deadlines, get_task_submit_deadlines,
-        timed_overrun,
+        timed_overrun, timed_upload_overrun,
     )
 
     now = datetime.now(timezone.utc)
@@ -1822,6 +1822,11 @@ def get_timed_stats(
         })
         started = _utc(state.started_at)
         finished = _utc(state.completed_at)
+        work_finished = _utc(state.work_finished_at) or finished
+        upload_minutes = (
+            int((finished - _utc(state.work_finished_at)).total_seconds() // 60)
+            if finished is not None and state.work_finished_at is not None else None
+        )
         if started is not None:
             item["started"] += 1
         overrun = timed_overrun(block, state)
@@ -1834,7 +1839,7 @@ def get_timed_stats(
             item["submitted"] += 1
             item["overrun" if overrun else "in_time"] += 1
             item["late"] += 1 if late else 0
-        elif (
+        elif work_finished is None and (
             started is not None and block.time_limit_minutes
             and (now - started).total_seconds() > block.time_limit_minutes * 60
         ):
@@ -1842,6 +1847,8 @@ def get_timed_stats(
             item["running_over"] += 1
         if finished is not None:
             status = "late" if late else ("overrun" if overrun else "in_time")
+        elif work_finished is not None:
+            status = "uploading"
         elif (
             started is not None and block.time_limit_minutes
             and (now - started).total_seconds() > block.time_limit_minutes * 60
@@ -1863,9 +1870,11 @@ def get_timed_stats(
             "month_id": stage.id if stage is not None else 0,
             "month": stage.title if stage is not None else "Без месяца",
             "minutes": (
-                int((finished - started).total_seconds() // 60)
-                if started is not None and finished is not None else None
+                int((work_finished - started).total_seconds() // 60)
+                if started is not None and work_finished is not None else None
             ),
+            "upload_minutes": upload_minutes,
+            "upload_overrun": timed_upload_overrun(state),
             "limit": block.time_limit_minutes,
             "status": status,
         })
@@ -1873,9 +1882,11 @@ def get_timed_stats(
             students.append({
                 "name": name, "tariff": tariff, "title": title,
                 "minutes": (
-                    int((finished - started).total_seconds() // 60)
-                    if started is not None and finished is not None else None
+                    int((work_finished - started).total_seconds() // 60)
+                    if started is not None and work_finished is not None else None
                 ),
+                "upload_minutes": upload_minutes,
+                "upload_overrun": timed_upload_overrun(state),
                 "limit": block.time_limit_minutes,
                 "overrun": overrun, "late": late,
             })

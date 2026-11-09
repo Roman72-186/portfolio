@@ -96,6 +96,83 @@ def _notes(db, user):
     )
 
 
+def test_absence_reminder_waits_for_staff_and_is_sent_once(db, user_factory):
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=891_001, name="Ученик")
+    task = _old_task(db, owner)
+    _block(db, task, "link", url="https://zoom.us/j/1",
+           lesson_ends_at=_naive(NOW - timedelta(minutes=30)))
+    # Полчаса – ещё ждём ручных отметок. Через час напоминание создаётся один раз.
+    _run(db, NOW)
+    assert not any("Нет отметки" in n.title for n in _notes(db, student))
+    _run(db, NOW + timedelta(minutes=40))
+    _run(db, NOW + timedelta(minutes=45))
+    notices = [n for n in _notes(db, student) if "Нет отметки" in n.title]
+    assert len(notices) == 1
+    assert "нет отметки твоего присутствия" in notices[0].text
+
+
+def test_absence_reminder_excludes_present_and_recording_completed(db, user_factory):
+    from app.models.activity_event import StudentActivityEvent
+    from app.models.task_block import LessonAttendanceMark
+    from app.services.meeting_joins import EVENT_MEETING_JOIN
+
+    owner = _owner(user_factory)
+    online = user_factory(vk_id=891_002, name="Онлайн")
+    in_person = user_factory(vk_id=891_003, name="Очно")
+    watched = user_factory(vk_id=891_004, name="Посмотрел запись")
+    missed = user_factory(vk_id=891_005, name="Пропустил")
+    task = _old_task(db, owner)
+    link = _block(db, task, "link", url="https://zoom.us/j/1", sort_order=0,
+                  lesson_ends_at=_naive(NOW - timedelta(hours=2)))
+    video = _block(db, task, "video", sort_order=1, optional_if_attended=True,
+                   video_id=_video(db).id, created_at=NOW - timedelta(days=2))
+    db.add_all([
+        StudentActivityEvent(user_id=online.id, event_type=EVENT_MEETING_JOIN, details=f"block:{link.id}"),
+        LessonAttendanceMark(block_id=link.id, user_id=in_person.id, attended=True, attendance_format="in_person"),
+        TaskBlockState(block_id=video.id, user_id=watched.id, status="done"),
+    ])
+    db.commit()
+    _run(db, NOW)
+    for student in (online, in_person, watched):
+        assert not any("Нет отметки" in n.title for n in _notes(db, student))
+    assert len([n for n in _notes(db, missed) if "Нет отметки" in n.title]) == 1
+
+
+def test_absence_reminder_ignores_unconfigured_and_old_links(db, user_factory):
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=891_006, name="Ученик")
+    task = _old_task(db, owner)
+    _block(db, task, "link", url="https://zoom.us/j/1")
+    _block(db, task, "link", url="https://zoom.us/j/2",
+           lesson_ends_at=_naive(NOW - timedelta(days=5)))
+    _run(db, NOW)
+    assert not any("Нет отметки" in n.title for n in _notes(db, student))
+
+
+def test_absence_reminder_checks_subject_audience_and_publication(db, user_factory):
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=891_007, name="Ученик")
+    task = _old_task(db, owner)
+    link = _block(db, task, "link", url="https://zoom.us/j/1",
+                  lesson_ends_at=_naive(NOW - timedelta(hours=2)))
+    db.add(TaskBlockTariff(block_id=link.id, tariff="УВЕРЕННЫЙ МАКСИМУМ"))
+    student.tariff = "Я С ВАМИ"
+    task.is_published = False
+    db.commit()
+    _run(db, NOW)
+    assert not any("Нет отметки" in n.title for n in _notes(db, student))
+    task.is_published = True
+    db.commit()
+    _run(db, NOW)
+    assert not any("Нет отметки" in n.title for n in _notes(db, student))
+    db.query(TaskBlockTariff).filter_by(block_id=link.id).delete()
+    task.published_at = _naive(NOW)  # Задание опубликовали уже после занятия.
+    db.commit()
+    _run(db, NOW)
+    assert not any("Нет отметки" in n.title for n in _notes(db, student))
+
+
 # ── Новое задание и видео ───────────────────────────────────────────────────
 
 def test_new_task_is_announced_once(db, user_factory):

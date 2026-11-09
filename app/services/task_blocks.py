@@ -1684,6 +1684,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # показывается как «00:00».
         row.opens_at = _moment(item.get("opens_at"))
         row.closes_at = _moment(item.get("closes_at"))
+        row.lesson_ends_at = _moment(item.get("lesson_ends_at")) if block_type == BLOCK_LINK else None
         # Закрытие раньше открытия — куратор перепутал поля; отбрасываем
         # молча, как и везде в этой функции с некорректным вводом, а не
         # роняем сохранение всего блока (см. неизвестный тариф/предмет выше).
@@ -2663,8 +2664,60 @@ def start_timed_block(db: DBSession, *, block: TaskBlock, user_id: int) -> TaskB
     return state
 
 
+TIMED_UPLOAD_SECONDS = 5 * 60
+
+
+def finish_timed_work(db: DBSession, *, block: TaskBlock, user_id: int) -> TaskBlockState:
+    """Остановить время выполнения один раз, не закрывая приём работы.
+
+    Условный UPDATE сохраняет первый момент даже при двух одновременных запросах.
+    Старые сдачи без отдельного завершения остаются со старым измерением.
+    """
+    state = get_state(db, block_id=block.id, user_id=user_id)
+    if state is None or state.started_at is None:
+        raise ValueError("Сначала начни работу")
+    if state.work_finished_at is not None:
+        return state
+    if state.completed_at is not None:
+        raise ValueError("Работа уже сдана")
+    db.query(TaskBlockState).filter(
+        TaskBlockState.id == state.id,
+        TaskBlockState.work_finished_at.is_(None),
+        TaskBlockState.completed_at.is_(None),
+    ).update({TaskBlockState.work_finished_at: datetime.now(timezone.utc)}, synchronize_session=False)
+    db.flush()
+    db.refresh(state)
+    return state
+
+
+def timed_upload_seconds_left(state: TaskBlockState | None, *, now=None) -> int | None:
+    if state is None or state.work_finished_at is None:
+        return None
+    start = state.work_finished_at
+    end = state.completed_at or now or datetime.now(timezone.utc)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return int(TIMED_UPLOAD_SECONDS - (end - start).total_seconds())
+
+
+def timed_upload_overrun(state: TaskBlockState | None) -> bool:
+    if state is None or state.completed_at is None or state.work_finished_at is None:
+        return False
+    start, end = state.work_finished_at, state.completed_at
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return (end - start).total_seconds() > TIMED_UPLOAD_SECONDS
+
+
 def timed_overrun(block: TaskBlock, state: TaskBlockState | None) -> bool:
-    """Не уложился ли ученик в лимит. Без старта, лимита или сдачи — нет.
+    """Превышен ли лимит выполнения. Новым попыткам загрузка время не добавляет.
+
+    Пока не завершено выполнение, результата нет. У старых попыток отдельной
+    отметки нет: их считаем до completed_at, сохраняя историческую статистику.
 
     Превышение не мешает сдать работу: «придётся делать так, что ребёнок будет
     рисовать, как у него получилось, и будет скидывать» — оно только попадает
@@ -2672,10 +2725,10 @@ def timed_overrun(block: TaskBlock, state: TaskBlockState | None) -> bool:
     """
     if state is None or block.time_limit_minutes is None:
         return False
-    if state.started_at is None or state.completed_at is None:
+    if state.started_at is None or (state.work_finished_at or state.completed_at) is None:
         return False
     started = state.started_at
-    finished = state.completed_at
+    finished = state.work_finished_at or state.completed_at
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
     if finished.tzinfo is None:
@@ -2698,7 +2751,10 @@ def timed_seconds_left(
     started = state.started_at
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
-    spent = ((now or _now()) - started).total_seconds()
+    finished = state.work_finished_at or now or _now()
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+    spent = (finished - started).total_seconds()
     return int(block.time_limit_minutes * 60 - spent)
 
 
@@ -2815,21 +2871,32 @@ def is_block_required_for_user(
     return block.is_required
 
 
-def attendance_links(blocks: list[TaskBlock]) -> dict[int, int]:
+def attendance_links(blocks: list[TaskBlock]) -> dict[int, int | None]:
     """Видео «обязательно только тем, кто не был на занятии» → кнопка
-    «Ссылка», по которой решается «был»: ближайшая выше в том же списке блоков
-    задания. Видео без ссылки выше в ответ не попадает — флаг ему не действует."""
-    result: dict[int, int] = {}
+    «Ссылка» выше в том же задании. При явном предмете – ближайшая по этому
+    предмету, запасная – общая без предмета; без предмета видео – ближайшая.
+    None означает несовпадение предметов: запись остаётся обязательной.
+    Без ссылок выше флаг по-прежнему не действует."""
+    result: dict[int, int | None] = {}
     link_id: int | None = None
+    links_by_subject: dict[str, int] = {}
     for block in blocks:
         if block.block_type == BLOCK_LINK:
             link_id = block.id
+            links_by_subject[block.subject or ""] = block.id
         elif (
             block.block_type == BLOCK_VIDEO
             and getattr(block, "optional_if_attended", False)
             and link_id is not None
         ):
-            result[block.id] = link_id
+            # Явный предмет записи не должен засчитываться посещением другого
+            # предмета. Общая ссылка без предмета сохраняет прежнее поведение.
+            matching = links_by_subject.get(block.subject or "") if block.subject else link_id
+            if matching is None and block.subject:
+                matching = links_by_subject.get("")
+            # Нет совместимой ссылки – посещение другого предмета запись
+            # не освобождает. None не входит в набор посещённых занятий.
+            result[block.id] = matching
     return result
 
 
@@ -3448,6 +3515,7 @@ def submission_review_queue(
                 (min(group_dates), max(group_dates)) if linked else None
             ),
             "overrun": timed_overrun(block, state),
+            "upload_overrun": timed_upload_overrun(state),
             # Сдано после срока (владелец 30.09.2026): с 06.10.2026 после
             # срока принимают первую сдачу любого блока, отметка общая.
             "late": completed_after_deadline(
