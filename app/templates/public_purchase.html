@@ -35,6 +35,17 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <button class="btn-blue" type="submit">Оплатить {{ rub_text(amount) }}</button>
 </form>
+<div class="purchase-actions">
+    <button class="btn-outline" type="button" id="parent-payment-copy">Скопировать ссылку для родителя</button>
+</div>
+<p class="text-muted">Родитель сможет оплатить по ссылке. Затем вернись в свой кабинет и обнови статус покупки.</p>
+<p id="parent-payment-status" role="status" aria-live="polite"></p>
+<div id="parent-payment-fallback" hidden>
+    <label for="parent-payment-url">Ссылка на оплату – скопируй и отправь родителю</label>
+    <input class="form-input" id="parent-payment-url" type="text" readonly>
+</div>
+<script src="/static/js/copy.js?v=1"></script>
+<script src="/static/js/public_purchase.js?v=1"></script>
 <p class="text-muted">Если ты уже оплатил курс, дождись подтверждения и обнови статус.</p>
 {% else %}<p class="alert">Приём оплат пока закрыт.</p>{% endif %}
 {% endif %}

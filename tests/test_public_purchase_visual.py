@@ -35,12 +35,31 @@ def test_purchase_mobile_and_desktop(client, db, buyer):
                 route.fulfill(status=response.status_code, headers=headers, body=response.content)
 
             page.route('**/*', serve)
-            for route, label in [('/tariffs', 'tariffs'), ('/purchase', 'unpaid')]:
+            for route, label in [('/tariffs', 'tariffs'), ('/purchase/return?paid=1', 'parent-return'), ('/purchase', 'unpaid')]:
                 page.goto('https://testserver' + route)
                 page.locator('h1').wait_for()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 assert not page.locator(f'a[href="{INVITE}"]').count()
                 page.screenshot(path=str(artifacts / f'{label}-{width}.png'), full_page=True)
+            # Реальный запрос к API, разрешённое копирование и отказ браузера.
+            page.evaluate("() => { window.copyText = async text => { window.copiedPayment = text; }; }")
+            page.get_by_role('button', name='Скопировать ссылку для родителя').click()
+            page.wait_for_function("document.getElementById('parent-payment-status').textContent.includes('Ссылка скопирована')")
+            copied = page.evaluate('window.copiedPayment')
+            assert copied.startswith('https://purchase-test.payform.ru/')
+            assert INVITE not in copied
+            page.evaluate("() => { window.copyText = async () => { throw new Error('denied'); }; }")
+            page.get_by_role('button', name='Скопировать ссылку для родителя').click()
+            page.locator('#parent-payment-url').wait_for(state='visible')
+            assert page.locator('#parent-payment-url').input_value() == copied
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=str(artifacts / f'parent-link-fallback-{width}.png'), full_page=True)
+            page.route('**/purchase/payment-link', lambda route: route.fulfill(
+                status=409, content_type='application/json', body='{"error":"Payment unavailable"}'))
+            page.get_by_role('button', name='Скопировать ссылку для родителя').click()
+            page.wait_for_function("document.getElementById('parent-payment-status').textContent === 'Payment unavailable'")
+            assert not page.locator('#parent-payment-url').is_visible()
+            assert page.locator('#parent-payment-copy').is_enabled()
             page.close()
 
         _settle(db, _payment(db, buyer))

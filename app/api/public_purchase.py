@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.dependencies import get_current_user, require_csrf
+from app.dependencies import get_current_user, require_csrf, require_csrf_header
 from app.limiter import limiter
 from app.models.user import User
 from app.models.payment import COHORT_FROM
@@ -16,6 +16,31 @@ from app.services.tz import _as_utc
 from app.tmpl import templates
 
 router = APIRouter()
+
+
+@router.get("/purchase/return")
+def payment_return(request: Request):
+    # Возврат из платёжной формы не подтверждает оплату и не раскрывает заказ.
+    return templates.TemplateResponse(request, "public_purchase_return.html", {
+        "request": request,
+    }, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+@router.post("/purchase/payment-link")
+@limiter.limit("20/minute")
+def payment_link(request: Request, user: Annotated[dict, Depends(get_current_user)],
+                 db: Annotated[Session, Depends(get_db)],
+                 _csrf: Annotated[None, Depends(require_csrf_header)]):
+    from app.api.auth import _public_base_url
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    try:
+        payment = public_purchase.checkout(db, db.get(User, user["user_id"]),
+                                           _public_base_url(request), datetime.now(timezone.utc))
+        db.commit()
+    except payments.PaymentUnavailable as exc:
+        db.rollback()
+        return JSONResponse({"error": str(exc)}, status_code=409, headers=headers)
+    return JSONResponse({"url": payment.link_url}, headers=headers)
 
 
 @router.get("/tariffs")

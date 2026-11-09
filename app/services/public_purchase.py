@@ -65,7 +65,7 @@ def confirmed_payment(db, enrollment) -> Payment | None:
 
 
 def allows_path(db, enrollment, path: str) -> bool:
-    if path in {"/purchase", "/purchase/pay", "/purchase/check-channel", "/csrf", "/logout"}:
+    if path in {"/purchase", "/purchase/pay", "/purchase/payment-link", "/purchase/check-channel", "/csrf", "/logout"}:
         return True
     return path == "/cabinet/profile" and confirmed_payment(db, enrollment) is not None
 

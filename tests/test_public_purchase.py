@@ -153,7 +153,8 @@ def test_two_clicks_reuse_pending_payment_and_do_not_assign_tariff(client, db, b
     assert db.query(Payment).count() == 1
     assert buyer[0].tariff == ''
     params = parse_qs(urlparse(first.headers['location']).query)
-    assert params['urlSuccess'] == ['https://testserver/purchase?paid=1']
+    assert params['urlSuccess'] == ['https://testserver/purchase/return?paid=1']
+    assert params['urlReturn'] == ['https://testserver/purchase/return']
     assert INVITE not in first.headers['location']
 
 
@@ -162,6 +163,85 @@ def test_forged_success_return_does_not_open_profile_or_invitation(client, buyer
     assert INVITE not in response.text
     assert 'Заполнить анкету' not in response.text
     assert client.get('/cabinet/profile', headers={'Accept': 'application/json'}).status_code == 403
+
+
+def test_parent_link_belongs_to_student_and_reuses_self_payment(client, db, buyer, user_factory):
+    other = user_factory(vk_id=100002)
+    first = client.post('/purchase/payment-link', json={'user_id': other.id, 'amount_kop': 1})
+    assert first.status_code == 200
+    assert first.headers['cache-control'] == 'no-store'
+    assert first.headers['referrer-policy'] == 'no-referrer'
+    assert set(first.json()) == {'url'}
+    second = client.post('/purchase/pay', follow_redirects=False)
+    assert first.json()['url'] == second.headers['location']
+    payment = db.query(Payment).one()
+    assert payment.user_id == buyer[0].id
+    assert payment.amount_kop == 100000
+    assert INVITE not in first.text
+    assert client.cookies.get('session_id') not in first.text
+
+
+def test_parent_return_is_anonymous_neutral_and_never_admits(client, db, buyer):
+    payment = _payment(db, buyer)
+    _settle(db, payment)
+    buyer[0].profile_completed = True
+    db.commit()
+    for authenticated in (True, False):
+        if not authenticated:
+            client.cookies.clear()
+        response = client.get('/purchase/return?paid=1')
+        assert response.status_code == 200
+        assert INVITE not in response.text
+        assert 'Заполнить анкету' not in response.text
+        assert buyer[0].name not in response.text
+        assert response.headers['cache-control'] == 'no-store'
+        assert buyer[1].activated_at is None
+
+
+def test_parent_link_requires_session_and_csrf(client, db, buyer):
+    from app.main import app
+    from app.dependencies import require_csrf_header
+    app.dependency_overrides.pop(require_csrf_header)
+    assert client.post('/purchase/payment-link', headers={'Accept': 'application/json'}).status_code == 403
+    client.cookies.clear()
+    response = client.post('/purchase/payment-link', headers={'Accept': 'application/json'}, follow_redirects=False)
+    assert response.status_code == 401
+    assert db.query(Payment).count() == 0
+
+
+def test_parent_link_unavailable_after_payment_or_sales_closed(client, db, buyer, monkeypatch):
+    monkeypatch.setattr(settings, 'public_purchase_enabled', False)
+    response = client.post('/purchase/payment-link')
+    assert response.status_code == 409
+    assert 'error' in response.json()
+    assert db.query(Payment).count() == 0
+    monkeypatch.setattr(settings, 'public_purchase_enabled', True)
+    _settle(db, _payment(db, buyer))
+    assert client.post('/purchase/payment-link').status_code == 409
+    assert db.query(Payment).count() == 1
+
+
+def test_existing_public_link_keeps_old_return(client, db, buyer):
+    payment = _payment(db, buyer)
+    old_link = payment.link_url.replace('/purchase/return', '/purchase')
+    # URL внутри query закодирован urlencode.
+    old_link = old_link.replace('%2Fpurchase%2Freturn', '%2Fpurchase')
+    payment.link_url = old_link
+    db.commit()
+    assert client.post('/purchase/payment-link').json()['url'] == old_link
+    assert db.query(Payment).count() == 1
+
+
+def test_parent_link_replaces_expired_order(client, db, buyer):
+    payment = _payment(db, buyer)
+    payment.link_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+    response = client.post('/purchase/payment-link')
+    assert response.status_code == 200
+    assert response.json()['url'] != payment.link_url
+    db.refresh(payment)
+    assert payment.status == 'cancelled'
+    assert db.query(Payment).count() == 2
 
 
 def test_paid_buyer_can_only_fill_annual_profile_then_get_invitation(client, db, buyer):

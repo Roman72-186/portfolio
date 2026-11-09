@@ -302,7 +302,7 @@ async def security_headers(request: Request, call_next):
     response: Response = await call_next(request)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
 
@@ -323,6 +323,9 @@ async def security_headers(request: Request, call_next):
 @app.middleware("http")
 async def cache_control(request: Request, call_next):
     response: Response = await call_next(request)
+    # Покупка содержит платёжные ссылки: сохраняем явный запрет кэширования роутера.
+    if request.url.path.startswith("/purchase") and "no-store" in response.headers.get("Cache-Control", ""):
+        return response
     # Видео — единственное место, где `no-store` перевешивает bfcache: страница
     # несёт подписанный embed-URL и ФИО с телефоном зрителя в ватермарке, и
     # оставлять её копию в дисковом кэше нельзя. Плата за это — bfcache здесь

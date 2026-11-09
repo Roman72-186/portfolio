@@ -505,9 +505,8 @@ def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink
         thanks = paid_thanks_text(payment.tariff)
         back = f"{base_url}/cabinet/personal"
     if public_purchase:
-        from app.services.public_purchase import AFTER_PAYMENT_TEXT
-        back = f"{base_url}/purchase"
-        thanks = f"Оплата прошла, спасибо!\n{AFTER_PAYMENT_TEXT}"
+        back = f"{base_url}/purchase/return"
+        thanks = "Спасибо за оплату! Ученику нужно открыть свой кабинет на сайте и проверить статус покупки."
     data = {
         "order_id": order_number(payment),
         "products": [{
