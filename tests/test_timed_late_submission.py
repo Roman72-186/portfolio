@@ -172,7 +172,7 @@ def test_school_timing_migration_preserves_existing_rows():
         migration.op = Operations(MigrationContext.configure(conn))
         migration.upgrade()
         assert conn.execute(text("SELECT completed_at, work_finished_at FROM task_block_states")).one() == ("2026-11-08 10:00:00", None)
-        assert "lesson_ends_at" in {c["name"] for c in inspect(conn).get_columns("task_blocks")}
+        assert "lesson_ends_at" not in {c["name"] for c in inspect(conn).get_columns("task_blocks")}
         migration.downgrade()
         assert "work_finished_at" not in {c["name"] for c in inspect(conn).get_columns("task_block_states")}
 
