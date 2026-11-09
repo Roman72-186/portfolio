@@ -129,7 +129,7 @@
        дублирование ради дублирования — это верная логика сама по себе (кнопка
        не нужна после сдачи «До» независимо от судьбы гейта), а не обход
        гейта, поэтому оставлено явным, а не убрано как «мёртвое». #}
-    {% if not user.portfolio_do_completed %}
+    {% if not user.portfolio_do_completed or (portfolio_onboarding and not portfolio_onboarding.expired) %}
     <div class="portfolio-bottom-action">
         <a href="/upload?section=before" class="portfolio-upload-btn">
             <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>

@@ -54,6 +54,21 @@
         {% endif %}
     </div>
 
+    {% if portfolio_onboarding and not archive_view %}
+    <div class="lrn-card" data-role="portfolio-onboarding">
+        <div class="lrn-card-title">Портфолио до обучения</div>
+        {% if portfolio_onboarding.expired %}
+        <p class="lrn-card-note">Окно загрузки закрылось {{ portfolio_onboarding.deadline }} МСК. Если нужно добавить работы, напиши в поддержку.</p>
+        {% elif portfolio_onboarding.started %}
+        <p class="lrn-card-note">Добавлять и удалять непроверенные фото можно до {{ portfolio_onboarding.deadline }} МСК.</p>
+        <a class="btn-blue" href="/upload?section=before">Продолжить загрузку</a>
+        {% else %}
+        <p class="lrn-card-note">Загрузи работы, которые ты сделал до обучения. После открытия формы у тебя будет 72 часа, чтобы добавить фото и исправить загрузку.</p>
+        <a class="btn-blue" href="/upload?section=before">Открыть портфолио</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {# Переключатель направления появляется, только если в этом цикле есть
        деление по предметам (владелец 03.09.2026: «в предыдущих циклах эти
        кнопки не нужны — мы просто не будем ставить разделение, и кнопок в

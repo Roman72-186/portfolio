@@ -741,6 +741,9 @@ def upload_form(
     # Доступ определяет само задание: с 18.09.2026 — сроки его блока
     # «Загрузить портфолио» (`services/portfolio_window.py`).
     mode = _resolve_upload_mode(user, section)
+    if mode == WORK_TYPE_BEFORE:
+        from app.services.portfolio_onboarding import start
+        start(db, user["user_id"])
     window, allowed, window_ctx = _resolve_window(db, user, mode, block)
     # Карточка с крестиками — только при настоящем окне: без него удаление
     # запрещено, и рисовать кнопку, которая ответит отказом, незачем.

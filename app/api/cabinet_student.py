@@ -42,6 +42,7 @@ from app.services import feedback as fb_service
 from app.services.task_block_feedback import list_student_feedback_cards
 from app.services.feature_periods import is_feature_available
 from app.services import s3 as s3_service
+from app.services.portfolio_onboarding import card as portfolio_onboarding_card
 from app.services.upload_validation import read_image_uploads
 from app.services.mock_exam_access import (
     MOCK_EXAM_DURATION_SEC,
@@ -980,6 +981,7 @@ async def cabinet_portfolio(
         "request": request,
         "user": user,
         "can_upload_portfolio_after": bool(portfolio_upload_open),
+        "portfolio_onboarding": portfolio_onboarding_card(db, user["user_id"]),
         "portfolio_before_score": portfolio_before_score,
         "portfolio_before_works": [serialize_work(w) for w in before_works],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],

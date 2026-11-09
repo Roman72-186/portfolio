@@ -36,6 +36,7 @@ from app.dependencies import require_student
 from app.services.cycle_feed import archive_cycle_ids, archive_for_student, feed_for_student
 from app.services import intake_link as intake_link_service
 from app.services.program import item_details
+from app.services.portfolio_onboarding import card as portfolio_onboarding_card
 from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
 from app.constants import SUPPORT_URL
@@ -134,6 +135,7 @@ def cabinet_learning(
         "request": request,
         "user": user,
         "feed": feed,
+        "portfolio_onboarding": portfolio_onboarding_card(db, user["user_id"]),
         "focus_task_id": focus_task_id,
         "focus_subject": focus_subject,
         # Нужен partial'у `partials/task_action.html` у шагов без блоков: без

@@ -21,7 +21,7 @@ from app.models.user import User
 from app.services.cycle_stats import cycle_debtors
 from app.services.tags import add_tag_to_user, get_or_create_tag
 from app.services.tracker import cycle_debt, effective_cycle
-from app.services.tz import today_msk
+from app.services.tz import now_msk, today_msk
 from app.services.video_topics import (
     accessible_topic_ids,
     get_excluded_tag_ids,
@@ -164,7 +164,8 @@ def test_existing_student_login_gets_no_tag(client, db, monkeypatch, user_factor
 
 def test_holiday_newcomer_by_group_link_gets_no_tag(client, db, monkeypatch):
     _enable_telegram_login(monkeypatch)
-    link = _group_link(db)
+    # This tests enrollment, so the intake must still be open on the test date.
+    link = _group_link(db, access_until=now_msk() + timedelta(days=7))
     _mock_callback(client, monkeypatch, intake_slug=link.slug, member=None)
 
     _callback(client)

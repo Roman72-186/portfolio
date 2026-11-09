@@ -49,8 +49,8 @@ SECTION_AFTER = WORK_TYPE_AFTER
 class PortfolioWindow:
     """Одно окно загрузки — один блок «Загрузить портфолио» у ученика."""
 
-    block_id: int
-    task_id: int
+    block_id: int | None
+    task_id: int | None
     section: str
     opens_at: datetime | None
     closes_at: datetime | None
@@ -212,6 +212,20 @@ def snapshot(
     section: str | None = None,
     preferred_block_id: int | None = None,
 ) -> WindowSnapshot:
+    # Paid newcomer admission is authoritative for Before: weekly blocks and
+    # the legacy "no blocks" fallback must not extend these 72 hours.
+    if section in (None, SECTION_BEFORE):
+        from app.services.portfolio_onboarding import window
+        admission = window(db, user_id)
+        if admission is not None:
+            return WindowSnapshot(
+                open=admission if admission.is_open else None,
+                last_closed=(
+                    admission if admission.closes_at is not None
+                    and admission.closes_at <= now_msk() else None
+                ),
+                any_exists=True,
+            )
     windows = portfolio_windows(
         db,
         user_id=user_id,

@@ -95,3 +95,4 @@ from app.models.tracker import (
     TrackerTaskTag,
 )
 from app.models.vpn_key import VpnKey
+from app.models.portfolio_onboarding import PortfolioOnboarding

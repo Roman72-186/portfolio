@@ -355,8 +355,17 @@ def build_cycle_feed(
         and (block.id not in states or states[block.id].status != STATUS_DONE)
     ]
     closed_upload = False
+    from app.services.portfolio_onboarding import uploaded as onboarding_uploaded
+    managed_portfolio_done = onboarding_uploaded(db, user_id) if any(
+        block.block_type == BLOCK_PORTFOLIO for block in ordered_blocks
+    ) else None
     for block in pending_uploads:
         state = states.get(block.id)
+        if managed_portfolio_done is not None:
+            if managed_portfolio_done:
+                close_block_for_user(db, block=block, user_id=user_id, source="portfolio_upload")
+                closed_upload = True
+            continue
         # Для персонального окна работа, загруженная до его старта, не может
         # закрыть новый шаг. Первый показ ниже создаст started_at; со
         # следующего запроса считаем только более свежие загрузки.
@@ -464,6 +473,7 @@ def build_cycle_feed(
                 accessible
                 and block.block_type == BLOCK_PORTFOLIO
                 and block.portfolio_window_hours
+                and managed_portfolio_done is None
             ):
                 was_started = state is not None and state.started_at is not None
                 state = start_portfolio_window(

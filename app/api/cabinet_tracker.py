@@ -586,6 +586,10 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
     state = get_task_block_state(db, block_id=block.id, user_id=user_id)
     if state is not None and state.status == STATUS_DONE:
         return True
+    from app.services.portfolio_onboarding import uploaded as onboarding_uploaded
+    managed_done = onboarding_uploaded(db, user_id)
+    if managed_done is not None:
+        return managed_done
     if block.portfolio_window_hours and (state is None or state.started_at is None):
         return False
     task = db.get(TrackerTask, block.task_id)

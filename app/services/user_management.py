@@ -292,6 +292,8 @@ def tag_annual_newcomer(db: DBSession, user: User) -> None:
         db.flush()
     tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
     add_tag_to_user(db, user.id, tag.id)
+    from app.services.portfolio_onboarding import ensure_candidate
+    ensure_candidate(db, user)
 
 
 def move_to_annual(db: DBSession, performed_by_id: int, student: User, reason: str) -> bool:

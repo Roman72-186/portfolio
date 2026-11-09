@@ -1039,6 +1039,9 @@ def record_paid(
         )
         extended += f", тариф {_tariff_name(tariff_from) or '—'} → {_tariff_name(user.tariff)}"
 
+    from app.services.portfolio_onboarding import grant_after_payment
+    grant_after_payment(db, payment, new_enrollment=public_initial or moved_to_annual)
+
     db.add(AuditLog(
         action="payment_paid",
         performed_by_id=performed_by_id,
