@@ -144,12 +144,18 @@ def broadcast_audience(
     levels: Annotated[list[str], Query()] = [],
     students: str = "",
     excluded: str = "",
+    assignment_block_id: str = "",
+    assignment_status: str = "",
 ):
     """Живой счётчик под выбором: сколько получат и сколько не дойдёт."""
-    audience = bc.normalize_audience(
-        db, tariffs=tariffs, levels=levels, user_ids=[s for s in students.split(",") if s],
-        excluded_ids=[s for s in excluded.split(",") if s],
-    )
+    try:
+        audience = bc.normalize_audience(
+            db, tariffs=tariffs, levels=levels, user_ids=[s for s in students.split(",") if s],
+            excluded_ids=[s for s in excluded.split(",") if s],
+            assignment_block_id=assignment_block_id, assignment_status=assignment_status,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     users = bc.audience_users(db, audience)
     summary = bc.summarize(users)
     return JSONResponse({
@@ -227,6 +233,8 @@ def broadcast_screen(
         "levels": bc.LEVELS,
         "point_a_level_2_min": POINT_A_LEVEL_2_MIN_AVERAGE,
         "students": bc.student_choices(db),
+        "assignments": bc.assignment_choices(db),
+        "assignment_statuses": bc.ASSIGNMENT_STATUSES,
         "chosen_student_ids": sorted(audience.user_ids),
         "excluded_student_ids": sorted(audience.excluded_ids),
         "summary": summary,
@@ -292,6 +300,8 @@ async def broadcast_save(
     levels: Annotated[list[str], Form()] = [],
     student_ids: Annotated[str, Form()] = "",
     excluded_ids: Annotated[str, Form()] = "",
+    assignment_block_id: Annotated[str, Form()] = "",
+    assignment_status: Annotated[str, Form()] = "",
     remove_media: Annotated[str, Form()] = "",
     action: Annotated[str, Form()] = "save",
     preview_to: Annotated[str, Form()] = "",
@@ -367,12 +377,21 @@ async def broadcast_save(
     broadcast.schedule_mode = mode
     broadcast.scheduled_at = moment
 
-    audience = bc.normalize_audience(
-        db, tariffs=tariffs, levels=levels,
-        user_ids=[s for s in student_ids.split(",") if s.strip()],
-        excluded_ids=[s for s in excluded_ids.split(",") if s.strip()],
-    )
-    bc.save_audience(db, broadcast, audience)
+    try:
+        audience = bc.normalize_audience(
+            db, tariffs=tariffs, levels=levels,
+            user_ids=[s for s in student_ids.split(",") if s.strip()],
+            excluded_ids=[s for s in excluded_ids.split(",") if s.strip()],
+            assignment_block_id=assignment_block_id, assignment_status=assignment_status,
+        )
+    except ValueError as exc:
+        # Невалидный фильтр не расширяет аудиторию. Текст сохраняем,
+        # прежний выбор оставляем и требуем новую проверку.
+        errors.append(str(exc))
+        audience = bc.get_audience(db, broadcast.id)
+        bc.invalidate_preview(broadcast)
+    else:
+        bc.save_audience(db, broadcast, audience)
     db.flush()
     if moment is not None:
         # Прошедшее время — сразу при сохранении, а не только на проверке.

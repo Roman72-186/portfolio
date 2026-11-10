@@ -108,7 +108,18 @@ class Broadcast(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ID сохраняется и после удаления блока: потеря задания не должна
+    # отключить фильтр и расширить рассылку на весь тариф.
+    assignment_block_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assignment_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     __table_args__ = (
+        CheckConstraint(
+            "(assignment_block_id IS NULL AND assignment_status IS NULL) OR "
+            "(assignment_block_id IS NOT NULL AND assignment_block_id > 0 AND "
+            "assignment_status IS NOT NULL AND assignment_status IN ('submitted', 'not_submitted'))",
+            name="ck_broadcasts_assignment_filter",
+        ),
         CheckConstraint(
             "status IN ('draft', 'scheduled', 'sending', 'sent')", name="ck_broadcasts_status",
         ),

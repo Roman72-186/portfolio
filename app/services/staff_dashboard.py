@@ -348,6 +348,7 @@ _ATTENDANCE_NOTES = {
 
 def _assignment_activity(
     db: DBSession, students: list[User], *, theory: bool = False, links: bool = False,
+    block_id: int | None = None,
 ) -> list[dict]:
     """Открытые блоки сдачи работы (домашка и контрольная на время): кому
     положено сдавать, кто сдал, а у несдавших — прошёл ли срок.
@@ -405,6 +406,7 @@ def _assignment_activity(
         .outerjoin(LearningTopic, TrackerTask.topic_id == LearningTopic.id)
         .filter(
             *kind_filter,
+            *([TaskBlock.id == block_id] if block_id is not None else []),
             TrackerTask.is_published.is_(True),
             TrackerTask.deleted_at.is_(None),
             or_(TrackerTask.starts_at.is_(None), TrackerTask.starts_at <= now),
@@ -420,7 +422,9 @@ def _assignment_activity(
     if not candidates:
         return []
 
-    learners = program_learners(program_students(db, now))
+    # Редактор рассылки запрашивает названия работ без учеников.
+    # В таком режиме не читаем школьную аудиторию и историю сдач.
+    learners = program_learners(program_students(db, now)) if students else {}
     # Строки таблицы — свои у сводки; адресат без строки в списке не нужен.
     reachable = learners.keys() & {student.id for student in students}
     block_ids = [block.id for block, _ in candidates]
@@ -438,14 +442,15 @@ def _assignment_activity(
     task_deadlines = get_task_submit_deadlines(db, task_ids)
     # Срок цикла — запасной срок отметки «Сдал после срока» (06.10.2026).
     cycle_deadline = cycle_deadline_lookup(db, {task.topic_id for _, task in candidates})
-    audience = {task_id: task_audience_user_ids(db, task_id) & reachable for task_id in task_ids}
+    audience = {task_id: task_audience_user_ids(db, task_id) & reachable if reachable else set()
+                for task_id in task_ids}
     done = {
         (state.block_id, state.user_id): state
         for state in db.query(TaskBlockState).filter(
             TaskBlockState.block_id.in_(block_ids),
             TaskBlockState.status == STATUS_DONE,
         )
-    } if not links else {}
+    } if not links and reachable else {}
     # «Был на занятии» — нажал кнопку или отметил преподаватель
     # (`meeting_joins.attendance_by_block`, Александрия и владелец 27.10.2026).
     attendance = attendance_by_block(db, block_ids) if links else {}

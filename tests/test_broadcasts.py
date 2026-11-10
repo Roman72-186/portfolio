@@ -285,6 +285,179 @@ def _save(client, bid, *, action="save", files=None, **form):
     return client.post(f"/cabinet/staff/broadcasts/{bid}", data=data, files=files, follow_redirects=False)
 
 
+@pytest.fixture()
+def assignment(db):
+    from app.models.task_block import TaskBlock
+    from app.models.tracker import TrackerTask
+
+    task = TrackerTask(title="Неделя 2", kind="material", is_published=True, assign_to_all=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload", title="Рисунок")
+    db.add(block)
+    db.commit()
+    return task, block
+
+
+def test_assignment_filter_matches_statistics_and_intersects_named_students(db, student, assignment):
+    from app.models.task_block import TaskBlockState, TaskBlockTariff
+    from app.services.staff_dashboard import _assignment_activity
+
+    task, block = assignment
+    done = student(chat=101)
+    pending = student(chat=102)
+    started = student(chat=103)
+    wrong_tariff = student(tariff="Я САМ", chat=104)
+    excluded = student(chat=105)
+    student(chat=106, is_active=False)
+    student(chat=107, access_until=datetime.now(timezone.utc) - timedelta(days=1))
+    student(chat=108, is_group_member=False)
+    student(chat=109, archived_at=datetime.now(timezone.utc))
+    db.add(TaskBlockTariff(block_id=block.id, tariff="Я С ВАМИ"))
+    db.add_all([
+        TaskBlockState(block_id=block.id, user_id=done.id, status="done"),
+        TaskBlockState(block_id=block.id, user_id=started.id, status="open"),
+    ])
+    db.commit()
+
+    def audience(status):
+        return bc.normalize_audience(
+            db, tariffs=["Я С ВАМИ"], levels=[], user_ids=[wrong_tariff.id, done.id],
+            excluded_ids=[excluded.id], assignment_block_id=block.id, assignment_status=status,
+        )
+
+    assert {u.id for u in bc.audience_users(db, audience("submitted"))} == {done.id}
+    assert {u.id for u in bc.audience_users(db, audience("not_submitted"))} == {pending.id, started.id}
+    stats = _assignment_activity(db, list(bc._students(db)), block_id=block.id)[0]
+    assert set(stats["eligible"]) - set(stats["submitted"]) - {excluded.id} == {pending.id, started.id}
+    # Само задание достаточно для выбора аудитории, тариф необязателен.
+    only_task = bc.normalize_audience(db, tariffs=[], levels=[], user_ids=[],
+                                     assignment_block_id=block.id, assignment_status="submitted")
+    assert only_task.has_selection
+    assert {u.id for u in bc.audience_users(db, only_task)} == {done.id}
+
+
+@pytest.mark.parametrize("unavailable", ["deleted", "unpublished", "future_task", "future_block", "removed"])
+def test_saved_assignment_filter_never_widens_when_unavailable(db, student, assignment, unavailable):
+    task, block = assignment
+    student(chat=101)
+    audience = bc.normalize_audience(db, tariffs=["Я С ВАМИ"], levels=[], user_ids=[],
+                                     assignment_block_id=block.id, assignment_status="not_submitted")
+    if unavailable == "deleted":
+        task.deleted_at = datetime.now(timezone.utc)
+    elif unavailable == "unpublished":
+        task.is_published = False
+    elif unavailable == "future_task":
+        task.starts_at = datetime.now(timezone.utc) + timedelta(days=1)
+    elif unavailable == "future_block":
+        block.opens_at = datetime.now(timezone.utc) + timedelta(days=1)
+    else:
+        db.delete(block)
+    db.commit()
+    assert bc.audience_users(db, audience) == []
+
+
+def test_assignment_filter_saved_previewed_and_sent(gp_client, db, student, assignment, fake_tg):
+    from app.models.task_block import TaskBlockState
+
+    client, _ = gp_client
+    task, block = assignment
+    done, pending = student(chat=101), student(chat=102)
+    db.add(TaskBlockState(block_id=block.id, user_id=done.id, status="done"))
+    db.commit()
+    bid = _create(client)
+    fields = {"tariffs": [], "assignment_block_id": str(block.id), "assignment_status": "not_submitted"}
+    response = _save(client, bid, action="preview", **fields)
+    assert response.headers["location"].endswith("ok=preview")
+    db.expire_all()
+    audience = bc.get_audience(db, bid)
+    assert (audience.assignment_block_id, audience.assignment_status) == (block.id, "not_submitted")
+    assert "Рисунок" in bc.audience_text(audience)
+    screen = client.get(f"/cabinet/staff/broadcasts/{bid}")
+    assert screen.status_code == 200
+    assert 'name="assignment_block_id"' in screen.text and "Статус сдачи" in screen.text
+    summary = client.get("/cabinet/staff/broadcasts/audience", params=fields)
+    assert summary.json()["total"] == 1
+
+    _save(client, bid, **dict(fields, assignment_status="submitted"))
+    db.expire_all()
+    assert not bc.preview_is_current(db, db.get(Broadcast, bid))
+    _save(client, bid, action="preview", **fields)
+    response = client.post(f"/cabinet/staff/broadcasts/{bid}/send", follow_redirects=False)
+    assert response.headers["location"].endswith("ok=sending")
+    assert fake_tg.to(101) == [] and len(fake_tg.to(102)) == 1
+
+
+@pytest.mark.parametrize("fields", [
+    {"assignment_block_id": "garbage", "assignment_status": "not_submitted"},
+    {"assignment_block_id": "999999", "assignment_status": "not_submitted"},
+    {"assignment_block_id": "", "assignment_status": "submitted"},
+    {"assignment_block_id": "1", "assignment_status": "invalid"},
+])
+def test_invalid_assignment_preserves_saved_audience_and_text(gp_client, db, assignment, fields):
+    client, _ = gp_client
+    _, block = assignment
+    bid = _create(client)
+    _save(client, bid, assignment_block_id=str(block.id), assignment_status="not_submitted")
+    response = _save(client, bid, text="Сохранить текст", **fields)
+    assert "error=" in response.headers["location"]
+    db.expire_all()
+    broadcast = db.get(Broadcast, bid)
+    assert broadcast.text == "Сохранить текст"
+    assert (broadcast.assignment_block_id, broadcast.assignment_status) == (block.id, "not_submitted")
+    assert client.get("/cabinet/staff/broadcasts/audience", params=fields).status_code == 400
+
+
+def test_scheduled_assignment_rechecks_submission_at_start(gp_client, db, student, assignment, fake_tg):
+    from app.models.task_block import TaskBlockState
+
+    client, _ = gp_client
+    _, block = assignment
+    finished_later, pending = student(chat=101), student(chat=102)
+    bid = _create(client)
+    _save(client, bid, action="preview", assignment_block_id=str(block.id),
+          assignment_status="not_submitted", schedule_mode="msk",
+          scheduled_at=_msk_input(timedelta(hours=2)))
+    response = client.post(f"/cabinet/staff/broadcasts/{bid}/send", follow_redirects=False)
+    assert response.headers["location"].endswith("ok=scheduled")
+    db.add(TaskBlockState(block_id=block.id, user_id=finished_later.id, status="done"))
+    db.commit()
+    db.expire_all()
+    broadcast = db.get(Broadcast, bid)
+    assert bc.fire_scheduled(db, now=broadcast.fire_at + timedelta(seconds=1)) == [bid]
+    assert {r.user_id for r in db.query(BroadcastRecipient).filter_by(broadcast_id=bid)} == {pending.id}
+
+
+def test_assignment_migration_roundtrip_preserves_existing_broadcasts():
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.exc import IntegrityError
+
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/f6a91d2c870b_broadcast_assignment_filter.py"
+    spec = importlib.util.spec_from_file_location("assignment_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE broadcasts (id INTEGER PRIMARY KEY, text TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO broadcasts (id, text) VALUES (1, 'existing')"))
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        assert connection.execute(text("SELECT text, assignment_block_id, assignment_status FROM broadcasts")).one() == ("existing", None, None)
+        for invalid in ["NULL, 'submitted'", "1, NULL", "1, 'unknown'", "-1, 'submitted'"]:
+            with pytest.raises(IntegrityError):
+                connection.execute(text(f"INSERT INTO broadcasts (text, assignment_block_id, assignment_status) VALUES ('bad', {invalid})"))
+        migration.downgrade()
+        assert {c["name"] for c in inspect(connection).get_columns("broadcasts")} == {"id", "text"}
+        assert connection.execute(text("SELECT text FROM broadcasts WHERE id = 1")).scalar_one() == "existing"
+        migration.upgrade()
+        assert "assignment_block_id" in {c["name"] for c in inspect(connection).get_columns("broadcasts")}
+    engine.dispose()
+
+
 def test_full_flow_preview_then_send(gp_client, db, student, fake_tg):
     client, gp = gp_client
     reachable = student(chat=101)

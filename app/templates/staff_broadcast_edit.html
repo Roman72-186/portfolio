@@ -178,7 +178,7 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                 </div>
                 <div class="prg-setting-item">
                     <p class="prg-settings-title">Ученики поимённо</p>
-                    <p class="prg-hint">Получат при любом тарифе и уровне. Можно выбрать одного человека
+                    <p class="prg-hint">Получат при любом тарифе и уровне, если подходят под фильтр сдачи. Можно выбрать одного человека
                         или вставить список ников: @ivanov @petrova.</p>
                     <div class="prg-blk-students" data-bc-students>
                         <input type="search" data-bc-student-search autocomplete="off"
@@ -200,13 +200,39 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
                         <input type="hidden" name="excluded_ids" value="{{ excluded_student_ids|join(',') }}" data-bc-student-ids>
                     </div>
                 </div>
+                <div class="prg-setting-item">
+                    <label class="prg-field">
+                        <span class="prg-settings-title">Задание</span>
+                        <select name="assignment_block_id" data-bc-audience>
+                            <option value="">Без фильтра по заданию</option>
+                            {% if audience.assignment_block_id and audience.assignment_block_id not in assignments|map(attribute='id')|list %}
+                            <option value="{{ audience.assignment_block_id }}" selected>{{ audience.assignment_label or 'Недоступная работа' }} · №{{ audience.assignment_block_id }} (недоступна)</option>
+                            {% endif %}
+                            {% for assignment in assignments %}
+                            <option value="{{ assignment.id }}" {{ 'selected' if audience.assignment_block_id == assignment.id }}>{{ assignment.label }} · №{{ assignment.id }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="prg-field">
+                        <span>Статус сдачи</span>
+                        <select name="assignment_status" data-bc-audience>
+                            <option value="">Выберите статус</option>
+                            {% for value, label in assignment_statuses.items() %}
+                            <option value="{{ value }}" {{ 'selected' if audience.assignment_status == value }}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <p class="prg-hint">Как в статистике: только ученики, которым доступна выбранная работа.
+                        Частично загруженная работа считается несданной. Тариф можно оставить пустым.
+                        Список пересчитается при старте рассылки; по часам учеников – перед первой отправкой.</p>
+                </div>
             </fieldset>
             <p class="bc-summary" data-bc-summary aria-live="polite">
                 {% if summary.total %}
                 Получат {{ summary.reachable }} из {{ summary.total }}.
                 {% if summary.no_telegram %}Не подключили бота: {{ summary.no_telegram }}.{% endif %}
                 {% if summary.notifications_off %}Выключили уведомления: {{ summary.notifications_off }}.{% endif %}
-                {% elif audience.is_everyone %}
+                {% elif not audience.has_selection %}
                 Пока никого не выбрано.
                 {% else %}
                 Под этот выбор не подходит ни один ученик.
@@ -308,5 +334,5 @@ Telegram → отправка. Правила — `services/broadcasts.py`.
 
 <script type="application/json" id="bc-students">{{ students|tojson }}</script>
 <script src="/static/js/media-recorder-field.js?v=10"></script>
-<script src="/static/js/broadcasts.js?v=8"></script>
+<script src="/static/js/broadcasts.js?v=9"></script>
 {% endblock %}

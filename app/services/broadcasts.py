@@ -20,6 +20,13 @@
 же объекте выбора, поэтому счётчик, проверка, отпечаток, журнал и
 запланированный старт видят его без отдельных вызовов.
 
+**Сдача работы** (10.11.2026) — пересечение с фильтром статистики
+`staff_dashboard._assignment_activity`: выбран конкретный блок сдачи,
+«Сдали» или «Не сдали». Поимённое включение это условие не обходит.
+Фильтра работы достаточно и без тарифа. Неадресаты не считаются несдавшими.
+Удалённая/закрытая работа даёт пустую аудиторию, не снимает фильтр.
+Список пересчитывается при старте (`fire_at`), до первой часовой волны.
+
 Не получают никак: заблокированные, архив, удалённые и ученики с закрытым по
 сроку кабинетом (`access_state.access_expired` — то же правило, что у входа и
 напоминаний).
@@ -84,15 +91,23 @@ from app.services.task_blocks import BlockAudience, BlockViewer, is_block_open_t
 from app.services.tz import MSK_TZ, msk_text
 
 LEVELS = (1, 2)
+ASSIGNMENT_STATUSES = {"submitted": "Сдали", "not_submitted": "Не сдали"}
 
 
 @dataclass(frozen=True)
 class BroadcastAudience(BlockAudience):
     """Выбор получателей рассылки: тройка блока плюс исключённые поимённо.
-    Сами исключённые выбором не считаются — «никого не выбрано, кроме @x»
-    по-прежнему никого (`is_everyone`)."""
+    Сами исключённые выбором не считаются. `has_selection` учитывает и
+    фильтр сдачи, `is_everyone` сохраняет семантику базовых осей блока."""
 
     excluded_ids: frozenset[int] = frozenset()
+    assignment_block_id: int | None = None
+    assignment_status: str | None = None
+    assignment_label: str = ""
+
+    @property
+    def has_selection(self) -> bool:
+        return not self.is_everyone or self.assignment_block_id is not None
 
 # Лимиты Telegram: текст сообщения и подпись к фото или голосовому. Считает
 # Telegram в UTF-16 и без разметки — так же считает `visible_length`. У
@@ -324,6 +339,7 @@ def text_problem(broadcast: Broadcast) -> str | None:
 
 
 def get_audience(db: DBSession, broadcast_id: int) -> BroadcastAudience:
+    broadcast = db.get(Broadcast, broadcast_id)
     tariffs = {
         row[0] for row in
         db.query(BroadcastTariff.tariff).filter(BroadcastTariff.broadcast_id == broadcast_id)
@@ -344,6 +360,9 @@ def get_audience(db: DBSession, broadcast_id: int) -> BroadcastAudience:
     return BroadcastAudience(
         tariffs=frozenset(tariffs), levels=frozenset(levels), user_ids=frozenset(user_ids),
         excluded_ids=frozenset(excluded),
+        assignment_block_id=broadcast.assignment_block_id if broadcast else None,
+        assignment_status=broadcast.assignment_status if broadcast else None,
+        assignment_label=assignment_label(db, broadcast.assignment_block_id) if broadcast else "",
     )
 
 
@@ -365,6 +384,7 @@ def _student_ids(db: DBSession, raw) -> frozenset[int]:
 def normalize_audience(
     db: DBSession, *, tariffs: list[str], levels: list, user_ids: list,
     excluded_ids: list = (),
+    assignment_block_id: str | int | None = None, assignment_status: str | None = None,
 ) -> BroadcastAudience:
     """Выбор с формы → проверенные значения. Чужое отбрасывается молча: тариф
     не из `TARIFFS`, уровень не 1/2, id не действующего ученика. Ученик и в
@@ -379,13 +399,28 @@ def normalize_audience(
         if value in LEVELS:
             clean_levels.add(value)
     excluded = _student_ids(db, excluded_ids)
+    block_id = None
+    status = assignment_status or None
+    if assignment_block_id or status:
+        try:
+            block_id = int(assignment_block_id)
+        except (TypeError, ValueError):
+            raise ValueError("Выберите задание для фильтра сдачи") from None
+        if block_id <= 0 or not assignment_label(db, block_id):
+            raise ValueError("Задание недоступно: выберите другую работу")
+        if status not in ASSIGNMENT_STATUSES:
+            raise ValueError("Выберите, кому отправить: сдали или не сдали")
     return BroadcastAudience(
         tariffs=clean_tariffs, levels=frozenset(clean_levels),
         user_ids=_student_ids(db, user_ids) - excluded, excluded_ids=excluded,
+        assignment_block_id=block_id, assignment_status=status,
+        assignment_label=assignment_label(db, block_id),
     )
 
 
 def save_audience(db: DBSession, broadcast: Broadcast, audience: BroadcastAudience) -> None:
+    broadcast.assignment_block_id = audience.assignment_block_id
+    broadcast.assignment_status = audience.assignment_status
     for model in (BroadcastTariff, BroadcastLevel, BroadcastStudent, BroadcastExcludedStudent):
         db.query(model).filter(model.broadcast_id == broadcast.id).delete(synchronize_session=False)
     for tariff in sorted(audience.tariffs):
@@ -412,9 +447,34 @@ def _students(db: DBSession):
     )
 
 
+def assignment_label(db: DBSession, block_id: int | None) -> str:
+    """Название для сохранённого фильтра; удалённый блок не снимает фильтр."""
+    from app.models.task_block import TaskBlock, SUBMISSION_BLOCK_TYPES
+    from app.models.tracker import TrackerTask
+
+    if block_id is None:
+        return ""
+    row = (db.query(TaskBlock, TrackerTask)
+           .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
+           .filter(TaskBlock.id == block_id, TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),
+                   TrackerTask.deleted_at.is_(None), TrackerTask.is_published.is_(True)).first())
+    if row is None:
+        return ""
+    block, task = row
+    return f"{task.title} · {block.title}" if block.title and block.title != task.title else task.title
+
+
+def assignment_choices(db: DBSession) -> list[dict]:
+    # Тот же набор работ и названия, что у фильтра «Сдали / Не сдали».
+    from app.services.staff_dashboard import _assignment_activity
+
+    return [{"id": row["id"], "label": row["label"]}
+            for row in _assignment_activity(db, [])]
+
+
 def audience_users(db: DBSession, audience: BroadcastAudience) -> list[User]:
     """Кто получит рассылку при таком выборе. Пустой выбор — никто."""
-    if audience.is_everyone:
+    if not audience.has_selection:
         return []
     now = datetime.now(timezone.utc)
     chosen: list[User] = []
@@ -427,6 +487,17 @@ def audience_users(db: DBSession, audience: BroadcastAudience) -> list[User]:
         viewer = BlockViewer(db, user_id=user.id, tariff=user.tariff)
         if is_block_open_to(audience, viewer):
             chosen.append(user)
+    if audience.assignment_block_id is not None:
+        from app.services.staff_dashboard import _assignment_activity
+
+        rows = _assignment_activity(db, chosen, block_id=audience.assignment_block_id)
+        if not rows or audience.assignment_status not in ASSIGNMENT_STATUSES:
+            return []
+        row = rows[0]
+        allowed = set(row["submitted"])
+        if audience.assignment_status == "not_submitted":
+            allowed = set(row["eligible"]) - allowed
+        chosen = [user for user in chosen if user.id in allowed]
     return chosen
 
 
@@ -541,6 +612,10 @@ def _listed(ids: frozenset[int], names: dict[int, str] | None) -> str:
 def audience_text(audience: BroadcastAudience, names: dict[int, str] | None = None) -> str:
     """Выбор словами — для проверки у преподавателя и журнала."""
     text = _chosen_text(audience, names)
+    if audience.assignment_block_id is not None:
+        selection = (audience.assignment_label or f"Недоступная работа №{audience.assignment_block_id}")
+        filtered = f"{selection}: {ASSIGNMENT_STATUSES.get(audience.assignment_status, 'неизвестный статус')}"
+        text = filtered if audience.is_everyone else f"{text}; {filtered}"
     if audience.excluded_ids:
         text += f"; кроме {len(audience.excluded_ids)}{_listed(audience.excluded_ids, names)}"
     return text
@@ -599,6 +674,8 @@ def fingerprint(broadcast: Broadcast, audience: BroadcastAudience) -> str:
     # в силе после выкатки.
     if audience.excluded_ids:
         parts.append("-" + ",".join(str(uid) for uid in sorted(audience.excluded_ids)))
+    if audience.assignment_block_id is not None:
+        parts.append(f"assignment:{audience.assignment_block_id}:{audience.assignment_status}")
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -677,7 +754,7 @@ def _ready(db: DBSession, broadcast_id: int) -> tuple[Broadcast, list[User]]:
     if broadcast.status != STATUS_DRAFT:
         raise SendRefused("Эта рассылка уже отправлена")
     audience = get_audience(db, broadcast.id)
-    if audience.is_everyone:
+    if not audience.has_selection:
         raise SendRefused("Не выбрано, кому отправить")
     if not (broadcast.text or broadcast.media_kind):
         raise SendRefused("Сообщение пустое")

@@ -222,7 +222,7 @@ def _load_preview(broadcast_id: int, sender_id: int, target_id: int | None) -> _
         if problem:
             return problem
         audience = bc.get_audience(db, broadcast.id)
-        if audience.is_everyone:
+        if not audience.has_selection:
             return "Не выбрано, кому отправить"
         target = bc.preview_target(db, sender_id, target_id)
         if target is None:

@@ -443,8 +443,18 @@
     var summaryTimer = null;
     var eastOffset = Number(form.getAttribute('data-east-offset')) || 0;
     var summarySeq = 0;
+    var assignmentField = form.querySelector('[name="assignment_block_id"]');
+    var assignmentStatus = form.querySelector('[name="assignment_status"]');
+
+    function syncAssignment() {
+        if (!assignmentField || !assignmentStatus) return;
+        assignmentStatus.disabled = !assignmentField.value;
+        if (!assignmentField.value) assignmentStatus.value = '';
+    }
+    syncAssignment();
 
     function scheduleSummary() {
+        summarySeq++;
         window.clearTimeout(summaryTimer);
         summaryTimer = window.setTimeout(loadSummary, 300);
     }
@@ -455,18 +465,22 @@
         form.querySelectorAll('input[name="levels"]:checked').forEach(function (el) { params.append('levels', el.value); });
         params.set('students', idsField.value || '');
         if (excludedField) params.set('excluded', excludedField.value || '');
+        if (assignmentField) params.set('assignment_block_id', assignmentField.value);
+        if (assignmentStatus) params.set('assignment_status', assignmentStatus.value);
         var seq = ++summarySeq;
         summary.textContent = 'Считаю…';
         fetch(audienceUrl + '?' + params.toString(), {
             credentials: 'same-origin', headers: {'Accept': 'application/json'}
         }).then(function (resp) {
-            if (!resp.ok) throw new Error('audience');
-            return resp.json();
+            return resp.json().then(function (data) {
+                if (!resp.ok) throw new Error(data.error || 'Не удалось посчитать получателей');
+                return data;
+            });
         }).then(function (data) {
             if (seq !== summarySeq) return;
             if (!data.total) {
                 var chosenAny = params.getAll('tariffs').length || params.getAll('levels').length
-                    || (idsField.value || '').length;
+                    || (idsField.value || '').length || params.get('assignment_block_id');
                 summary.textContent = chosenAny
                     ? 'Под этот выбор не подходит ни один ученик.'
                     : 'Пока никого не выбрано.';
@@ -477,8 +491,8 @@
             if (data.no_telegram) text += ' Не подключили бота: ' + data.no_telegram + '.';
             if (data.notifications_off) text += ' Выключили уведомления: ' + data.notifications_off + '.';
             summary.textContent = text;
-        }).catch(function () {
-            if (seq === summarySeq) summary.textContent = 'Не удалось посчитать — сохраните, число появится после.';
+        }).catch(function (error) {
+            if (seq === summarySeq) summary.textContent = error.message || 'Не удалось посчитать получателей';
         });
     }
 
@@ -490,6 +504,10 @@
     }
 
     form.addEventListener('change', function (event) {
+        if (event.target === assignmentField) {
+            if (assignmentField.value && !assignmentStatus.value) assignmentStatus.value = 'not_submitted';
+            syncAssignment();
+        }
         if (event.target && event.target.hasAttribute('data-bc-audience')) scheduleSummary();
         if (event.target && event.target.hasAttribute('data-bc-when')) syncWhen();
     });
@@ -556,11 +574,14 @@
             }
         }
 
+        if (assignmentField && assignmentField.value && !assignmentStatus.value) {
+            list.push('Выберите, кому отправить: сдали или не сдали');
+        }
         if (action === 'preview') {
             if (!hasMessage()) list.push('Сообщение пустое: добавьте текст или вложение');
             var chosenAny = form.querySelector('input[name="tariffs"]:checked')
                 || form.querySelector('input[name="levels"]:checked')
-                || (idsField.value || '').length;
+                || (idsField.value || '').length || (assignmentField && assignmentField.value);
             if (!chosenAny) list.push('Не выбрано, кому отправить');
         }
         return list;
