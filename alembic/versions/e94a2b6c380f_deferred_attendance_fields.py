@@ -6,7 +6,8 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "e94a2b6c380f"
-down_revision = "b72e8a4c190f"
+# Attendance is still deferred; the released broadcast filter precedes it.
+down_revision = "f6a91d2c870b"
 branch_labels = None
 depends_on = None
 
