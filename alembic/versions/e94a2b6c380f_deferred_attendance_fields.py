@@ -7,7 +7,7 @@ import sqlalchemy as sa
 
 revision = "e94a2b6c380f"
 # Attendance is still deferred; the released broadcast filter precedes it.
-down_revision = "f6a91d2c870b"
+down_revision = "c82e1d6b904a"
 branch_labels = None
 depends_on = None
 

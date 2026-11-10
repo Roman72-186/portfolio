@@ -1617,7 +1617,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.body = (item.get("body") or "").strip() or None
         # Специализированные поля чистим у чужих типов: блок могли переключить
         # с видео на текст, и старый video_id тянул бы за собой плеер.
-        row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
+        # The homework editor has no video picker. Preserve instructions on
+        # converted portfolio blocks when that editor omits the field.
+        # BlockItem.model_dump() also inserts video_id=None for omitted fields.
+        if block_type != BLOCK_PHOTO_UPLOAD or item.get("video_id") is not None:
+            row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
         is_media = block_type == BLOCK_MEDIA
         row.media_kind = item.get("media_kind") if is_media else None

@@ -254,7 +254,7 @@ LATE_SUBMISSION_BLOCK_TYPES = SUBMISSION_BLOCK_TYPES + (
 #
 # VIDEO_BLOCK_TYPES читает и `video_catalog`: ролик в любом из этих блоков
 # открывается ученику по доступу к блоку, а не по правилу «без темы — всем».
-VIDEO_BLOCK_TYPES = (BLOCK_VIDEO, BLOCK_PORTFOLIO)
+VIDEO_BLOCK_TYPES = (BLOCK_VIDEO, BLOCK_PORTFOLIO, BLOCK_PHOTO_UPLOAD)
 # BLOCK_TIMED — фото к условию контрольной (владелец 02.10.2026), ученику
 # отдаются только после «Начать работу», как и само условие.
 IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_COMPARE, BLOCK_TIMED)
@@ -489,6 +489,9 @@ class TaskBlock(Base):
     # N из N: до этого `submitted_at` пуст, блок не закрыт, проверяющий её не
     # видит. NULL — прежнее правило: до MAX_SUBMISSION_IMAGES, сдано с первого.
     required_photos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Optional caption for the existing homework upload form.
+    upload_button_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # «Настройка диалога» (владелец 01.10.2026): сколько сообщений ученик
     # может отправить в диалоге обратной связи по своей сдаче. Считаются только

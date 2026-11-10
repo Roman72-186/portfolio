@@ -903,6 +903,11 @@ scope)` и свойством `answered` (одна попытка: после о
             // работы» и у «Работы на время» — механика приёма у них общая.
             function uploadForm(block) {
                 var wrap = el('div', 'lrn-blk-upload');
+                if (block.legacy_portfolio_url) {
+                    var prior = el('a', 'btn-outline', 'Открыть ранее загруженные работы');
+                    prior.href = block.legacy_portfolio_url;
+                    wrap.appendChild(prior);
+                }
                 var gallery = submittedGallery(block);
                 if (gallery) wrap.appendChild(gallery);
                 if (block.submitted_comment) {
@@ -1077,7 +1082,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(saveComment);
                 }
 
-                var send = el('button', 'btn-blue', 'Отправить работу');
+                var send = el('button', 'btn-blue', block.upload_button_label || 'Отправить работу');
                 send.type = 'button';
                 var note = el('p', 'video-progress-status');
                 note.setAttribute('aria-live', 'polite');
@@ -1219,6 +1224,7 @@ scope)` и свойством `answered` (одна попытка: после о
             // сама сдача, как и «Домашнее задание».
             function renderPhotoUpload(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo-upload'), block);
+                if (block.video_embed_endpoint) wrap.appendChild(videoPlayer(block));
                 var urls = (block.images || []).map(function (image) { return image.url; });
                 if (urls.length) {
                     wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));

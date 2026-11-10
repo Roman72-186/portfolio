@@ -764,6 +764,7 @@ def _submission_payload(
     истёк, и рендерер убирает кнопки замены и удаления (владелец 06.10.2026).
     """
     submission = get_task_block_submission(db, block_id=block.id, user_id=user_id)
+    prior_state = get_task_block_state(db, block_id=block.id, user_id=user_id) if submission is None else None
     images = (
         list_task_block_submission_images(db, submission.id) if submission else []
     )
@@ -798,6 +799,13 @@ def _submission_payload(
         deadline_passed = aware <= datetime.now(timezone.utc)
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
+        "upload_button_label": block.upload_button_label,
+        # Old portfolio uploads have no block_id. Keep them in their original
+        # location rather than guessing which homework each photo belonged to.
+        "legacy_portfolio_url": (
+            "/cabinet/portfolio" if prior_state and prior_state.status == STATUS_DONE
+            and prior_state.completion_source == "portfolio_upload" else None
+        ),
         "max_files": submission_photo_limit(block),
         # «Сколько фото сдать» (владелец 02.10.2026): экран пишет «нужно ровно
         # N», считает «загружено X из N» и вместо поштучного удаления даёт
@@ -1183,6 +1191,9 @@ def cabinet_tracker_task_blocks(
                 task_tariff_deadlines=task_submit_deadlines,
             ))
         elif block.block_type == BLOCK_PHOTO_UPLOAD:
+            item["video_embed_endpoint"] = (
+                f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
+            )
             # Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
             # галерея, что у BLOCK_PHOTO, приём результата — тот же приём, что
             # у BLOCK_UPLOAD. `done` берёт роут загрузки, отдельного кружка
