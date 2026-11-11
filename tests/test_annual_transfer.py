@@ -420,7 +420,7 @@ def test_first_payment_is_open_right_away_then_by_window(db, prices, chief, make
     kid = _fresh_holiday(db, make_student, chief)
     nov_2 = _msk(2026, 11, 2, 12, 0)
 
-    # Первая оплата до окна — за текущий месяц, следующая только в декабре.
+    # Первая оплата до окна — за ноябрь, декабрь оплачивается в конце ноября.
     assert ps.due_period(kid, nov_2) == date(2026, 11, 1)
     assert ps.can_pay_now(kid, nov_2)
     view = ps.student_payment_view(db, kid, nov_2)
@@ -432,11 +432,11 @@ def test_first_payment_is_open_right_away_then_by_window(db, prices, chief, make
     db.refresh(kid)
 
     assert kid.program == PROGRAM_ANNUAL
-    # Следующая оплата — в своё окно 25–30 декабря.
+    # Следующая оплата за декабрь — в окно 25–30 ноября.
     assert ps.due_period(kid, _msk(2026, 11, 20)) == date(2026, 12, 1)
-    assert not ps.can_pay_now(kid, _msk(2026, 11, 25, 0, 1))
-    assert not ps.can_pay_now(kid, _msk(2026, 12, 24, 23, 0))
-    assert ps.can_pay_now(kid, _msk(2026, 12, 25, 0, 1))
+    assert not ps.can_pay_now(kid, _msk(2026, 11, 24, 23, 59))
+    assert ps.can_pay_now(kid, _msk(2026, 11, 25, 0, 0))
+    assert ps.can_pay_now(kid, _msk(2026, 12, 1, 0, 1))
 
 
 def test_first_payment_inside_open_window_is_current_month(db, prices, chief, make_student):

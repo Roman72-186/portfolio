@@ -6,8 +6,8 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "e94a2b6c380f"
-# Attendance is still deferred; the released broadcast filter precedes it.
-down_revision = "c82e1d6b904a"
+# Attendance stays deferred; calendar can be released without this file.
+down_revision = "f31b7c9d204e"
 branch_labels = None
 depends_on = None
 

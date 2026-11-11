@@ -83,7 +83,8 @@ def test_command_total_counts_upcoming_and_skips_left(db, school):
     unpaid_mail.access_until = _msk(2026, 10, 15, 0, 5)
     db.commit()
     text = "\n".join(pd.command_messages(db, _msk(2026, 10, 16, 12, 0)))
-    assert "Октябрь: оплатили 1, не оплатили 2 (у 1 окно ещё не открылось)" in text
+    assert "Октябрь: оплатили 1, не оплатили 2" in text
+    assert "окно ещё не открылось" not in text  # октябрь для 25–30 оплачивался в сентябре
 
 
 def test_command_when_everyone_paid(db, school):

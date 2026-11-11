@@ -10,7 +10,7 @@ from app.db.database import get_db
 from app.dependencies import get_current_user, require_csrf, require_csrf_header
 from app.limiter import limiter
 from app.models.user import User
-from app.models.payment import COHORT_FROM
+from app.models.payment import COHORT_FROM, Payment, KIND_MONTH, STATUS_PENDING
 from app.services import payments, public_purchase, telegram
 from app.services.tz import _as_utc
 from app.tmpl import templates
@@ -70,12 +70,20 @@ def _render(request, db, user, *, error=None):
     payment = public_purchase.confirmed_payment(db, enrollment)
     amount = (payment.amount_kop if payment else
               payments.reference_price_kop(db, enrollment.selected_tariff, COHORT_FROM))
+    now = datetime.now(timezone.utc)
+    # Уже переданный родителю заказ может относиться к другому месяцу после
+    # смены календаря. Показываем его месяц, а не месяц нового предложения.
+    pending = None if payment else db.query(Payment).filter(
+        Payment.user_id == student.id, Payment.kind == KIND_MONTH,
+        Payment.status == STATUS_PENDING, Payment.tariff == enrollment.selected_tariff,
+        Payment.amount_kop == amount, Payment.link_expires_at > now,
+    ).order_by(Payment.id.desc()).first()
     # Адрес приглашения даже не попадает в контекст до оплаты и анкеты.
     invitation = public_purchase.invite_url() if payment and student.profile_completed else ""
     return templates.TemplateResponse(request, "public_purchase.html", {
         "request": request, "user": user, "enrollment": enrollment,
         "payment": payment, "amount": amount, "rub_text": payments.rub_text,
-        "period": payments.period_label(payment.period if payment else payments.due_period(student, datetime.now(timezone.utc))),
+        "period": payments.period_label(payment.period if payment else pending.period if pending else payments.due_period(student, now)),
         "sales_ready": public_purchase.sales_ready(), "invite_url": invitation,
         "after_payment_text": public_purchase.AFTER_PAYMENT_TEXT, "error": error,
         "paid_expired": bool(payment and (student.paid_until is None

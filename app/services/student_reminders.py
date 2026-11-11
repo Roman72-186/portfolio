@@ -630,7 +630,9 @@ def _collect_pay_window(
         else:
             kind = KIND_PAY_WINDOW
         items[uid].append(_Item(
-            kind=kind, ref=period.isoformat(), title=payments.period_label(period),
+            # Ключ календарного окна сохраняет защиту от повторной отправки
+            # после уточнения месяца обучения для группы 25–30.
+            kind=kind, ref=payments.payment_window_month(user, period).isoformat(), title=payments.period_label(period),
             moment=cutoff, amount_kop=payments.price_kop(db, user),
         ))
 

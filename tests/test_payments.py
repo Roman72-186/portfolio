@@ -103,11 +103,11 @@ def test_window_beyond_month_end_ends_on_last_day(payer):
     """Окно 25–30: в феврале — по 28-е (в високосный — по 29-е), в 31-дневном
     месяце — как есть. Школа 11.10.2026: «февраль до конца месяца»."""
     payer.pay_window_start, payer.pay_window_end = 25, 30
-    assert ps.window_last_day(payer, date(2027, 2, 1)) == date(2027, 2, 28)
-    assert ps.window_last_day(payer, date(2028, 2, 1)) == date(2028, 2, 29)
-    assert ps.window_last_day(payer, date(2026, 10, 1)) == date(2026, 10, 30)
-    assert ps.window_cutoff(payer, date(2027, 2, 1)) == _msk(2027, 3, 1, 2, 0)
-    assert ps.window_opens_at(payer, date(2027, 2, 1)) == _msk(2027, 2, 25, 0, 0)
+    assert ps.window_last_day(payer, date(2027, 3, 1)) == date(2027, 2, 28)
+    assert ps.window_last_day(payer, date(2028, 3, 1)) == date(2028, 2, 29)
+    assert ps.window_last_day(payer, date(2026, 11, 1)) == date(2026, 10, 30)
+    assert ps.window_cutoff(payer, date(2027, 3, 1)) == _msk(2027, 3, 1, 2, 0)
+    assert ps.window_opens_at(payer, date(2027, 3, 1)) == _msk(2027, 2, 25, 0, 0)
 
 
 def test_window_start_beyond_month_end(payer):
@@ -119,12 +119,12 @@ def test_window_start_beyond_month_end(payer):
 
 
 def test_due_period_across_february_window(payer):
-    """Оплачен январь при окне 25–30: срок — 1 марта 2:00, должен февраль."""
+    """Оплачен февраль: март оплачивается 25–28 февраля, отсечка 1 марта."""
     payer.pay_window_start, payer.pay_window_end = 25, 30
-    payer.paid_until = ps.paid_until_after(payer, date(2027, 1, 1))
+    payer.paid_until = ps.paid_until_after(payer, date(2027, 2, 1))
     assert payer.paid_until == _msk(2027, 3, 1, 2, 0)
-    assert ps.due_period(payer, _msk(2027, 2, 26)) == date(2027, 2, 1)
-    assert ps.paid_month(payer) == date(2027, 1, 1)
+    assert ps.due_period(payer, _msk(2027, 2, 26)) == date(2027, 3, 1)
+    assert ps.paid_month(payer) == date(2027, 2, 1)
 
 
 def test_due_period_reads_paid_until_set_at_old_cutoff_hour(payer):
@@ -863,12 +863,11 @@ def test_one_day_window_sends_only_last_day_reminder(db, prices, payer, prodamus
 
 
 def test_staff_period_is_month_of_study(payer):
-    """Период в уведомлении службе заботы — «с 15 по 15» по окну ученика,
-    в феврале окно 25–30 кончается последним днём месяца."""
+    """Служба заботы видит календарный месяц обучения для обоих окон."""
     payer.pay_window_start, payer.pay_window_end = 10, 15
-    assert ps._paid_period_text(payer, date(2026, 10, 1)) == "15.10.2026 – 15.11.2026"
+    assert ps._paid_period_text(payer, date(2026, 10, 1)) == "октябрь 2026"
     payer.pay_window_start, payer.pay_window_end = 25, 30
-    assert ps._paid_period_text(payer, date(2027, 1, 1)) == "30.01.2027 – 28.02.2027"
+    assert ps._paid_period_text(payer, date(2027, 1, 1)) == "январь 2027"
     payer.pay_window_start = payer.pay_window_end = None
     assert ps._paid_period_text(payer, date(2026, 10, 1)) == "октябрь 2026"
 

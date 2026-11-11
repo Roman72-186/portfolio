@@ -232,6 +232,30 @@ def test_existing_public_link_keeps_old_return(client, db, buyer):
     assert db.query(Payment).count() == 1
 
 
+def test_migrated_first_order_is_reused_before_window_and_shown(client, db, buyer):
+    from test_payment_calendar import _migrate
+    from app.api.public_purchase import _render
+    from starlette.requests import Request
+    now = datetime(2026, 11, 11, tzinfo=timezone.utc)
+    payment = public_purchase.checkout(db, buyer[0], 'https://testserver', now)
+    # До миграции первая ноябрьская ссылка действовала до конца ноября.
+    payment.link_expires_at = datetime(2026, 11, 30, 23, tzinfo=timezone.utc)
+    payment.link_url = payments.build_link(payment, buyer[0], 'https://testserver', public_purchase=True)
+    old_link = payment.link_url
+    db.flush()
+    _migrate(db)
+    assert payment.period.isoformat() == '2026-12-01'
+    again = public_purchase.checkout(db, buyer[0], 'https://testserver', now)
+    assert again.id == payment.id and again.link_url == old_link
+    assert db.query(Payment).count() == 1
+    # Приводим дату истечения к живой для проверки рендера независимо от дня запуска.
+    payment.link_expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+    db.flush()
+    request = Request({'type': 'http', 'method': 'GET', 'path': '/purchase', 'headers': [], 'query_string': b''})
+    response = _render(request, db, {'user_id': buyer[0].id, 'profile_completed': False, 'role_rank': 1, 'public_purchase_pending': True})
+    assert response.context['period'] == 'декабрь 2026'
+
+
 def test_parent_link_replaces_expired_order(client, db, buyer):
     payment = _payment(db, buyer)
     payment.link_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -371,7 +395,7 @@ def test_first_payment_uses_current_month_and_next_window(db, buyer):
     payment = public_purchase.checkout(db, buyer[0], 'https://testserver', now)
     assert payment.period.isoformat() == '2026-11-01'
     _settle(db, payment)
-    assert payments._as_utc(buyer[0].paid_until).month == 12
+    assert payments._as_utc(buyer[0].paid_until).isoformat() == '2026-11-30T23:00:00+00:00'
     assert payments.due_period(buyer[0], now).isoformat() == '2026-12-01'
 
 

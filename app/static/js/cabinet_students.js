@@ -1293,6 +1293,13 @@ function buildManage(s) {
 
 // Оплата (07.10.2026): окно, набор, своя цена, последний оплаченный месяц.
 // Срок «оплачено до» считает сервер из месяца и окна (`payments.manage_view`).
+document.addEventListener('input', function(event) {
+    if (['manage-pay-start', 'manage-pay-end', 'manage-paid-month'].indexOf(event.target.id) === -1) return;
+    var month = document.getElementById('manage-paid-month');
+    var hint = month && month.parentElement.querySelector('.field-hint');
+    if (hint) hint.textContent = 'Сохраните оплату, чтобы пересчитать следующее окно. 25–30 – за следующий месяц, 10–15 – за текущий.';
+});
+
 function buildManagePayment(p, dis, canEdit) {
     if (!p) return '';
     var dayInput = function(id, value) {
@@ -1301,13 +1308,13 @@ function buildManagePayment(p, dis, canEdit) {
     };
     var cohorts = [['', 'Не указан']].concat(p.pay_cohorts);
     var paidHint = p.paid_until_text
-        ? 'Следующий месяц – оплатить до ' + p.paid_until_text + ' по Москве'
+        ? 'Следующая оплата за ' + p.next_payment_month + ': ' + p.next_window_start + ' – ' + p.next_window_end + '. Доступ до ' + p.paid_until_text + ' по Москве'
             + (p.payments_block_enabled ? '' : '. Закрытие кабинета по неоплате пока выключено')
         : 'Пусто – оплат ещё не было, по неоплате кабинет не закроется';
 
     var html = '<div class="manage-group"><div class="section-title">Оплата</div><div class="profile-grid">';
     html += manageField('Окно оплаты с', dayInput('manage-pay-start', p.pay_window_start),
-        false, 'День месяца. Пусто – ученик платит не через сайт');
+        false, '25–30 – за следующий месяц; 10–15 – за текущий. Пусто – ученик платит не через сайт');
     html += manageField('Окно оплаты по', dayInput('manage-pay-end', p.pay_window_end),
         false, 'В коротком месяце – по его последний день');
     html += manageField('Набор',
@@ -1317,7 +1324,7 @@ function buildManagePayment(p, dis, canEdit) {
     html += manageField('Своя цена, ₽',
         '<input class="profile-edit-input" id="manage-pay-price" inputmode="decimal" placeholder="13255" value="' + esc(p.pay_price) + '"' + dis + '>',
         false, p.pay_reference_text ? 'Пусто – по тарифу и набору: ' + p.pay_reference_text : 'Пусто – по тарифу и набору');
-    html += manageField('Оплачено по',
+    html += manageField('Оплачен месяц обучения',
         '<input type="month" class="profile-edit-input" id="manage-paid-month" value="' + esc(p.paid_month) + '"' + dis + '>',
         false, paidHint);
     // Владелец 13.10.2026: сменил тариф до оплаты – платит уже по новому,

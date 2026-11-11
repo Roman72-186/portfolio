@@ -188,14 +188,24 @@ def window_day(period: date, day: int) -> date:
     return period.replace(day=min(day, last))
 
 
+def window_month_offset(user: User) -> int:
+    """Только согласованная группа 25–30 платит за следующий месяц обучения."""
+    return int((user.pay_window_start, user.pay_window_end) == (25, 30))
+
+
+def payment_window_month(user: User, period: date) -> date:
+    """Из месяца обучения получаем календарный месяц платёжного окна."""
+    return add_months(period, -window_month_offset(user))
+
+
 def window_last_day(user: User, period: date) -> date:
-    """Последний день окна месяца `period` — «оплатить до … включительно»."""
-    return window_day(period, user.pay_window_end)
+    """Последний день оплаты за месяц обучения `period`, включительно."""
+    return window_day(payment_window_month(user, period), user.pay_window_end)
 
 
 def window_opens_at(user: User, period: date) -> datetime:
-    """Начало окна месяца `period` — 00:00 первого дня окна по Москве, в UTC."""
-    opens = datetime.combine(window_day(period, user.pay_window_start), time(0), MSK_TZ)
+    """Начало оплаты за месяц обучения `period`: полночь по Москве, в UTC."""
+    opens = datetime.combine(window_day(payment_window_month(user, period), user.pay_window_start), time(0), MSK_TZ)
     return opens.astimezone(timezone.utc)
 
 
@@ -214,20 +224,23 @@ def paid_until_after(user: User, period: date) -> datetime:
 def due_period(user: User, now: datetime) -> date:
     """Какой месяц ученик должен оплатить следующим.
 
-    `paid_until` — отсечка окна следующего неоплаченного месяца, значит этот
-    месяц — тот, в котором лежит последний день окна, за сутки до отсечки
+    `paid_until` — отсечка следующего неоплаченного окна. Его календарный
+    месяц лежит за сутки до отсечки; для 25–30 месяц обучения на один позже
     (сама отсечка приходится на 1-е число, если окно кончается последним днём
     месяца). Сутки, а не час: срок, поставленный при другом `CUTOFF_HOUR_MSK`
     (до 11.10.2026 — 9:00), должен указывать на тот же месяц.
 
-    Оплат ещё не было — текущий месяц по Москве, даже до начала окна.
-    Владелец 06.11.2026: первая оплата сейчас за ноябрь, следующая — в
-    декабрьское окно. Прошлый месяц создал бы повторный платёж в ноябре.
+    Первая оплата до 25-го — текущий месяц по Москве; с открытием окна
+    25–30 покупается следующий месяц. Другие окна остаются в текущем месяце.
     """
     if user.paid_until is not None:
         last_day_msk = _as_utc(user.paid_until).astimezone(MSK_TZ) - timedelta(days=1)
-        return month_start(last_day_msk.date())
-    return month_start(_as_utc(now).astimezone(MSK_TZ).date())
+        return add_months(month_start(last_day_msk.date()), window_month_offset(user))
+    current = month_start(_as_utc(now).astimezone(MSK_TZ).date())
+    # Новичок в начале ноября покупает ноябрь; с 25 ноября уже открыт декабрь.
+    if window_month_offset(user) and _as_utc(now) >= window_opens_at(user, add_months(current, 1)):
+        return add_months(current, 1)
+    return current
 
 
 def can_pay_now(user: User, now: datetime) -> bool:
@@ -567,13 +580,17 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
     if already_paid:
         raise PaymentUnavailable("Оплата за следующий месяц обучения уже получена")
 
-    pending = (
+    pending_query = (
         db.query(Payment)
-        .filter(Payment.user_id == user.id, Payment.period == period,
+        .filter(Payment.user_id == user.id,
                 Payment.kind == KIND_MONTH, Payment.status == STATUS_PENDING)
         .order_by(Payment.id.desc())
-        .all()
     )
+    # До первой оплаты enrollment один: переход месяца или миграция не должны
+    # создавать второй действующий заказ рядом с уже переданной родителю ссылкой.
+    if not public_purchase:
+        pending_query = pending_query.filter(Payment.period == period)
+    pending = pending_query.all()
     for row in pending:
         alive = row.link_expires_at is None or _as_utc(row.link_expires_at) > _as_utc(now)
         # Тариф — в названии чека: поставили следующий тариф — нужна новая ссылка.
@@ -880,6 +897,9 @@ def manage_view(db: DBSession, student: User) -> dict:
         "pay_next_tariff": student.pay_next_tariff or "",
         "pay_tariff_choices": [[t, _tariff_name(t)] for t in TARIFFS_CURRENT],
         "paid_until_text": msk_text(student.paid_until),
+        "next_payment_month": period_label(due_period(student, now)) if windowed else "",
+        "next_window_start": window_opens_at(student, due_period(student, now)).astimezone(MSK_TZ).strftime("%d.%m.%Y") if windowed else "",
+        "next_window_end": window_last_day(student, due_period(student, now)).strftime("%d.%m.%Y") if windowed else "",
         "payments_block_enabled": settings.payments_block_enabled,
     }
 
@@ -1081,13 +1101,8 @@ def record_paid(
 
 
 def _paid_period_text(user: User, period: date) -> str:
-    """Месяц обучения, за который оплата: «15.10.2026 – 15.11.2026» — от
-    последнего дня окна до него же через месяц (школа: «с 15 по 15»)."""
-    if not has_window(user):
-        return period_label(period)
-    start = window_last_day(user, period)
-    end = window_last_day(user, add_months(period, 1))
-    return f"{start.strftime('%d.%m.%Y')} – {end.strftime('%d.%m.%Y')}"
+    """Календарный месяц обучения, независимо от даты платёжного окна."""
+    return period_label(period)
 
 
 def _paid_staff_text(user: User, payment: Payment, paid_sum_kop: int, how: str,
