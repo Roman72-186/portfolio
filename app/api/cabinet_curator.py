@@ -144,6 +144,27 @@ def cabinet_curator_dashboard(
 
 # ── Статистика своей группы ─────────────────────────────────────────────────
 
+@router.get("/curator/demo", response_class=HTMLResponse)
+def cabinet_curator_demo(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    stage_id: Annotated[int | None, Query(ge=-1)] = None,
+    cycle_id: Annotated[int | None, Query(ge=0)] = None,
+    subject: Annotated[str, Query(max_length=30)] = "",
+):
+    from app.services.curator_demo import build_curator_demo
+
+    if (user.get("nav_rank") or user["role_rank"]) != 2:
+        raise HTTPException(403, "Демо доступно кураторам")
+    return templates.TemplateResponse(request, "cabinet_curator_demo.html", {
+        "request": request,
+        "user": user,
+        "nav_active": "curator_demo",
+        "demo": build_curator_demo(db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject),
+    })
+
+
 @router.get("/curator/statistics", response_class=HTMLResponse)
 def cabinet_curator_statistics(
     request: Request,

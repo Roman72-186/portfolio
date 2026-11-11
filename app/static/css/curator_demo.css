@@ -1,0 +1,50 @@
+.curator-demo {
+    max-width: 880px;
+    margin-inline: auto;
+    display: grid;
+    gap: var(--s-4);
+}
+
+.curator-demo-links,
+.curator-demo-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--s-3);
+}
+
+.curator-demo-filters label {
+    flex: 1 1 150px;
+    min-width: 0;
+}
+
+.curator-demo-filters select {
+    display: block;
+    width: 100%;
+}
+
+.curator-demo-group {
+    border-top: 1px solid var(--line);
+    padding-block: var(--s-2);
+}
+
+.curator-demo-group summary {
+    cursor: pointer;
+    min-height: 44px;
+    padding-block: var(--s-2);
+    font-weight: 700;
+}
+
+.curator-demo-pupils {
+    padding-inline-start: var(--s-5);
+}
+
+.curator-demo-progress {
+    width: 100%;
+    accent-color: var(--blue-fill);
+}
+
+.curator-demo-pupils li {
+    margin-block: var(--s-1);
+    overflow-wrap: anywhere;
+}
