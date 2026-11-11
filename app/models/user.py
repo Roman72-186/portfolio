@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Integer, BigInteger, String, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Integer, BigInteger, String, Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, CheckConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.crypto import EncryptedString
@@ -104,6 +104,9 @@ class User(Base):
     staff_login: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     portfolio_do_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Persist the admission policy: removing the newcomer tag later must not
+    # make training submissions invalidate the student's initial assessment.
+    point_a_before_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     # Точка А — одна оценка Главного преподавателя за ВЕСЬ набор работ «До»
     # (владелец 09.09.2026: «оценку должен ГП ставит общую по всем работам, не
     # для каждой… это будет для высчета среднего значения в точке А»). Шкала
@@ -144,6 +147,11 @@ class User(Base):
     # ГП сбросила флаг кнопкой «переуведомить» (`cabinet_point_a.py`).
     point_a_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Уровень, сообщённый ученику. Оценки следующих работ его не пересчитывают.
+    point_a_assigned_level: Mapped[int | None] = mapped_column(
+        Integer, CheckConstraint("point_a_assigned_level IN (1, 2)", name="ck_users_point_a_assigned_level"),
+        nullable=True,
     )
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)

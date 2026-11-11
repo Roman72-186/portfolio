@@ -410,9 +410,6 @@ class TaskBlock(Base):
     # на стороне API) — та же конвенция, что у `day_bounds`, чтобы наивное
     # время из SQLite в тестах трактовалось как UTC без сюрпризов.
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Только у ссылки на занятие: явное окончание для напоминания о пропуске.
-    # Пусто – обычная ссылка, напоминания по ней не создаются.
-    lesson_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Закрытие доступа по календарю — обратная сторона `opens_at` (владелец
     # 10.09.2026, механика предобучения 17.09-03.10: «27 сентября в 23:30

@@ -106,6 +106,14 @@ class PointA:
     is_done: bool
     scored_count: int
 
+    @property
+    def level(self) -> int | None:
+        if self.student.point_a_assigned_level is not None:
+            return self.student.point_a_assigned_level
+        if self.is_done and self.average is not None:
+            return point_a_level(self.average)
+        return None
+
 
 def _latest_final_work(
     db: DBSession, student_id: int, *, kind: str, subject: str
@@ -257,6 +265,21 @@ def student_point_a(db: DBSession, student: User, *, with_images: bool = True) -
     """
     plates: list[PointAPlate] = []
 
+    # New admissions are assessed from the initial portfolio only. Subsequent
+    # homework/exams must not change the level or reopen the initial review.
+    if student.point_a_before_only:
+        images = _before_images(db, student.id, limit=_IMAGE_LIMIT if with_images else 1)
+        if images:
+            plates.append(PointAPlate(
+                key="portfolio_before", title="Портфолио «До»", kind=PLATE_PORTFOLIO_BEFORE,
+                score=student.portfolio_before_score, images=images if with_images else [],
+            ))
+        return PointA(
+            student=student, plates=plates, average=_average(plates),
+            is_done=bool(plates) and all(plate.is_scored for plate in plates),
+            scored_count=sum(1 for plate in plates if plate.is_scored),
+        )
+
     for key, kind, subject, title in _MOCK_PLATES:
         plate = _work_plate(
             db, student.id, key=key, kind=kind, subject=subject, title=title,
@@ -307,17 +330,10 @@ def point_a_level(average: int) -> int:
 
 
 def student_point_a_level(db: DBSession, student: User) -> int | None:
-    """Уровень точки А ученика; `None` — точка А ещё не разобрана целиком.
-
-    Тот же момент, что у уведомления об уровне (`maybe_notify_point_a_level`):
-    уровень есть, когда оценены все плашки. По нему блок конструктора бывает
-    открыт только уровню 1 или 2 (`task_blocks.is_block_open_to`, владелец
-    06.10.2026).
-    """
-    point_a = student_point_a(db, student, with_images=False)
-    if not point_a.is_done or point_a.average is None:
-        return None
-    return point_a_level(point_a.average)
+    """Уровень для программы: сообщённый, либо расчёт до первого уведомления."""
+    if student.point_a_assigned_level is not None:
+        return student.point_a_assigned_level
+    return student_point_a(db, student, with_images=False).level
 
 
 def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | None:
@@ -343,20 +359,31 @@ def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | N
     if student.point_a_notified_at is not None:
         return None
 
-    point_a = student_point_a(db, student, with_images=False)
-    if not point_a.is_done or point_a.average is None:
+    # Две оценки могут прийти одновременно. Фиксация уровня и создание
+    # первого уведомления выполняются под одной блокировкой строки ученика.
+    db.flush()
+    db.refresh(student, ["point_a_assigned_level", "point_a_notified_at"], with_for_update=True)
+    if student.point_a_notified_at is not None:
         return None
 
-    level = point_a_level(point_a.average)
+    point_a = student_point_a(db, student, with_images=False)
+    level = point_a.level
+    if level is None:
+        return None
+
     audio = get_level_audio(db, level)
+    message = f"Уровень программы: {level}."
+    if point_a.is_done and point_a.average is not None and point_a_level(point_a.average) == level:
+        message = f"Средний балл: {point_a.average} / 100."
 
     notification = Notification(
         user_id=student.id,
         title=f"Точка А разобрана — уровень {level}",
-        text=f"Средний балл: {point_a.average} / 100.",
+        text=message,
         audio_url=audio.audio_s3_url if audio else None,
     )
     db.add(notification)
+    student.point_a_assigned_level = level
     student.point_a_notified_at = datetime.now(timezone.utc)
     db.flush()
     return notification

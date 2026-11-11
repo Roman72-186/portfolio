@@ -149,6 +149,10 @@ class TrackerTask(Base):
     # школе — та же дорогая ошибка, что у тем видеоуроков.
     assign_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Initial-week exercises stay in their assignment, outside the newcomer's
+    # After gallery. Existing students keep their historical gallery.
+    include_in_newcomer_after: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+
     # Блокирует ли элемент следующие шаги ленты и переход к следующему циклу
     # (гейт «блок → цикл → месяц», решение владельца 23.08, лента — 06.09.2026).
     # default=True осознанно: де-факто обязательно всё, чекбокс даёт

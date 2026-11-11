@@ -25,6 +25,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import true
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MONTHS
@@ -71,19 +72,7 @@ def portfolio_item_count(db: DBSession, user_id: int) -> int:
         )
         .count()
     )
-    submission_photo_count = (
-        db.query(TaskBlockSubmissionImage.id)
-        .join(
-            TaskBlockSubmission,
-            TaskBlockSubmission.id == TaskBlockSubmissionImage.submission_id,
-        )
-        .filter(
-            TaskBlockSubmission.user_id == user_id,
-            TaskBlockSubmission.submitted_at.isnot(None),
-            TaskBlockSubmissionImage.image_s3_url != "",
-        )
-        .count()
-    )
+    submission_photo_count = _submission_images_query(db, user_id).count()
     homework_photo_count = _homework_final_images_query(db, user_id).count()
     return work_count + submission_photo_count + homework_photo_count
 
@@ -110,6 +99,29 @@ class SubmissionPhoto:
     task_submission_id: int | None = None
 
 
+def _after_task_clause(db: DBSession, user_id: int):
+    """Only newcomers exclude marked initial-week exercises from After."""
+    student = db.get(User, user_id)
+    if student and student.point_a_before_only:
+        return TrackerTask.include_in_newcomer_after.is_(True)
+    return true()
+
+
+def _submission_images_query(db: DBSession, user_id: int):
+    return (
+        db.query(TaskBlockSubmissionImage, TaskBlockSubmission)
+        .join(TaskBlockSubmission, TaskBlockSubmission.id == TaskBlockSubmissionImage.submission_id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .filter(
+            TaskBlockSubmission.user_id == user_id,
+            TaskBlockSubmission.submitted_at.isnot(None),
+            TaskBlockSubmissionImage.image_s3_url != "",
+            _after_task_clause(db, user_id),
+        )
+    )
+
+
 def _submission_photos(db: DBSession, user_id: int, *, limit: int) -> list[SubmissionPhoto]:
     """Снимки сданных работ ученика, свежие первыми.
 
@@ -117,16 +129,7 @@ def _submission_photos(db: DBSession, user_id: int, *, limit: int) -> list[Submi
     пуст) в галерею не идёт: с точки зрения ученика работа ещё не сдана.
     """
     rows = (
-        db.query(TaskBlockSubmissionImage, TaskBlockSubmission)
-        .join(
-            TaskBlockSubmission,
-            TaskBlockSubmission.id == TaskBlockSubmissionImage.submission_id,
-        )
-        .filter(
-            TaskBlockSubmission.user_id == user_id,
-            TaskBlockSubmission.submitted_at.isnot(None),
-            TaskBlockSubmissionImage.image_s3_url != "",
-        )
+        _submission_images_query(db, user_id)
         .order_by(TaskBlockSubmission.submitted_at.desc(), TaskBlockSubmissionImage.id)
         .limit(limit)
         .all()
@@ -159,11 +162,13 @@ def _homework_final_images_query(db: DBSession, user_id: int):
             HomeworkSubmission,
             HomeworkSubmission.id == HomeworkSubmissionImage.submission_id,
         )
+        .join(TrackerTask, TrackerTask.id == HomeworkSubmission.tracker_task_id)
         .filter(
             HomeworkSubmission.user_id == user_id,
             HomeworkSubmission.submitted_at.isnot(None),
             HomeworkSubmissionImage.is_final.is_(True),
             HomeworkSubmissionImage.image_s3_url != "",
+            _after_task_clause(db, user_id),
         )
     )
 

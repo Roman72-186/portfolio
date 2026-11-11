@@ -24,7 +24,7 @@ from app.models.session import Session as UserSession
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.meeting_joins import (
-    ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, ATTENDED_IN_PERSON, EVENT_MEETING_JOIN, attendance_by_block,
+    ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, EVENT_MEETING_JOIN, attendance_by_block,
 )
 from app.services.point_a import student_point_a_level
 from app.services.presence import last_visit_seconds
@@ -267,7 +267,7 @@ def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats
 
     from app.models.payment import COHORT_LABELS
     from app.services.payments import price_kop
-    from app.services.point_a import point_a_level, student_point_a
+    from app.services.point_a import student_point_a
     from app.services.stats import avg_score_by_subject_all_time
 
     student_ids = [student["id"] for student in stats["students"]]
@@ -309,7 +309,7 @@ def build_tariff_registration_xlsx(db: DBSession, stats: TariffRegistrationStats
             controls.get("Рисунок"),
             controls.get("Композиция"),
             point_a_score,
-            point_a_level(point_a_score) if point_a_score is not None else None,
+            point_a.level,
             f"{point_a.scored_count} из {len(point_a.plates)}" if point_a.plates else "нет работ",
             price / 100 if price else None,
             COHORT_LABELS.get(user.pay_cohort or "", ""),
@@ -339,7 +339,6 @@ _ACTIVITY_LABELS = {
 
 # Подписи режима «Занятия» (владелец 27.10.2026): откуда «был / не был».
 _ATTENDANCE_NOTES = {
-    ATTENDED_IN_PERSON: "Был очно (отметил преподаватель)",
     ATTENDED_PRESSED: "Был на занятии (нажал кнопку)",
     ATTENDED_STAFF: "Был на занятии (отметил преподаватель)",
     ABSENT_STAFF: "Не был (отметил преподаватель)",
@@ -475,7 +474,13 @@ def _assignment_activity(
         for task_blocks in get_blocks_for_tasks(db, flagged_tasks).values():
             lesson_link.update(attendance_links(task_blocks))
     lesson_attendance = attendance_by_block(db, set(lesson_link.values()))
-    was_there = (ATTENDED_PRESSED, ATTENDED_STAFF, ATTENDED_IN_PERSON)
+    first_week_exemptions = {}
+    if theory:
+        from app.services.first_week_attendance import exemptions_by_student
+        first_week_exemptions = exemptions_by_student(
+            db, get_blocks_for_tasks(db, task_ids), reachable,
+        )
+    was_there = (ATTENDED_PRESSED, ATTENDED_STAFF)
 
     videos = {
         video.id: video
@@ -499,6 +504,7 @@ def _assignment_activity(
             uid for uid in audience[task.id]
             if feed_visible_blocks([block], audiences, viewers[uid])
             and lesson_attendance.get((lesson_link.get(block.id), uid)) not in was_there
+            and block.id not in first_week_exemptions.get(uid, set())
         )
         submitted, overdue, pending, started, notes, done_at = [], [], [], [], {}, {}
         for uid in eligible:

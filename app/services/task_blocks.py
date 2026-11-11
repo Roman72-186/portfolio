@@ -66,6 +66,7 @@ from app.models.task_block import (
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask
 from app.services.tz import msk_midnight, parse_msk_local
+from app.services.first_week_attendance import recording_exemptions
 
 
 def get_blocks(db: DBSession, task_id: int) -> list[TaskBlock]:
@@ -775,6 +776,7 @@ def required_steps_for_student(
         task, blocks,
         is_intake_student=bool(student and student.access_until is not None),
         attended_link_ids=attended_links_for(db, user_id, blocks),
+        recording_exempt_ids=recording_exemptions(db, user_id, blocks),
     )
     candidates = [block for block in blocks if required_by_block[block.id]]
     if not candidates:
@@ -1688,7 +1690,6 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # показывается как «00:00».
         row.opens_at = _moment(item.get("opens_at"))
         row.closes_at = _moment(item.get("closes_at"))
-        row.lesson_ends_at = _moment(item.get("lesson_ends_at")) if block_type == BLOCK_LINK else None
         # Закрытие раньше открытия — куратор перепутал поля; отбрасываем
         # молча, как и везде в этой функции с некорректным вводом, а не
         # роняем сохранение всего блока (см. неизвестный тариф/предмет выше).
@@ -2875,7 +2876,7 @@ def is_block_required_for_user(
     return block.is_required
 
 
-def attendance_links(blocks: list[TaskBlock]) -> dict[int, int | None]:
+def attendance_links(blocks: list[TaskBlock], *, include_all_videos: bool = False) -> dict[int, int | None]:
     """Видео «обязательно только тем, кто не был на занятии» → кнопка
     «Ссылка» выше в том же задании. При явном предмете – ближайшая по этому
     предмету, запасная – общая без предмета; без предмета видео – ближайшая.
@@ -2890,7 +2891,7 @@ def attendance_links(blocks: list[TaskBlock]) -> dict[int, int | None]:
             links_by_subject[block.subject or ""] = block.id
         elif (
             block.block_type == BLOCK_VIDEO
-            and getattr(block, "optional_if_attended", False)
+            and (include_all_videos or getattr(block, "optional_if_attended", False))
             and link_id is not None
         ):
             # Явный предмет записи не должен засчитываться посещением другого
@@ -2919,6 +2920,7 @@ def attended_links_for(db: DBSession, user_id: int, blocks: list[TaskBlock]) -> 
 def required_by_block_for_task(
     task, blocks: list[TaskBlock], *, is_intake_student: bool,
     attended_link_ids: set[int] | frozenset = frozenset(),
+    recording_exempt_ids: set[int] | frozenset = frozenset(),
 ) -> dict[int, bool]:
     """Обязателен ли этому ученику каждый блок задания `task`.
 
@@ -2950,6 +2952,8 @@ def required_by_block_for_task(
     lesson_link = attendance_links(blocks)
 
     def own_flag(block: TaskBlock) -> bool:
+        if block.id in recording_exempt_ids:
+            return False
         if block.id in lesson_link:
             return lesson_link[block.id] not in attended_link_ids
         return is_block_required_for_user(block, is_intake_student=is_intake_student)
@@ -2999,6 +3003,7 @@ def feed_state(
         task, blocks,
         is_intake_student=bool(student and student.access_until is not None),
         attended_link_ids=attended_links_for(db, user_id, blocks),
+        recording_exempt_ids=recording_exemptions(db, user_id, blocks),
     )
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)

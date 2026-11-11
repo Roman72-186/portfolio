@@ -585,21 +585,17 @@
     // Кнопка в строке «Занятий»: ставит обратное текущему. Ответ сервера
     // меняет только этот элемент списка, без перезагрузки страницы.
     function attendanceButton(item, userId) {
-        const button = document.createElement('select');
-        button.className = 'form-input';
-        button.setAttribute('aria-label', 'Посещение: ' + item.label);
-        [['', 'Изменить посещение'], ['in_person', 'Был очно'], ['online', 'Был онлайн'], ['absent', 'Не был']].forEach(function (pair) {
-            button.appendChild(option(pair[0], pair[1]));
-        });
-        button.addEventListener('change', function () {
-            if (!button.value) return;
-            const format = button.value;
-            const attended = format !== 'absent';
+        const was = item.submitted.indexOf(userId) !== -1;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn-outline';
+        button.textContent = was ? 'Отметить: не был' : 'Отметить: был';
+        button.addEventListener('click', function () {
             button.disabled = true;
             window.csrfFetch('/cabinet/students/' + userId + '/lesson-links/' + item.id + '/attendance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ attended: attended, attendance_format: attended ? format : null }),
+                body: JSON.stringify({ attended: !was }),
             }).then(function (resp) {
                 return resp.json().catch(function () { return {}; }).then(function (data) {
                     if (!resp.ok) throw { status: resp.status, data: data };
@@ -607,10 +603,8 @@
             }).then(function () {
                 item.submitted = item.submitted.filter(function (id) { return id !== userId; });
                 item.pending = item.pending.filter(function (id) { return id !== userId; });
-                (attended ? item.submitted : item.pending).push(userId);
-                item.notes[userId] = attended
-                    ? (format === 'in_person' ? 'Был очно (отметил преподаватель)' : 'Был на занятии (отметил преподаватель)')
-                    : 'Не был (отметил преподаватель)';
+                (was ? item.pending : item.submitted).push(userId);
+                item.notes[userId] = was ? 'Не был (отметил преподаватель)' : 'Был на занятии (отметил преподаватель)';
                 applyFilter();
             }).catch(function (error) {
                 button.disabled = false;
