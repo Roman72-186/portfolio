@@ -289,7 +289,12 @@
     // Итог цикла по ученику: сколько ему положено, сколько сделано, что не
     // сделано и прошёл ли срок у несделанного.
     function cycleSummary(items, userId) {
-        const own = items.filter(function (item) { return item.eligible.indexOf(userId) !== -1; });
+        // Практика закрыта по обязательным работам; дополнительные видны
+        // в выборе задания, но не создают долг за неделю или месяц.
+        const own = items.filter(function (item) {
+            return item.eligible.indexOf(userId) !== -1
+                && (mode !== 'practice' || item.required.indexOf(userId) !== -1);
+        });
         const missing = own.filter(function (item) { return item.submitted.indexOf(userId) === -1; });
         return {
             total: own.length,

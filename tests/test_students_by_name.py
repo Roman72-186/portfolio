@@ -23,6 +23,62 @@ from app.services.staff_dashboard import get_student_activity_overview
 OPENS = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("task_required,block_required,kind,restricted,expected", [
+    (True, False, "photo_upload", False, False),
+    (True, True, "photo_upload", False, True),
+    (False, True, "photo_upload", False, False),
+    (True, True, "photo_upload", True, False),
+    (True, False, "timed_work", False, True),
+])
+def test_practice_summary_requirement(db, user_factory, task_required, block_required,
+                                      kind, restricted, expected):
+    from app.models.task_block import BLOCK_TIMED, TaskBlockRequiredTariff
+
+    student = user_factory(vk_id=829_001, name="Student", tariff=TARIFF_SELF)
+    _, _, _, upload = _cycle_with_video(db)
+    task = db.get(TrackerTask, upload.task_id)
+    task.is_required = task_required
+    upload.is_required = block_required
+    upload.block_type = BLOCK_TIMED if kind == "timed_work" else kind
+    if restricted:
+        db.add(TaskBlockRequiredTariff(block_id=upload.id, tariff=TARIFF_CONFIDENT_MAX))
+    db.commit()
+
+    item = get_student_activity_overview(db, include_assignments=True)["assignments"][0]
+    assert item["required"] == ([student.id] if expected else [])
+    # Дополнительная работа остаётся в детализации с настоящим статусом.
+    assert item["eligible"] == [student.id]
+    assert item["submitted"] == []
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="нужен node")
+def test_cycle_summary_ignores_optional_practice(tmp_path):
+    from pathlib import Path
+
+    template = Path("app/templates/partials/students_by_name.html").read_text(encoding="utf-8")
+    summary = template.split("    function cycleSummary(items, userId) {", 1)[1].split(
+        "    function cycleSummaryText", 1)[0]
+    script = "const assert = require('node:assert/strict'); let mode = 'practice';\n"
+    script += "function cycleSummary(items, userId) {" + summary
+    script += """
+const items = [
+    {label:'Core', eligible:[1,2], required:[1,2], submitted:[1], overdue:[2]},
+    {label:'Extra', eligible:[1,2], required:[], submitted:[], overdue:[1,2]}
+];
+assert.deepEqual(cycleSummary(items, 1), {total:1, done:1, missing:[], overdue:false});
+assert.deepEqual(cycleSummary(items, 2), {total:1, done:0, missing:['Core'], overdue:true});
+assert.equal(cycleSummary([items[1]], 1).total, 0);
+mode = 'theory';
+assert.equal(cycleSummary(items, 1).total, 2);
+mode = 'meetings';
+assert.equal(cycleSummary(items, 1).total, 2);
+"""
+    path = tmp_path / "summary.js"
+    path.write_text(script, encoding="utf-8")
+    result = subprocess.run(["node", str(path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
 def _cycle_with_video(db, *, stage_title="Октябрь", video_title="Перспектива"):
     stage = LearningTopic(title=stage_title, kind="stage", opens_at=OPENS,
                           is_published=True, assign_to_all=True)

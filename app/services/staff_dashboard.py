@@ -33,7 +33,8 @@ from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
     BlockViewer, attendance_links, completed_after_deadline, feed_visible_blocks,
     get_audiences, get_blocks_for_tasks,
-    get_submit_deadlines, get_task_submit_deadlines,
+    get_submit_deadlines, get_task_submit_deadlines, get_required_tariffs,
+    required_by_block_for_task,
 )
 from app.services.tracker import (
     cycle_bounds, cycle_deadline_lookup, cycle_label, program_learners, program_students, stage_cycle_ordinal,
@@ -430,6 +431,18 @@ def _assignment_activity(
     block_ids = [block.id for block, _ in candidates]
     task_ids = list({task.id for _, task in candidates})
     audiences = get_audiences(db, block_ids)
+    # В итогах практики нужны только блокирующие работы. Детализация
+    # отдельного задания по-прежнему включает и дополнительные сдачи.
+    required_flags = {}
+    required_tariffs = {}
+    if not theory and not links:
+        blocks_by_task = get_blocks_for_tasks(db, task_ids)
+        for task in {task.id: task for _, task in candidates}.values():
+            # У типов сдачи нет отдельного флага для вводного тарифа.
+            required_flags.update(required_by_block_for_task(
+                task, blocks_by_task.get(task.id, []), is_intake_student=False,
+            ))
+        required_tariffs = get_required_tariffs(db, block_ids)
     # Уровень точки А считается лениво и один раз на ученика (`BlockViewer`).
     viewers = {
         uid: BlockViewer(
@@ -574,6 +587,12 @@ def _assignment_activity(
             # Порядок внутри цикла — как в ленте ученика.
             "order": [task.sort_order or 0, task.id, block.sort_order or 0, block.id],
             "eligible": eligible,
+            "required": [
+                uid for uid in eligible
+                if required_flags.get(block.id, False) and not block.hidden_until_done
+                and (not required_tariffs.get(block.id)
+                     or learners[uid].tariff in required_tariffs[block.id])
+            ] if not theory and not links else eligible,
             "submitted": submitted,
             "overdue": overdue,
             "pending": pending,
