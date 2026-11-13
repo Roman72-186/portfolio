@@ -101,24 +101,20 @@
 
     <section class="card" aria-labelledby="demo-practice-title">
         <h2 id="demo-practice-title" class="card-title">Практика · {{ demo.subject }}</h2>
-        {% for key, label in [('done', 'Завершили'), ('remaining', 'Не завершили')] %}
-                <details class="curator-demo-group">
-                    <summary>{{ label }} · {{ groups[key]|length }}</summary>
-                    {{ pupil_list(groups[key], true) if groups[key] else 'В этой группе пока никого.' }}
-                </details>
-                {% endfor %}
-                {% else %}<p class="text-muted">Нет назначенных обязательных работ.</p>{% endif %}
-            </div>
+        {% if demo.practice_total %}
+        {% set pie = namespace(offset=0) %}
+        <div class="curator-practice-pie" aria-hidden="true" data-curator-pie
+             data-done="{{ demo.practice.done|length }}" data-started="{{ demo.practice.started|length }}"
+             data-none="{{ demo.practice.none|length }}">
+            {% for key in ('done', 'started', 'none') %}
+            {% set count = demo.practice[key]|length %}
+            {% if count %}
+            <span class="curator-pie-sector curator-pie-{{ key }}{% if count == demo.practice_total %} curator-pie-full{% endif %}"
+                  style="--sector-start: {{ pie.offset * 360 / demo.practice_total }}deg; --sector-size: {{ count * 360 / demo.practice_total }}deg"></span>
+            {% endif %}
+            {% set pie.offset = pie.offset + count %}
             {% endfor %}
         </div>
-    </section>
-
-    <section class="card" aria-labelledby="demo-practice-title">
-        <h2 id="demo-practice-title" class="card-title">Практика · {{ demo.subject }}</h2>
-        {% if demo.practice_total %}
-        {% set done = demo.practice.done|length %}
-        {% set started = demo.practice.started|length %}
-        <div class="curator-practice-pie" aria-hidden="true" style="--practice-done: {{ done * 100 / demo.practice_total }}%; --practice-active: {{ (done + started) * 100 / demo.practice_total }}%"></div>
         {% for key, label in [('done', 'Сдали всё'), ('started', 'В процессе'), ('none', 'Нет действий на платформе')] %}
         {% set count = demo.practice[key]|length %}
         <details class="curator-demo-group">
