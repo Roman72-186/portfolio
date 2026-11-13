@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Статистика куратора{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/curator_demo.css?v=3">
+<link rel="stylesheet" href="/static/css/curator_demo.css?v=6">
 {% endblock %}
 
 {% macro pupil_list(rows, with_progress=false) %}
@@ -101,6 +101,20 @@
 
     <section class="card" aria-labelledby="demo-practice-title">
         <h2 id="demo-practice-title" class="card-title">Практика · {{ demo.subject }}</h2>
+        {% for key, label in [('done', 'Завершили'), ('remaining', 'Не завершили')] %}
+                <details class="curator-demo-group">
+                    <summary>{{ label }} · {{ groups[key]|length }}</summary>
+                    {{ pupil_list(groups[key], true) if groups[key] else 'В этой группе пока никого.' }}
+                </details>
+                {% endfor %}
+                {% else %}<p class="text-muted">Нет назначенных обязательных работ.</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="demo-practice-title">
+        <h2 id="demo-practice-title" class="card-title">Практика · {{ demo.subject }}</h2>
         {% if demo.practice_total %}
         {% set done = demo.practice.done|length %}
         {% set started = demo.practice.started|length %}
@@ -131,4 +145,5 @@
 
 
 </div>
+<script src="/static/js/curator_pie.js?v=2" defer></script>
 {% endblock %}

@@ -43,16 +43,51 @@
 .curator-tariff-grid .stat-tile { min-width: 0; overflow-wrap: anywhere; }
 .curator-tariff-grid .stat-tile-value { color: var(--blue-text); }
 .curator-practice-pie {
+    position: relative;
     width: min(65%, 200px);
     aspect-ratio: 1;
     border-radius: 50%;
-    margin: var(--s-3) auto;
-    background: conic-gradient(
-        var(--blue-fill) 0 var(--practice-done),
-        var(--blue-mid) var(--practice-done) var(--practice-active),
-        var(--line) var(--practice-active) 100%
-    );
+    margin: var(--s-4) auto var(--s-5);
+    filter: drop-shadow(0 8px 8px color-mix(in srgb, var(--blue-deep) 22%, transparent));
 }
+.curator-pie-sector {
+    --sector-gap: min(1.4deg, calc(var(--sector-size) / 8));
+    --sector-bevel: min(4deg, calc(var(--sector-size) / 4));
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        conic-gradient(from var(--sector-start),
+            rgb(255 255 255 / 62%) var(--sector-gap),
+            transparent calc(var(--sector-gap) + var(--sector-bevel)),
+            transparent calc(var(--sector-size) - var(--sector-gap) - var(--sector-bevel)),
+            rgb(30 15 48 / 36%) calc(var(--sector-size) - var(--sector-gap)), transparent var(--sector-size)),
+        linear-gradient(145deg, rgb(255 255 255 / 37%), transparent 52%, rgb(30 15 48 / 13%)),
+        var(--sector-color);
+    mask-image: conic-gradient(from var(--sector-start),
+        transparent var(--sector-gap), black calc(var(--sector-gap) + .15deg),
+        black calc(var(--sector-size) - var(--sector-gap) - .15deg),
+        transparent calc(var(--sector-size) - var(--sector-gap)));
+    box-shadow:
+        inset 0 0 0 1px rgb(255 255 255 / 45%),
+        inset 0 -8px 16px rgb(30 15 48 / 14%);
+}
+.curator-pie-done { --sector-color: var(--blue-fill); }
+.curator-pie-started { --sector-color: var(--blue-mid); }
+.curator-pie-none { --sector-color: var(--line); }
+.curator-pie-full {
+    mask-image: none;
+    background: linear-gradient(145deg, rgb(255 255 255 / 37%), transparent 52%, rgb(30 15 48 / 13%)), var(--sector-color);
+}
+.curator-practice-pie:has(svg) {
+    width: min(100%, 290px);
+    aspect-ratio: auto;
+    --pie-done: var(--blue-fill);
+    --pie-started: var(--blue-mid);
+    --pie-none: var(--line);
+    filter: drop-shadow(0 9px 7px color-mix(in srgb, var(--blue-deep) 17%, transparent));
+}
+.curator-practice-pie > svg { display: block; width: 100%; height: auto; }
 .curator-demo-filters select { padding-inline-start: var(--s-2); text-overflow: ellipsis; }
 
 .curator-demo-pupils li {
