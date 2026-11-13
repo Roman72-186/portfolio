@@ -1,0 +1,19 @@
+.curator-review { max-width: 960px; margin-inline: auto; }
+.review-subjects, .review-student-grid { display: grid; gap: var(--s-3); }
+.review-student-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.review-subject { min-height: 130px; display: grid; align-items: end; background: var(--blue-soft); color: var(--blue-text); font-size: var(--fs-h2); font-weight: 800; }
+.review-subject:nth-child(2) { background: var(--surface-2); }
+.review-filters { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: end; }
+.review-filters label { display: grid; gap: var(--s-1); flex: 1 1 135px; }
+.review-student-card { min-width: 0; }
+.review-student-card img, .review-no-photo { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--blue-soft); border-radius: var(--r-md); margin-bottom: var(--s-2); }
+.review-student-card strong { overflow-wrap: anywhere; }
+.review-no-photo { display: grid; place-items: center; }
+.review-photo-strip { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: min(80vw, 440px); overflow-x: auto; scroll-snap-type: x mandatory; }
+.review-photo-strip > * { scroll-snap-align: start; }
+.review-photo-strip img { object-fit: contain; }
+.review-history { list-style: none; padding: 0; }
+.review-history a { display: flex; align-items: center; gap: var(--s-2); padding-block: var(--s-2); }
+.review-history img { width: 52px; height: 52px; object-fit: contain; }
+.review-feedback-sections { border: 0; padding: 0; margin: var(--s-2) 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+@media (max-width: 600px) { .review-student-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

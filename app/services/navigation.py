@@ -72,13 +72,13 @@ class StaffNavItem:
 
 
 CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
-    NavItem(key="dashboard", href="/cabinet/curator", label="Кабинет", icon="🏠"),
+    NavItem(key="dashboard", href="/cabinet/curator?sections=1", label="Все разделы", icon="🏠"),
+    NavItem(key="curator_demo", href="/cabinet/curator/overview", label="Статистика", icon="📈"),
     NavItem(key="students", href="/cabinet/students", label="Ученики", icon="👥"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     # Статистика своей группы — «Ученики поимённо» (Александрия 22.10.2026);
     # статистика одного ученика — по ссылке оттуда, во вкладке его карточки.
-    NavItem(key="statistics", href="/cabinet/curator/statistics", label="Статистика", icon="📈"),
-    NavItem(key="curator_demo", href="/cabinet/curator/demo", label="Демо-версия", icon="📈"),
+    NavItem(key="statistics", href="/cabinet/curator/statistics", label="Поимённая статистика", icon="📈"),
     # 3D-лаборатория (владелец 25.09.2026: «всем кураторам открыть доступ»).
     # Сервер куратора пускал и раньше (`can_open_3dlab`), но в его отдельном
     # меню пункта не было — зайти можно было только по прямой ссылке.

@@ -72,6 +72,7 @@ def _check_student_access(
 
 
 @router.get("", response_class=HTMLResponse)
+@router.get("/queue", response_class=HTMLResponse)
 def students_review_list(
     request: Request,
     user: Annotated[dict, Depends(require_curator)],
@@ -80,9 +81,21 @@ def students_review_list(
     status: str = "",
     tariff: str = "",
     curator: str = "",
+    subject: str = "",
+    cycle_id: int | None = None,
 ):
     if user["role_rank"] < FULL_ACCESS_RANK:
-        return RedirectResponse("/cabinet/students", status_code=302)
+        if not request.url.path.endswith("/queue"):
+            return RedirectResponse("/cabinet/students", status_code=302)
+        from app.services.curator_review_queue import build_review_queue
+
+        queue = build_review_queue(
+            db, user["user_id"], subject=subject, tariff=tariff, cycle_id=cycle_id, status=status,
+        )
+        return templates.TemplateResponse(request, "curator_review_queue.html", {
+            "request": request, "user": user, "nav_active": "students_review",
+            **queue,
+        })
     all_rows = aggregate_student_review_counts(db, user)
     rows = filter_review_rows(
         all_rows, q=q, status=status, tariff=tariff, curator=curator,

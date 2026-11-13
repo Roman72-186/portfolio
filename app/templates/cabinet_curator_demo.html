@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Демо-версия кабинета куратора{% endblock %}
+{% block title %}Статистика куратора{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/curator_demo.css?v=1">
+<link rel="stylesheet" href="/static/css/curator_demo.css?v=3">
 {% endblock %}
 
 {% macro pupil_list(rows, with_progress=false) %}
@@ -26,23 +26,12 @@
 {% include "_curator_nav.html" %}
 <div class="curator-demo">
     <header class="page-header page-header--stacked">
-        <a class="back-link" href="/cabinet/curator">← Кабинет</a>
+        <a class="back-link" href="/cabinet/curator?sections=1">← Все разделы</a>
         <h1 class="page-title">Мои ученики</h1>
-        <p class="page-subtitle">Демо-версия кабинета куратора</p>
     </header>
 
-    {% set closed = user.closed_sections or () %}
-    {% set granted = user.granted_sections or () %}
-    <nav class="curator-demo-links" aria-label="Разделы кабинета">
-        <a class="btn-outline" href="/cabinet/curator/demo" aria-current="page">Статистика</a>
-        {% if 'students_review' not in closed %}<a class="btn-outline" href="/cabinet/staff/students-review">Проверка</a>{% endif %}
-        {% if 'program' in granted and 'program' not in closed %}<a class="btn-outline" href="/cabinet/staff/program/periods">Учебная программа</a>{% endif %}
-        {% if '3dlab' not in closed %}<a class="btn-outline" href="/3dlab">3Dlab</a>{% endif %}
-        <a class="btn-outline" href="/cabinet/curator/profile">Профиль</a>
-    </nav>
-
     {% if demo.stages %}
-    <form class="card curator-demo-filters" method="get" action="/cabinet/curator/demo">
+    <form class="card curator-demo-filters" method="get" action="/cabinet/curator/overview">
         <label class="field-label">Месяц
             <select class="field-select" name="stage_id">
                 <option value="-1">Все месяцы</option>
@@ -70,12 +59,28 @@
     </form>
     {% endif %}
 
+    <section class="card" aria-labelledby="demo-important-title">
+        <h2 id="demo-important-title" class="card-title">Важное</h2>
+        {% if demo.absent %}
+        <details class="curator-demo-group">
+            <summary>Три календарных дня без активности · {{ demo.absent|length }}</summary>
+            {{ pupil_list(demo.absent) }}
+        </details>
+        {% else %}<p class="text-muted">Среди учеников с известной датой посещения никто не пропустил три календарных дня подряд.</p>{% endif %}
+        {% if demo.unknown %}
+        <details class="curator-demo-group">
+            <summary>Нет данных об активности · {{ demo.unknown|length }}</summary>
+            {{ pupil_list(demo.unknown) }}
+        </details>
+        {% endif %}
+    </section>
+
     {% if not demo.cycle or demo.future %}
     <p class="empty-state">{{ 'Эта неделя ещё не началась' if demo.future else 'Сейчас нет текущей недели. Можно выбрать период из списка.' }}</p>
     {% else %}
     <section class="card" aria-labelledby="demo-week-title">
         <h2 id="demo-week-title" class="card-title">Завершили неделю</h2>
-        <div class="grid-2">
+        <div class="curator-tariff-grid">
             {% for tariff, groups in demo.weekly.items() %}
             {% set total = groups.done|length + groups.remaining|length %}
             <div class="stat-tile">
@@ -97,33 +102,33 @@
     <section class="card" aria-labelledby="demo-practice-title">
         <h2 id="demo-practice-title" class="card-title">Практика · {{ demo.subject }}</h2>
         {% if demo.practice_total %}
+        {% set done = demo.practice.done|length %}
+        {% set started = demo.practice.started|length %}
+        <div class="curator-practice-pie" aria-hidden="true" style="--practice-done: {{ done * 100 / demo.practice_total }}%; --practice-active: {{ (done + started) * 100 / demo.practice_total }}%"></div>
         {% for key, label in [('done', 'Сдали всё'), ('started', 'В процессе'), ('none', 'Нет действий на платформе')] %}
         {% set count = demo.practice[key]|length %}
         <details class="curator-demo-group">
             <summary>{{ label }} · {{ count }} из {{ demo.practice_total }} ({{ (count * 100 / demo.practice_total)|round|int }}%)
-                <progress class="curator-demo-progress" value="{{ count }}" max="{{ demo.practice_total }}" aria-label="{{ label }}"></progress>
             </summary>
             {{ pupil_list(demo.practice[key], true) if count else 'В этой группе пока никого.' }}
         </details>
         {% endfor %}
         {% else %}<p class="text-muted">По этому предмету нет назначенных работ за выбранную неделю.</p>{% endif %}
     </section>
+    {% for control in demo.controls %}
+    <section class="card">
+        <h2 class="card-title">Баллы за контрольную</h2>
+        <p>{{ control.label }}</p>
+        {% for label, rows in control.groups.items() %}
+        <details class="curator-demo-group">
+            <summary>{{ label }} · {{ rows|length }}</summary>
+            {{ pupil_list(rows) }}
+        </details>
+        {% endfor %}
+    </section>
+    {% endfor %}
     {% endif %}
 
-    <section class="card" aria-labelledby="demo-important-title">
-        <h2 id="demo-important-title" class="card-title">Важное</h2>
-        {% if demo.absent %}
-        <details class="curator-demo-group">
-            <summary>Три календарных дня без активности · {{ demo.absent|length }}</summary>
-            {{ pupil_list(demo.absent) }}
-        </details>
-        {% else %}<p class="text-muted">Среди учеников с известной датой посещения никто не пропустил три календарных дня подряд.</p>{% endif %}
-        {% if demo.unknown %}
-        <details class="curator-demo-group">
-            <summary>Нет данных об активности · {{ demo.unknown|length }}</summary>
-            {{ pupil_list(demo.unknown) }}
-        </details>
-        {% endif %}
-    </section>
+
 </div>
 {% endblock %}

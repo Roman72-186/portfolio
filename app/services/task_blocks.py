@@ -8,7 +8,7 @@
 from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import DIALOG_HOLIDAY, MOCK_SUBJECTS, TARIFFS
@@ -3400,6 +3400,7 @@ def submission_review_queue(
     tariff: str | None = None,
     week_start=None,
     week_end=None,
+    cycle_id: int | None = None,
     limit: int = 200,
 ) -> list[dict]:
     """Сданные в блоках работы для экрана проверки по ученику.
@@ -3426,7 +3427,12 @@ def submission_review_queue(
     if student_id is not None:
         query = query.filter(TaskBlockSubmission.user_id == student_id)
     if subject:
-        query = query.filter(TaskBlock.subject == subject)
+        query = query.filter(
+            func.coalesce(TaskBlock.subject, TrackerTask.subject) == subject
+            if cycle_id is not None else TaskBlock.subject == subject
+        )
+    if cycle_id is not None:
+        query = query.filter(TrackerTask.topic_id == cycle_id)
     if tariff:
         query = query.filter(User.tariff == tariff)
     if week_start is not None:

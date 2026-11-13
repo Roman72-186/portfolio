@@ -5,9 +5,13 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
+{% if viewer_role != 'student' %}<link rel="stylesheet" href="/static/css/curator_review.css?v=1">{% endif %}
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
+    {% if viewer_role != 'student' %}
+    <a class="back-link" data-review-navigation href="{{ queue_navigation.queue_url if queue_navigation else '/cabinet/staff/students-review/queue' }}">← Очередь проверки</a>
+    {% endif %}
     <a class="back-link" href="{{ back_url }}">← Назад</a>
     <div class="prg-head">
         <div class="prg-head-copy">
@@ -15,6 +19,8 @@
             <p>{{ task.title }}{% if block.title %} · {{ block.title }}{% endif %}{% if student %} · {{ student.name }}{% endif %}</p>
         </div>
     </div>
+
+    {% include "partials/curator_review_navigation.html" %}
 
     <section class="card">
         <h2 class="section-label">{{ 'Работы ученика' if group else 'Работа ученика' }}</h2>
@@ -29,7 +35,7 @@
            «проверено» и «Завершить ОС» — общие, ниже; балл — у каждой работы. #}
         {% if group %}
         <p class="card-desc">{{ group.period_label }}. Ответ в диалоге ниже – один на все эти работы{% if viewer_role != 'student' %}, ученик увидит его по каждой{% endif %}.</p>
-        <div class="photo-grid hw-group-strip" data-gallery="group-{{ submission.id }}">
+        <div class="photo-grid hw-group-strip{% if viewer_role != 'student' %} review-photo-strip{% endif %}" data-gallery="group-{{ submission.id }}">
             {% for work in group.works %}
             {% for url in work.images %}
             <figure class="hw-group-work">
@@ -53,7 +59,7 @@
         {% if submission.comment %}<p>{{ submission.comment | rich_text | safe }}</p>{% endif %}
         {% endif %}
         {% if submission_images and not group %}
-        <div class="photo-grid" data-gallery="submission-{{ submission.id }}">
+        <div class="photo-grid{% if viewer_role != 'student' %} review-photo-strip{% endif %}" data-gallery="submission-{{ submission.id }}">
             {% for image in submission_images %}
             <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото работы">
                 <img src="{{ image.image_s3_url }}" alt="Работа ученика" loading="lazy">
@@ -90,6 +96,28 @@
         </div>
         {% endif %}
     </section>
+
+    {% if viewer_role != 'student' %}
+    <section class="card">
+        <details open>
+            <summary class="section-label">Задание · {{ task.title }}</summary>
+            {% if task.description %}<div>{{ task.description | rich_text | safe }}</div>{% endif %}
+            {% if block.title %}<p>{{ block.title }}</p>{% endif %}
+        </details>
+    </section>
+    <section class="card">
+        <h2 class="section-label">Прошлые работы</h2>
+        <ul class="review-history">
+            {% for item in past_works %}
+            <li><a href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback">
+                {% if item.images %}<img src="{{ item.images[0] }}" loading="lazy" alt="">{% endif %}
+                <span>{{ item.task_title }} · {{ item.submitted_at | msk_text }}</span>
+            </a></li>
+            {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
+        </ul>
+        <a class="btn-outline" href="/cabinet/students?student={{ submission.user_id }}">Карточка ученика и портфолио</a>
+    </section>
+    {% endif %}
 
     <section class="card">
         <h2 class="section-label">Оценка</h2>
@@ -177,7 +205,7 @@
         {% if messages %}
         <div class="hw-messages">
             {% for message in messages %}
-            <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}">
+            <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}"{% if viewer_role != 'student' and message.draft and message.sender_id == user.user_id %} data-own-review-draft="{{ message.id }}"{% endif %}>
                 <div class="hw-msg-bubble">
                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
                     {% if message.text %}<p class="hw-msg-text">{{ message.text | rich_text | safe }}</p>{% endif %}
@@ -230,11 +258,26 @@
         {% if (viewer_role != 'student' and not rating_panel.closed) or reply.allowed %}
         {% if viewer_role == 'student' %}<p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>{% endif %}
         <form class="hw-async-form hw-form" method="post"
+              {% if autosave is defined and autosave is not none and viewer_role != 'student' %}data-review-draft-url="/cabinet/staff/task-block-submissions/{{ submission.id }}/draft"
+              data-review-draft-key="{{ user.user_id }}:{{ submission.id }}"{% endif %}
               action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}"
               enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
-            <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"></textarea>
+            {% if viewer_role != 'student' %}
+            <fieldset class="review-feedback-sections" data-review-sections>
+                <legend>Раздел замечания</legend>
+                {% for section in ('Композиционное решение', 'Конструктивное решение', 'Графическое решение', 'Рекомендации') %}
+                <button type="button" class="btn-outline" data-review-section="{{ section }}">{{ section }}</button>
+                {% endfor %}
+            </fieldset>
+            {% endif %}
+            <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"{% if autosave is defined and autosave is not none %} maxlength="20000"{% endif %}></textarea>
+            {% if autosave is defined and autosave is not none and viewer_role != 'student' %}
+            <script type="application/json" data-review-draft-state>{{ autosave|tojson }}</script>
+            <p class="card-desc" data-review-save-status role="status">Текст сохраняется как черновик.</p>
+            <button type="button" class="btn-outline" data-review-save-retry hidden>Повторить сохранение</button>
+            {% endif %}
             {% if viewer_role != 'student' %}<div data-media-recorder></div>{% endif %}
             <label class="form-label hw-label-gap" for="feedback-photo">Фото, необязательно</label>
             <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
@@ -252,11 +295,11 @@
         {% endif %}
         {# Сообщения сотрудника — черновик, пока не нажата «Отправить ОС»: она
            открывает их ученику и шлёт одно уведомление (владелец 22.10.2026). #}
-        {% if viewer_role != 'student' and draft_count %}
+        {% if viewer_role != 'student' and (draft_count or (autosave is defined and autosave is not none and not rating_panel.closed)) %}
         <div class="hw-hint">
-            <p class="card-desc">Ученик пока не видит {{ draft_count }} {{ draft_count | plural('сообщение', 'сообщения', 'сообщений') }}. Напиши всё, что хотел, и нажми «Отправить ОС» – ученик получит одно уведомление.</p>
+            <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
             <div class="prg-actions">
-                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback">Отправить ОС</button>
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Отправить ОС</button>
             </div>
             <p class="prg-message" data-send-status aria-live="polite"></p>
         </div>
@@ -297,6 +340,7 @@
 </div>
 
 {% include "partials/lightbox.html" %}
+{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=2" defer></script>{% endif %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
 <script src="/static/js/feedback-rating.js?v=1"></script>
@@ -463,14 +507,23 @@
             var status = document.querySelector('[data-send-status]');
             var fallback = 'Не получилось отправить. Обнови страницу и попробуй ещё раз.';
             button.disabled = true;
-            window.csrfFetch(button.dataset.sendFeedback, {method: 'POST'}).then(function (response) {
+            var draft = window.curatorReviewDraft;
+            if (draft) draft.setBusy(true);
+            var saved = draft ? draft.flush() : Promise.resolve();
+            saved.then(function () {
+                return window.csrfFetch(button.dataset.sendFeedback, {method: 'POST'});
+            }).then(function (response) {
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) {
                         throw new Error(window.csrfFailure(response.status, data, fallback));
                     }
                 });
-            }).then(function () { window.location.reload(); }).catch(function (error) {
+            }).then(function () {
+                if (draft) draft.detach();
+                window.location.reload();
+            }).catch(function (error) {
                 button.disabled = false;
+                if (draft) draft.setBusy(false);
                 showError(status, error.message || fallback);
             });
         });
@@ -482,15 +535,38 @@
             var message = form.querySelector('.prg-message');
             var button = form.querySelector('button[type=submit]');
             button.disabled = true;
-            fetch(form.action, {
-                method: 'POST', credentials: 'same-origin',
-                headers: {'X-CSRF-Token': csrfToken}, body: new FormData(form)
+            var draft = form.hasAttribute('data-review-draft-url') ? window.curatorReviewDraft : null;
+            var body = new FormData(form);
+            if (draft) draft.setBusy(true);
+            var save = draft ? draft.flush() : Promise.resolve();
+            save.then(function () {
+                if (draft) {
+                    var attachment = ['photo', 'video', 'audio'].some(function (key) {
+                        var value = body.get(key);
+                        return value && value.size > 0;
+                    }) || !!String(body.get('video_link') || '').trim();
+                    if (!attachment) {
+                        if (!draft.hasDraft()) throw new Error('Добавьте текст или вложение.');
+                        return null;
+                    }
+                    // Текст уже сохранён. Вложения добавляются существующей формой.
+                    body.delete('text');
+                }
+                return fetch(form.action, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {'X-CSRF-Token': csrfToken}, body: body
+                });
             }).then(function (response) {
+                if (!response) return;
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) throw new Error(data.error || 'Не получилось отправить сообщение.');
                 });
-            }).then(function () { window.location.reload(); }).catch(function (error) {
+            }).then(function () {
+                if (draft) draft.detach();
+                window.location.reload();
+            }).catch(function (error) {
                 button.disabled = false;
+                if (draft) draft.setBusy(false);
                 message.classList.add('is-error');
                 message.textContent = error.message;
             });

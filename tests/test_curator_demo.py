@@ -137,18 +137,46 @@ def test_demo_route_scope_and_section_guard(client, db, user_factory, session_fa
     _student(db, user_factory, other, 70104, "Ученик чужой группы")
     db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
-    dashboard = client.get("/cabinet/curator")
-    assert 'href="/cabinet/curator/demo"' in dashboard.text
-    response = client.get("/cabinet/curator/demo", params={"stage_id": stage.id, "cycle_id": cycle.id})
+    home = client.get("/cabinet/curator", follow_redirects=False)
+    assert home.headers["location"] == "/cabinet/curator/overview"
+    dashboard = client.get("/cabinet/curator?sections=1")
+    assert 'href="/cabinet/curator/overview"' in dashboard.text
+    assert 'href="/cabinet/curator/statistics"' in dashboard.text
+    params = {"stage_id": stage.id, "cycle_id": cycle.id}
+    old = client.get("/cabinet/curator/demo", params=params, follow_redirects=False)
+    assert old.headers["location"] == f"/cabinet/curator/overview?stage_id={stage.id}&cycle_id={cycle.id}"
+    response = client.get("/cabinet/curator/overview", params=params)
     assert response.status_code == 200
     assert "Ученик своей группы" in response.text
     assert "Ученик чужой группы" not in response.text
+    assert "Демо-версия" not in response.text
     assert "private" in response.headers["cache-control"]
     assert_static_versioned(response.text)
 
     db.add(SectionAccessRule(section_key="statistics", user_id=curator.id, level="none"))
     db.commit()
     assert client.get("/cabinet/curator/demo").status_code == 403
-    assert 'href="/cabinet/curator/demo"' not in client.get("/cabinet/curator").text
+    assert client.get("/cabinet/curator/overview").status_code == 403
+    fallback = client.get("/cabinet/curator", follow_redirects=False)
+    assert fallback.status_code == 200
+    assert 'href="/cabinet/curator/overview"' not in fallback.text
     client.cookies.set("session_id", session_factory(own).id)
     assert client.get("/cabinet/curator/demo").status_code == 403
+
+
+def test_review_queue_uses_assignment_week_and_own_students(client, db, user_factory, session_factory, demo_group):
+    now, curator, _, cycle, first, _, _ = demo_group
+    own = _student(db, user_factory, curator, 70102, "Работа своей группы")
+    other = user_factory(vk_id=70103, role_name="куратор")
+    foreign = _student(db, user_factory, other, 70104, "Работа чужой группы")
+    _submission(db, own, first, 2, now + timedelta(days=12))
+    _submission(db, foreign, first, 2, now)
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    url = "/cabinet/staff/students-review/queue"
+    assert "Выберите предмет" in client.get(url).text
+    response = client.get(url, params={"subject": "Рисунок", "cycle_id": cycle.id})
+    assert response.status_code == 200
+    assert "Работа своей группы" in response.text
+    assert "Работа чужой группы" not in response.text

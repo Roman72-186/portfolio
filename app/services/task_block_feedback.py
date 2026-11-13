@@ -662,7 +662,7 @@ def run_unsent_feedback_reminders(db: DBSession, now: datetime | None = None) ->
         db.query(
             TaskBlockFeedbackMessage.feedback_id,
             func.min(TaskBlockFeedbackMessage.id),
-            func.max(TaskBlockFeedbackMessage.created_at),
+            func.max(func.coalesce(TaskBlockFeedbackMessage.edited_at, TaskBlockFeedbackMessage.created_at)),
         )
         .join(TaskBlockFeedback, TaskBlockFeedback.id == TaskBlockFeedbackMessage.feedback_id)
         .filter(

@@ -57,7 +57,7 @@ def _add_work(db, user_id, work_type, month="январь", year=2026, score=Non
 
 def test_curator_dashboard_renders(curator_client):
     client, _ = curator_client
-    resp = client.get("/cabinet/curator", follow_redirects=False)
+    resp = client.get("/cabinet/curator?sections=1", follow_redirects=False)
     assert resp.status_code == 200
 
 

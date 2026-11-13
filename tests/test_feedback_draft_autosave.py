@@ -1,0 +1,123 @@
+"""Хранение замечания в черновике до явной отправки обратной связи."""
+
+from datetime import datetime, timedelta, timezone
+
+from app.dependencies import require_csrf_header
+from app.models.notification import Notification
+from app.models.section_access import SectionAccessRule
+from app.models.task_block import TaskBlock
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+from app.services.linked_feedback import sync_links
+from tests.test_feedback_rating import (
+    _login,
+    _quiet_side_effects,  # noqa: F401 — проверка диалога без доставки уведомлений
+    _send,
+    _setup_block,
+)
+from tests.test_linked_feedback import _submit, _task_with_block
+
+
+def _save(client, submission, text, *, cursor=0, draft=None):
+    return client.put(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/draft",
+        json={"text": text, "cursor": cursor, **({"message_id": draft["id"], "revision": draft["revision"]} if draft else {})},
+    )
+
+
+def test_autosave_retries_updates_and_delivers_only_on_send(db, user_factory, session_factory, client):
+    curator, student, _, submission = _setup_block(db, user_factory, base=995_001)
+    _login(client, session_factory, curator)
+    created = _save(client, submission, "Первое замечание\n")
+    assert created.status_code == 200, created.text
+    draft = created.json()
+    assert _save(client, submission, "Первое замечание\n").json() == draft
+    assert _save(client, submission, "Черновик второй вкладки").status_code == 409
+    changed = _save(client, submission, "Исправленное замечание", cursor=draft["cursor"], draft=draft).json()
+    assert changed["id"] == draft["id"]
+    assert changed["revision"] != draft["revision"]
+    assert _save(client, submission, "Исправленное замечание", cursor=draft["cursor"], draft=draft).json() == changed
+    assert _save(client, submission, "Старая версия", cursor=draft["cursor"], draft=draft).status_code == 409
+    assert db.query(TaskBlockFeedbackMessage).count() == 1
+    assert db.query(Notification).filter(Notification.user_id == student.id).count() == 0
+
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
+    assert "Исправленное замечание" not in page.text
+    _login(client, session_factory, curator)
+    assert _send(client, submission).status_code == 200
+    assert _save(client, submission, "Исправленное замечание").status_code == 409
+    assert _save(client, submission, "Слишком поздно", cursor=changed["cursor"], draft=changed).status_code == 409
+    assert db.query(TaskBlockFeedbackMessage).count() == 1
+    assert db.query(Notification).filter(Notification.user_id == student.id).count() == 1
+    _login(client, session_factory, student)
+    assert "Исправленное замечание" in client.get(
+        f"/cabinet/task-block-submissions/{submission.id}/feedback",
+    ).text
+
+
+def test_autosave_clears_only_its_draft_and_does_not_create_empty_dialog(db, user_factory, session_factory, client):
+    curator, _, _, submission = _setup_block(db, user_factory, base=995_011)
+    _login(client, session_factory, curator)
+    assert _save(client, submission, " \n").json() == {"ok": True, "id": None, "revision": None, "cursor": 0}
+    assert db.query(TaskBlockFeedback).count() == 0
+    assert client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/messages", data={"text": "Другой черновик"},
+    ).status_code == 200
+    first = db.query(TaskBlockFeedbackMessage).one()
+    created = _save(client, submission, "Очистить", cursor=first.id).json()
+    cleared = _save(client, submission, "", cursor=created["cursor"], draft=created)
+    assert cleared.json() == {"ok": True, "id": None, "revision": None, "cursor": first.id}
+    assert _save(client, submission, "", cursor=created["cursor"], draft=created).json() == cleared.json()
+    assert [row.text for row in db.query(TaskBlockFeedbackMessage).all()] == ["Другой черновик"]
+
+
+def test_autosave_checks_csrf_and_does_not_allow_foreign_draft(db, user_factory, session_factory, client):
+    curator, student, _, submission = _setup_block(db, user_factory, base=995_021)
+    other = user_factory(vk_id=995_023, name="Другой куратор", role_name="куратор")
+    chief = user_factory(vk_id=995_024, name="Главный преподаватель", role_name="админ")
+    _login(client, session_factory, curator)
+    draft = _save(client, submission, "Своё замечание").json()
+    _login(client, session_factory, other)
+    assert _save(client, submission, "Чужой ученик").status_code == 403
+    _login(client, session_factory, student)
+    assert _save(client, submission, "Ученик").status_code == 403
+    _login(client, session_factory, chief)
+    assert _save(client, submission, "Чужой черновик", draft=draft).status_code == 409
+
+    _login(client, session_factory, curator)
+    no_op = client.app.dependency_overrides.pop(require_csrf_header)
+    try:
+        assert _save(client, submission, "Нет токена", draft=draft).status_code == 403
+    finally:
+        client.app.dependency_overrides[require_csrf_header] = no_op
+    db.add(SectionAccessRule(section_key="students_review", user_id=curator.id, level="view"))
+    db.commit()
+    assert _save(client, submission, "Только чтение", draft=draft).status_code == 403
+    assert db.query(TaskBlockFeedbackMessage).one().text == "Своё замечание"
+
+
+def test_autosave_keeps_linked_work_in_main_dialog(db, user_factory, session_factory, client):
+    curator, student, _, first = _setup_block(db, user_factory, base=995_031)
+    _, main = _task_with_block(db, "Следующая неделя", db.get(TaskBlock, first.block_id).block_type)
+    sync_links(db, main, [first.block_id])
+    db.commit()
+    _login(client, session_factory, curator)
+    assert _save(client, first, "Ранний текст").status_code == 409
+    assert db.query(TaskBlockFeedback).count() == 0
+
+    latest = _submit(db, main, student, datetime.now(timezone.utc))
+    db.commit()
+    assert _save(client, latest, "Общий разбор").status_code == 200
+    assert db.query(TaskBlockFeedback).one().submission_id == latest.id
+
+
+def test_autosave_rejects_late_save_after_dialog_closes(db, user_factory, session_factory, client):
+    curator, _, _, submission = _setup_block(db, user_factory, base=995_041)
+    _login(client, session_factory, curator)
+    draft = _save(client, submission, "Замечание").json()
+    assert _send(client, submission).status_code == 200
+    feedback = db.query(TaskBlockFeedback).one()
+    feedback.feedback_closed_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.commit()
+    assert _save(client, submission, "Новый черновик", cursor=draft["cursor"]).status_code == 403
+    assert db.query(TaskBlockFeedbackMessage).one().text == "Замечание"

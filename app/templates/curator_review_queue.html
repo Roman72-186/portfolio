@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Проверка работ{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/curator_review.css?v=1">
+{% endblock %}
+{% block content %}
+{% include "_curator_nav.html" %}
+<main class="curator-review">
+    <header class="page-header">
+        <h1 class="page-title">Проверка работ</h1>
+        <a href="/cabinet/curator/profile">Профиль</a>
+    </header>
+    {% if not subject %}
+    <h2 class="section-label">Выберите предмет</h2>
+    <div class="review-subjects">
+        {% for name in subjects %}
+        <a class="card review-subject" href="?subject={{ name|urlencode }}">{{ name }}</a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <a class="back-link" href="/cabinet/staff/students-review/queue">← Выбрать предмет</a>
+    <h2>{{ subject }}</h2>
+    <form method="get" class="card review-filters">
+        <input type="hidden" name="subject" value="{{ subject }}">
+        <label>Тариф<select class="field-select" name="tariff">
+            <option value="">Все тарифы</option>
+            {% for value in tariffs %}<option value="{{ value }}" {% if value == tariff %}selected{% endif %}>{{ value|tariff_label }}</option>{% endfor %}
+        </select></label>
+        <label>Неделя<select class="field-select" name="cycle_id">
+            {% for cycle in period.cycles %}<option value="{{ cycle.id }}" {% if period.cycle and cycle.id == period.cycle.id %}selected{% endif %}>{{ cycle.title }}</option>{% endfor %}
+        </select></label>
+        <label>Работы<select class="field-select" name="status">
+            <option value="">На проверке</option><option value="all" {% if status == 'all' %}selected{% endif %}>Все сданные</option>
+        </select></label>
+        <button class="btn-blue" type="submit">Показать</button>
+    </form>
+    <h2 class="section-label">Выберите ученика для проверки</h2>
+    <div class="review-student-grid">
+    {% for card in cards %}
+        {% set work = card.works[0] %}
+        <article class="card review-student-card">
+            <a href="{{ work.url }}">
+                {% if work.images %}<img src="{{ work.images[0] }}" loading="lazy" alt="Работа ученика">{% else %}<span class="review-no-photo">Без фото</span>{% endif %}
+                <strong>{{ card.student.last_name or '' }} {{ card.student.first_name or card.student.name }}</strong>
+            </a>
+            {% if card.works|length > 1 %}
+            <details><summary>Работы · {{ card.works|length }}</summary>
+                <ul>{% for item in card.works %}<li><a href="{{ item.url }}">{{ item.block_title }}</a></li>{% endfor %}</ul>
+            </details>
+            {% endif %}
+        </article>
+    {% else %}<p class="empty-state">За выбранную неделю работ в этом списке пока нет.</p>{% endfor %}
+    </div>
+    {% endif %}
+</main>
+{% endblock %}

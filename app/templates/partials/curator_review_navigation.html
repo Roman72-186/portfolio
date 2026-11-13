@@ -1,0 +1,14 @@
+{% if queue_navigation %}
+<nav class="prg-actions" aria-label="Ученики в очереди проверки">
+    {% if queue_navigation.previous_url %}
+    <a class="btn-outline" data-review-navigation rel="prev" href="{{ queue_navigation.previous_url }}">← Предыдущий ученик</a>
+    {% else %}
+    <button type="button" class="btn-outline" disabled>← Предыдущий ученик</button>
+    {% endif %}
+    {% if queue_navigation.next_url %}
+    <a class="btn-outline" data-review-navigation rel="next" href="{{ queue_navigation.next_url }}">Следующий ученик →</a>
+    {% else %}
+    <button type="button" class="btn-outline" disabled>Следующий ученик →</button>
+    {% endif %}
+</nav>
+{% endif %}

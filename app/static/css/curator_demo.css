@@ -39,10 +39,21 @@
     padding-inline-start: var(--s-5);
 }
 
-.curator-demo-progress {
-    width: 100%;
-    accent-color: var(--blue-fill);
+.curator-tariff-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+.curator-tariff-grid .stat-tile { min-width: 0; overflow-wrap: anywhere; }
+.curator-tariff-grid .stat-tile-value { color: var(--blue-text); }
+.curator-practice-pie {
+    width: min(65%, 200px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    margin: var(--s-3) auto;
+    background: conic-gradient(
+        var(--blue-fill) 0 var(--practice-done),
+        var(--blue-mid) var(--practice-done) var(--practice-active),
+        var(--line) var(--practice-active) 100%
+    );
 }
+.curator-demo-filters select { padding-inline-start: var(--s-2); text-overflow: ellipsis; }
 
 .curator-demo-pupils li {
     margin-block: var(--s-1);

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
@@ -118,6 +119,39 @@ def _feedback(db: DBSession, submission_id: int) -> TaskBlockFeedback | None:
     ).first()
 
 
+def _locked_feedback(db: DBSession, submission_id: int) -> TaskBlockFeedback | None:
+    # Блокировка совпадает с отправкой и закрытием ОС. После ожидания читаем
+    # свежий статус даже если диалог уже есть в identity map запроса.
+    return db.query(TaskBlockFeedback).filter(
+        TaskBlockFeedback.submission_id == submission_id,
+    ).populate_existing().with_for_update().first()
+
+
+def _editable_text_draft(message: TaskBlockFeedbackMessage) -> bool:
+    return bool(
+        message.is_draft and message.sender_role != "student" and message.text
+        and not (message.photo_s3_url or message.video_url or message.video_s3_url or message.audio_s3_url)
+    )
+
+
+def _draft_revision(message: TaskBlockFeedbackMessage) -> str:
+    stamp = message.edited_at or message.created_at
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return sha256(f"{message.id}|{stamp.isoformat()}|{message.text}".encode("utf-8")).hexdigest()
+
+
+def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int) -> dict:
+    own = [message for message in messages if message.sender_id == author_id]
+    return {
+        "cursor": max((message.id for message in own), default=0),
+        "drafts": [
+            {"id": message.id, "text": message.text, "revision": _draft_revision(message)}
+            for message in own if _editable_text_draft(message)
+        ],
+    }
+
+
 def _mark_notifications_read(db: DBSession, user_id: int, submission_id: int) -> None:
     db.query(Notification).filter(
         Notification.user_id == user_id,
@@ -151,6 +185,7 @@ def _render(
 ) -> HTMLResponse:
     block, task = _context(db, submission)
     feedback = _feedback(db, submission.id)
+    awaits_group = absorbed_main_block(db, submission) is not None
     messages = feedback.messages if feedback else []
     if viewer_role == "student":
         # Черновик ОС ученику не виден, пока не нажата «Отправить ОС»
@@ -167,10 +202,28 @@ def _render(
         f"/cabinet/students?student={submission.user_id}&tab=tasks"
         if viewer_role != "student" else "/cabinet/learning"
     )
+    past_works = []
+    queue_navigation = None
+    if viewer_role != "student":
+        from app.services.task_blocks import submission_review_queue
+
+        past_works = [
+            row for row in submission_review_queue(db, student_id=submission.user_id, limit=12)
+            if row["submission_id"] != submission.id and row["submitted_at"] < submission.submitted_at
+        ][:4] if submission.submitted_at else []
+        if (user.get("nav_rank") or user["role_rank"]) == 2 and can(user, "students_review", "view"):
+            from app.services.curator_review_queue import review_neighbors
+
+            queue_navigation = review_neighbors(db, user["user_id"], submission, request.query_params)
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
         "request": request,
         "user": user,
         "viewer_role": viewer_role,
+        "autosave": (
+            _autosave_context(messages, user["user_id"])
+            if viewer_role != "student" and not is_closed(feedback)
+            and not awaits_group and can(user, "students_review") else None
+        ),
         # Балл ставит только ГП и выше; куратор видит его только для чтения.
         "can_score": viewer_role != "student" and can_score(user.get("role_rank", 1)),
         # «Вернуть на доработку» — только здесь, в диалоге (владелец 14.10.2026),
@@ -182,12 +235,14 @@ def _render(
         ),
         "student": student,
         "submission": submission,
+        "past_works": past_works,
+        "queue_navigation": queue_navigation,
         # Общая ОС на несколько заданий (13.10.2026): прошлые работы ученика,
         # на которые этот ответ тоже. None — работа одна.
         "group": work_group(db, submission),
         # Работа сама входит в общую ОС, а главная ещё не сдана: ответа по
         # ней отдельно не будет (`linked_feedback`).
-        "awaits_group": absorbed_main_block(db, submission) is not None,
+        "awaits_group": awaits_group,
         "submission_images": list_submission_images(db, submission.id),
         # Сколько и когда ученик менял сданную работу и что было до правки
         # (владелец 07.10.2026) — для проверяющего, ученику не показываем.
@@ -231,9 +286,10 @@ def staff_feedback_page(
     main = main_submission_for(db, submission)
     if main is not None:
         # Работа вошла в общую ОС — ответ пишется там (созвон 13.10.2026).
-        return RedirectResponse(
-            f"/cabinet/staff/task-block-submissions/{main.id}/feedback", status_code=302,
-        )
+        url = f"/cabinet/staff/task-block-submissions/{main.id}/feedback"
+        if request.url.query:
+            url += "?" + request.url.query
+        return RedirectResponse(url, status_code=302)
     return _render(
         request, db, submission=submission, user=user,
         viewer_role=role_from_rank(user.get("role_rank", 1)), student=student,
@@ -472,6 +528,108 @@ def _student_link(submission_id: int) -> str:
     return f"/cabinet/task-block-submissions/{submission_id}/feedback"
 
 
+class DraftUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(max_length=20000)
+    message_id: int | None = Field(default=None, gt=0)
+    revision: str | None = Field(default=None, min_length=64, max_length=64)
+    cursor: int = Field(ge=0)
+
+
+def _draft_response(message: TaskBlockFeedbackMessage | None, cursor: int) -> JSONResponse:
+    return JSONResponse({
+        "ok": True,
+        "id": message.id if message is not None else None,
+        "revision": _draft_revision(message) if message is not None else None,
+        "cursor": cursor,
+    })
+
+
+@router.put("/staff/task-block-submissions/{submission_id}/draft", response_class=JSONResponse)
+def save_feedback_draft(
+    submission_id: int,
+    data: DraftUpdate,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Сохранить текстовое замечание. Ученику оно откроется по «Отправить ОС»."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+    if not can(user, "students_review"):
+        return _error(403, "Нет доступа к проверке работ.")
+    if absorbed_main_block(db, submission) is not None:
+        return _error(409, "Откройте общую обратную связь, чтобы сохранить замечание к этой работе.")
+    if "\x00" in data.text:
+        return _error(422, "В тексте замечания есть недопустимый символ.")
+
+    author_id = user["user_id"]
+    content = data.text if data.text.strip() else ""
+    feedback = _locked_feedback(db, submission.id)
+    if feedback is None and content and data.message_id is None and data.cursor == 0:
+        get_or_create_feedback(db, submission_id=submission.id, initiator_id=author_id)
+        feedback = _locked_feedback(db, submission.id)
+    if is_closed(feedback):
+        return _error(403, "Обратная связь завершена, диалог закрыт.")
+    if feedback is None:
+        if not content and data.message_id is None and data.cursor == 0:
+            return _draft_response(None, 0)
+        return _error(409, "Диалог изменился. Обновите страницу перед сохранением.")
+
+    own_query = db.query(TaskBlockFeedbackMessage).filter(
+        TaskBlockFeedbackMessage.feedback_id == feedback.id,
+        TaskBlockFeedbackMessage.sender_id == author_id,
+    )
+    newest = own_query.order_by(TaskBlockFeedbackMessage.id.desc()).first()
+    cursor = newest.id if newest else 0
+    if data.message_id is None:
+        if cursor != data.cursor:
+            # Если ответ первого PUT потерялся, повтор не создаёт второе сообщение.
+            # Отправленное или изменённое сообщение повтором не открываем заново.
+            if (
+                newest is not None and cursor > data.cursor and _editable_text_draft(newest)
+                and newest.text == content and own_query.filter(
+                    TaskBlockFeedbackMessage.id > data.cursor,
+                ).count() == 1
+            ):
+                return _draft_response(newest, cursor)
+            return _error(409, "Диалог изменился. Обновите страницу перед сохранением.")
+        if not content:
+            return _draft_response(None, cursor)
+        message = TaskBlockFeedbackMessage(
+            feedback_id=feedback.id, sender_id=author_id,
+            sender_role=role_from_rank(user["role_rank"]), text=content, is_draft=True,
+        )
+        db.add(message)
+        db.flush()
+        cursor = message.id
+    else:
+        message = db.get(TaskBlockFeedbackMessage, data.message_id)
+        if message is None and not content and cursor <= data.cursor:
+            return _draft_response(None, cursor)
+        if message is None or message.feedback_id != feedback.id or message.sender_id != author_id:
+            return _error(409, "Черновик больше недоступен. Обновите страницу.")
+        if not _editable_text_draft(message):
+            return _error(409, "Сообщение уже отправлено или изменилось. Обновите страницу.")
+        if message.text == content:
+            return _draft_response(message, cursor)
+        if data.revision != _draft_revision(message):
+            return _error(409, "Замечание изменилось в другом окне. Обновите страницу перед сохранением.")
+        if content:
+            message.text = content
+            message.edited_at = datetime.now(timezone.utc)
+        else:
+            db.delete(message)
+            db.flush()
+            newest = own_query.order_by(TaskBlockFeedbackMessage.id.desc()).first()
+            cursor = newest.id if newest else 0
+            message = None
+    response = _draft_response(message, cursor)
+    db.commit()
+    return response
+
+
 @router.post("/staff/task-block-submissions/{submission_id}/send-feedback", response_class=JSONResponse)
 def send_feedback(
     submission_id: int,
@@ -486,9 +644,7 @@ def send_feedback(
     _staff_guard(db, user, submission)
     # Блокировка строки: два одновременных нажатия иначе прислали бы два
     # уведомления на одни и те же черновики.
-    feedback = db.query(TaskBlockFeedback).filter(
-        TaskBlockFeedback.submission_id == submission.id
-    ).with_for_update().first()
+    feedback = _locked_feedback(db, submission.id)
     if is_closed(feedback):
         return _error(403, "Обратная связь завершена – диалог закрыт.")
     if not send_drafts(feedback):
@@ -565,7 +721,7 @@ def edit_staff_message(
     открыта, хватает пометки «изменено»."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
-    feedback = _feedback(db, submission.id)
+    feedback = _locked_feedback(db, submission.id)
     message = db.get(TaskBlockFeedbackMessage, message_id)
     if feedback is None or message is None or message.feedback_id != feedback.id:
         return _error(404, "Сообщение не найдено.")

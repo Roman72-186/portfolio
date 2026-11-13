@@ -16,7 +16,7 @@ from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
 from app.models.user import User
 from app.services.program import msk_date
 from app.services.report_scope import reportable_students_q
-from app.services.staff_dashboard import CURATOR_STATS_TARIFFS
+from app.services.staff_dashboard import CURATOR_STATS_TARIFFS, _score_value
 from app.services.task_blocks import (
     BlockViewer, feed_visible_blocks, get_audiences, get_required_tariffs,
     is_submission_complete, required_by_block_for_task,
@@ -68,11 +68,11 @@ def _period(db: Session, today: date, stage_id: int | None, cycle_id: int | None
     return {"stages": stages, "stage_id": stage_id, "cycles": options, "cycle": selected}
 
 
-def _activity(db: Session, pairs: list, student_ids: set[int]) -> tuple[set, set, dict]:
+def _activity(db: Session, pairs: list, student_ids: set[int]) -> tuple[dict, set, dict]:
     blocks = {block.id: block for block, _ in pairs}
     if not blocks or not student_ids:
-        return set(), set(), {}
-    complete, started = set(), set()
+        return {}, set(), {}
+    complete, started = {}, set()
     submissions = db.query(TaskBlockSubmission, func.count(TaskBlockSubmissionImage.id)).outerjoin(
         TaskBlockSubmissionImage, TaskBlockSubmissionImage.submission_id == TaskBlockSubmission.id,
     ).filter(
@@ -83,7 +83,7 @@ def _activity(db: Session, pairs: list, student_ids: set[int]) -> tuple[set, set
         if count:
             started.add(key)
         if submission.submitted_at and is_submission_complete(blocks[submission.block_id], count):
-            complete.add(key)
+            complete[key] = submission.score
 
     timed_ids = [block.id for block in blocks.values() if block.block_type == BLOCK_TIMED]
     if timed_ids:
@@ -149,6 +149,8 @@ def _assignments(db: Session, cycle: LearningTopic, students: list[User], now: d
             label = f"{task.title} · {block.title}" if block.title and block.title != task.title else task.title
             result[student.id].append({
                 "label": label, "subject": subject,
+                "block_id": block.id, "control": block.block_type == BLOCK_TIMED,
+                "score": complete.get(key),
                 "required": required[block.id] and (
                     not required_tariffs.get(block.id) or student.tariff in required_tariffs[block.id]
                 ),
@@ -186,6 +188,7 @@ def build_curator_demo(
     subject = subject if subject in subjects else subjects[0]
     weekly = {tariff: {"done": [], "remaining": []} for tariff in CURATOR_STATS_TARIFFS}
     practice = {"done": [], "started": [], "none": []}
+    controls = {}
     for row in student_rows:
         blocks = assigned.get(row["id"], [])
         required = [block for block in blocks if block["required"]]
@@ -193,6 +196,17 @@ def build_curator_demo(
             result = _progress(row, required)
             weekly[row["tariff"]]["remaining" if result["remaining"] else "done"].append(result)
         matching = [block for block in blocks if (block["subject"] or UNASSIGNED_SUBJECT) == subject]
+        for block in matching:
+            if not block["control"]:
+                continue
+            control = controls.setdefault(block["block_id"], {"label": block["label"], "groups": defaultdict(list)})
+            if not block["done"]:
+                key = "Не сдали"
+            elif block["score"] is None:
+                key = "Сдали без оценки"
+            else:
+                key = f"{_score_value(block['score'])} б."
+            control["groups"][key].append(row)
         if matching:
             result = _progress(row, matching)
             if not result["remaining"]:
@@ -208,5 +222,6 @@ def build_curator_demo(
     return {
         **period, "future": future, "subjects": subjects, "subject": subject,
         "weekly": weekly, "practice": practice, "practice_total": sum(map(len, practice.values())),
+        "controls": list(controls.values()),
         "absent": absent, "unknown": [row for row in student_rows if row["last_seen"] is None],
     }
