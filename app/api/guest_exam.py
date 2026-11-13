@@ -157,6 +157,11 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
         return RedirectResponse(f"/guest/{token}", status_code=302)
 
     guest_exam_service.touch_participant(db, participant)
+    return _render_guest_exam(request, db, config, participant)
+
+
+def _render_guest_exam(request: Request, db: DBSession, config, participant, *,
+                       upload_error: str | None = None, status_code: int = 200):
     # Билет по второму предмету закрыт, пока по первому не загружена работа.
     pending = guest_exam_service.get_pending_submission(db, participant.id)
     subjects = [
@@ -177,7 +182,8 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
         "is_open": config.is_active,
         "guest_csrf_token": generate_csrf_token(request.cookies.get(GUEST_COOKIE_NAME, "")),
         "visual_duration_minutes": guest_exam_service.VISUAL_DURATION_MINUTES,
-    })
+        "upload_error": upload_error,
+    }, status_code=status_code)
 
 
 @router.post("/guest/{token}/exam/{subject}/ticket")
@@ -245,6 +251,11 @@ async def guest_upload(
     # `image/jpeg`, как у всех загрузок фото: `compress_image` отдаёт JPEG, а
     # тип из запроса — это слово браузера, а не содержимое файла.
     s3_url = s3_service.upload_to_s3(s3_path, compressed, content_type="image/jpeg")
+    if not s3_url:
+        return _render_guest_exam(
+            request, db, config, participant, status_code=503,
+            upload_error="Не удалось сохранить фото. Выбери его снова и повтори отправку.",
+        )
 
     guest_exam_service.record_upload(db, submission, s3_url, s3_path)
 

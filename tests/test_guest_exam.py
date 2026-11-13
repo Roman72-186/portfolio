@@ -375,6 +375,41 @@ def test_upload_success_marks_submission_submitted(client, db, guest_config_fact
     assert submission.s3_url == "https://s3.example/guest-exam/fake.jpg"
 
 
+def test_storage_failure_keeps_guest_ticket_open_for_retry(
+    client, db, guest_config_factory, guest_ticket_factory, monkeypatch
+):
+    from app.services import s3
+
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = _login_guest(client, db, config)
+    csrf = _guest_csrf(client)
+    path = f"/guest/{config.token}/exam/Рисунок"
+    client.post(f"{path}/ticket", data={"csrf_token": csrf}, follow_redirects=False)
+
+    with monkeypatch.context() as storage:
+        storage.setattr(s3, "upload_to_s3", lambda *args, **kwargs: None)
+        response = client.post(
+            f"{path}/upload", data={"csrf_token": csrf},
+            files={"photo": ("photo.jpg", _JPG_BYTES, "image/jpeg")},
+        )
+    assert response.status_code == 503
+    assert "Не удалось сохранить фото" in response.text
+    assert "Работа отправлена" not in response.text
+    submission = guest_exam_service.get_submission(db, participant.id, "Рисунок")
+    assert submission.status == "issued"
+    assert submission.s3_url is None
+
+    response = client.post(
+        f"{path}/upload", data={"csrf_token": csrf},
+        files={"photo": ("photo.jpg", _JPG_BYTES, "image/jpeg")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    db.refresh(submission)
+    assert submission.status == "submitted"
+
+
 def test_upload_rejected_when_link_disabled_mid_session(client, db, guest_config_factory, guest_ticket_factory):
     config = guest_config_factory()
     guest_ticket_factory(config, subject="Рисунок")

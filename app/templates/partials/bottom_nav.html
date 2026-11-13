@@ -127,15 +127,6 @@
     var wraps = document.querySelectorAll('.notif-gear-wrap');
     if (!wraps.length) return;
 
-    function urlBase64ToUint8Array(base64String) {
-        var padding = '='.repeat((4 - base64String.length % 4) % 4);
-        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-        var raw = atob(base64);
-        var out = new Uint8Array(raw.length);
-        for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-        return out;
-    }
-
     function postJson(url, body, csrf) {
         return fetch(url, {
             method: 'POST',
@@ -161,7 +152,8 @@
             var left = Math.min(r.right - popWidth, window.innerWidth - 16 - popWidth);
             left = Math.max(16, left);
             var top = r.bottom + 8;
-            if (top + 260 > window.innerHeight) top = Math.max(16, r.top - 8 - 260);
+            var height = pop.offsetHeight;
+            if (top + height > window.innerHeight - 16) top = Math.max(16, r.top - 8 - height);
             pop.style.left = left + 'px';
             pop.style.top = top + 'px';
         }
@@ -204,69 +196,13 @@
             });
         }
 
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            var isStandalone = window.navigator.standalone === true
-                || window.matchMedia('(display-mode: standalone)').matches;
-            if (isIOS && !isStandalone) {
-                pushNote.textContent = 'На iPhone push работает только у сайта, добавленного на экран «Домой».';
-            } else {
-                pushNote.textContent = 'Браузер не поддерживает push-уведомления.';
-            }
-            return;
+        var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        var standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+        if (window.mountPushToggle) {
+            window.mountPushToggle(pushInput, pushNote, vapidKey, ios && !standalone
+                ? 'На iPhone push работает у сайта, добавленного на экран «Домой».'
+                : 'Браузер не поддерживает push-уведомления.');
         }
-        if (!vapidKey) { pushNote.textContent = 'Push пока не настроен на сервере.'; return; }
-        if (Notification.permission === 'denied') { pushNote.textContent = 'Уведомления заблокированы в браузере.'; return; }
-
-        navigator.serviceWorker.register('/sw.js').then(function () {
-            return navigator.serviceWorker.ready;
-        }).then(function (registration) {
-            return registration.pushManager.getSubscription().then(function (sub) {
-                pushInput.disabled = false;
-                pushInput.checked = !!sub;
-                pushNote.textContent = sub ? 'Включены на этом устройстве.' : 'Выключены на этом устройстве.';
-
-                pushInput.addEventListener('change', function () {
-                    pushInput.disabled = true;
-                    if (pushInput.checked) {
-                        Notification.requestPermission().then(function (permission) {
-                            if (permission !== 'granted') {
-                                pushInput.checked = false;
-                                pushInput.disabled = false;
-                                pushNote.textContent = 'Разрешение не выдано.';
-                                return;
-                            }
-                            registration.pushManager.subscribe({
-                                userVisibleOnly: true,
-                                applicationServerKey: urlBase64ToUint8Array(vapidKey)
-                            }).then(function (newSub) {
-                                return postJson('/cabinet/push/subscribe', newSub.toJSON(), csrf);
-                            }).then(function () {
-                                pushNote.textContent = 'Включены на этом устройстве.';
-                            }).catch(function () {
-                                pushInput.checked = false;
-                                pushNote.textContent = 'Не получилось включить, попробуй ещё раз.';
-                            }).finally(function () {
-                                pushInput.disabled = false;
-                            });
-                        });
-                    } else {
-                        registration.pushManager.getSubscription().then(function (activeSub) {
-                            if (!activeSub) { pushInput.disabled = false; return; }
-                            var endpoint = activeSub.endpoint;
-                            activeSub.unsubscribe().finally(function () {
-                                postJson('/cabinet/push/unsubscribe', {endpoint: endpoint}, csrf).finally(function () {
-                                    pushNote.textContent = 'Выключены на этом устройстве.';
-                                    pushInput.disabled = false;
-                                });
-                            });
-                        });
-                    }
-                });
-            });
-        }).catch(function () {
-            pushNote.textContent = 'Не получилось подготовить push-уведомления.';
-        });
     });
 })();
 </script>

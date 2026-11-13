@@ -13,7 +13,8 @@
         {# Рамка держит приближенное фото в своих границах: без неё увеличенный
            рисунок наезжал бы на стрелки и кнопки под ним. Жесты — в `lightbox.js`. #}
         <div class="lightbox-frame" id="lightbox-frame">
-            <img id="lightbox-img" src="" alt="" draggable="false">
+            <img id="lightbox-img" alt="" draggable="false">
+            <div class="lightbox-status" id="lightbox-status" role="status" hidden></div>
         </div>
         <button class="lightbox-nav lightbox-next" type="button" onclick="lightboxStep(1)" aria-label="Следующее фото">›</button>
 
@@ -49,4 +50,4 @@
 {# Код лайтбокса — в `/static/js/lightbox.js` (с 01.10.2026, аудит АОП ученика, п. 4.1):
    партиал стоит на 18 экранах, встроенным он заново качался на каждом. Правишь файл —
    поднимай `?v=` здесь. Ключ для поворота остаётся строкой выше: он у каждой сессии свой. #}
-<script src="/static/js/lightbox.js?v=5"></script>
+<script src="/static/js/lightbox.js?v=6"></script>

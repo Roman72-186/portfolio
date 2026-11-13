@@ -174,7 +174,10 @@ mock_exam-задания одной недели), синглтон-id стол�
         }
 
         // ── Загрузка состояния ──────────────────────────────────────────────
-        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        function load() {
+            statusEl.textContent = 'Загружаем пробник…';
+            statusEl.classList.remove('is-error');
+            window.fetchWithTimeout(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (resp) {
                 if (resp.status === 403) {
                     return resp.json().then(function (body) {
@@ -220,8 +223,17 @@ mock_exam-задания одной недели), синглтон-id стол�
                 }
             })
             .catch(function (err) {
-                showError(err.message || 'Не удалось загрузить пробник.');
+                showError(err.message === 'Этот предмет недоступен для твоей группы.' || err.message === 'Пробник недоступен.'
+                    ? err.message : 'Не удалось загрузить пробник.');
+                var retry = document.createElement('button');
+                retry.type = 'button';
+                retry.className = 'btn-outline';
+                retry.textContent = 'Повторить';
+                retry.addEventListener('click', load);
+                statusEl.append(' ', retry);
             });
+        }
+        load();
 
         function applyStageState(raw) {
             stageState = {

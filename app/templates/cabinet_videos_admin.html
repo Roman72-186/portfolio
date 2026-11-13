@@ -8,7 +8,7 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -174,6 +174,8 @@ FORM: Operate, расширение существующего кабинета 
     var MAX_PARALLEL_UPLOADS = 3;
     var queueItems = [];
     var nextItemId = 1;
+    var coverRequestId = 0;
+    var catalogSaving = false;
 
     function setMessage(text, isError) {
         message.textContent = text;
@@ -200,9 +202,12 @@ FORM: Operate, расширение существующего кабинета 
     // Картинка уходит на сервер сразу при выборе: к моменту «Начать загрузку»
     // у нас уже есть её адрес в S3, и видеофайл не ждёт вторую заливку.
     if (coverInput) coverInput.addEventListener('change', function () {
+        var requestId = ++coverRequestId;
         var file = coverInput.files && coverInput.files[0];
         var holder = document.getElementById('video-cover-thumb');
-        if (!file) { coverImage = {url: null, path: null}; holder.innerHTML = ''; return; }
+        coverImage = {url: null, path: null};
+        holder.innerHTML = '';
+        if (!file) { startButton.disabled = !uploadAvailable; setMessage('', false); return; }
         var data = new FormData();
         data.append('file', file);
         data.append('csrf_token', csrfToken);
@@ -211,7 +216,11 @@ FORM: Operate, расширение существующего кабинета 
         fetch('/cabinet/staff/program/upload-cover', {
             method: 'POST', credentials: 'same-origin',
             headers: {'X-CSRF-Token': csrfToken}, body: data
-        }).then(function (response) { return response.json(); }).then(function (result) {
+        }).then(function (response) {
+            if (!response.ok) throw new Error();
+            return response.json();
+        }).then(function (result) {
+            if (requestId !== coverRequestId) return;
             startButton.disabled = !uploadAvailable;
             if (!result || !result.ok) { setMessage('Обложка не загрузилась. Выберите другой файл.', true); return; }
             coverImage = {url: result.url, path: result.path};
@@ -222,6 +231,7 @@ FORM: Operate, расширение существующего кабинета 
             img.alt = 'Обложка видео';
             holder.appendChild(img);
         }).catch(function () {
+            if (requestId !== coverRequestId) return;
             startButton.disabled = !uploadAvailable;
             setMessage('Обложка не загрузилась. Попробуйте ещё раз.', true);
         });
@@ -253,8 +263,10 @@ FORM: Operate, расширение существующего кабинета 
         // Выбранный файл или набранное название — признак несохранённого ввода.
         var fileInput = document.getElementById('video-file');
         if (fileInput && fileInput.files && fileInput.files.length) return true;
+        if (coverInput && coverInput.files && coverInput.files.length) return true;
         var titleInput = document.getElementById('video-title');
-        return Boolean(titleInput && titleInput.value.trim());
+        var descriptionInput = document.getElementById('video-description');
+        return Boolean((titleInput && titleInput.value.trim()) || (descriptionInput && descriptionInput.value.trim()));
     }
 
     // Держит ли вкладка прямо сейчас File-объект живым: сама передача байтов
@@ -371,7 +383,10 @@ FORM: Operate, расширение существующего кабинета 
     // пока в очереди есть хоть одна активная загрузка или человек набирает
     // следующую, нельзя — иначе оборвётся чужой файл на несколько гигабайт.
     function pollUntilReady(videoId, attempts, item) {
-        if (attempts <= 0) return;
+        if (attempts <= 0) {
+            if (item) setItemStatus(item, 'Статус обработки неизвестен. Проверьте его в списке видео.');
+            return;
+        }
         window.setTimeout(function () {
             api('/cabinet/admin/videos/' + videoId + '/refresh').then(function (data) {
                 var status = data.video && data.video.status;
@@ -384,7 +399,7 @@ FORM: Operate, расширение существующего кабинета 
                     return;
                 }
                 if (item) {
-                    setItemStatus(item, data.video && data.video.encode_progress !== null
+                    setItemStatus(item, data.video && data.video.encode_progress != null
                         ? data.video.encode_progress + '% обработки'
                         : 'Видео обрабатывается…');
                 }
@@ -464,9 +479,15 @@ FORM: Operate, расширение существующего кабинета 
             renderItemActions(item);
             updateSummary();
             if (credentials.resume_existing) {
-                item.tusUpload.findPreviousUploads().then(function (previous) {
+                var upload = item.tusUpload;
+                return upload.findPreviousUploads().then(function (previous) {
+                    if (item.state !== 'uploading' || item.tusUpload !== upload) return;
                     if (previous.length) item.tusUpload.resumeFromPreviousUpload(previous[0]);
                     item.tusUpload.start();
+                }).catch(function () {
+                    if (item.state === 'uploading' && item.tusUpload === upload) {
+                        finishItem(item, 'error', 'Не удалось проверить прошлую загрузку. Повторите тем же файлом.');
+                    }
                 });
             } else {
                 item.tusUpload.start();
@@ -538,6 +559,7 @@ FORM: Operate, расширение существующего кабинета 
 
     if (form) form.addEventListener('submit', function (event) {
         event.preventDefault();
+        if (catalogSaving || startButton.disabled) return;
         var files = document.getElementById('video-file').files;
         var title = document.getElementById('video-title').value.trim();
         if (!files || !files.length) { setMessage('Выберите хотя бы один видеофайл.', true); return; }
@@ -558,6 +580,11 @@ FORM: Operate, расширение существующего кабинета 
     document.addEventListener('click', function (event) {
         var button = event.target.closest('[data-video-action]');
         if (!button) return;
+        if (catalogSaving) return;
+        if (hasActiveUploads() || isAdminBusy()) {
+            window.alert('Завершите загрузки и сохраните данные формы перед изменением списка видео.');
+            return;
+        }
         var row = button.closest('[data-video-id]');
         var videoId = row.dataset.videoId;
         var action = button.dataset.videoAction;
@@ -577,9 +604,13 @@ FORM: Operate, расширение существующего кабинета 
             body = {confirmation: confirmation};
         }
         button.disabled = true;
+        catalogSaving = true;
+        if (form) form.inert = true;
         api('/cabinet/admin/videos/' + videoId + '/' + action, body).then(function () {
             window.location.reload();
         }).catch(function (error) {
+            catalogSaving = false;
+            if (form) form.inert = false;
             button.disabled = false;
             window.alert(error.message === 'unpublish_first' ? 'Сначала скройте видео.' : 'Действие не выполнено. Попробуйте ещё раз.');
         });

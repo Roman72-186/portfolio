@@ -661,7 +661,8 @@ def _edit_payloads(
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
                 "optional_if_attended": b.optional_if_attended,
-                "lesson_ends_at": msk_input_value(b.lesson_ends_at) or None,
+                # Поле отложено до включения учёта посещений в модели.
+                "lesson_ends_at": msk_input_value(getattr(b, "lesson_ends_at", None)) or None,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),

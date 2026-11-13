@@ -76,6 +76,7 @@
     {% if broadcast.status != 'scheduled' %}
     <section class="bc-section">
         <h2>Ученики</h2>
+        {% if recipients %}
         <div class="table-scroll">
             <table class="prg-table bc-recipients">
                 <thead>
@@ -94,6 +95,9 @@
                 </tbody>
             </table>
         </div>
+        {% else %}
+        <p class="empty-mini">Получателей пока нет.</p>
+        {% endif %}
     </section>
     {% endif %}
 </div>

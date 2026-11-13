@@ -101,6 +101,12 @@
     border-radius: 10px; cursor: zoom-in; overflow: hidden;
     -webkit-tap-highlight-color: transparent;
 }
+.ios-portfolio .pf-work-unavailable {
+    display: grid; align-content: center; text-align: center;
+    padding: 6px; min-height: 80px; overflow-wrap: anywhere;
+    border: 1px solid var(--ios-sep); border-radius: 10px;
+    color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font);
+}
 .ios-portfolio .pf-work-card:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 .ios-portfolio .pf-work-card img {
     width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px;
@@ -110,7 +116,7 @@
 
 /* Оценённые работы и ближайшие баллы по тому же заданию или билету. */
 .ios-portfolio .pf-score-comparisons {
-    display: grid; gap: 10px; padding: 0 12px 14px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 12px 14px;
 }
 .ios-portfolio .pf-score-comparison {
     border: 1px solid var(--ios-sep); border-radius: 12px;
@@ -121,6 +127,7 @@
     flex-wrap: wrap; gap: 4px 12px;
 }
 .ios-portfolio .pf-score-title {
+    min-width: 0; overflow-wrap: anywhere;
     font: 600 14px/1.4 var(--ios-font); color: var(--ios-label);
 }
 .ios-portfolio .pf-score-own {

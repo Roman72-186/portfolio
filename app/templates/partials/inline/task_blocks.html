@@ -188,16 +188,30 @@
             listEl.hidden = false;
         }
 
-        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        function load() {
+            statusEl.hidden = false;
+            statusEl.textContent = 'Загружаем…';
+            statusEl.classList.remove('is-error');
+            listEl.replaceChildren();
+            listEl.hidden = true;
+            window.fetchWithTimeout(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (resp) {
                 if (!resp.ok) throw new Error();
                 return resp.json();
             })
-            .then(render)
-            .catch(function () {
-                statusEl.textContent = 'Не удалось загрузить содержимое. Попробуй позже.';
+            .then(function (data) {
+                if (!data || !Array.isArray(data.blocks)) throw new Error();
+                return data;
+            }).then(render, function () {
+                statusEl.textContent = 'Не удалось загрузить содержимое. ';
                 statusEl.classList.add('is-error');
+                var retry = el('button', 'btn-outline', 'Повторить');
+                retry.type = 'button';
+                retry.addEventListener('click', load);
+                statusEl.appendChild(retry);
             });
+        }
+        load();
     };
 })();
 </script>

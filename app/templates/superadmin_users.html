@@ -556,6 +556,7 @@ function openConfirm(action, userId, name, isUnblock) {
 }
 
 function closeModal(restoreFocus) {
+    if (document.getElementById('modalCancelBtn').disabled) return;
     if (restoreFocus === undefined) restoreFocus = true;
     document.getElementById('confirmModal').classList.remove('open');
     document.getElementById('modalConfirmInput').hidden = true;
@@ -674,7 +675,7 @@ function removeUserRow(userId) {
 }
 
 function submitAction() {
-    if (!_action || !_userId) return;
+    if (!_action || !_userId || document.getElementById('modalCancelBtn').disabled) return;
     const form = document.getElementById('actionForm');
     const action = _action;
     const userId = _userId;
@@ -703,6 +704,7 @@ function submitAction() {
             if (!result.ok || !result.data.ok) {
                 throw new Error(result.data.detail || 'Не удалось выполнить действие');
             }
+            setModalBusy(false);
             closeModal(false);
             if (action === 'delete' || action === 'hard-delete') {
                 removeUserRow(userId);

@@ -559,10 +559,12 @@
    касания кнопки свисает на 12px вниз — абзац с тем же `z-index: 1` позже в
    разметке и рисовался поверх, съедая низ области (аудит АОП 30.09.2026). */
 .ios-learning .lrn-hero h1 {
+    overflow-wrap: anywhere;
     position: relative; z-index: 2;
     font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--on-color);
 }
 .ios-learning .lrn-hero p {
+    overflow-wrap: anywhere;
     position: relative; z-index: 1;
     font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.92); opacity: 1;
 }
@@ -1258,7 +1260,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    галереи: обрезанный край листа — это уже другая композиция. */
 .lrn-cmp { display: flex; flex-direction: column; gap: var(--s-3); }
 .lrn-cmp-pair {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
     gap: var(--s-3);
     animation: lrn-cmp-in var(--duration-base) var(--ease-out);
 }

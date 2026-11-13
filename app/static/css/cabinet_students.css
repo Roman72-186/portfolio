@@ -557,20 +557,20 @@
     box-shadow: var(--sh-sm);
 }
 .profile-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px;
 }
 .profile-field { display: flex; flex-direction: column; gap: 3px; }
 .profile-field-label {
     font-size: 12px; font-weight: 700; color: var(--dim);
     text-transform: uppercase; letter-spacing: 0.06em;
 }
-.profile-field-value { font-size: 14px; font-weight: 600; color: var(--text); }
+.profile-field-value { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; color: var(--text); }
 .profile-field-value.empty { color: var(--dim); font-weight: 400; font-style: italic; }
 .profile-field.full-width { grid-column: 1 / -1; }
 .profile-about {
     font-size: 13px; color: var(--text); line-height: 1.5;
     background: var(--bg); border-radius: var(--r-sm); padding: 10px 14px;
-    white-space: pre-wrap;
+    white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .profile-status-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .profile-badge {
@@ -824,7 +824,7 @@
     .mock-month-list, #main-panel .cal-month-list { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
     .mock-month-btn, #main-panel .cal-month-btn { padding: 7px 0; }
     .tab-bar { padding: 0 12px; }
-    .profile-grid { grid-template-columns: 1fr; }
+    .profile-grid { grid-template-columns: minmax(0, 1fr); }
     .profile-actions { grid-template-columns: repeat(2, 1fr); } /* 2×2: столбиком четыре раздела занимали 540px */
     /* Фильтры над списком: тарифы — одна строка с прокруткой вбок, куратор и год — рядом; касание те же 44px */
     .sidebar-hard-filters-add { padding-top: 0; }
