@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Назначить теги{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=10">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=14">
 {% endblock %}
 {% macro tag_color_cls(name, curator_names=[]) -%}
 {%- if name in ('10-14', '6') -%}tag-pill--pink
@@ -261,14 +261,21 @@ function removeTag(removeBtn) {
 }
 
 const BULK_TAG_NAMES = ['Р', 'К', 'Р+К'];
+let bulkLookupId = 0;
 
 function bulkLookup() {
+    const requestId = ++bulkLookupId;
     const raw = document.getElementById('bulkUsernames').value;
+    const container = document.getElementById('bulkResult');
+    const status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    status.textContent = 'Ищем учеников…';
+    container.replaceChildren(status);
     const fd = new FormData();
     fd.append('csrf_token', csrfToken());
     fd.append('usernames', raw);
 
-    fetch('/cabinet/superadmin/tags/bulk-lookup', {
+    window.fetchWithTimeout('/cabinet/superadmin/tags/bulk-lookup', {
         method: 'POST',
         body: fd,
         headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -279,13 +286,21 @@ function bulkLookup() {
                 .then(function(data) { return { ok: response.ok, data: data }; });
         })
         .then(function(result) {
+            if (requestId !== bulkLookupId) return;
             if (!result.ok || !result.data.ok) {
                 throw new Error(result.data.detail || 'Не удалось загрузить список');
             }
             renderBulkResult(result.data);
         })
         .catch(function(err) {
-            alert(err.message || 'Ошибка сети');
+            if (requestId !== bulkLookupId) return;
+            status.textContent = 'Не удалось загрузить список.';
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'btn-outline';
+            retry.textContent = 'Повторить';
+            retry.addEventListener('click', bulkLookup);
+            container.appendChild(retry);
         });
 }
 
@@ -355,6 +370,7 @@ function onBulkCheckboxChange(cb) {
         fd.append('csrf_token', csrfToken());
         fd.append('name', tagName);
 
+        cb.disabled = true;
         fetch('/cabinet/superadmin/tags/' + userId, {
             method: 'POST',
             body: fd,
@@ -374,11 +390,12 @@ function onBulkCheckboxChange(cb) {
             .catch(function(err) {
                 cb.checked = false;
                 alert(err.message || 'Ошибка сети');
-            });
+            }).finally(function() { cb.disabled = false; });
     } else {
         const tagId = cb.dataset.tagId;
         if (!tagId) return;
 
+        cb.disabled = true;
         fetch('/cabinet/superadmin/tags/' + userId + '/' + tagId, {
             method: 'DELETE',
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken() },
@@ -397,7 +414,7 @@ function onBulkCheckboxChange(cb) {
             .catch(function(err) {
                 cb.checked = true;
                 alert(err.message || 'Ошибка сети');
-            });
+            }).finally(function() { cb.disabled = false; });
     }
 }
 </script>

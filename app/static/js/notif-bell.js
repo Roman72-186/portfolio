@@ -19,6 +19,7 @@
         var closeBtn = document.getElementById('notifPopClose');
         if (!bells.length || !pop || !body) return;
         var CSRF = csrfToken;
+        var loadId = 0;
 
         // textContent → innerHTML кавычек не экранирует, а результат идёт и в
         // `href="…"` (код-ревью 12.10.2026, P3): кавычки — сами.
@@ -51,24 +52,42 @@
             });
             body.innerHTML = html;
         }
-        function markRead(){
-            fetch('/cabinet/notifications/mark-read', {
+        function markRead(id){
+            window.fetchWithTimeout('/cabinet/notifications/mark-read', {
                 method: 'POST',
                 headers: {'X-CSRF-Token': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
                 body: 'csrf_token=' + encodeURIComponent(CSRF),
                 cache: 'no-store'
-            }).then(clearBadge).catch(function(){});
+            }).then(function(r){
+                if (!r.ok || r.redirected) return;
+                return r.json().then(function(data){
+                    if (id === loadId && data.ok === true) clearBadge();
+                });
+            }).catch(function(){});
         }
         function load(){
-            body.innerHTML = '<div class="notif-pop-empty">Загрузка…</div>';
-            fetch('/cabinet/notifications/feed', {headers:{'Accept':'application/json'}, cache:'no-store'})
-                .then(function(r){ return r.ok ? r.json() : null; })
-                .then(function(j){
-                    if (!j){ body.innerHTML = '<div class="notif-pop-empty">Уведомлений пока нет</div>'; return; }
-                    render(j.notifications);
-                    if (j.unread_count > 0) markRead(); else clearBadge();
+            var id = ++loadId;
+            body.innerHTML = '<div class="notif-pop-empty" role="status">Загрузка…</div>';
+            window.fetchWithTimeout('/cabinet/notifications/feed', {headers:{'Accept':'application/json'}, cache:'no-store'})
+                .then(function(r){
+                    if (!r.ok || r.redirected) throw new Error();
+                    return r.json();
                 })
-                .catch(function(){ body.innerHTML = '<div class="notif-pop-empty">Не удалось загрузить</div>'; });
+                .then(function(j){
+                    if (id !== loadId) return;
+                    if (!j || !Array.isArray(j.notifications)) throw new Error();
+                    render(j.notifications);
+                    if (j.unread_count > 0) markRead(id); else clearBadge();
+                })
+                .catch(function(){
+                    if (id !== loadId) return;
+                    body.innerHTML = '<div class="notif-pop-empty"><p role="status">Не удалось загрузить уведомления.</p>' +
+                        '<button type="button" class="btn-outline">Повторить</button></div>';
+                    body.querySelector('button').addEventListener('click', function(e){
+                        e.stopPropagation();
+                        load();
+                    });
+                });
         }
         function open(){
             pop.hidden = false;
@@ -76,6 +95,7 @@
             load();
         }
         function close(){
+            ++loadId;
             pop.hidden = true;
             bells.forEach(function(bell){ bell.setAttribute('aria-expanded', 'false'); });
         }

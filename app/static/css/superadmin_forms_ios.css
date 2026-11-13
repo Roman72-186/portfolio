@@ -92,6 +92,7 @@
 }
 .ios-sa-tags .bulk-input-row textarea:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-sa-tags .bulk-result { margin-top: 14px; }
+.ios-sa-tags .bulk-result { overflow-wrap: anywhere; }
 .ios-sa-tags .bulk-table { width: 100%; border-collapse: collapse; }
 .ios-sa-tags .bulk-table th {
     text-align: left; padding: 9px 12px; font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2);
@@ -113,6 +114,7 @@
     background: var(--ios-card-bg); border: none; border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
 }
+.ios-sa-tags .tags-table-wrap:has(.tag-add-popover.open) { overflow: visible; }
 .ios-sa-tags .tags-table { width: 100%; border-collapse: collapse; }
 .ios-sa-tags .tags-table th {
     text-align: left; padding: 11px 14px; font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2);
@@ -131,7 +133,8 @@
 
 .ios-sa-tags .tag-chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px;
-    border-radius: 999px; font: 700 11px/1.3 var(--ios-font); background: rgba(175,82,222,0.10); color: var(--blue-text); white-space: nowrap;
+    min-width: 0; max-width: 100%; overflow-wrap: anywhere;
+    border-radius: 999px; font: 700 11px/1.3 var(--ios-font); background: rgba(175,82,222,0.10); color: var(--blue-text);
 }
 .ios-sa-tags .tag-chip__remove {
     position: relative;
@@ -208,7 +211,7 @@
         content: "Теги"; display: block; font: 700 11px/1.3 var(--ios-font);
         text-transform: uppercase; letter-spacing: 0.03em; color: var(--ios-label-2); margin-bottom: 6px;
     }
-    .ios-sa-tags .tag-add-popover { left: auto; right: 0; max-width: calc(100vw - 56px); }
+    .ios-sa-tags .tag-add-popover { position: static; min-width: 0; max-width: 100%; }
 }
 
 /* ═══════════════════════════ superadmin_assign_curator.html ═══════════════════════════ */

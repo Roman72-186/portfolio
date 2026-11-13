@@ -137,17 +137,21 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
             event.preventDefault();
             var msg = form.querySelector('.prg-message');
             var btn = form.querySelector('button[type=submit]');
-            var csrf = form.querySelector('[name=csrf_token]').value;
+            if (btn.disabled) return;
             btn.disabled = true;
-            fetch(form.action, {
+            if (msg) {
+                msg.setAttribute('role', 'status');
+                msg.classList.remove('is-error');
+                msg.textContent = 'Отправляем…';
+            }
+            window.csrfFetch(form.action, {
                 method: 'POST',
-                credentials: 'same-origin',
-                headers: {'X-CSRF-Token': csrf},
                 body: new FormData(form),
             }).then(function (response) {
                 return response.json().catch(function () { return {}; }).then(function (data) {
-                    if (!response.ok || data.ok === false) {
-                        throw new Error(data.error || 'Не получилось отправить, попробуй ещё раз.');
+                    if (!response.ok || !data || data.ok !== true) {
+                        var reason = window.csrfMessage(data, '');
+                        throw new Error(typeof reason === 'string' && reason || 'Не получилось отправить, попробуй ещё раз.');
                     }
                     return data;
                 });
@@ -155,7 +159,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
                 window.location.reload();
             }).catch(function (error) {
                 btn.disabled = false;
-                if (msg) { msg.textContent = error.message; msg.classList.add('is-error'); }
+                if (msg) { msg.textContent = error.message === 'Failed to fetch' ? 'Нет связи. Попробуй отправить ещё раз.' : error.message; msg.classList.add('is-error'); }
             });
         });
     });

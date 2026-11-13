@@ -508,12 +508,14 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
     border: 2px solid var(--surface);
 }
 
+.page-title, .page-subtitle, .card-title, .card-desc { overflow-wrap: anywhere; }
+
 /* ── Notifications popup ── */
 .notif-pop {
     position: fixed;
     z-index: 260;
     width: 340px; max-width: calc(100vw - 28px);
-    max-height: min(70vh, 480px);
+    max-height: min(70vh, 480px, calc(100dvh - 160px - env(safe-area-inset-bottom, 0px)));
     right: 18px;
     bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 72px);
     background: var(--surface);
@@ -553,6 +555,7 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
 }
 .notif-pop-item {
     display: block; text-decoration: none; color: inherit;
+    overflow-wrap: anywhere;
     padding: 12px 12px; border-radius: 12px;
     border: 1px solid var(--line); background: var(--surface);
     transition: border-color var(--duration-fast), background var(--duration-fast);
@@ -577,6 +580,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
         right: 10px; left: 10px; width: auto; max-width: none;
         top: calc(64px + env(safe-area-inset-top, 0px));
         bottom: auto;
+        max-height: min(70vh, 480px, calc(100dvh - 80px - env(safe-area-inset-top, 0px)));
     }
 }
 
@@ -939,6 +943,9 @@ audio { max-width: 100%; }
     letter-spacing: 0.02em; white-space: nowrap;
     background: var(--blue-soft); color: var(--blue-on-soft);
 }
+.tag-pill--curator, .tag-pill--curator-tag {
+    min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+}
 .tag-pill-muted {
     background: var(--bg); color: var(--muted);
     border: 1px solid var(--line);
@@ -1249,6 +1256,8 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 }
 .lightbox.is-zoomed .lightbox-frame { cursor: grab; }
 .lightbox.is-zoomed .lightbox-frame.is-gesturing { cursor: grabbing; }
+.lightbox-status { padding: 16px; color: var(--on-color); text-align: center; line-height: 1.4; cursor: default; }
+.lightbox-status .lightbox-tool { width: auto; padding-inline: 12px; }
 /* Высота фото — не больше того, что остаётся от видимого экрана после
    кнопок, счётчика и миниатюр (`--lightbox-chrome`, замерено на стенде).
    `dvh`, а не `vh`: на айфоне `vh` считается по экрану без панелей браузера
@@ -1343,7 +1352,7 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
     display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .gate-modal.open { display: flex; }
-.gate-modal-card { position: relative; text-align: center; }
+.gate-modal-card { position: relative; text-align: center; max-height: 100%; overflow-y: auto; }
 .gate-modal-close {
     position: absolute; top: 10px; right: 10px;
     width: 32px; height: 32px; border-radius: 50%;
@@ -1546,6 +1555,7 @@ button.desk-nav-item {
    .profile-hero держит overflow:hidden ради декоративных кругов, absolute
    внутри него обрезался бы по границе карточки. */
 .notif-gear-pop {
+    max-height: calc(100dvh - 32px); overflow-y: auto; overflow-wrap: anywhere;
     position: fixed; z-index: 260;
     width: 280px; max-width: calc(100vw - 32px);
     background: var(--surface); border: 1px solid var(--line);
@@ -1612,6 +1622,7 @@ button.desk-nav-item {
 .hint-pop {
     position: fixed; z-index: 260;
     width: 260px; max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 32px); overflow-y: auto; overflow-wrap: anywhere;
     background: var(--surface); border: 1px solid var(--line);
     border-radius: var(--r-md); box-shadow: var(--sh-md);
     padding: 12px 30px 12px 14px;

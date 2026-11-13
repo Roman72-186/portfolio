@@ -2,14 +2,13 @@
    Разметка — `partials/feedback_rating.html`, роуты — `api/task_block_feedback.py`
    и `api/feedback.py`. Оба роута отвечают JSON с `error` при отказе. */
 (function () {
-    function send(url, csrf, body) {
-        return fetch(url, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Accept': 'application/json', 'X-CSRF-Token': csrf},
+    function send(url, body) {
+        return window.csrfFetch(url, {
+            method: 'POST',
             body: body
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
-                if (!response.ok || data.ok === false) {
+                if (!response.ok || !data || data.ok !== true) {
                     throw new Error(data.error || data.detail || 'Не получилось. Обнови страницу и попробуй ещё раз.');
                 }
                 return data;
@@ -29,7 +28,9 @@
         closeButton.addEventListener('click', function () {
             if (!window.confirm('Завершить обратную связь? Диалог закроется для вас обоих, открыть его снова нельзя.')) return;
             closeButton.disabled = true;
-            send(close.dataset.url, close.dataset.csrf, null)
+            closeStatus.className = 'card-desc';
+            closeStatus.textContent = 'Завершаем обратную связь…';
+            send(close.dataset.url, null)
                 .then(function () { window.location.reload(); })
                 .catch(function (error) {
                     closeButton.disabled = false;
@@ -54,6 +55,7 @@
     form.addEventListener('submit', function (event) {
         event.preventDefault();
         var button = form.querySelector('button[type=submit]');
+        if (button.disabled) return;
         if (!form.querySelector('input[name="score"]:checked')) {
             showError(status, 'Выбери оценку от 1 до 5.');
             return;
@@ -70,7 +72,7 @@
         button.disabled = true;
         status.className = 'card-desc';
         status.textContent = 'Отправляем…';
-        send(form.action, form.elements.csrf_token.value, new FormData(form))
+        send(form.action, new FormData(form))
             .then(function () { window.location.reload(); })
             .catch(function (error) {
                 button.disabled = false;

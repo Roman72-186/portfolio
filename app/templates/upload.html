@@ -382,7 +382,7 @@ function resetForm() {
 }
 
 uploadForm.addEventListener('submit', function(ev) {
-    if (preparing > 0) { ev.preventDefault(); return; }
+    if (preparing > 0 || uploadForm.inert) { ev.preventDefault(); return; }
     syncInputFiles();
     if (!selectedFiles.length) return;
 
@@ -394,7 +394,14 @@ uploadForm.addEventListener('submit', function(ev) {
     var fd = null;
     var btnOriginal = submitBtn.innerHTML;
     submitBtn.disabled = true;
+    form.inert = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Готовим фото…';
+
+    function restoreForm() {
+        form.inert = false;
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = btnOriginal;
+    }
 
     // Свежий ключ перед отправкой (`static/js/csrf.js`): страница загрузки
     // живёт долго, а ключ из разметки старился вместе с ней и отдавал
@@ -416,13 +423,10 @@ uploadForm.addEventListener('submit', function(ev) {
             submitBtn.innerHTML = '<span class="spinner"></span>Загружаем ' + pct + '%…';
         };
         xhr.onerror = function() {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = btnOriginal;
+            restoreForm();
             showAlert('error', 'Ошибка сети. Попробуй ещё раз.');
         };
         xhr.onload = function() {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = btnOriginal;
             var data = null;
             try { data = JSON.parse(xhr.responseText); } catch (_) {}
 
@@ -441,6 +445,7 @@ uploadForm.addEventListener('submit', function(ev) {
                     + '&failed=' + encodeURIComponent(data.failed || 0);
                 setTimeout(function() { window.location.assign(back); }, 900);
             } else {
+                restoreForm();
                 var err = (data && (data.error || data.detail)) || ('Ошибка ' + xhr.status);
                 showAlert('error', err);
             }
@@ -458,13 +463,16 @@ uploadForm.addEventListener('submit', function(ev) {
         submitBtn.innerHTML = '<span class="spinner"></span>Загружаем 0%…';
 
         var freshToken = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
-        freshToken.then(function (token) {
+        return freshToken.then(function (token) {
             startUpload(token || CSRF_TOKEN);
-        }).catch(function () {
+        }, function () {
             // Ключ не пришёл — шлём тот, что в разметке: сервер решит сам, а
             // кнопка не остаётся запертой с текстом «Загружаем 0%…».
             startUpload(CSRF_TOKEN);
         });
+    }).catch(function () {
+        restoreForm();
+        showAlert('error', 'Не удалось отправить фото. Попробуй ещё раз.');
     });
 });
 }

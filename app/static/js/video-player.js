@@ -132,7 +132,13 @@
             shell.hidden = false;
             populatePlayer(preloadedData);
         } else if (endpoint) {
-            fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            loadVideo();
+        }
+
+        function loadVideo() {
+            statusEl.textContent = 'Загружаем видео…';
+            statusEl.classList.remove('is-error');
+            window.fetchWithTimeout(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
                 .then(function (resp) {
                     if (resp.status === 403) {
                         return resp.json().then(function (body) {
@@ -143,16 +149,22 @@
                     return resp.json();
                 })
                 .then(function (data) {
-                    if (!data.ok || !data.player_url) {
-                        showError('Видео временно недоступно.');
-                        return;
-                    }
+                    if (!data || !data.ok || !data.player_url) throw new Error('Видео временно недоступно.');
+                    return data;
+                })
+                .then(function (data) {
                     statusEl.hidden = true;
                     shell.hidden = false;
                     populatePlayer(data);
-                })
-                .catch(function (err) {
-                    showError(err.message || 'Не удалось загрузить видео.');
+                }, function (err) {
+                    showError(err.name === 'TypeError' || err.name === 'SyntaxError' || err.name === 'AbortError'
+                        ? 'Не удалось загрузить видео.' : err.message || 'Не удалось загрузить видео.');
+                    var retry = document.createElement('button');
+                    retry.type = 'button';
+                    retry.className = 'btn-outline';
+                    retry.textContent = 'Повторить';
+                    retry.addEventListener('click', loadVideo);
+                    statusEl.append(' ', retry);
                 });
         }
 

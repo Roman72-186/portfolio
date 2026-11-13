@@ -7,15 +7,18 @@
     if (!feed) return;
 
     var el = window.lrnBlockRender.el;
-    var steps = Array.prototype.slice.call(feed.querySelectorAll('[data-block-id]'));
+    var steps = Array.prototype.filter.call(feed.querySelectorAll('[data-block-id]'), function (step) {
+        return step.querySelector('[data-role="block-body"]');
+    });
     if (!steps.length) return;
 
     // Один запрос на задание, а не на блок: у задания из пяти блоков это
     // пять одинаковых ответов сервера вместо одного.
-    var taskIds = [];
+    var taskSteps = new Map();
     steps.forEach(function (step) {
         var id = step.getAttribute('data-task-id');
-        if (taskIds.indexOf(id) === -1) taskIds.push(id);
+        if (!taskSteps.has(id)) taskSteps.set(id, []);
+        taskSteps.get(id).push(step);
     });
 
     function stepFor(taskId, blockId) {
@@ -24,9 +27,7 @@
         );
     }
 
-    function fail(step, text) {
-        var status = step.querySelector('[data-role="status"]');
-        if (!status) return;
+    function fail(status, text) {
         status.textContent = text;
         status.classList.add('is-error');
     }
@@ -236,19 +237,49 @@
         host.appendChild(form);
     }
 
-    taskIds.forEach(function (taskId) {
-        fetch('/cabinet/tracker/tasks/' + taskId + '/blocks', {
+    function loadTask(taskId, cards) {
+        cards.forEach(function (card) {
+            var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
+            if (!status) return;
+            var retry = status.parentNode.querySelector('[data-block-retry]');
+            if (retry) retry.remove();
+            status.textContent = 'Загружаем…';
+            status.classList.remove('is-error');
+        });
+        window.fetchWithTimeout('/cabinet/tracker/tasks/' + taskId + '/blocks', {
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json' }
         }).then(function (resp) {
             if (!resp.ok) throw new Error();
             return resp.json();
         }).then(function (data) {
+            if (!data || !Array.isArray(data.blocks)) throw new Error();
+            return data;
+        }).then(function (data) {
             renderTask(taskId, data);
-        }).catch(function () {
-            feed.querySelectorAll('[data-task-id="' + taskId + '"]').forEach(function (step) {
-                fail(step, 'Не удалось загрузить содержимое. Попробуй позже.');
+            var ids = new Set(data.blocks.map(function (block) { return String(block.id); }));
+            cards.forEach(function (card) {
+                if (ids.has(card.dataset.blockId)) return;
+                var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
+                if (status) fail(status, 'Этот блок недоступен. Обнови страницу, чтобы увидеть актуальное задание.');
             });
+        }, function () {
+            showLoadError(taskId, cards);
         });
-    });
+    }
+
+    function showLoadError(taskId, cards) {
+        cards.forEach(function (card) {
+            var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
+            if (!status) return;
+            fail(status, 'Не удалось загрузить содержимое.');
+            var retry = el('button', 'btn-outline', 'Повторить');
+            retry.type = 'button';
+            retry.setAttribute('data-block-retry', '');
+            retry.addEventListener('click', function () { loadTask(taskId, cards); });
+            status.after(retry);
+        });
+    }
+
+    taskSteps.forEach(function (cards, taskId) { loadTask(taskId, cards); });
 })();

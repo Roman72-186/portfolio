@@ -1,10 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Моё портфолио{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=8">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
+{% macro pf_photo(w) %}
+    {% set src = w.thumb or w.s3_url %}
+    {% if src %}
+    <button type="button" class="pf-work-card" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+        <img src="{{ src }}" alt="{{ w.filename }}" loading="lazy">
+    </button>
+    {% else %}
+    <div class="pf-work-unavailable" title="{{ w.filename }}">Фото недоступно</div>
+    {% endif %}
+{% endmacro %}
 {# Плоская лента без месяцев — раздел «До» (владелец 09.09.2026: «в До
    добавляется не по месяцам»). Стартовый набор ученик грузит один раз в
    предобучении, месяцы там ничего не разделяют. Карточка и сетка те же, что
@@ -13,12 +23,7 @@
   {% if works %}
     <div class="pf-mgrid" data-gallery="pf-{{ key }}">
         {% for w in works %}
-        {% set src = w.thumb or w.s3_url or "" %}
-        {% if src %}
-        <button type="button" class="pf-work-card" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
-            <img src="{{ src }}" alt="{{ w.filename }}" loading="lazy">
-        </button>
-        {% endif %}
+        {{ pf_photo(w) }}
         {% endfor %}
     </div>
   {% else %}
@@ -43,12 +48,7 @@
         </div>
         <div class="pf-mgrid" data-gallery="pf-{{ key }}-{{ g.year }}-{{ g.month }}">
             {% for w in g.works %}
-            {% set src = w.thumb or w.s3_url or "" %}
-            {% if src %}
-            <button type="button" class="pf-work-card" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
-                <img src="{{ src }}" alt="{{ w.filename }}" loading="lazy">
-            </button>
-            {% endif %}
+            {{ pf_photo(w) }}
             {% endfor %}
         </div>
         {% if g.score_comparisons %}

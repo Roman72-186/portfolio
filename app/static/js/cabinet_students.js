@@ -18,6 +18,7 @@ var _currentStudentId = null;
 var _currentTab = 'portfolio';
 var _tabCache = {};   // { studentId: { tabName: data } }
 var _viewMode = 'profile'; // 'profile' or 'tab'
+var _viewRequest = 0;
 var _portfolioDragWorkId = null;
 // Раздел дашборда из URL (?tab=…) без выбранного ученика: при клике на ученика
 // открывать сразу эту вкладку, а не профиль (используется навбаром «Статистика»).
@@ -74,6 +75,7 @@ var _listScrollY = null;
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 function navShowList() {
+    ++_viewRequest;
     var row = _currentStudentId && document.getElementById('srow-' + _currentStudentId);
     _currentStudentId = null;
     _viewMode = 'profile';
@@ -145,16 +147,16 @@ function selectStudent(id, forceTab) {
             '<div id="student-hero-container"></div>' +
             '<div id="tab-content"><div class="tab-loading">Загружаем…</div></div>';
         switchTab(_currentTab);
-        prefetchProfile(id);
         return;
     }
 
     // Default: show profile
     _viewMode = 'profile';
+    var request = ++_viewRequest;
     navCommit(navPush, 'list');
     document.getElementById('tab-bar').style.display = 'none';
     document.getElementById('main-panel').innerHTML =
-        '<div class="tab-loading">Загружаем…</div>';
+        '<div class="tab-loading" role="status">Загружаем…</div>';
 
     // Load profile (from cache or fetch)
     if (_tabCache[id].profile) {
@@ -164,11 +166,13 @@ function selectStudent(id, forceTab) {
 
     getCardJson('/cabinet/students/' + id + '/profile')
         .then(function(data) {
+            if (request !== _viewRequest) return;
             _tabCache[id].profile = data;
             renderProfile(data);
         }, function(err) {
-            document.getElementById('main-panel').innerHTML = loadFailedHtml(err,
-                'Не удалось открыть ученика. Проверьте интернет и выберите его ещё раз.');
+            if (request !== _viewRequest) return;
+            showLoadFailure(document.getElementById('main-panel'), err,
+                'Не удалось открыть карточку ученика.', function() { selectStudent(id, 'profile'); });
         });
 }
 
@@ -180,22 +184,36 @@ function selectStudent(id, forceTab) {
 function loadFailedHtml(err, netText) {
     var reason = err && err.serverMessage;
     var text = typeof reason === 'string' && reason ? reason
-        : err && err.status ? 'Сервер не ответил как надо (код ' + err.status + '). Обновите страницу.'
         : netText;
     return '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">' + esc(text) + '</div></div>';
+}
+
+function showLoadFailure(container, err, message, retry, isTab) {
+    container.innerHTML = (isTab ? '<button type="button" class="back-to-profile" onclick="backToProfile()">← К профилю</button>' : '') +
+        loadFailedHtml(err, message);
+    var state = container.querySelector('.empty-state');
+    state.setAttribute('role', 'status');
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-outline';
+    button.textContent = 'Повторить';
+    button.addEventListener('click', retry);
+    state.appendChild(button);
 }
 
 // Точку А и уровень для шапки отдаёт только профиль (`/profile`, поле hero):
 // вкладки их не считают. Вкладку открыли ссылкой, минуя профиль, — дотягиваем
 // его в фоне и перерисовываем шапку.
 function prefetchProfile(id) {
-    if (_tabCache[id] && _tabCache[id].profile) return;
+    var cache = _tabCache[id];
+    if (cache.profile) return;
+    var request = _viewRequest;
     getCardJson('/cabinet/students/' + id + '/profile')
         .then(function(data) {
-            if (!_tabCache[id]) _tabCache[id] = {};
-            _tabCache[id].profile = data;
+            if (request !== _viewRequest || _tabCache[id] !== cache) return;
+            cache.profile = data;
             var heroEl = document.getElementById('student-hero-container');
-            var tabData = _tabCache[id][_currentTab];
+            var tabData = cache[_currentTab];
             if (heroEl && id === _currentStudentId && _viewMode === 'tab' && tabData && tabData.student) {
                 heroEl.innerHTML = buildHero(tabData.student, tabData.student.avg_score_by_subject || null);
             }
@@ -216,6 +234,7 @@ function openTab(tabName) {
 }
 
 function showProfile() {
+    ++_viewRequest;
     _viewMode = 'profile';
     document.getElementById('tab-bar').style.display = 'none';
     if (_tabCache[_currentStudentId] && _tabCache[_currentStudentId].profile) {
@@ -519,19 +538,19 @@ function buildTaskActions(it, data) {
 
 // После отметки перечитываем вкладку и профиль («Не проверено: N» в «Учёбе
 // сейчас»), а счётчик в списке учеников правим на месте.
-function afterTaskReview(row, nowReviewed, message) {
-    var sid = _currentStudentId;
+function afterTaskReview(sid, row, nowReviewed, message) {
     var wasReviewed = row.dataset.reviewed === 'true';
     if (wasReviewed !== nowReviewed) bumpSidebarPending(sid, nowReviewed ? -1 : 1);
     if (_tabCache[sid]) {
         delete _tabCache[sid].tasks;
         delete _tabCache[sid].profile;
     }
-    switchTab('tasks');
+    if (_currentStudentId === sid && _viewMode === 'tab' && _currentTab === 'tasks') switchTab('tasks');
     if (message) showToast(message);
 }
 
 function toggleTaskReviewed(btn) {
+    var sid = _currentStudentId;
     var row = btn.closest('[data-task-item]');
     var next = row.dataset.reviewed !== 'true';
     // Ответы на вопросы и сданные файлы — разные сущности со своими отметками.
@@ -544,7 +563,7 @@ function toggleTaskReviewed(btn) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({reviewed: next}),
     }).then(readJsonOrThrow).then(function(body) {
-        afterTaskReview(row, !!body.reviewed, body.reviewed ? 'Отмечено: просмотрено' : 'Вернули в очередь');
+        afterTaskReview(sid, row, !!body.reviewed, body.reviewed ? 'Отмечено: просмотрено' : 'Вернули в очередь');
     }).catch(function(err) {
         btn.disabled = false;
         alert(err.serverMessage || 'Не удалось сохранить отметку. Попробуйте ещё раз.');
@@ -589,28 +608,30 @@ function switchTab(tabName) {
         if (btn) btn.classList.toggle('active', t === tabName);
     });
 
-    if (!_currentStudentId) return;
+    var id = _currentStudentId;
+    if (!id) return;
+    var request = ++_viewRequest;
+    prefetchProfile(id);
 
     // Serve from cache if available
-    if (_tabCache[_currentStudentId][tabName]) {
-        renderTab(tabName, _tabCache[_currentStudentId][tabName]);
+    if (_tabCache[id][tabName]) {
+        renderTab(tabName, _tabCache[id][tabName]);
         return;
     }
 
     // Show loading indicator in tab-content only
     var tc = document.getElementById('tab-content');
-    if (tc) tc.innerHTML = '<div class="tab-loading">Загружаем…</div>';
+    if (tc) tc.innerHTML = '<button type="button" class="back-to-profile" onclick="backToProfile()">← К профилю</button>' +
+        '<div class="tab-loading" role="status">Загружаем…</div>';
 
-    getCardJson('/cabinet/students/' + _currentStudentId + '/' + tabName)
+    getCardJson('/cabinet/students/' + id + '/' + tabName)
         .then(function(data) {
-            _tabCache[_currentStudentId][tabName] = data;
+            if (request !== _viewRequest) return;
+            _tabCache[id][tabName] = data;
             renderTab(tabName, data);
         }, function(err) {
-            // Ученика нет или он чужой — вкладки ему не помогут, прячем их
-            if (err && err.status === 404) document.getElementById('tab-bar').style.display = 'none';
-            var tc = document.getElementById('tab-content');
-            if (tc) tc.innerHTML = loadFailedHtml(err,
-                'Не удалось открыть вкладку. Проверьте интернет и нажмите на неё ещё раз.');
+            if (request !== _viewRequest || !tc) return;
+            showLoadFailure(tc, err, 'Не удалось загрузить вкладку.', function() { switchTab(tabName); }, true);
         });
 }
 
@@ -826,12 +847,12 @@ function normalizePortfolioMonth(value) {
     return '';
 }
 
-function reloadPortfolioAfterManage(message) {
-    if (_tabCache[_currentStudentId]) {
-        delete _tabCache[_currentStudentId].portfolio;
-        delete _tabCache[_currentStudentId].profile;
+function reloadPortfolioAfterManage(sid, message) {
+    if (_tabCache[sid]) {
+        delete _tabCache[sid].portfolio;
+        delete _tabCache[sid].profile;
     }
-    switchTab('portfolio');
+    if (_currentStudentId === sid && _viewMode === 'tab' && _currentTab === 'portfolio') switchTab('portfolio');
     if (message) showToast(message);
 }
 
@@ -869,7 +890,7 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
             alert(window.csrfMessage(result.data, 'Не удалось переименовать месяц'));
             return;
         }
-        reloadPortfolioAfterManage('Месяц обновлён');
+        reloadPortfolioAfterManage(sid, 'Месяц обновлён');
     })
     .catch(function() { alert(NET_ERROR); });
 }
@@ -923,7 +944,7 @@ function portfolioDrop(ev, el, sid, toMonth, toYear) {
             alert(window.csrfMessage(result.data, 'Не удалось перенести работу'));
             return;
         }
-        reloadPortfolioAfterManage('Работа перенесена');
+        reloadPortfolioAfterManage(sid, 'Работа перенесена');
     })
     .catch(function() { alert(NET_ERROR); })
     .finally(function() { portfolioDragEnd(); });
@@ -965,7 +986,12 @@ function readJsonOrThrow(r) {
 // в `app/main.py` отдают HTML-страницу, и причина («Ученик не найден») до
 // экрана не доходит.
 function getCardJson(url) {
-    return fetch(url, {headers: {'Accept': 'application/json'}}).then(readJsonOrThrow);
+    return window.fetchWithTimeout(url, {headers: {'Accept': 'application/json'}})
+        .then(readJsonOrThrow)
+        .then(function(data) {
+            if (!data || !data.student) throw new Error('missing student');
+            return data;
+        });
 }
 
 function toggleEditForm(id, btn) {
@@ -1126,7 +1152,8 @@ function cancelEditProfile() {
 }
 
 function saveProfile() {
-    if (!_currentStudentId) return;
+    var sid = _currentStudentId;
+    if (!sid) return;
     var body = new FormData();
     body.append('first_name', document.getElementById('edit-first_name').value);
     body.append('last_name', document.getElementById('edit-last_name').value);
@@ -1138,14 +1165,14 @@ function saveProfile() {
     // Тариф, метку и срок форма не шлёт — сервер их не трогает.
     body.append('anketa_only', '1');
 
-    window.csrfFetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
+    window.csrfFetch('/cabinet/students/' + sid + '/profile', { method: 'POST', body: body })
         .then(function(r) { return r.json().catch(function() { return {}; }).then(function(d) { return {ok: r.ok, data: d}; }); })
         .then(function(res) {
             if (res.ok && res.data.ok) {
                 // Clear cache and reload
-                delete _tabCache[_currentStudentId].profile;
-                selectStudent(_currentStudentId, 'profile');
-                refreshSidebarRow(_currentStudentId);
+                if (_tabCache[sid]) delete _tabCache[sid].profile;
+                if (_currentStudentId === sid && _viewMode === 'profile') selectStudent(sid, 'profile');
+                refreshSidebarRow(sid);
                 showToast('Анкета сохранена');
             } else {
                 var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Не удалось сохранить анкету');
@@ -1930,7 +1957,9 @@ function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
 }
 
 function openUploadModal() {
-    if (!_currentStudentId) return;
+    if (!_currentStudentId || _uploadBusy) return;
+    if (_uploadStudentId !== _currentStudentId) _uploadResetAll();
+    _uploadStudentId = _currentStudentId;
     document.querySelector('#upload-form [name="csrf_token"]').value = CSRF_TOKEN;
     syncUploadPeriod();
     document.getElementById('upload-modal').classList.add('open');
@@ -1949,12 +1978,15 @@ function syncUploadPeriod() {
 }
 
 function closeUploadModal() {
+    if (_uploadBusy) return;
     document.getElementById('upload-modal').classList.remove('open');
     document.body.style.overflow = '';
 }
 
 // ── Upload DnD/preview state ────────────────────────────────────────────────
 var _uploadFiles = [];
+var _uploadStudentId = null;
+var _uploadBusy = false;
 var UPLOAD_MAX_FILES = 20;
 var UPLOAD_MAX_SIZE = 10 * 1024 * 1024;
 
@@ -2027,7 +2059,8 @@ function _uploadResetAll() {
 
 function submitUpload(e) {
     e.preventDefault();
-    if (!_currentStudentId) return false;
+    var studentId = _uploadStudentId;
+    if (!studentId || studentId !== _currentStudentId || _uploadBusy) return false;
     if (!_uploadFiles.length) return false;
     _uploadSyncInput();
 
@@ -2038,6 +2071,15 @@ function submitUpload(e) {
     btn.textContent = 'Загружаем 0%…';
 
     var fd = new FormData(form);
+    _uploadBusy = true;
+    form.inert = true;
+
+    function finishUpload() {
+        _uploadBusy = false;
+        form.inert = false;
+        btn.disabled = false;
+        btn.textContent = btnOriginal;
+    }
 
     // Свежий ключ перед отправкой (`static/js/csrf.js`): карточка ученика
     // открыта у куратора весь рабочий день, а ключ из разметки старился вместе
@@ -2046,7 +2088,7 @@ function submitUpload(e) {
     fd.set('csrf_token', token);
 
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/cabinet/students/' + _currentStudentId + '/upload');
+    xhr.open('POST', '/cabinet/students/' + studentId + '/upload');
     xhr.setRequestHeader('X-CSRF-Token', token);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.setRequestHeader('Accept', 'application/json');
@@ -2056,20 +2098,22 @@ function submitUpload(e) {
         btn.textContent = 'Загружаем ' + Math.round((ev.loaded / ev.total) * 100) + '%…';
     };
     xhr.onerror = function() {
-        btn.disabled = false; btn.textContent = btnOriginal;
+        finishUpload();
         alert(NET_ERROR);
     };
     xhr.onload = function() {
-        btn.disabled = false; btn.textContent = btnOriginal;
+        finishUpload();
         var data = null;
         try { data = JSON.parse(xhr.responseText); } catch (_) {}
         if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) {
             closeUploadModal();
-            if (_tabCache[_currentStudentId]) {
-                delete _tabCache[_currentStudentId].portfolio;
-                delete _tabCache[_currentStudentId].profile;
+            if (_tabCache[studentId]) {
+                _tabCache[studentId] = {};
             }
-            if (_viewMode === 'tab') { switchTab(_currentTab); } else { selectStudent(_currentStudentId, 'profile'); }
+            if (studentId === _currentStudentId) {
+                if (_viewMode === 'tab') switchTab(_currentTab);
+                else selectStudent(studentId, 'profile');
+            }
             var msg = data.success_count + ' фото загружено';
             if (data.fail_count > 0) msg += ', ' + data.fail_count + ' не удалось';
             showToast(msg);
@@ -2084,8 +2128,11 @@ function submitUpload(e) {
     var freshToken = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
     freshToken.then(function (token) {
         startUpload(token || CSRF_TOKEN);
-    }).catch(function () {
+    }, function () {
         startUpload(CSRF_TOKEN);
+    }).catch(function () {
+        finishUpload();
+        alert(NET_ERROR);
     });
     return false;
 }
@@ -2109,7 +2156,7 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
                 delete _tabCache[studentId].portfolio;
                 delete _tabCache[studentId].profile;
             }
-            switchTab(_currentTab);
+            if (_currentStudentId === studentId && _viewMode === 'tab' && _currentTab === 'portfolio') switchTab('portfolio');
             showToast('Удалено ' + workCountLabel(data.deleted_count));
         } else {
             alert(window.csrfMessage(data, 'Не удалось удалить'));

@@ -14,17 +14,17 @@
    из tracker.css: стрелка и сброс маркера оттуда. Здесь только раскладка:
    строка во всю ширину карточки, под палец 44px, число циклов у стрелки. */
 .lrn-archive-period > summary { display: flex; width: 100%; min-height: 44px; }
-.lrn-archive-period > summary .lrn-card-title { flex: 1; margin: 0; }
+.lrn-archive-period > summary .lrn-card-title { flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .lrn-archive-count { color: var(--dim); font-size: 13px; font-weight: 600; white-space: nowrap; }
 
 .lrn-archive-stage {
-    margin: 14px 0 8px;
+    margin: 14px 0 8px; overflow-wrap: anywhere;
     font-size: 12px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
     color: var(--dim);
 }
 
-.lrn-archive-cycles { display: grid; gap: 10px; }
+.lrn-archive-cycles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 
 /* В строке цикла нет описания под названием — нижний отступ заголовка
    строки сместил бы его вверх относительно «Открыть». */

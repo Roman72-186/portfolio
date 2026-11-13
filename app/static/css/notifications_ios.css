@@ -90,7 +90,7 @@
 .ios-notifications .notif-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; color: var(--ios-label-2); }
 .ios-notifications .notif-card.unread .notif-icon { color: #F59E0B; }
 
-.ios-notifications .notif-body { flex: 1; min-width: 0; }
+.ios-notifications .notif-body { flex: 1; min-width: 0; overflow-wrap: anywhere;
 .ios-notifications .notif-title {
     font: 600 15px/1.4 var(--ios-font); color: var(--ios-label);
     margin-bottom: 3px;

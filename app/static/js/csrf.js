@@ -48,7 +48,7 @@
             return Promise.resolve(cached);
         }
         if (inflight) return inflight;
-        inflight = fetch('/csrf', {
+        inflight = window.fetchWithTimeout('/csrf', {
             credentials: 'same-origin',
             headers: {'Accept': 'application/json'},
             cache: 'no-store'

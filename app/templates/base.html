@@ -59,7 +59,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=89">
+    <link rel="stylesheet" href="/static/css/base.css?v=90">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
@@ -76,6 +76,18 @@
          тогда просто вернёт пустой список. У ученика на мобилке своя
          версия — чекбокс внутри шестерёнки, обвязан в bottom_nav.html,
          синхронизируется с этой через событие apparchi-theme-change. -->
+    <script>
+    // Общий wrapper для fetch() с таймаутом через AbortController — иначе на плохом
+    // интернете запрос виснет бесконечно без обратной связи пользователю.
+    window.fetchWithTimeout = function(url, options, timeoutMs) {
+        options = options || {};
+        timeoutMs = timeoutMs || 15000;
+        var controller = new AbortController();
+        var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+        var opts = Object.assign({}, options, { signal: controller.signal });
+        return fetch(url, opts).finally(function() { clearTimeout(timer); });
+    };
+    </script>
     <script>
     (function () {
         // DOMContentLoaded, а не сразу: этот блок сидит в начале body, а сама
@@ -150,7 +162,7 @@
                 var card = document.createElement('div');
                 card.setAttribute('style',
                     'max-width:360px;width:100%;background:#fff;border-radius:18px;padding:26px 22px;' +
-                    'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.35);');
+                    'text-align:center;max-height:100%;overflow:auto;box-shadow:0 16px 48px rgba(0,0,0,0.35);');
                 card.innerHTML =
                     '<div style="font-size:40px;line-height:1;margin-bottom:12px">🌐</div>' +
                     '<div style="font-size:18px;font-weight:800;color:#0F121C;margin-bottom:8px">Открой в обычном браузере</div>' +
@@ -182,13 +194,20 @@
                         } else { fallbackCopy(); }
                     } catch (e) { fallbackCopy(); }
                     function fallbackCopy(){
+                        var field = document.createElement('input');
+                        field.type = 'text';
+                        field.value = targetUrl;
+                        field.readOnly = true;
+                        field.className = 'field-input';
+                        field.setAttribute('aria-label', 'Ссылка для открытия в браузере');
+                        card.appendChild(field);
+                        field.select();
                         try {
-                            var ta = document.createElement('textarea');
-                            ta.value = targetUrl; ta.setAttribute('readonly','');
-                            ta.style.position = 'fixed'; ta.style.opacity = '0';
-                            document.body.appendChild(ta); ta.select();
-                            document.execCommand('copy'); document.body.removeChild(ta); done();
-                        } catch (e2) {}
+                            if (document.execCommand('copy')) { field.remove(); done(); return; }
+                        } catch (_) {}
+                        copyBtn.hidden = true;
+                        field.focus();
+                        field.select();
                     }
                 };
                 card.appendChild(openBtn);
@@ -208,7 +227,7 @@
                 if (IS_AUTHED) {
                     // Уже залогинены внутри Telegram → выписываем свежий токен,
                     // чтобы внешний браузер открылся тоже залогиненным.
-                    fetch('/auth/handoff', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+                    window.fetchWithTimeout('/auth/handoff', { headers: { 'Accept': 'application/json' }, cache: 'no-store' }, 5000)
                         .then(function(r){ return r.ok ? r.json() : null; })
                         .then(function(j){ present((j && j.ok && j.login_url) ? j.login_url : window.location.href); })
                         .catch(function(){ present(window.location.href); });
@@ -227,22 +246,13 @@
         } catch (e) { /* никогда не ломаем страницу */ }
     })();
     </script>
-    <script>
-    // Общий wrapper для fetch() с таймаутом через AbortController — иначе на плохом
-    // интернете запрос виснет бесконечно без обратной связи пользователю.
-    window.fetchWithTimeout = function(url, options, timeoutMs) {
-        options = options || {};
-        timeoutMs = timeoutMs || 15000;
-        var controller = new AbortController();
-        var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
-        var opts = Object.assign({}, options, { signal: controller.signal });
-        return fetch(url, opts).finally(function() { clearTimeout(timer); });
-    };
-    </script>
     {# Свежий CSRF-ключ перед мутацией — общий слой на все экраны. Подключён в
        base.html, а не на страницах загрузки: ключ старится у любой долго
        открытой вкладки, а не только у формы с фото (разбор — в самом файле). #}
-    <script src="/static/js/csrf.js?v=2"></script>
+    <script src="/static/js/csrf.js?v=3"></script>
+    {% if user is defined and user and user.role_rank == 1 %}
+    <script src="/static/js/push-toggle.js?v=1"></script>
+    {% endif %}
     {# «Был на платформе» и время на платформе — пинг видимой вкладки, только
        ученику и не во входе «глазами» (`services/presence.py`). #}
     {% if user is defined and user and user.role_rank == 1 and not user.impersonated_by_id and not user.public_purchase_pending %}
@@ -291,7 +301,7 @@
     {# Код колокольчика — в `/static/js/notif-bell.js` (с 01.10.2026, аудит АОП ученика,
        п. 4.1): он на каждой странице, встроенным качался заново при каждом заходе.
        Правишь файл — поднимай `?v=` здесь. #}
-    <script src="/static/js/notif-bell.js?v=2" data-csrf-token="{{ csrf_token(request) }}"></script>
+    <script src="/static/js/notif-bell.js?v=3" data-csrf-token="{{ csrf_token(request) }}"></script>
     {% endif %}
 
     {# Меню — по родной роли (`nav_rank`): в разделе, открытом сверх роли,

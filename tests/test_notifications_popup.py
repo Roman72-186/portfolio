@@ -74,3 +74,55 @@ def test_notification_time_shown_in_moscow(auth_client, db):
     assert item["created_at"] == "08.10.2026 в 10:05"
 
     assert client.get("/cabinet/notifications").status_code == 200
+
+
+def test_bell_shows_error_then_empty_and_keeps_badge_on_failed_mark(auth_client, db):
+    import pytest
+
+    from app.models.notification import Notification
+
+    sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+    client, user = auth_client
+    db.add(Notification(user_id=user.id, title="Новое", is_read=False))
+    db.commit()
+    feed_status = 503
+    feed_body = "{}"
+
+    def serve(route):
+        url = route.request.url
+        if not url.startswith("https://testserver/"):
+            route.abort()
+        elif url.endswith("/notifications/feed"):
+            route.fulfill(status=feed_status, content_type="application/json", body=feed_body)
+        elif url.endswith("/notifications/mark-read"):
+            route.fulfill(status=503, content_type="application/json", body="{}")
+        else:
+            response = client.get(url, follow_redirects=False)
+            route.fulfill(
+                status=response.status_code,
+                headers={key: value for key, value in response.headers.items() if key != "content-length"},
+                body=response.content,
+            )
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.route("**/*", serve)
+        page.goto("https://testserver/cabinet/portfolio")
+        bell = page.locator("button.notif-bell")
+        body = page.locator("#notifPopBody")
+        bell.click()
+        body.get_by_text("Не удалось загрузить уведомления.").wait_for()
+        feed_status = 200
+        feed_body = '{"unread_count": 1, "notifications": [{"title":"Новое"}]}'
+        with page.expect_response("**/notifications/mark-read"):
+            body.get_by_role("button", name="Повторить").click()
+        assert body.get_by_text("Новое").is_visible()
+        assert bell.locator("[data-notif-bell-badge]").is_visible()
+
+        feed_body = '{"unread_count": 0, "notifications": []}'
+        page.locator("#notifPopClose").click()
+        bell.click()
+        body.get_by_text("Уведомлений пока нет").wait_for()
+        assert not bell.locator("[data-notif-bell-badge]").is_visible()
+        browser.close()

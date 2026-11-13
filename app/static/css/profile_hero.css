@@ -138,11 +138,10 @@
 /* Плашка тарифа общая — `.profile-tariff` в base.css (белый фон, надпись в
    цвет тарифа). Здесь она над именем, рядом с аватаром (05.10.2026), поэтому
    мельче общей: «Уверенный максимум» иначе не влезает между аватаром и
-   баллами. `max-width: none` — пусть лучше заденет зазор колонок, чем
-   надпись вылезет за край плашки. */
+   баллами. На узком экране надпись переносится внутри плашки. */
 .profile-hero .profile-tariff {
-    white-space: nowrap;
-    max-width: none;
+    white-space: normal;
+    max-width: 100%; overflow-wrap: anywhere;
     font-size: 11px; padding: 4px 10px; gap: 5px;
 }
 /* Уровень программы — под аватаром и именем на всю левую колонку (владелец
@@ -150,7 +149,7 @@
    Скругление меньше пилюли — на трёх строках пилюля выглядела бы овалом. */
 .profile-hero .profile-level {
     display: block;
-    white-space: normal;
+    white-space: normal; overflow-wrap: anywhere;
     border-radius: 14px;
     padding: 7px 12px;
     font-size: 12px; line-height: 1.3;

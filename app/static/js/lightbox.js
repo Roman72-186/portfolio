@@ -1,6 +1,8 @@
 (function(){
     var lb = document.getElementById('lightbox');
     var img = document.getElementById('lightbox-img');
+    var status = document.getElementById('lightbox-status');
+    var photoRequest = 0;
     var thumbs = document.getElementById('lightbox-thumbs');
     var counter = document.getElementById('lightbox-counter');
     var slides = [];
@@ -50,12 +52,35 @@
         }).catch(function(){});
     }
 
+    function loadPhoto() {
+        var photo = slides[idx];
+        var request = ++photoRequest;
+        status.hidden = false;
+        status.textContent = 'Загружаем фото…';
+        img.hidden = true;
+        img.src = photo.full;
+        img.decode().then(function() {
+            if (request !== photoRequest) return;
+            img.hidden = false;
+            status.hidden = true;
+        }, function() {
+            if (request !== photoRequest) return;
+            status.textContent = 'Не удалось загрузить фото. ';
+            var retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'lightbox-tool';
+            retry.textContent = 'Повторить';
+            retry.addEventListener('click', loadPhoto);
+            status.appendChild(retry);
+        });
+    }
+
     function render() {
         if (!slides.length) return;
         idx = (idx + slides.length) % slides.length;
         var s = slides[idx];
-        img.src = s.full;
         img.alt = s.alt || '';
+        loadPhoto();
         counter.textContent = (idx + 1) + ' / ' + slides.length;
         var thumbEls = thumbs.querySelectorAll('.lightbox-thumb');
         thumbEls.forEach(function(el, i){
@@ -211,6 +236,7 @@
 
     window.closeLightbox = function(e){
         if (e && e.target && e.target.tagName === 'IMG' && e.target.id === 'lightbox-img') return;
+        ++photoRequest;
         lb.classList.remove('open');
         lb.setAttribute('aria-hidden', 'true');
         resetZoom();

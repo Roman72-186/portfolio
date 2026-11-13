@@ -483,6 +483,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
                 Нет пробников для проверки
             </div>
             {% endfor %}
+            {% if sidebar_students %}<p id="mock-search-empty" class="empty-mini" role="status" hidden>Ученики не найдены.</p>{% endif %}
     {% endcall %}
 
     <div class="split-main">
@@ -505,10 +506,14 @@ var CURRENT_YEAR = new Date().getFullYear();
 var _currentStudentId = null;
 var _currentData = null;
 var _mockCalendarState = {};
+var _mockRequest = 0;
+var _mockBack = '<button type="button" class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>';
 
 function selectStudent(id) {
     if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
+    var request = ++_mockRequest;
     _currentStudentId = id;
+    _currentData = null;
     document.querySelectorAll('.student-row').forEach(r => r.classList.remove('active'));
     var row = document.getElementById('srow-' + id);
     if (row) row.classList.add('active');
@@ -516,19 +521,27 @@ function selectStudent(id) {
     document.querySelector('.split-wrap').classList.add('mobile-show-main');
     window.scrollTo(0, 0);
 
-    document.getElementById('main-panel').innerHTML =
-        '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
-        + '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+    var panel = document.getElementById('main-panel');
+    panel.innerHTML = _mockBack + '<div class="empty-mini" role="status">Загружаем…</div>';
 
-    fetch('/cabinet/students/' + id + '/mock-exams')
-        .then(r => r.json())
+    window.fetchWithTimeout('/cabinet/students/' + id + '/mock-exams', {headers: {Accept: 'application/json'}})
+        .then(r => {
+            if (!r.ok) throw new Error();
+            return r.json();
+        })
         .then(data => {
+            if (!data || !data.student) throw new Error();
+            return data;
+        })
+        .then(data => {
+            if (request !== _mockRequest) return;
             _currentData = data;
             renderMockExams(data);
-        })
-        .catch(() => {
-            document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
+        }, () => {
+            if (request !== _mockRequest) return;
+            panel.innerHTML = _mockBack + '<div class="empty-state"><p class="empty-text" role="status">Не удалось загрузить пробники.</p>' +
+                '<button type="button" class="btn-outline">Повторить</button></div>';
+            panel.querySelector('.empty-state button').addEventListener('click', function () { selectStudent(id); });
         });
 }
 
@@ -971,7 +984,7 @@ function submitScore(sid, workId, formId) {
     }).then(function(r) {
         if (r.ok || r.type === 'opaqueredirect' || r.status === 0) {
             _showMsg(f.root, 'Сохранено <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
-            setTimeout(function() { selectStudent(sid); }, 600);
+            refreshSelectedStudent(sid, 600);
         } else {
             f.root.dataset.saving = '0';
             _showMsg(f.root, 'Ошибка при сохранении', true);
@@ -1007,7 +1020,7 @@ function submitRetake(sid, workId, formId) {
       .then(function(resp) {
           if (resp.ok && resp.j.ok) {
               _showMsg(f.root, 'Отправлено на отработку <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
-              setTimeout(function() { selectStudent(sid); }, 700);
+              refreshSelectedStudent(sid, 700);
           } else {
               f.root.dataset.saving = '0';
               _showMsg(f.root, (resp.j && resp.j.detail) || 'Ошибка', true);
@@ -1032,7 +1045,7 @@ function submitRevision(sid, workId, formId) {
                   var box = root.querySelector('.score-msg');
                   if (box) { box.style.display = 'block'; box.className = 'score-msg score-ok'; box.textContent = 'Студент может переснять пробник'; }
               }
-              setTimeout(function() { selectStudent(sid); }, 700);
+              refreshSelectedStudent(sid, 700);
           } else {
               if (root) root.dataset.saving = '0';
               alert((resp.j && resp.j.detail) || 'Ошибка');
@@ -1050,7 +1063,7 @@ function deleteWork(sid, workId, btnEl) {
           if (resp.ok && resp.j && resp.j.ok) {
               var wrap = btnEl.closest('.photo-wrap');
               if (wrap) wrap.remove();
-              setTimeout(function() { selectStudent(sid); }, 200);
+              refreshSelectedStudent(sid, 200);
           } else {
               alert((resp.j && resp.j.detail) || 'Ошибка удаления');
           }
@@ -1058,7 +1071,16 @@ function deleteWork(sid, workId, btnEl) {
       .catch(function() { alert('Ошибка сети'); });
 }
 
+function refreshSelectedStudent(id, delay) {
+    setTimeout(function() {
+        if (_currentStudentId === id) selectStudent(id);
+    }, delay);
+}
+
 function backToList() {
+    ++_mockRequest;
+    _currentStudentId = null;
+    _currentData = null;
     document.querySelector('.split-wrap').classList.remove('mobile-show-main');
     window.scrollTo(0, 0);
 }
@@ -1075,6 +1097,7 @@ function selectTariff(btn, tariff) {
 function applyFilters() {
     var q = (document.getElementById('student-search').value || '').toLowerCase();
     var queryId = studentIdFromQuery(q);
+    var visible = 0;
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
@@ -1082,7 +1105,10 @@ function applyFilters() {
         var rowTariff = row.getAttribute('data-tariff') || '';
         var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
         row.style.display = (matchesName && matchesTariff) ? '' : 'none';
+        if (matchesName && matchesTariff) visible++;
     });
+    var empty = document.getElementById('mock-search-empty');
+    if (empty) empty.hidden = visible > 0;
 }
 
 function esc(s) {
