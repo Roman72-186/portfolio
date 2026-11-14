@@ -3427,9 +3427,9 @@ def submission_review_queue(
     if student_id is not None:
         query = query.filter(TaskBlockSubmission.user_id == student_id)
     if subject:
+        # Предмет блока наследуется от задания во всех очередях проверки.
         query = query.filter(
             func.coalesce(TaskBlock.subject, TrackerTask.subject) == subject
-            if cycle_id is not None else TaskBlock.subject == subject
         )
     if cycle_id is not None:
         query = query.filter(TrackerTask.topic_id == cycle_id)

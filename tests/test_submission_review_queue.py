@@ -8,6 +8,8 @@
 """
 from datetime import date, datetime, timezone
 
+import pytest
+
 from app.models.task_block import BLOCK_UPLOAD, TaskBlock, TaskBlockState, TaskBlockSubmission
 from app.services.review_aggregate import week_bounds
 from app.services.task_blocks import submission_review_queue
@@ -81,3 +83,29 @@ def test_overrun_is_read_for_each_row_in_one_query(db, user_factory):
     assert len(items) == 2
     state_queries = [s for s in statements if "task_block_states" in s]
     assert len(state_queries) == 1
+
+
+@pytest.mark.parametrize("block_subject,expected_subject", [
+    (None, "Композиция"),
+    ("Рисунок", "Рисунок"),
+])
+def test_subject_filter_inherits_task_subject_and_keeps_curator_scope(
+    db, user_factory, block_subject, expected_subject,
+):
+    curator = user_factory(vk_id=960_010, role_name="куратор")
+    other_curator = user_factory(vk_id=960_011, role_name="куратор")
+    student = user_factory(vk_id=960_012)
+    student.curator_id = curator.id
+    task, block, submission = _submission(
+        db, curator, student, submitted_at=datetime(2026, 11, 14, tzinfo=timezone.utc),
+    )
+    task.subject = "Композиция"
+    block.subject = block_subject
+    db.commit()
+
+    rows = submission_review_queue(db, curator_id=curator.id, subject=expected_subject)
+    assert [row["submission_id"] for row in rows] == [submission.id]
+    assert rows[0]["subject"] == expected_subject
+    other_subject = "Рисунок" if expected_subject == "Композиция" else "Композиция"
+    assert submission_review_queue(db, curator_id=curator.id, subject=other_subject) == []
+    assert submission_review_queue(db, curator_id=other_curator.id, subject=expected_subject) == []
