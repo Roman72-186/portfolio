@@ -169,6 +169,73 @@ def test_student_cannot_open_curator_statistics(auth_client):
     assert client.get("/cabinet/curator/statistics", follow_redirects=False).status_code == 403
 
 
+def test_assistant_statistics_all_students_without_financial_access(
+    curator_client, db, user_factory, monkeypatch,
+):
+    from app.api import cabinet_curator
+    from app.services.section_access import save_user_rules
+    from app.services.user_management import get_curator_for_assignment
+
+    client, curator = curator_client
+    contexts = []
+    render = cabinet_curator.templates.TemplateResponse
+
+    def capture(request, name, context, **kwargs):
+        if name == "cabinet_curator_statistics.html":
+            contexts.append(context)
+        return render(request, name, context, **kwargs)
+
+    monkeypatch.setattr(cabinet_curator.templates, "TemplateResponse", capture)
+    actor = user_factory(vk_id=820_050, name="Owner", role_name="суперадмин")
+    own = user_factory(vk_id=820_051, name="Own course pupil", tariff=TARIFF_CONFIDENT_MAX)
+    own.curator_id = curator.id
+    other = user_factory(vk_id=820_052, name="Other course pupil", tariff=TARIFF_SELF)
+    db.commit()
+    save_user_rules(db, actor_id=actor.id, target=curator, desired={
+        "statistics:all_students": "edit", "broadcasts": "edit",
+    })
+
+    response = client.get("/cabinet/curator/statistics")
+    assert response.status_code == 200
+    assert "Статистика всех учеников курса" in response.text
+    ids = {row["id"] for row in contexts[-1]["student_activity"]["students"]}
+    assert {own.id, other.id} <= ids
+    assert contexts[-1]["user"]["role_rank"] == 2
+    assert contexts[-1]["user"]["nav_rank"] == 2
+    for row in contexts[-1]["student_activity"]["students"]:
+        assert not ({"paid_until", "price", "price_kop", "debt", "payments"} & row.keys())
+    assert client.get("/cabinet/curator", follow_redirects=False).headers["location"] == "/cabinet/curator/statistics"
+    assert client.get("/cabinet/staff/broadcasts").status_code == 200
+    # Полномочия ГП, финансы и выгрузки не возникают даже по прямой ссылке.
+    for path in (
+        "/cabinet/superadmin/activity", "/cabinet/superadmin/stats",
+        "/cabinet/superadmin/payments", "/cabinet/superadmin/payment-import",
+        "/cabinet/admin/registration-stats.xlsx",
+        "/cabinet/superadmin/registration-stats.xlsx",
+        "/cabinet/admin-panel", "/cabinet/superadmin/users",
+        f"/cabinet/students/{other.id}/statistics",
+    ):
+        assert client.get(path, follow_redirects=False).status_code == 403, path
+    assert get_curator_for_assignment(db, curator.id).id == curator.id
+    assert own.curator_id == curator.id
+
+    # Отзыв персонального права возвращает собственную группу.
+    save_user_rules(db, actor_id=actor.id, target=curator, desired={"statistics:all_students": "role"})
+    response = client.get("/cabinet/curator/statistics")
+    assert {row["id"] for row in contexts[-1]["student_activity"]["students"]} == {own.id}
+
+
+def test_all_students_grant_does_not_bypass_closed_statistics(curator_client, db, user_factory):
+    from app.services.section_access import save_user_rules
+
+    client, curator = curator_client
+    actor = user_factory(vk_id=820_053, name="Owner", role_name="суперадмин")
+    save_user_rules(db, actor_id=actor.id, target=curator, desired={
+        "statistics:all_students": "edit", "statistics": "none",
+    })
+    assert client.get("/cabinet/curator/statistics", follow_redirects=False).status_code == 403
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="нужен node")
 def test_students_by_name_script_parses(admin_client, db, user_factory, tmp_path):
     """Скрипт карточки рендерится Jinja (данные вшиты `tojson`) — проверяем
