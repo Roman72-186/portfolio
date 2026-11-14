@@ -22,6 +22,7 @@ from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_M
 from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
+from app.services.section_access import can
 from app.services.tariff_view import linked_viewer
 from app.services.tz import MSK_TZ
 from app.services.user_management import rename_staff_self, validate_staff_name
@@ -132,7 +133,12 @@ def cabinet_curator_dashboard(
         and request.query_params.get("sections") != "1"
         and request.query_params.get("renamed") != "1"
     ):
-        return RedirectResponse("/cabinet/curator/overview", status_code=303)
+        target = (
+            "/cabinet/curator/statistics"
+            if can(user, "statistics:all_students")
+            else "/cabinet/curator/overview"
+        )
+        return RedirectResponse(target, status_code=303)
     viewer = linked_viewer(db, user["user_id"])
     return templates.TemplateResponse(request, "cabinet_curator_dashboard.html", {
         "request": request,
@@ -195,14 +201,19 @@ def cabinet_curator_statistics(
 
     if (user.get("nav_rank") or user["role_rank"]) >= 4:
         return RedirectResponse("/cabinet/superadmin/activity", status_code=303)
+    # Ассистент остаётся куратором: расширяем только учебную выборку.
+    # Общая статистика платформы и финансовые выгрузки не открываются.
+    all_students = can(user, "statistics:all_students")
     return templates.TemplateResponse(request, "cabinet_curator_statistics.html", {
         "request": request,
         "user": user,
         "nav_active": "statistics",
         "open_by_default": True,
+        "all_students": all_students,
         "student_activity": get_student_activity_overview(
-            db, include_assignments=True, curator_id=user["user_id"],
-            tariffs=CURATOR_STATS_TARIFFS,
+            db, include_assignments=True,
+            curator_id=None if all_students else user["user_id"],
+            tariffs=None if all_students else CURATOR_STATS_TARIFFS,
         ),
     })
 

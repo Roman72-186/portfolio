@@ -354,6 +354,9 @@ class Action:
 
 
 ACTIONS: tuple[Action, ...] = (
+    # Расширяет только выборку учебной статистики, без подъёма ранга роли.
+    # Отдельного адреса действия нет: его проверяет страница куратора.
+    Action("statistics:all_students", "Статистика всех учеников курса", "statistics", False),
     Action("people:students", "Куратор, тариф, когорта и теги ученика", "people", True),
     Action("people:block", "Заблокировать и удалить", "people", True),
     Action("people:role", "Менять роль", "people", True, risky=True),
