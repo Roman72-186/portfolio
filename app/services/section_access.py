@@ -172,7 +172,7 @@ SECTIONS: tuple[Section, ...] = (
     ),
     Section(
         "statistics", "Статистика", "Статистика активности, выгрузки, статистика циклов",
-        (ROLE_CURATOR, ROLE_MODERATOR, ROLE_HEAD), ("statistics", "activity"),
+        (ROLE_CURATOR, ROLE_MODERATOR, ROLE_HEAD), ("statistics", "activity", "curator_demo"),
     ),
     Section(
         "guest_exam", "Гостевой пробник", "Ссылка, билеты и работы гостей",
@@ -236,6 +236,8 @@ _RULES: tuple[_Rule, ...] = (
     _rule("statistics", _exact("/cabinet/students"), _GET, ("tab", "statistics")),
     _rule("statistics", _tree("/cabinet/superadmin/activity")),
     _rule("statistics", _exact("/cabinet/curator/statistics")),
+    _rule("statistics", _exact("/cabinet/curator/demo")),
+    _rule("statistics", _exact("/cabinet/curator/overview")),
     _rule("statistics", _tree("/cabinet/superadmin/stats")),
     _rule("statistics", _exact("/cabinet/admin/registration-stats.xlsx")),
     _rule("statistics", _exact("/cabinet/superadmin/registration-stats.xlsx")),
@@ -352,6 +354,7 @@ class Action:
 
 
 ACTIONS: tuple[Action, ...] = (
+    Action("students:first_week_attendance", "Посещаемость очников первой недели", "students", False),
     Action("people:students", "Куратор, тариф, когорта и теги ученика", "people", True),
     Action("people:block", "Заблокировать и удалить", "people", True),
     Action("people:role", "Менять роль", "people", True, risky=True),
@@ -383,6 +386,8 @@ _POST = ("POST",)
 _ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
     (key, re.compile(pattern), frozenset(methods))
     for key, pattern, methods in (
+        ("students:first_week_attendance", r"^/cabinet/staff/first-week-attendance$", ("GET", "HEAD")),
+        ("students:first_week_attendance", r"^/cabinet/staff/first-week-attendance/\d+/\d+$", _POST),
         # `labels`, `access-until` и `payment` — блок «Управление» в карточке «Учеников»
         # (05.10.2026): та же правка ученика, что в форме «Людей».
         ("people:students", _USER + "/(tags|curator|tariff|cohort-tag|labels|access-until|payment)$", _POST),

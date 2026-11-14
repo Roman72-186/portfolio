@@ -125,9 +125,14 @@ def cabinet_curator_dashboard(
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам.
-    Плюс кнопка входа в свой аккаунт просмотра тарифа, если он есть
-    (`services/tariff_view.py`, 10.10.2026)."""
+    """Главная ведёт в статистику, а «Все разделы» сохраняет меню и просмотр тарифа."""
+    if (
+        (user.get("nav_rank") or user["role_rank"]) == 2
+        and "statistics" not in (user.get("closed_sections") or ())
+        and request.query_params.get("sections") != "1"
+        and request.query_params.get("renamed") != "1"
+    ):
+        return RedirectResponse("/cabinet/curator/overview", status_code=303)
     viewer = linked_viewer(db, user["user_id"])
     return templates.TemplateResponse(request, "cabinet_curator_dashboard.html", {
         "request": request,
@@ -143,6 +148,33 @@ def cabinet_curator_dashboard(
 
 
 # ── Статистика своей группы ─────────────────────────────────────────────────
+
+@router.get("/curator/demo", response_class=HTMLResponse)
+@router.get("/curator/overview", response_class=HTMLResponse)
+def cabinet_curator_demo(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    stage_id: Annotated[int | None, Query(ge=-1)] = None,
+    cycle_id: Annotated[int | None, Query(ge=0)] = None,
+    subject: Annotated[str, Query(max_length=30)] = "",
+):
+    from app.services.curator_demo import build_curator_demo
+
+    if (user.get("nav_rank") or user["role_rank"]) != 2:
+        raise HTTPException(403, "Раздел доступен кураторам")
+    if request.url.path.endswith("/demo"):
+        target = "/cabinet/curator/overview"
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=303)
+    return templates.TemplateResponse(request, "cabinet_curator_demo.html", {
+        "request": request,
+        "user": user,
+        "nav_active": "curator_demo",
+        "demo": build_curator_demo(db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject),
+    })
+
 
 @router.get("/curator/statistics", response_class=HTMLResponse)
 def cabinet_curator_statistics(
