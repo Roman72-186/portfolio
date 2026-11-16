@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Annotated
+from json import dumps
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -86,6 +87,15 @@ router = APIRouter(prefix="/cabinet")
 MAX_FEEDBACK_PHOTO_INPUT_SIZE = 25 * 1024 * 1024
 
 
+REVIEW_SECTIONS = {
+    "task": "Задание",
+    "composition": "Композиционное решение",
+    "structure": "Конструктивное решение",
+    "graphics": "Графическое решение",
+    "recommendations": "Рекомендации",
+}
+
+
 def _submission_or_404(db: DBSession, submission_id: int) -> TaskBlockSubmission:
     submission = db.get(TaskBlockSubmission, submission_id)
     if submission is None or submission.submitted_at is None:
@@ -139,7 +149,10 @@ def _draft_revision(message: TaskBlockFeedbackMessage) -> str:
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
     return sha256(
-        f"{message.id}|{stamp.isoformat()}|{message.text}|{message.review_image_id}".encode("utf-8")
+        dumps([
+            message.id, stamp.isoformat(), message.text, message.review_image_id,
+            message.review_section, message.review_submission_id,
+        ]).encode("utf-8")
     ).hexdigest()
 
 
@@ -149,7 +162,8 @@ def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int) 
         "cursor": max((message.id for message in own), default=0),
         "drafts": [
             {"id": message.id, "text": message.text, "revision": _draft_revision(message),
-             "image_id": message.review_image_id}
+             "image_id": message.review_image_id, "section": message.review_section,
+             "target_submission_id": message.review_submission_id}
             for message in own if _editable_text_draft(message)
         ],
     }
@@ -180,6 +194,33 @@ def _revision_state(db: DBSession, feedback: TaskBlockFeedback | None, user: dic
         # Удалить ошибочную ОС целиком (21.10.2026) — те же ГП и суперадмин.
         "can_delete": is_head and task_block_delete_refusal(db, feedback) is None,
     }
+
+
+def _review_choices(db: DBSession, submission: TaskBlockSubmission, task: TrackerTask):
+    group = work_group(db, submission)
+    submission_images = list_submission_images(db, submission.id)
+    if group:
+        work_choices = {
+            work.submission.id: " · ".join(filter(None, (
+                work.task_title, work.block_title, work.submitted_label,
+            )))
+            for work in group.works
+        }
+        image_choices = {
+            image.id: (f"{work.task_title} · Фото {number}", image.image_s3_url, work.submission.id)
+            for work in group.works
+            for number, image in enumerate(
+                submission_images if work.submission.id == submission.id
+                else list_submission_images(db, work.submission.id), 1
+            )
+        }
+    else:
+        work_choices = {submission.id: task.title or "Текущая работа"}
+        image_choices = {
+            image.id: (f"Фото {number}", image.image_s3_url, submission.id)
+            for number, image in enumerate(submission_images, 1)
+        }
+    return group, submission_images, work_choices, image_choices
 
 
 def _render(
@@ -218,22 +259,7 @@ def _render(
             from app.services.curator_review_queue import review_neighbors
 
             queue_navigation = review_neighbors(db, user["user_id"], submission, request.query_params)
-    group = work_group(db, submission)
-    submission_images = list_submission_images(db, submission.id)
-    if group:
-        image_choices = {
-            image.id: (f"{work.task_title} · Фото {number}", image.image_s3_url)
-            for work in group.works
-            for number, image in enumerate(
-                submission_images if work.submission.id == submission.id
-                else list_submission_images(db, work.submission.id), 1
-            )
-        }
-    else:
-        image_choices = {
-            image.id: (f"Фото {number}", image.image_s3_url)
-            for number, image in enumerate(submission_images, 1)
-        }
+    group, submission_images, work_choices, image_choices = _review_choices(db, submission, task)
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
         "request": request,
         "user": user,
@@ -256,6 +282,8 @@ def _render(
         "submission": submission,
         "past_works": past_works,
         "review_images": image_choices,
+        "review_works": work_choices,
+        "review_sections": REVIEW_SECTIONS,
         "queue_navigation": queue_navigation,
         # Общая ОС на несколько заданий (13.10.2026): прошлые работы ученика,
         # на которые этот ответ тоже. None — работа одна.
@@ -548,6 +576,16 @@ def _student_link(submission_id: int) -> str:
     return f"/cabinet/task-block-submissions/{submission_id}/feedback"
 
 
+def _is_review_target(db: DBSession, main: TaskBlockSubmission, target_id: int) -> bool:
+    if target_id == main.id:
+        return True
+    target = db.get(TaskBlockSubmission, target_id)
+    if not target or not target.submitted_at or target.user_id != main.user_id:
+        return False
+    owner = main_submission_for(db, target)
+    return owner is not None and owner.id == main.id
+
+
 class DraftUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -556,6 +594,8 @@ class DraftUpdate(BaseModel):
     revision: str | None = Field(default=None, min_length=64, max_length=64)
     cursor: int = Field(ge=0)
     image_id: int | None = Field(default=None, gt=0)
+    target_submission_id: int | None = Field(default=None, gt=0)
+    section: Literal["task", "composition", "structure", "graphics", "recommendations"] | None = None
 
 
 def _draft_response(message: TaskBlockFeedbackMessage | None, cursor: int) -> JSONResponse:
@@ -605,28 +645,39 @@ def save_feedback_draft(
     newest = own_query.order_by(TaskBlockFeedbackMessage.id.desc()).first()
     cursor = newest.id if newest else 0
     message = db.get(TaskBlockFeedbackMessage, data.message_id) if data.message_id else None
-    image_id = data.image_id
-    if message is not None and "image_id" not in data.model_fields_set:
-        image_id = message.review_image_id
-    if content and image_id is not None and (message is None or image_id != message.review_image_id):
+    if message is not None and (message.feedback_id != feedback.id or message.sender_id != author_id):
+        return _error(409, "Черновик больше недоступен. Обновите страницу.")
+    metadata = data.model_dump(exclude_unset=True)
+    image_id = metadata.get("image_id", message.review_image_id if message else None)
+    target_id = metadata.get("target_submission_id", message.review_submission_id if message else None)
+    section = metadata.get("section", message.review_section if message else None)
+    if content and target_id is not None and (message is None or target_id != message.review_submission_id):
+        if not _is_review_target(db, submission, target_id):
+            return _error(422, "Выберите работу из этого диалога.")
+    if content and image_id is not None and (
+        message is None or image_id != message.review_image_id or target_id != message.review_submission_id
+    ):
         image = db.get(TaskBlockSubmissionImage, image_id)
         if image is None:
             return _error(422, "Фото больше недоступно.")
-        if image.submission_id != submission.id:
-            target = db.get(TaskBlockSubmission, image.submission_id)
-            main = (
-                main_submission_for(db, target)
-                if target and target.submitted_at and target.user_id == submission.user_id else None
-            )
-            if main is None or main.id != submission.id:
-                return _error(422, "Выберите фото работы из этого диалога.")
+        if not _is_review_target(db, submission, image.submission_id):
+            return _error(422, "Выберите фото работы из этого диалога.")
+        if target_id is not None and image.submission_id != target_id:
+            return _error(422, "Выберите фото указанной работы.")
+
+    def matches(candidate: TaskBlockFeedbackMessage) -> bool:
+        return (
+            candidate.text == content and candidate.review_image_id == image_id
+            and candidate.review_section == section and candidate.review_submission_id == target_id
+        )
+
     if data.message_id is None:
         if cursor != data.cursor:
             # Если ответ первого PUT потерялся, повтор не создаёт второе сообщение.
             # Отправленное или изменённое сообщение повтором не открываем заново.
             if (
                 newest is not None and cursor > data.cursor and _editable_text_draft(newest)
-                and newest.text == content and newest.review_image_id == image_id and own_query.filter(
+                and matches(newest) and own_query.filter(
                     TaskBlockFeedbackMessage.id > data.cursor,
                 ).count() == 1
             ):
@@ -637,7 +688,7 @@ def save_feedback_draft(
         message = TaskBlockFeedbackMessage(
             feedback_id=feedback.id, sender_id=author_id,
             sender_role=role_from_rank(user["role_rank"]), text=content, is_draft=True,
-            review_image_id=image_id,
+            review_image_id=image_id, review_section=section, review_submission_id=target_id,
         )
         db.add(message)
         db.flush()
@@ -645,17 +696,19 @@ def save_feedback_draft(
     else:
         if message is None and not content and cursor <= data.cursor:
             return _draft_response(None, cursor)
-        if message is None or message.feedback_id != feedback.id or message.sender_id != author_id:
+        if message is None:
             return _error(409, "Черновик больше недоступен. Обновите страницу.")
         if not _editable_text_draft(message):
             return _error(409, "Сообщение уже отправлено или изменилось. Обновите страницу.")
-        if message.text == content and message.review_image_id == image_id:
+        if matches(message):
             return _draft_response(message, cursor)
         if data.revision != _draft_revision(message):
             return _error(409, "Замечание изменилось в другом окне. Обновите страницу перед сохранением.")
         if content:
             message.text = content
             message.review_image_id = image_id
+            message.review_section = section
+            message.review_submission_id = target_id
             message.edited_at = datetime.now(timezone.utc)
         else:
             db.delete(message)
@@ -675,16 +728,48 @@ def send_feedback(
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
+    preview: bool = False,
+    snapshot: str | None = None,
 ):
-    """«Отправить ОС» (владелец 22.10.2026): все черновики сотрудников в
-    диалоге становятся видны ученику, ему уходит одно уведомление."""
+    """Предпросмотр и отправка всех черновиков выбранного диалога."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
-    # Блокировка строки: два одновременных нажатия иначе прислали бы два
-    # уведомления на одни и те же черновики.
+    if (preview or snapshot is not None) and (
+        not can(user, "students_review") or absorbed_main_block(db, submission) is not None
+    ):
+        return _error(403, "Этот диалог недоступен для отправки.")
+    # Отправка, предпросмотр и autosave используют одну блокировку диалога.
     feedback = _locked_feedback(db, submission.id)
     if is_closed(feedback):
         return _error(403, "Обратная связь завершена – диалог закрыт.")
+    if preview or snapshot is not None:
+        drafts = serialize_messages(draft_messages(feedback))
+        if not drafts:
+            return _error(409, "Новых сообщений нет – отправлять нечего.")
+        _, task = _context(db, submission)
+        _, _, works, images = _review_choices(db, submission, task)
+        items = [
+            {
+                "text": row["text"],
+                "section": REVIEW_SECTIONS.get(row["review_section"]),
+                "work": works.get(row["review_submission_id"], "Работа больше недоступна")
+                if row["review_submission_id"] else None,
+                "image": images.get(row["review_image_id"], ("Фото больше недоступно",))[0]
+                if row["review_image_id"] else None,
+                "attachments": [
+                    label for field, label in (
+                        ("photo_s3_url", "Фото"), ("video_s3_url", "Видео"),
+                        ("video_url", "Ссылка на видео"), ("audio_s3_url", "Голосовое"),
+                    ) if row[field]
+                ],
+            }
+            for row in drafts
+        ]
+        current_snapshot = sha256(dumps([drafts, items], sort_keys=True).encode("utf-8")).hexdigest()
+        if preview:
+            return JSONResponse({"ok": True, "items": items, "snapshot": current_snapshot})
+        if current_snapshot != snapshot:
+            return _error(409, "Черновики изменились. Откройте предпросмотр ещё раз.")
     if not send_drafts(feedback):
         return _error(409, "Новых сообщений нет – отправлять нечего.")
     notification = notify_counterpart(

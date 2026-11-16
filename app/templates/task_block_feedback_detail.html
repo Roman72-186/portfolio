@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=2">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=3">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -208,6 +208,13 @@
             <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}"{% if viewer_role != 'student' and message.draft and message.sender_id == user.user_id %} data-own-review-draft="{{ message.id }}"{% endif %}>
                 <div class="hw-msg-bubble">
                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
+                    {% if message.review_section or message.review_submission_id %}
+                    <p class="hw-msg-meta">
+                        {% if message.review_section %}{{ review_sections[message.review_section] }}{% endif %}
+                        {% if message.review_section and message.review_submission_id %} · {% endif %}
+                        {% if message.review_submission_id %}{{ review_works.get(message.review_submission_id, 'Работа больше недоступна') }}{% endif %}
+                    </p>
+                    {% endif %}
                     {% if message.review_image_id %}
                     {% set image = review_images.get(message.review_image_id) %}
                     {% if image %}
@@ -273,23 +280,44 @@
               enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
-            {% if viewer_role != 'student' %}
-            <fieldset class="review-feedback-sections" data-review-sections>
-                <legend>Раздел замечания</legend>
-                {% for section in ('Композиционное решение', 'Конструктивное решение', 'Графическое решение', 'Рекомендации') %}
-                <button type="button" class="btn-outline" data-review-section="{{ section }}">{{ section }}</button>
-                {% endfor %}
-            </fieldset>
-            {% endif %}
             {% if autosave is defined and autosave is not none %}
-            <label class="prg-field" for="review-image">К какому фото замечание
-                <select id="review-image" class="field-input" data-review-image>
-                    <option value="">К работе целиком</option>
-                    {% for id, image in review_images.items() %}
-                    <option value="{{ id }}">{{ image[0] }}</option>
+            <label class="prg-field" for="review-draft">Черновики
+                <select id="review-draft" class="field-input" data-review-draft-picker>
+                    <option value="">Новое замечание</option>
+                </select>
+            </label>
+            <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
+            <label class="prg-field" for="review-section">Раздел замечания
+                <select id="review-section" class="field-input" data-review-section>
+                    <option value="">Без раздела</option>
+                    {% for key, label in review_sections.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
                     {% endfor %}
                 </select>
             </label>
+            <label class="prg-field" for="review-work">Работа
+                <select id="review-work" class="field-input" data-review-work>
+                    <option value="">{{ 'Ко всему диалогу' if group else 'К работе целиком' }}</option>
+                    {% for id, label in review_works.items() %}
+                    <option value="{{ id }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="prg-field" for="review-image">Фото работы
+                <select id="review-image" class="field-input" data-review-image>
+                    <option value="">Без привязки к фото</option>
+                    {% for id, image in review_images.items() %}
+                    <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% elif viewer_role != 'student' %}
+            <fieldset class="review-feedback-sections" data-review-sections>
+                <legend>Раздел замечания</legend>
+                {% for section in ('Композиционное решение', 'Конструктивное решение', 'Графическое решение', 'Рекомендации') %}
+                <button type="button" class="btn-outline" data-review-heading="{{ section }}">{{ section }}</button>
+                {% endfor %}
+            </fieldset>
             {% endif %}
             <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"{% if autosave is defined and autosave is not none %} maxlength="20000"{% endif %}></textarea>
             {% if autosave is defined and autosave is not none and viewer_role != 'student' %}
@@ -318,8 +346,16 @@
         <div class="hw-hint">
             <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
             <div class="prg-actions">
-                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Отправить ОС</button>
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Предпросмотр ОС</button>
             </div>
+            <dialog class="card review-preview" data-review-preview aria-labelledby="review-preview-title">
+                <h3 id="review-preview-title" class="section-label">Состав обратной связи</h3>
+                <ol class="review-preview-items" data-review-preview-items></ol>
+                <div class="modal-actions">
+                    <button type="button" class="btn-outline" data-review-preview-cancel>Вернуться к правке</button>
+                    <button type="button" class="btn-blue" data-review-preview-send>Отправить ОС</button>
+                </div>
+            </dialog>
             <p class="prg-message" data-send-status aria-live="polite"></p>
         </div>
         {% endif %}
@@ -359,7 +395,7 @@
 </div>
 
 {% include "partials/lightbox.html" %}
-{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=3" defer></script>{% endif %}
+{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=4" defer></script>{% endif %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
 <script src="/static/js/feedback-rating.js?v=2"></script>
@@ -520,33 +556,72 @@
         });
     });
 
-    // «Отправить ОС» (22.10.2026): свежий ключ через `csrfFetch`, как у удаления.
-    document.querySelectorAll('[data-send-feedback]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var status = document.querySelector('[data-send-status]');
-            var fallback = 'Не получилось отправить. Обнови страницу и попробуй ещё раз.';
-            button.disabled = true;
-            var draft = window.curatorReviewDraft;
-            if (draft) draft.setBusy(true);
-            var saved = draft ? draft.flush() : Promise.resolve();
-            saved.then(function () {
-                return window.csrfFetch(button.dataset.sendFeedback, {method: 'POST'});
-            }).then(function (response) {
-                return response.json().catch(function () { return {}; }).then(function (data) {
-                    if (!response.ok || data.ok === false) {
-                        throw new Error(window.csrfFailure(response.status, data, fallback));
-                    }
+    var sendButton = document.querySelector('[data-send-feedback]');
+    if (sendButton) {
+        var preview = document.querySelector('[data-review-preview]');
+        var confirmSend = preview.querySelector('[data-review-preview-send]');
+        var cancelSend = preview.querySelector('[data-review-preview-cancel]');
+        var sendStatus = document.querySelector('[data-send-status]');
+        var snapshot;
+        var sending = false;
+
+        function lockEditor(locked) {
+            if (window.curatorReviewDraft) window.curatorReviewDraft.setBusy(locked);
+            else sendButton.disabled = locked;
+        }
+
+        async function sendRequest(query) {
+            var response = await window.csrfFetch(sendButton.dataset.sendFeedback + query, {method: 'POST'});
+            var data = await response.json().catch(function () { return {}; });
+            if (!response.ok || !data.ok) {
+                throw new Error(window.csrfFailure(response.status, data, 'Не получилось отправить ОС.'));
+            }
+            return data;
+        }
+
+        sendButton.addEventListener('click', async function () {
+            lockEditor(true);
+            sendStatus.textContent = '';
+            try {
+                await window.curatorReviewDraft?.flush();
+                var data = await sendRequest('?preview=true');
+                snapshot = data.snapshot;
+                var items = data.items.map(function (item) {
+                    var row = document.createElement('li');
+                    var heading = [item.section, item.work, item.image].filter(Boolean).join(' · ');
+                    [heading, item.text, item.attachments.join(', ')].filter(Boolean).forEach(function (text) {
+                        var part = document.createElement('p');
+                        part.textContent = text;
+                        row.append(part);
+                    });
+                    return row;
                 });
-            }).then(function () {
-                if (draft) draft.detach();
-                window.location.reload();
-            }).catch(function (error) {
-                button.disabled = false;
-                if (draft) draft.setBusy(false);
-                showError(status, error.message || fallback);
-            });
+                preview.querySelector('[data-review-preview-items]').replaceChildren(...items);
+                preview.showModal();
+            } catch (error) {
+                lockEditor(false);
+                showError(sendStatus, error.message);
+            }
         });
-    });
+        cancelSend.addEventListener('click', function () { preview.close(); });
+        preview.addEventListener('cancel', function (event) {
+            if (sending) event.preventDefault();
+        });
+        preview.addEventListener('close', function () { lockEditor(false); });
+        confirmSend.addEventListener('click', async function () {
+            sending = confirmSend.disabled = cancelSend.disabled = true;
+            try {
+                await sendRequest('?snapshot=' + encodeURIComponent(snapshot));
+                window.curatorReviewDraft?.detach();
+                window.location.reload();
+            } catch (error) {
+                preview.close();
+                showError(sendStatus, error.message);
+            } finally {
+                sending = confirmSend.disabled = cancelSend.disabled = false;
+            }
+        });
+    }
 
     document.querySelectorAll('.hw-async-form').forEach(function (form) {
         form.addEventListener('submit', function (event) {

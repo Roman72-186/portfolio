@@ -160,3 +160,65 @@ def test_autosave_rejects_late_save_after_dialog_closes(db, user_factory, sessio
     db.commit()
     assert _save(client, submission, "Новый черновик", cursor=draft["cursor"]).status_code == 403
     assert db.query(TaskBlockFeedbackMessage).one().text == "Замечание"
+
+def test_section_target_and_preview_snapshot(db, user_factory, session_factory, client):
+    curator, student, _, first = _setup_block(db, user_factory, base=995_101)
+    _, independent_student, _, foreign = _setup_block(db, user_factory, base=995_111)
+    block_type = db.get(TaskBlock, first.block_id).block_type
+    _, independent = _task_with_block(db, "Самостоятельная работа", block_type)
+    standalone = _submit(db, independent, student, datetime.now(timezone.utc))
+    _, main = _task_with_block(db, "Общая проверка", block_type)
+    sync_links(db, main, [first.block_id])
+    latest = _submit(db, main, student, datetime.now(timezone.utc))
+    wrong_photo = TaskBlockSubmissionImage(submission_id=latest.id, image_s3_url="https://example.test/main.png")
+    db.add(wrong_photo)
+    db.commit()
+    base = f"/cabinet/staff/task-block-submissions/{latest.id}"
+    payload = {"text": "Замечание к отдельной работе", "cursor": 0,
+               "section": "composition", "target_submission_id": first.id}
+
+    _login(client, session_factory, curator)
+    for invalid in (
+        {"target_submission_id": foreign.id}, {"target_submission_id": standalone.id},
+        {"image_id": wrong_photo.id}, {"section": "invalid"},
+    ):
+        assert client.put(base + "/draft", json={**payload, **invalid}).status_code == 422
+    saved = client.put(base + "/draft", json=payload)
+    assert saved.status_code == 200, saved.text
+    assert client.put(base + "/draft", json=payload).json() == saved.json()
+    second = client.put(base + "/draft", json={
+        "text": "Второе замечание", "cursor": saved.json()["cursor"], "section": "graphics",
+    })
+    assert second.status_code == 200, second.text
+
+    assert _save(client, standalone, "Текст самостоятельного диалога").status_code == 200
+    assert client.post(base + "/messages", data={"video_link": "https://example.test/video"}).status_code == 200
+
+    preview_url = base + "/send-feedback?preview=true"
+    _login(client, session_factory, student)
+    assert client.post(preview_url).status_code == 403
+    _login(client, session_factory, independent_student)
+    assert client.post(preview_url).status_code == 403
+    _login(client, session_factory, curator)
+    preview = client.post(preview_url).json()
+    assert [item["section"] for item in preview["items"]] == [
+        "Композиционное решение", "Графическое решение", None,
+    ]
+    assert preview["items"][2]["attachments"] == ["Ссылка на видео"]
+    assert preview["items"][0]["work"]
+    assert preview["items"][0]["image"] is None
+    assert db.query(Notification).count() == 0
+
+    assert _save(client, latest, "Уточнение", cursor=second.json()["cursor"], draft=saved.json()).status_code == 200
+    assert client.post(base + "/send-feedback", params={"snapshot": preview["snapshot"]}).status_code == 409
+    assert db.query(TaskBlockFeedbackMessage).filter_by(is_draft=True).count() == 4
+    fresh = client.post(preview_url).json()
+    assert client.post(base + "/send-feedback", params={"snapshot": fresh["snapshot"]}).status_code == 200
+    assert db.query(Notification).filter_by(user_id=student.id).count() == 1
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/task-block-submissions/{latest.id}/feedback")
+    assert "Уточнение" in page.text
+    assert "Композиционное решение" in page.text
+    assert "Графическое решение" in page.text
+    assert "Текст самостоятельного диалога" not in page.text
+    assert db.query(TaskBlockFeedbackMessage).filter_by(is_draft=True).one().text == "Текст самостоятельного диалога"
