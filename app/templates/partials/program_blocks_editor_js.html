@@ -1752,10 +1752,10 @@ function wrapUniversalSection(row) {
     row.querySelector('summary').focus();
 }
 
-function addUniversalCard(button) {
-    var holder = button.closest('[data-form]').querySelector('[data-blocks]');
-    var card = createUniversalCard(holder);
-    card.querySelector('[data-universal-type]').focus();
+function addUniversalCard(form) {
+    var card = createUniversalCard(form.querySelector('[data-blocks]'));
+    card.scrollIntoView({block: 'nearest'});
+    card.querySelector('[data-universal-type]').focus({preventScroll: true});
 }
 
 function renderFormBlocks(form, rows) {

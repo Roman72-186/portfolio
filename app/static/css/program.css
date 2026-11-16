@@ -645,7 +645,17 @@
 
 @media (max-width: 760px) {
     .prg-head { display: grid; grid-template-columns: 1fr; }
-    .prg-tiles, .prg-grid2, .prg-grid3, .prg-item { grid-template-columns: 1fr; }
+    .prg-tiles, .prg-grid2, .prg-grid3, .prg-item { grid-template-columns: minmax(0, 1fr); }
+    .ios-prg-day .prg-form, .prg-form [data-blocks], .prg-form .prg-field,
+    .prg-form .prg-universal, .prg-form .prg-universal [data-universal-sections] {
+        grid-template-columns: minmax(0, 1fr);
+        min-width: 0;
+    }
+    .prg-form .prg-blk, .prg-form .prg-field :is(input, select, textarea) { min-width: 0; }
+    .prg-form .prg-blk > .prg-ticket-head,
+    .prg-form .prg-blk > details > .prg-ticket-head,
+    .prg-form .prg-blk-actions { flex-wrap: wrap; }
+    .prg-form .prg-blocks-take > button { max-width: 100%; white-space: normal; }
     .prg-day { min-height: 64px; padding: 6px; }
     .prg-monthbar h2 { min-width: 0; font-size: 16px; }
     .prg-grid { gap: 4px; }
