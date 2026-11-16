@@ -82,8 +82,10 @@ def _files(n):
     return [("photos", (f"w{i}.jpg", b"fake-bytes", "image/jpeg")) for i in range(n)]
 
 
-def _post(client, block_id, n=1, *, replace=False, comment=""):
+def _post(client, block_id, n=1, *, replace=False, comment="", request_key=None):
     data = {"comment": comment}
+    if request_key:
+        data["request_key"] = request_key
     if replace:
         data["replace"] = "1"
     with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
@@ -329,3 +331,30 @@ def test_feed_tells_the_student_the_number(auth_client, db):
 
     assert payload["required_photos"] == 1
     assert payload["max_files"] == 1
+
+
+def test_partial_submission_survives_grouping_and_lost_response(auth_client, db):
+    client, student = auth_client
+    task = _task(db, student)
+    block = _block(db, task, required=3)
+    first = _post(client, block.id)
+    assert first.status_code == 200, first.text
+    original = get_submission(db, block_id=block.id, user_id=student.id)
+    assert original.submitted_at is None
+    initial_id = original.id
+
+    sync_blocks(db, task_id=task.id, items=[{
+        "id": block.id, "block_type": BLOCK_PHOTO_UPLOAD, "title": block.title,
+        "required_photos": 3, "is_required": True, "universal_key": "existing-work",
+    }])
+    db.commit()
+    key = "a" * 32
+    final = _post(client, block.id, 2, request_key=key)
+    retry = _post(client, block.id, 2, request_key=key)
+    assert final.status_code == retry.status_code == 200, (final.text, retry.text)
+    assert final.json() == retry.json() == {"ok": True, "created": 2}
+    db.expire_all()
+    submission = get_submission(db, block_id=block.id, user_id=student.id)
+    assert submission.id == initial_id
+    assert submission.submitted_at is not None
+    assert _image_count(db, submission) == 3

@@ -1400,6 +1400,7 @@ def copy_week(
             user_id=user_id,
         )
         db.flush()
+        new_task.include_in_newcomer_after = item.include_in_newcomer_after
         copy_task_blocks(db, from_task_id=item.id, to_task_id=new_task.id)
     db.flush()
     return copy
@@ -1432,6 +1433,8 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
         clone = TaskBlock(
             task_id=to_task_id,
             block_type=block.block_type,
+            universal_key=block.universal_key,
+            portfolio_month=block.portfolio_month,
             sort_order=block.sort_order,
             title=block.title,
             body=block.body,

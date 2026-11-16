@@ -18,6 +18,8 @@ class Work(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     work_type: Mapped[str] = mapped_column(String(20), nullable=False)  # before | after | mock_exam | retake
+    # Origin of a newly submitted legacy form, when the server confirmed the open block.
+    portfolio_source_block_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     month: Mapped[str] = mapped_column(String(20), nullable=False)      # "январь" … "декабрь"
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)

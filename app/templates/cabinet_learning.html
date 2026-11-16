@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=90">
+<link rel="stylesheet" href="/static/css/tracker.css?v=91">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -161,6 +161,11 @@
     {% if feed.steps %}
     <div class="lrn-feed" id="learningStart">
         {% for step in feed.steps %}
+        {% set group = step.block.universal_key if step.block else none %}
+        {% if group and (loop.first or not loop.previtem.block or
+                         loop.previtem.task.id != step.task.id or loop.previtem.block.universal_key != group) %}
+        <div class="lrn-universal-block">
+        {% endif %}
         {# data-subject пустой у задач без предмета — это вкладка «Общее». #}
         <article
             class="lrn-step lrn-step--{{ step.status }}"
@@ -260,6 +265,10 @@
             </div>
             {% endif %}
         </article>
+        {% if group and (loop.last or not loop.nextitem.block or
+                         loop.nextitem.task.id != step.task.id or loop.nextitem.block.universal_key != group) %}
+        </div>
+        {% endif %}
         {% endfor %}
     </div>
     {% else %}

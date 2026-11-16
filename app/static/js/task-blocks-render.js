@@ -59,7 +59,20 @@ scope)` и свойством `answered` (одна попытка: после о
         return answer.option_ids.length > 0;
     }
 
+    function sectionHost(list, block) {
+        if (!block.universal_key) return list;
+        var group = list.lastElementChild;
+        if (!group || group.dataset.universalKey !== block.universal_key) {
+            group = document.createElement('div');
+            group.className = 'lrn-universal-block';
+            group.dataset.universalKey = block.universal_key;
+            list.appendChild(group);
+        }
+        return group;
+    }
+
     window.lrnBlockRender = {
+        sectionHost: sectionHost,
         el: el,
         profileResult: function (profile) {
             var wrap = el('section', 'lrn-blk lrn-blk-profile');
@@ -1103,6 +1116,9 @@ scope)` и свойством `answered` (одна попытка: после о
                 }
                 syncSend();
 
+                var uploadKey = null;
+                input.addEventListener('change', function () { uploadKey = null; });
+                comment.addEventListener('input', function () { uploadKey = null; });
                 send.addEventListener('click', function () {
                     if (!input.files || !input.files.length) {
                         note.textContent = 'Выбери хотя бы один файл.';
@@ -1120,14 +1136,22 @@ scope)` и свойством `answered` (одна попытка: после о
                     // Повёрнутые в превью фото крутим по-настоящему; не вышло —
                     // уходит оригинал (`prepareAll` не падает).
                     var chosen = Array.prototype.slice.call(input.files);
+                    var requestKey = uploadKey || Array.from(
+                        window.crypto.getRandomValues(new Uint8Array(16)),
+                        function (byte) { return byte.toString(16).padStart(2, '0'); }
+                    ).join('');
+                    uploadKey = requestKey;
+                    var noteText = comment.value || '';
+                    var replacePhotos = replaceMode;
                     var ready = window.PhotoPrep
                         ? window.PhotoPrep.prepareAll(chosen)
                         : Promise.resolve(chosen);
                     ready.then(function (files) {
                         var data = new FormData();
                         files.forEach(function (file) { data.append('photos', file); });
-                        data.append('comment', comment.value || '');
-                        if (replaceMode) data.append('replace', '1');
+                        data.append('request_key', requestKey);
+                        data.append('comment', noteText);
+                        if (replacePhotos) data.append('replace', '1');
                         return post(block.upload_endpoint, {
                             method: 'POST',
                             body: data
@@ -1186,6 +1210,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     replaceBtn.type = 'button';
                     replaceBtn.addEventListener('click', function () {
                         replaceMode = true;
+                        uploadKey = null;
                         replaceBtn.remove();
                         label.textContent = required
                             ? 'Новые фото вместо загруженных (ровно ' + required + ')'

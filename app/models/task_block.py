@@ -334,6 +334,9 @@ class TaskBlock(Base):
         ForeignKey("tracker_tasks.id", ondelete="CASCADE"), nullable=False
     )
     block_type: Mapped[str] = mapped_column(String(20), nullable=False, default=BLOCK_TEXT)
+    # Scoped to the task. Existing section IDs remain the anchors for student data.
+    universal_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    portfolio_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Подпись блока — необязательна у всех типов: у фото это подрисуночная
@@ -1114,6 +1117,18 @@ class TaskBlockSubmission(Base):
             name="ck_task_block_submissions_score_range",
         ),
     )
+
+
+class TaskBlockUploadReceipt(Base):
+    """Committed result for a retry of the same upload form."""
+
+    __tablename__ = "task_block_upload_receipts"
+
+    submission_id: Mapped[int] = mapped_column(
+        ForeignKey("task_block_submissions.id", ondelete="CASCADE"), primary_key=True
+    )
+    request_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class TaskBlockSubmissionImage(Base):

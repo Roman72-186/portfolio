@@ -407,6 +407,26 @@
 .prg-grid2[hidden] { display: none; }
 .prg-grid3 { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }
 
+.prg-universal {
+    min-width: 0;
+    display: grid;
+    gap: 12px;
+}
+.prg-universal [data-universal-sections] {
+    display: grid;
+    gap: 8px;
+}
+.prg-universal summary {
+    cursor: pointer;
+    min-height: 44px;
+    align-content: center;
+    overflow-wrap: anywhere;
+}
+.prg-universal summary:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+}
+
 .prg-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 /* Флажки и переключатели исключены намеренно: их размер задаёт общее правило
    из `base.css`, а `width: 100%` и паддинг поля ввода раздували флажок в

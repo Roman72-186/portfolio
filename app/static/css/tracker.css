@@ -1324,6 +1324,15 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 
 .lrn-feed { display: flex; flex-direction: column; gap: 12px; }
+.lrn-universal-block {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-2);
+}
 
 .lrn-step {
     background: var(--card);

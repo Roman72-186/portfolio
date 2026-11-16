@@ -60,6 +60,7 @@
                   style="display:flex;flex-direction:column;gap:20px">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <input type="hidden" name="section" value="{{ mode }}">
+                {% if source_block_id %}<input type="hidden" name="block" value="{{ source_block_id }}">{% endif %}
 
                 {% if mode == "after" %}
                 <!-- Месяц -->
@@ -440,7 +441,9 @@ uploadForm.addEventListener('submit', function(ev) {
                 // «Уже загружено» появятся свежие фото с кнопкой удаления — их id и
                 // ссылки знает сервер, а не этот ответ. Итог загрузки переезжает
                 // параметрами, иначе после перехода ученик не увидит подтверждения.
+                var sourceBlock = form.querySelector('[name="block"]');
                 var back = '/upload?section=' + encodeURIComponent(CURRENT_SECTION)
+                    + (sourceBlock ? '&block=' + encodeURIComponent(sourceBlock.value) : '')
                     + '&uploaded=' + encodeURIComponent(data.created)
                     + '&failed=' + encodeURIComponent(data.failed || 0);
                 setTimeout(function() { window.location.assign(back); }, 900);

@@ -29,7 +29,7 @@
    цикла (`partials/inline/cycle_feed.html`), и второй копии рендереров в
    проекте быть не должно — за этим следит `tests/test_reuse_ratchet.py`. #}
 <script src="/static/js/photo-prep.js?v=1"></script>
-<script src="/static/js/task-blocks-render.js?v=54"></script>
+<script src="/static/js/task-blocks-render.js?v=55"></script>
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -137,7 +137,7 @@
                         stepIndex++;
                     } else {
                         var node = renderer.render(block, index);
-                        if (node) listEl.appendChild(node);
+                        if (node) window.lrnBlockRender.sectionHost(listEl, block).appendChild(node);
                     }
                 });
                 window.lrnBlockRender.runWizard(renderer, steps, {
@@ -162,7 +162,7 @@
                 if (poll) {
                     if (poll.blocks[0] !== block) return;
                     var host = el('div', 'lrn-blk lrn-blk-question');
-                    listEl.appendChild(host);
+                    window.lrnBlockRender.sectionHost(listEl, block).appendChild(host);
                     var running = window.lrnBlockRender.runPoll(renderer, poll.blocks, host, {
                         showTitle: true,
                         onSubmit: function (answers, handlers) {
@@ -175,7 +175,7 @@
                     return;
                 }
                 var node = renderer.render(block, index);
-                if (node) listEl.appendChild(node);
+                if (node) window.lrnBlockRender.sectionHost(listEl, block).appendChild(node);
             });
             if (data.archi_profile) listEl.appendChild(window.lrnBlockRender.profileResult(data.archi_profile));
             var formBlocks = blocks.filter(function (block) { return !wizardIds[block.id]; });

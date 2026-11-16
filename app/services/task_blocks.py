@@ -1613,7 +1613,23 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             db.add(row)
         else:
             matched_ids.add(row.id)
+            if (
+                row.block_type == BLOCK_PORTFOLIO
+                and block_type != BLOCK_PORTFOLIO
+                and (row.universal_key or item.get("universal_key"))
+            ):
+                # An older /upload form can still be open for this block.
+                raise LegacyPortfolioTypeChangeError(
+                    "Сохраните режим загрузки портфолио у существующего блока."
+                )
         row.block_type = block_type
+        if item.get("universal_key"):
+            row.universal_key = item["universal_key"]
+            row.portfolio_month = item.get("portfolio_month")
+            if block_type in SUBMISSION_BLOCK_TYPES and not row.portfolio_month:
+                task = db.get(TrackerTask, task_id)
+                if task is not None and task.due_at is None:
+                    raise MissingPortfolioMonthError("Укажите учебный месяц для универсального блока со сдачей.")
         row.sort_order = len(paired)
         row.title = _clean(item.get("title"), 200)
         row.body = (item.get("body") or "").strip() or None
@@ -1622,7 +1638,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # The homework editor has no video picker. Preserve instructions on
         # converted portfolio blocks when that editor omits the field.
         # BlockItem.model_dump() also inserts video_id=None for omitted fields.
-        if block_type != BLOCK_PHOTO_UPLOAD or item.get("video_id") is not None:
+        if (
+            block_type != BLOCK_PHOTO_UPLOAD
+            or item.get("video_id") is not None
+            or item.get("universal_key")
+        ):
             row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
         is_media = block_type == BLOCK_MEDIA
@@ -1752,6 +1772,14 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         _drop_block(db, row)
     db.flush()
     return [row for row, _ in paired]
+
+
+class LegacyPortfolioTypeChangeError(ValueError):
+    pass
+
+
+class MissingPortfolioMonthError(ValueError):
+    pass
 
 
 class BlockHasSubmissionsError(Exception):

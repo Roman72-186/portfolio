@@ -20,6 +20,7 @@ from app.models.user import User
 from app.models.work import Work
 from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
+from app.services.task_blocks import LegacyPortfolioTypeChangeError, sync_blocks
 from app.services.tracker import create_task
 from app.services.tz import now_msk, today_msk
 
@@ -361,3 +362,41 @@ def test_deleting_every_work_keeps_portfolio_onboarding_done(auth_client, db):
 
     db.refresh(user)
     assert user.portfolio_do_completed is True
+
+
+def test_legacy_tab_survives_universal_switch_and_ui_rollback(auth_client, db):
+    client, student = auth_client
+    block = _open_window(db, student)
+    assert client.get(f"/upload?section=before&block={block.id}").status_code == 200
+
+    sync_blocks(db, task_id=block.task_id, items=[{
+        "id": block.id, "block_type": BLOCK_PORTFOLIO, "title": block.title,
+        "opens_at": block.opens_at, "closes_at": block.closes_at,
+        "is_required": True, "universal_key": "portfolio-rollout",
+    }])
+    db.commit()
+    with pytest.raises(LegacyPortfolioTypeChangeError):
+        sync_blocks(db, task_id=block.task_id, items=[{
+            "id": block.id, "block_type": "photo_upload", "title": block.title,
+        }])
+    db.rollback()
+    # A tab opened on the old release posts only section and photos.
+    old_tab = _post_before(client)
+    assert old_tab.status_code == 200, old_tab.text
+    first = db.query(Work).filter_by(user_id=student.id).one()
+    assert first.status == "success" and first.s3_url
+    assert first.portfolio_source_block_id is None
+    kept_id = first.id
+
+    # Rollback changes presentation only; the same tab and existing files survive.
+    block.universal_key = None
+    db.commit()
+    restored = client.get(f"/upload?section=before&block={block.id}")
+    assert restored.status_code == 200
+    assert first.s3_url in restored.text
+    modern_tab = _post_before(client, block=str(block.id))
+    assert modern_tab.status_code == 200, modern_tab.text
+    works = db.query(Work).filter_by(user_id=student.id).order_by(Work.id).all()
+    assert len(works) == 2
+    assert works[0].id == kept_id and works[0].s3_url
+    assert works[1].portfolio_source_block_id == block.id

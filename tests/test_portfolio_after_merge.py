@@ -16,7 +16,7 @@ from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissio
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.user import User
-from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK
+from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
 from app.services.portfolio import (
     SOURCE_SUBMISSION,
@@ -343,3 +343,17 @@ def test_student_portfolio_page_shows_homework_and_retake(auth_client, db):
     assert resp.status_code == 200
     assert f"hw-{submission.id}-final.jpg" in resp.text
     assert "retake-final.jpg" in resp.text
+
+
+def test_universal_submission_keeps_timestamp_but_uses_assignment_month(db, regular_user):
+    submitted = datetime(2026, 11, 1, 10, tzinfo=timezone.utc)
+    submission = _submission(db, regular_user, submitted_at=submitted)
+    block = db.get(TaskBlock, submission.block_id)
+    task = db.get(TrackerTask, block.task_id)
+    task.due_at = datetime(2026, 10, 31, 10, tzinfo=timezone.utc)
+    block.universal_key = "october-work"
+    db.commit()
+
+    groups = after_gallery_groups(db, regular_user.id)
+    assert [(g["year"], g["month"], g["total"]) for g in groups] == [(2026, "октябрь", 1)]
+    assert groups[0]["works"][0].created_at == submission.submitted_at

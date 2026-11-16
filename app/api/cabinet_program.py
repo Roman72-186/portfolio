@@ -94,7 +94,7 @@ from app.services.task_blocks import (
     get_required_tariffs as get_task_block_required_tariffs,
     get_submit_deadlines as get_task_block_submit_deadlines,
     get_tariffs as get_task_block_tariffs,
-    BlockHasSubmissionsError,
+    BlockHasSubmissionsError, LegacyPortfolioTypeChangeError, MissingPortfolioMonthError,
     sync_blocks as _sync_blocks,
     sync_submit_deadlines as sync_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
@@ -294,9 +294,9 @@ def sync_task_blocks(db: DBSession, *, task_id: int, items: list[dict]):
     опрос разворачивается здесь, а не в каждом роуте."""
     try:
         return _sync_blocks(db, task_id=task_id, items=_expand_polls(items))
-    except BlockHasSubmissionsError as exc:
+    except (BlockHasSubmissionsError, LegacyPortfolioTypeChangeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except LinkError as exc:
+    except (LinkError, MissingPortfolioMonthError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
@@ -658,11 +658,11 @@ def _edit_payloads(
                 # строку формы по этому ключу.
                 "poll_key": b.poll_key,
                 "poll_intro": b.poll_intro,
+                "universal_key": b.universal_key,
+                "portfolio_month": b.portfolio_month,
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
                 "optional_if_attended": b.optional_if_attended,
-                # Поле отложено до включения учёта посещений в модели.
-                "lesson_ends_at": msk_input_value(getattr(b, "lesson_ends_at", None)) or None,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),
@@ -1838,7 +1838,7 @@ _POLL_SHARED_FIELDS = (
     "hidden_until_done", "is_required", "subject", "tariffs", "required_tariffs",
     "levels", "student_ids", "tag_ids",
     "opens_at", "closes_at", "submit_until", "submit_deadlines",
-    "locked_message", "bypass_sequence",
+    "locked_message", "bypass_sequence", "universal_key", "portfolio_month",
 )
 
 
@@ -1920,6 +1920,8 @@ class BlockItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: int | None = Field(default=None, ge=1)
     block_type: str = Field(min_length=1, max_length=20)
+    universal_key: str | None = Field(default=None, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    portfolio_month: str | None = Field(default=None, pattern=r"^[1-9][0-9]{3}-(0[1-9]|1[0-2])$")
     title: str | None = Field(default=None, max_length=200)
     body: str | None = Field(default=None, max_length=5000)
     video_id: int | None = Field(default=None, ge=1)
@@ -1976,7 +1978,6 @@ class BlockItem(BaseModel):
     # суток, как и закрытие (владелец: «нужны не только даты, а время»).
     # Конвертацию в UTC делает сервисный слой (`sync_blocks`), не эта схема.
     opens_at: str | None = Field(default=None, max_length=32)
-    lesson_ends_at: str | None = Field(default=None, max_length=32)
     # Закрытие по календарю — обратная сторона `opens_at` (владелец
     # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
     # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой
@@ -2954,6 +2955,8 @@ def blocks_source_content(
             # новый при сохранении — копия не должна склеиться с оригиналом.
             "poll_key": b.poll_key,
             "poll_intro": b.poll_intro,
+            "universal_key": b.universal_key,
+            "portfolio_month": b.portfolio_month,
             "video_id": b.video_id,
             "url": b.url,
             # Файл записи в S3 общий у оригинала и копии, как у фото блока:

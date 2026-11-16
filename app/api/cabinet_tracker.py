@@ -32,8 +32,13 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
+
+from starlette.concurrency import run_in_threadpool
+
+from app.models.task_block import TaskBlockUploadReceipt
 
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
@@ -80,7 +85,7 @@ from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
 )
-from app.services.point_a import point_a_level, student_point_a
+from app.services.point_a import student_point_a
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.submission_changes import (
     photo_snapshot as submission_photo_snapshot, record_change as record_submission_change,
@@ -390,9 +395,8 @@ def cabinet_tracker(
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
         "point_a_average": point_a_average,
         # Плашка «ты осваиваешь N уровень программы» рядом с тарифом (владелец
-        # 05.10.2026). Уровень считает та же `point_a_level`, что и уведомление,
-        # и появляется он в тот же момент — когда точка А разобрана целиком.
-        "point_a_level": point_a_level(point_a_average) if point_a_average is not None else None,
+        # 05.10.2026). Показываем тот же уровень, по которому открыты задания.
+        "point_a_level": point_a.level if point_a is not None else None,
     })
 
 
@@ -1005,6 +1009,7 @@ def cabinet_tracker_task_blocks(
             # Запирается отдельный вопрос, а не форма разом: на пропущенный
             # ученик должен иметь возможность вернуться.
             "answered": block.id in answered_ids,
+            "universal_key": block.universal_key,
             # Срок сдачи — у блока любого типа (владелец 27.09.2026). Ученик
             # видит его и там, где срок ничего не запрещает: у видео и фото он
             # предупреждает, что отметка позже зачтётся опозданием.
@@ -1609,6 +1614,12 @@ def submit_compare_choice(
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024
 
 
+def _lock_block_submission(db: DBSession, block_id: int, user_id: int) -> None:
+    # Lock even before the first submission row exists. SQLite is used for local tests.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(select(func.pg_advisory_xact_lock(block_id, user_id)))
+
+
 @router.post("/tracker/blocks/{block_id}/upload", response_class=JSONResponse)
 async def upload_task_block_work(
     block_id: int,
@@ -1619,6 +1630,7 @@ async def upload_task_block_work(
     photos: list[UploadFile] = File(...),
     comment: str | None = Form(default=None),
     replace: bool = Form(default=False),
+    request_key: str | None = Form(default=None, pattern=r"^[a-f0-9]{32}$"),
 ):
     """Приём работы прямо в блоке задания (владелец 07.09.2026).
 
@@ -1634,6 +1646,7 @@ async def upload_task_block_work(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
+    await run_in_threadpool(_lock_block_submission, db, block.id, user["user_id"])
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )
@@ -1650,6 +1663,10 @@ async def upload_task_block_work(
         )
 
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
+    if request_key and submission:
+        receipt = db.get(TaskBlockUploadReceipt, (submission.id, request_key))
+        if receipt is not None:
+            return JSONResponse({"ok": True, "created": receipt.created_count})
     # Тариф обязателен: у блока может стоять свой срок приёма для этого
     # тарифа, и без него сработал бы общий (владелец 27.09.2026).
     reason = block_work_reason(
@@ -1753,6 +1770,10 @@ async def upload_task_block_work(
             photos_before=len(before), photos_after=existing + created,
             removed=before if replacing else (),
         )
+    if request_key and created:
+        db.add(TaskBlockUploadReceipt(
+            submission_id=submission.id, request_key=request_key, created_count=created,
+        ))
     db.commit()
     if notice is not None:
         background_tasks.add_task(notify, notice.id)
@@ -1781,6 +1802,7 @@ def edit_task_block_comment(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
+    _lock_block_submission(db, block.id, user["user_id"])
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )
@@ -1813,6 +1835,7 @@ def delete_task_block_image(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
+    _lock_block_submission(db, block.id, user["user_id"])
     task = _writable_task_or_404(
         db, user["user_id"], block.task_id, revision_block_id=block.id,
     )

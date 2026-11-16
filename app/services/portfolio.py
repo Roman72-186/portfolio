@@ -130,19 +130,24 @@ def _submission_photos(db: DBSession, user_id: int, *, limit: int) -> list[Submi
     """
     rows = (
         _submission_images_query(db, user_id)
+        .add_columns(TaskBlock.universal_key, TaskBlock.portfolio_month, TrackerTask.due_at)
         .order_by(TaskBlockSubmission.submitted_at.desc(), TaskBlockSubmissionImage.id)
         .limit(limit)
         .all()
     )
     photos = []
-    for image, submission in rows:
-        day = msk_date(submission.submitted_at)
+    for image, submission, universal_key, portfolio_month, due_at in rows:
+        submitted_day = msk_date(submission.submitted_at)
+        day = msk_date(due_at) if universal_key and due_at else submitted_day
+        year, month = day.year, day.month
+        if universal_key and portfolio_month and due_at is None:
+            year, month = map(int, portfolio_month.split("-"))
         photos.append(SubmissionPhoto(
             id=image.id,
             filename=f"Работа по заданию {day.strftime('%d.%m.%Y')}",
             s3_url=image.image_s3_url,
-            year=day.year,
-            month=MONTHS[day.month - 1],
+            year=year,
+            month=MONTHS[month - 1],
             created_at=submission.submitted_at,
             task_submission_id=submission.id,
         ))

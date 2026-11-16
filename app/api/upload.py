@@ -89,7 +89,7 @@ def _resolve_upload_mode(user: dict, requested_section: str | None) -> str:
 def _render_upload(request, user, *, mode: str = "after", error=None, success=False,
                    success_count=0, fail_count=0, feature_available=True, feature_message=None,
                    window_open: bool = True, window_deadline: str = "",
-                   window_closed_message: str = "", existing_works=None):
+                   window_closed_message: str = "", existing_works=None, source_block_id=None):
     return templates.TemplateResponse(request, "upload.html", {
         "request": request,
         "user": user,
@@ -108,6 +108,7 @@ def _render_upload(request, user, *, mode: str = "after", error=None, success=Fa
         "window_deadline": window_deadline,
         "window_closed_message": window_closed_message,
         "existing_works": existing_works or [],
+        "source_block_id": source_block_id,
     })
 
 
@@ -579,6 +580,7 @@ async def _process_uploads(
     subject: str | None = None,
     student_score: float | None = None,
     ticket_id: int | None = None,
+    source_block_id: int | None = None,
 ) -> tuple[int, int, str]:
     """Upload files to S3, create Work records immediately, send to n8n in background.
     Returns (success, fail, last_error).
@@ -674,6 +676,7 @@ async def _process_uploads(
             subject=subject,
             tariff=user["tariff"],
             student_score=student_score,
+            portfolio_source_block_id=source_block_id,
             status="success",
             drive_status="pending" if settings.n8n_enabled else "s3_only",
             cycle_id=cycle_id,
@@ -755,6 +758,7 @@ def upload_form(
     return _render_upload(
         request, user, mode=mode, existing_works=existing,
         success=created > 0, success_count=created, fail_count=max(failed or 0, 0),
+        source_block_id=block if window is not None and window.block_id == block else None,
         **window_ctx,
     )
 
@@ -771,16 +775,18 @@ async def upload_photos(
     photos: list[UploadFile] = File(...),
     month: str | None = Form(default=None),
     section: str | None = Form(default=None),
+    block: int | None = Form(default=None),
 ):
     # Гейт FeaturePeriod снят вместе с GET /upload (владелец 09.09.2026),
     # иначе форма открывалась бы, а отправка возвращала «Загрузка закрыта».
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
-    window, allowed, window_ctx = _resolve_window(db, user, mode)
+    window, allowed, window_ctx = _resolve_window(db, user, mode, block)
 
     def _err(msg):
         return _render_upload(
             request, user, mode=mode, error=msg,
+            source_block_id=block if window is not None and window.block_id == block else None,
             existing_works=(
                 _existing_works(db, user["user_id"], mode) if window is not None else []
             ),
@@ -803,6 +809,7 @@ async def upload_photos(
     success_count, fail_count, last_error = await _process_uploads(
         background_tasks=background_tasks,
         db=db, user=user, files_data=files_data, month=month, work_type=work_type,
+        source_block_id=block if mode == "before" and window is not None and window.block_id == block else None,
     )
 
     error = None
@@ -823,6 +830,7 @@ async def upload_photos(
 
     return _render_upload(request, user, mode=mode,
                           error=error, success=success_count > 0,
+                          source_block_id=block if window is not None and window.block_id == block else None,
                           success_count=success_count, fail_count=fail_count,
                           existing_works=(
                               _existing_works(db, user["user_id"], mode)
@@ -863,6 +871,7 @@ async def upload_photos_api(
     photos: list[UploadFile] = File(...),
     month: str | None = Form(default=None),
     section: str | None = Form(default=None),
+    block: int | None = Form(default=None),
 ):
     """AJAX-friendly вариант POST /upload — возвращает JSON вместо редиректа."""
     # Без гейта FeaturePeriod, как и обычный POST /upload (владелец 09.09.2026),
@@ -871,7 +880,7 @@ async def upload_photos_api(
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
 
-    _window, allowed, window_ctx = _resolve_window(db, user, mode)
+    window, allowed, window_ctx = _resolve_window(db, user, mode, block)
     if not allowed:
         return JSONResponse(
             {"success": False, "error": window_ctx["window_closed_message"]},
@@ -890,6 +899,7 @@ async def upload_photos_api(
     success_count, fail_count, last_error = await _process_uploads(
         background_tasks=background_tasks,
         db=db, user=user, files_data=files_data, month=month, work_type=work_type,
+        source_block_id=block if mode == "before" and window is not None and window.block_id == block else None,
     )
 
     mode_changed = False

@@ -13,10 +13,16 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("lesson_attendance_marks", sa.Column("attendance_format", sa.String(20), nullable=True))
+    # Production already has this nullable column while stamped at the parent.
+    if op.get_context().dialect.name == "postgresql":
+        op.execute("ALTER TABLE lesson_attendance_marks ADD COLUMN IF NOT EXISTS attendance_format VARCHAR(20)")
+    else:
+        op.add_column("lesson_attendance_marks", sa.Column("attendance_format", sa.String(20), nullable=True))
     op.add_column("task_blocks", sa.Column("lesson_ends_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade():
     op.drop_column("task_blocks", "lesson_ends_at")
-    op.drop_column("lesson_attendance_marks", "attendance_format")
+    # It can predate this revision and contain real attendance data.
+    if op.get_context().dialect.name != "postgresql":
+        op.drop_column("lesson_attendance_marks", "attendance_format")

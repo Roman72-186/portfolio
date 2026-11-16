@@ -606,6 +606,8 @@ function blockBodyHTML(type) {
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
             + REQUIRED_PHOTOS_FIELD
+            + '<label class="prg-field"><select data-b-video aria-label="Видеоинструкция, необязательно">'
+            + '<option value="">Без видеоинструкции</option>' + videoOptionsHTML() + '</select></label>'
             + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу прямо здесь.</p>';
     }
     if (type === 'compare') {
@@ -704,9 +706,7 @@ function blockBodyHTML(type) {
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название, оно же надпись на кнопке" placeholder="Название, оно же надпись на кнопке"></label>'
             + BODY_FIELD_OPTIONAL
-            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>'
-            + '<label class="prg-field">Окончание занятия (МСК)<input type="datetime-local" data-b-lesson-ends aria-label="Окончание занятия по Москве"></label>'
-            + '<p class="prg-hint">Для занятия укажи время окончания. Через час ученики без отметки посещения получат напоминание. Оставь пустым для обычной ссылки. Для рисунка и композиции добавь отдельные ссылки и выбери предмет у каждой.</p>';
+            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>';
     }
     if (type === 'diagnostic') {
         // Псевдо-тип, которого нет в БД (владелец 24.09.2026, второй раунд) —
@@ -920,6 +920,7 @@ function blockRowHTML(type) {
         + '        <button type="button" class="btn-outline" data-move-block="1" aria-label="Ниже">↓</button>'
         + '      </span>'
         + '      <button type="button" class="btn-outline prg-blk-remove" data-remove-block>Убрать</button>'
+        + '      <button type="button" class="btn-outline" data-wrap-universal>В универсальный блок</button>'
         + '    </span>'
         + '  </div>'
         + blockBodyHTML(type)
@@ -1295,6 +1296,7 @@ function pollRenderBlocks(item, key) {
             block_type: isScale ? 'scale' : 'question',
             question_type: isScale ? null : question.question_type,
             title: index === 0 ? item.title : null,
+            universal_key: item.universal_key,
             poll_key: key,
             poll_intro_html: index === 0 && item.body ? toHtml(item.body) : null,
             body_html: toHtml(question.text || ''),
@@ -1324,6 +1326,7 @@ function expandPollsForPreview(items) {
         if (item.block_type !== 'poll') { expanded.push(item); return; }
         if (item.title || item.body) {
             expanded.push({block_type: 'text', title: item.title, body: item.body,
+                           universal_key: item.universal_key,
                            hidden_until_done: item.hidden_until_done});
         }
         (item.questions || []).forEach(function (question) {
@@ -1332,6 +1335,7 @@ function expandPollsForPreview(items) {
                 block_type: isScale ? 'scale' : 'question',
                 question_type: isScale ? null : question.question_type,
                 body: question.text,
+                universal_key: item.universal_key,
                 options: question.options,
                 hidden_until_done: item.hidden_until_done
             });
@@ -1485,8 +1489,6 @@ function fillBlockRow(row, block) {
     if (bypass) bypass.checked = !!block.bypass_sequence;
     var limitField = row.querySelector('[data-b-time-limit]');
     if (limitField && block.time_limit_minutes) limitField.value = block.time_limit_minutes;
-    var lessonEnds = row.querySelector('[data-b-lesson-ends]');
-    if (lessonEnds) lessonEnds.value = block.lesson_ends_at || '';
     var requiredPhotos = row.querySelector('[data-b-required-photos]');
     if (requiredPhotos) requiredPhotos.value = block.required_photos || '';
     var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
@@ -1675,14 +1677,102 @@ function removeBlockRow(row) {
     restore.focus({preventScroll: true});
 }
 
+function createUniversalCard(holder, key, month) {
+    var card = document.createElement('fieldset');
+    card.className = 'prg-ticket prg-universal';
+    card.dataset.universalKey = key || Array.from(
+        window.crypto.getRandomValues(new Uint8Array(12)),
+        function (byte) { return byte.toString(16).padStart(2, '0'); }
+    ).join('');
+    card.innerHTML = '<legend>Универсальный блок</legend>'
+        + '<div data-universal-sections></div>'
+        + '<label class="prg-field">Учебный месяц для задания без даты'
+        + '<input type="month" data-universal-month></label>'
+        + '<label class="prg-field">Добавить секцию<select data-universal-type>'
+        + '<option value="">Выбрать секцию</option>'
+        + '<optgroup label="Материалы">'
+        + '<option value="text">Текст</option><option value="photo">Фото</option>'
+        + '<option value="video">Видео</option><option value="link">Ссылка</option>'
+        + '<option value="media">Голосовое / кружок</option></optgroup>'
+        + '<optgroup label="Интерактив"><option value="question">Опрос</option>'
+        + '<option value="scale">Шкала навыков</option><option value="rules">Правила с галочками</option>'
+        + '<option value="compare">Сравнение работ</option></optgroup>'
+        + '<optgroup label="Сдача"><option value="upload">Сдача работы</option>'
+        + '<option value="photo_upload">Фото, видео и сдача</option>'
+        + '<option value="timed">Работа на время</option>'
+        + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
+    card.querySelector('[data-universal-month]').value = month || '';
+    var picker = card.querySelector('[data-universal-type]');
+    picker.addEventListener('change', function () {
+        if (!picker.value) return;
+        var sections = card.querySelector('[data-universal-sections]');
+        sections.insertAdjacentHTML('beforeend', blockRowHTML(picker.value));
+        var row = sections.lastElementChild;
+        picker.value = '';
+        prepareUniversalSection(row, true);
+        window.RichTextField.enhanceAll(row);
+        syncBlockOptions(row);
+        renumberBlocks(holder);
+        row.querySelector('summary').focus();
+    });
+    holder.appendChild(card);
+    return card;
+}
+
+function prepareUniversalSection(row, open) {
+    var wrap = row.querySelector('[data-wrap-universal]');
+    if (wrap) wrap.remove();
+    var details = document.createElement('details');
+    details.open = open;
+    var summary = document.createElement('summary');
+    var label = BLOCK_LABELS[row.dataset.blockType] || row.dataset.blockType;
+    var title = row.querySelector('[data-b-title]');
+    var update = function () {
+        summary.textContent = title && title.value.trim()
+            ? label + ' · ' + title.value.trim()
+            : label;
+    };
+    if (title) title.addEventListener('input', update);
+    update();
+    details.appendChild(summary);
+    // Keep the original row and form inputs so draft and widget state survive toggling.
+    while (row.firstChild) details.appendChild(row.firstChild);
+    row.appendChild(details);
+}
+
+function wrapUniversalSection(row) {
+    if (row.closest('[data-universal-key]')) return;
+    var holder = row.closest('[data-blocks]');
+    var previous = row.previousElementSibling;
+    var card = previous && previous.dataset.universalKey ? previous : createUniversalCard(holder);
+    if (card !== previous) row.before(card);
+    card.querySelector('[data-universal-sections]').appendChild(row);
+    prepareUniversalSection(row, true);
+    renumberBlocks(holder);
+    row.querySelector('summary').focus();
+}
+
+function addUniversalCard(button) {
+    var holder = button.closest('[data-form]').querySelector('[data-blocks]');
+    var card = createUniversalCard(holder);
+    card.querySelector('[data-universal-type]').focus();
+}
+
 function renderFormBlocks(form, rows) {
     var holder = form.querySelector('[data-blocks]');
     if (!holder) return;
     holder.innerHTML = '';
+    var card = null;
     (rows || []).forEach(function (block) {
-        holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
-        var row = holder.lastElementChild;
+        if (!block.universal_key) card = null;
+        else if (!card || card.dataset.universalKey !== block.universal_key) {
+            card = createUniversalCard(holder, block.universal_key, block.portfolio_month);
+        }
+        var target = card ? card.querySelector('[data-universal-sections]') : holder;
+        target.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
+        var row = target.lastElementChild;
         fillBlockRow(row, block);
+        if (card) prepareUniversalSection(row, false);
         // enhance ПОСЛЕ fillBlockRow — textarea.value уже заполнено сохранённым
         // текстом, WYSIWYG-редактор сразу инициализируется с ним, без refresh().
         window.RichTextField.enhanceAll(row);
@@ -1698,6 +1788,11 @@ function collectFormBlocks(form) {
         var type = row.getAttribute('data-block-type');
         var idAttr = row.getAttribute('data-block-id');
         var item = {id: idAttr ? Number(idAttr) : null, block_type: type};
+        var card = row.closest('[data-universal-key]');
+        if (card) {
+            item.universal_key = card.dataset.universalKey;
+            item.portfolio_month = card.querySelector('[data-universal-month]').value || null;
+        }
         var body = row.querySelector('[data-b-body]');
         if (body) item.body = body.value.trim();
         var title = row.querySelector('[data-b-title]');
@@ -1724,8 +1819,6 @@ function collectFormBlocks(form) {
         var limitField = row.querySelector('[data-b-time-limit]');
         item.time_limit_minutes = (limitField && limitField.value)
             ? Number(limitField.value) : null;
-        var lessonEnds = row.querySelector('[data-b-lesson-ends]');
-        item.lesson_ends_at = lessonEnds ? lessonEnds.value || null : null;
         var requiredPhotos = row.querySelector('[data-b-required-photos]');
         item.required_photos = (requiredPhotos && requiredPhotos.value)
             ? Number(requiredPhotos.value) : null;
@@ -1837,6 +1930,8 @@ function collectFormBlocks(form) {
             });
         }
         if (type === 'photo_upload' || type === 'timed') {
+            var instruction = row.querySelector('[data-b-video]');
+            if (instruction && instruction.value) item.video_id = Number(instruction.value);
             // У контрольной фото к условию тоже необязательны.
             // В отличие от чистого «Фото» блок самодостаточен и без картинок
             // (см. `_is_empty` в `app/services/task_blocks.py`) — куратор мог
