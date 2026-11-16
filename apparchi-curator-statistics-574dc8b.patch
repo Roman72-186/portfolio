@@ -1,0 +1,312 @@
+From 574dc8b8201556bcaf652487b3c40fc8622d4883 Mon Sep 17 00:00:00 2001
+From: Portfolio SaaS <magigigogi2026@gmail.com>
+Date: Mon, 16 Nov 2026 22:20:33 +0500
+Subject: [PATCH] =?UTF-8?q?=D0=94=D0=BE=D0=B1=D0=B0=D0=B2=D0=B8=D1=82?=
+ =?UTF-8?q?=D1=8C=20=D0=B2=D1=8B=D0=B1=D0=BE=D1=80=20=D0=BA=D0=BE=D0=BD?=
+ =?UTF-8?q?=D1=82=D1=80=D0=BE=D0=BB=D1=8C=D0=BD=D0=BE=D0=B9=20=D0=B8=20?=
+ =?UTF-8?q?=D0=BD=D0=B5=D0=B4=D0=B0=D0=B2=D0=BD=D0=B8=D0=B5=20=D0=BD=D0=B0?=
+ =?UTF-8?q?=D0=B7=D0=BD=D0=B0=D1=87=D0=B5=D0=BD=D0=B8=D1=8F=20=D0=BA=D1=83?=
+ =?UTF-8?q?=D1=80=D0=B0=D1=82=D0=BE=D1=80=D1=83?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/api/cabinet_curator.py              |  5 +-
+ app/models/user.py                      |  1 +
+ app/services/curator_demo.py            | 18 +++++--
+ app/services/user_management.py         |  6 ++-
+ app/templates/cabinet_curator_demo.html | 38 +++++++++++---
+ tests/test_curator_demo.py              | 69 ++++++++++++++++++++++++-
+ 6 files changed, 123 insertions(+), 14 deletions(-)
+
+diff --git a/app/api/cabinet_curator.py b/app/api/cabinet_curator.py
+index 9df293f..f863bee 100644
+--- a/app/api/cabinet_curator.py
++++ b/app/api/cabinet_curator.py
+@@ -164,6 +164,7 @@ def cabinet_curator_demo(
+     stage_id: Annotated[int | None, Query(ge=-1)] = None,
+     cycle_id: Annotated[int | None, Query(ge=0)] = None,
+     subject: Annotated[str, Query(max_length=30)] = "",
++    control_id: Annotated[int | None, Query(gt=0)] = None,
+ ):
+     from app.services.curator_demo import build_curator_demo
+ 
+@@ -178,7 +179,9 @@ def cabinet_curator_demo(
+         "request": request,
+         "user": user,
+         "nav_active": "curator_demo",
+-        "demo": build_curator_demo(db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject),
++        "demo": build_curator_demo(
++            db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject, control_id=control_id,
++        ),
+     })
+ 
+ 
+diff --git a/app/models/user.py b/app/models/user.py
+index fbfae3b..93213a2 100644
+--- a/app/models/user.py
++++ b/app/models/user.py
+@@ -154,6 +154,7 @@ class User(Base):
+         nullable=True,
+     )
+     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
++    curator_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+     # Архив прошлого потока: ученик убран из рабочих списков (вместе с is_active=False),
+diff --git a/app/services/curator_demo.py b/app/services/curator_demo.py
+index 5d2b289..6fff76a 100644
+--- a/app/services/curator_demo.py
++++ b/app/services/curator_demo.py
+@@ -1,6 +1,6 @@
+ """Статистика демо по назначенным сдачам, независимо от очереди проверки."""
+ from collections import defaultdict
+-from datetime import date, datetime, timezone
++from datetime import date, datetime, timedelta, timezone
+ 
+ from sqlalchemy import func, or_
+ from sqlalchemy.orm import Session
+@@ -170,7 +170,7 @@ def _progress(student: dict, blocks: list[dict]) -> dict:
+ 
+ def build_curator_demo(
+     db: Session, curator_id: int, *, stage_id: int | None = None, cycle_id: int | None = None,
+-    subject: str = "", now: datetime | None = None,
++    subject: str = "", control_id: int | None = None, now: datetime | None = None,
+ ) -> dict:
+     now = now or datetime.now(timezone.utc)
+     today = now.astimezone(MSK_TZ).date()
+@@ -179,6 +179,14 @@ def build_curator_demo(
+         User.curator_id == curator_id, User.tariff.in_(CURATOR_STATS_TARIFFS),
+     ).all()
+     student_rows = sorted((_student_row(student) for student in students), key=lambda row: (row["name"].casefold(), row["id"]))
++    recent_ids = {
++        student_id for student_id, in reportable_students_q(db, now).with_entities(User.id).filter(
++            User.curator_id == curator_id,
++            User.tariff.in_(CURATOR_STATS_TARIFFS),
++            User.curator_assigned_at >= now - timedelta(days=7),
++            User.curator_assigned_at <= now,
++        )
++    }
+     cycle = period["cycle"]
+     future = bool(cycle is not None and cycle_bounds(cycle)[0] > today)
+     assigned = _assignments(db, cycle, students, now) if cycle is not None and not future else {}
+@@ -219,9 +227,13 @@ def build_curator_demo(
+ 
+     # Три завершившихся календарных дня между последним визитом и сегодня.
+     absent = [row for row in student_rows if row["last_seen"] and (today - row["last_seen"]).days > 3]
++    control_options = {block_id: controls[block_id]["label"] for block_id in sorted(controls)}
++    selected_control_id = control_id if control_id in controls else next(iter(control_options), None)
+     return {
+         **period, "future": future, "subjects": subjects, "subject": subject,
+         "weekly": weekly, "practice": practice, "practice_total": sum(map(len, practice.values())),
+-        "controls": list(controls.values()),
++        "control_options": control_options, "control_id": selected_control_id,
++        "control": controls.get(selected_control_id),
+         "absent": absent, "unknown": [row for row in student_rows if row["last_seen"] is None],
++        "recent_assignments": [row for row in student_rows if row["id"] in recent_ids],
+     }
+diff --git a/app/services/user_management.py b/app/services/user_management.py
+index bdba5a4..87c14cf 100644
+--- a/app/services/user_management.py
++++ b/app/services/user_management.py
+@@ -177,6 +177,7 @@ def assign_curator(
+ 
+     log_curator_change(db, performed_by_id, student.id, old_curator_id, new_curator_id)
+     student.curator_id = new_curator_id
++    student.curator_assigned_at = datetime.now(timezone.utc) if curator is not None else None
+ 
+ 
+ def validate_staff_name(first_name: str, last_name: str) -> list[str]:
+@@ -288,6 +289,7 @@ def tag_annual_newcomer(db: DBSession, user: User) -> None:
+     """
+     if user.program == PROGRAM_HOLIDAY:
+         return
++    user.point_a_before_only = True
+     if user.id is None:
+         db.flush()
+     tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
+@@ -671,7 +673,9 @@ def hard_delete_user(
+ 
+     # Кто-то другой может считать её своим куратором/оценщиком — обнулить,
+     # не трогая при этом чужие строки целиком.
+-    db.execute(update(User).where(User.curator_id == target_user_id).values(curator_id=None))
++    db.execute(update(User).where(User.curator_id == target_user_id).values(
++        curator_id=None, curator_assigned_at=None,
++    ))
+     db.execute(update(User).where(User.portfolio_before_scored_by_id == target_user_id)
+                .values(portfolio_before_scored_by_id=None))
+     db.execute(update(User).where(User.portfolio_after_scored_by_id == target_user_id)
+diff --git a/app/templates/cabinet_curator_demo.html b/app/templates/cabinet_curator_demo.html
+index a9369ef..e661cab 100644
+--- a/app/templates/cabinet_curator_demo.html
++++ b/app/templates/cabinet_curator_demo.html
+@@ -4,7 +4,7 @@
+ <link rel="stylesheet" href="/static/css/curator_demo.css?v=6">
+ {% endblock %}
+ 
+-{% macro pupil_list(rows, with_progress=false) %}
++{% macro pupil_list(rows, with_progress=false, with_last_seen=true) %}
+ <ul class="curator-demo-pupils">
+     {% for row in rows %}
+     <li>
+@@ -14,7 +14,7 @@
+         {% if with_progress %}
+         <span class="text-muted">{{ row.done }} из {{ row.total }}</span>
+         {% if row.remaining %}<ul>{% for label in row.remaining %}<li>{{ label }}</li>{% endfor %}</ul>{% endif %}
+-        {% elif row.last_seen %}
++        {% elif with_last_seen and row.last_seen %}
+         <span class="text-muted">{{ row.last_seen.strftime('%d.%m.%Y') }}</span>
+         {% endif %}
+     </li>
+@@ -61,6 +61,12 @@
+ 
+     <section class="card" aria-labelledby="demo-important-title">
+         <h2 id="demo-important-title" class="card-title">Важное</h2>
++        <details class="curator-demo-group">
++            <summary>Назначены за последние 7 суток · {{ demo.recent_assignments|length }}</summary>
++            {% if demo.recent_assignments %}
++            {{ pupil_list(demo.recent_assignments, with_last_seen=false) }}
++            {% else %}<p class="text-muted">За последние 7 суток вам никого не назначили.</p>{% endif %}
++        </details>
+         {% if demo.absent %}
+         <details class="curator-demo-group">
+             <summary>Три календарных дня без активности · {{ demo.absent|length }}</summary>
+@@ -125,18 +131,36 @@
+         {% endfor %}
+         {% else %}<p class="text-muted">По этому предмету нет назначенных работ за выбранную неделю.</p>{% endif %}
+     </section>
+-    {% for control in demo.controls %}
++    {% if demo.control %}
+     <section class="card">
+         <h2 class="card-title">Баллы за контрольную</h2>
+-        <p>{{ control.label }}</p>
+-        {% for label, rows in control.groups.items() %}
++        {% if demo.control_options|length > 1 %}
++        <form class="curator-demo-filters" method="get" action="/cabinet/curator/overview">
++            {% if demo.stage_id is not none %}
++            <input type="hidden" name="stage_id" value="{{ demo.stage_id }}">
++            {% endif %}
++            <input type="hidden" name="cycle_id" value="{{ demo.cycle.id }}">
++            <input type="hidden" name="subject" value="{{ demo.subject }}">
++            <label class="field-label">Контрольная
++                <select class="field-select" name="control_id">
++                    {% for id, label in demo.control_options.items() %}
++                    <option value="{{ id }}" {% if id == demo.control_id %}selected{% endif %}>{{ label }}</option>
++                    {% endfor %}
++                </select>
++            </label>
++            <button class="btn-blue" type="submit">Показать</button>
++        </form>
++        {% else %}
++        <p>{{ demo.control.label }}</p>
++        {% endif %}
++        {% for label, rows in demo.control.groups.items() %}
+         <details class="curator-demo-group">
+             <summary>{{ label }} · {{ rows|length }}</summary>
+-            {{ pupil_list(rows) }}
++            {{ pupil_list(rows, with_last_seen=false) }}
+         </details>
+         {% endfor %}
+     </section>
+-    {% endfor %}
++    {% endif %}
+     {% endif %}
+ 
+ 
+diff --git a/tests/test_curator_demo.py b/tests/test_curator_demo.py
+index 95b7a8c..4b76082 100644
+--- a/tests/test_curator_demo.py
++++ b/tests/test_curator_demo.py
+@@ -11,6 +11,7 @@ from app.models.task_block import (
+ )
+ from app.services.curator_demo import build_curator_demo
+ from app.services.tracker import create_task
++from app.services.user_management import assign_curator
+ 
+ 
+ @pytest.fixture
+@@ -45,14 +46,78 @@ def _student(db, user_factory, curator, vk_id, name):
+     return student
+ 
+ 
+-def _submission(db, student, block, count, submitted_at=None):
+-    submission = TaskBlockSubmission(block_id=block.id, user_id=student.id, submitted_at=submitted_at)
++def _submission(db, student, block, count, submitted_at=None, *, score=None):
++    submission = TaskBlockSubmission(block_id=block.id, user_id=student.id, submitted_at=submitted_at, score=score)
+     db.add(submission)
+     db.flush()
+     for index in range(count):
+         db.add(TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url=f"https://example.com/{index}.jpg"))
+ 
+ 
++def test_curator_assignment_date_changes_only_when_curator_changes(db, user_factory, demo_group):
++    now, curator, *_ = demo_group
++    other = user_factory(vk_id=70102, role_name="куратор")
++    student = user_factory(vk_id=70103, tariff=TARIFF_CONFIDENT_MAX)
++
++    assign_curator(db, curator.id, student, curator)
++    assert student.curator_assigned_at is not None
++    student.curator_assigned_at = now - timedelta(days=2)
++    assign_curator(db, curator.id, student, curator)
++    assert student.curator_assigned_at == now - timedelta(days=2)
++    assign_curator(db, curator.id, student, other)
++    assert student.curator_id == other.id
++    assert student.curator_assigned_at > now - timedelta(days=2)
++    assign_curator(db, curator.id, student, None)
++    assert student.curator_id is None
++    assert student.curator_assigned_at is None
++
++
++def test_demo_recent_assignments_use_seven_day_window(db, user_factory, demo_group):
++    now, curator, _, cycle, *_ = demo_group
++    boundary = _student(db, user_factory, curator, 70102, "Граница")
++    boundary.curator_assigned_at = now - timedelta(days=7)
++    old = _student(db, user_factory, curator, 70103, "Старое")
++    old.curator_assigned_at = boundary.curator_assigned_at - timedelta(seconds=1)
++    _student(db, user_factory, curator, 70104, "Дата неизвестна")
++    future = _student(db, user_factory, curator, 70105, "Будущее")
++    future.curator_assigned_at = now + timedelta(seconds=1)
++    db.commit()
++
++    overview = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now)
++    assert [row["id"] for row in overview["recent_assignments"]] == [boundary.id]
++
++
++def test_demo_selects_control_and_distinguishes_ungraded_from_zero(
++    client, db, user_factory, session_factory, demo_group,
++):
++    now, curator, stage, cycle, first, second, _ = demo_group
++    first.block_type = second.block_type = BLOCK_TIMED
++    zero = _student(db, user_factory, curator, 70102, "Ноль")
++    ungraded = _student(db, user_factory, curator, 70103, "Без оценки")
++    missing = _student(db, user_factory, curator, 70104, "Не сдал")
++    _submission(db, zero, second, 1, now, score=0)
++    _submission(db, ungraded, second, 1, now)
++    db.commit()
++
++    overview = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now, control_id=second.id)
++    assert list(overview["control_options"]) == [first.id, second.id]
++    assert overview["control_id"] == second.id
++    assert {label: [row["id"] for row in rows] for label, rows in overview["control"]["groups"].items()} == {
++        "0 б.": [zero.id], "Сдали без оценки": [ungraded.id], "Не сдали": [missing.id],
++    }
++    fallback = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now, control_id=999999)
++    assert fallback["control_id"] == first.id
++    client.cookies.set("session_id", session_factory(curator).id)
++    response = client.get("/cabinet/curator/overview", params={
++        "stage_id": stage.id, "cycle_id": cycle.id, "subject": "Рисунок", "control_id": second.id,
++    })
++    assert response.status_code == 200
++    assert 'name="control_id"' in response.text
++    assert f'<option value="{second.id}" selected>' in response.text
++    for label in ("0 б.", "Сдали без оценки", "Не сдали"):
++        assert f"{label} · 1" in response.text
++
++
+ def test_demo_counts_full_submissions_and_waiting_blocks(db, user_factory, demo_group):
+     now, curator, _, cycle, first, second, extra = demo_group
+     partial = _student(db, user_factory, curator, 70102, "Часть файлов")
+-- 
+2.56.1.windows.1
+
