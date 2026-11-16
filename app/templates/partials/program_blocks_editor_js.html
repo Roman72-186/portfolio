@@ -1684,10 +1684,13 @@ function createUniversalCard(holder, key, month) {
         window.crypto.getRandomValues(new Uint8Array(12)),
         function (byte) { return byte.toString(16).padStart(2, '0'); }
     ).join('');
+    // У формы дня учебный месяц определяется по самому дню.
+    var monthField = holder.closest('[data-item-form]')
+        ? '<label class="prg-field">Учебный месяц<input type="month" data-universal-month></label>'
+        : '';
     card.innerHTML = '<legend>Универсальный блок</legend>'
         + '<div data-universal-sections></div>'
-        + '<label class="prg-field">Учебный месяц для задания без даты'
-        + '<input type="month" data-universal-month></label>'
+        + monthField
         + '<label class="prg-field">Добавить секцию<select data-universal-type>'
         + '<option value="">Выбрать секцию</option>'
         + '<optgroup label="Материалы">'
@@ -1701,7 +1704,8 @@ function createUniversalCard(holder, key, month) {
         + '<option value="photo_upload">Фото, видео и сдача</option>'
         + '<option value="timed">Работа на время</option>'
         + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
-    card.querySelector('[data-universal-month]').value = month || '';
+    var monthInput = card.querySelector('[data-universal-month]');
+    if (monthInput) monthInput.value = month || '';
     var picker = card.querySelector('[data-universal-type]');
     picker.addEventListener('change', function () {
         if (!picker.value) return;
@@ -1791,7 +1795,8 @@ function collectFormBlocks(form) {
         var card = row.closest('[data-universal-key]');
         if (card) {
             item.universal_key = card.dataset.universalKey;
-            item.portfolio_month = card.querySelector('[data-universal-month]').value || null;
+            var month = card.querySelector('[data-universal-month]');
+            item.portfolio_month = month ? month.value || null : null;
         }
         var body = row.querySelector('[data-b-body]');
         if (body) item.body = body.value.trim();

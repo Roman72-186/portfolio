@@ -652,6 +652,21 @@
         min-width: 0;
     }
     .prg-form .prg-blk, .prg-form .prg-field :is(input, select, textarea) { min-width: 0; }
+    /* iOS date controls have an intrinsic width even when the grid track can shrink. */
+    .ios-prg-day :is(input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"]) {
+        -webkit-appearance: none;
+        appearance: none;
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    .ios-prg-day :is(input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"])::-webkit-date-and-time-value {
+        margin: 0;
+        min-width: 0;
+        text-align: start;
+    }
     .prg-form .prg-blk > .prg-ticket-head,
     .prg-form .prg-blk > details > .prg-ticket-head,
     .prg-form .prg-blk-actions { flex-wrap: wrap; }
