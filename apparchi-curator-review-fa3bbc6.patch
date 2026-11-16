@@ -1,0 +1,499 @@
+From fa3bbc6307d211fc49e705fb571d0df32e99605f Mon Sep 17 00:00:00 2001
+From: Portfolio SaaS <magigigogi2026@gmail.com>
+Date: Mon, 16 Nov 2026 21:40:45 +0500
+Subject: [PATCH] =?UTF-8?q?16.11.2026:=20=D0=94=D0=BE=D1=80=D0=B0=D0=B1?=
+ =?UTF-8?q?=D0=BE=D1=82=D0=B0=D1=82=D1=8C=20=D1=8D=D0=BA=D1=80=D0=B0=D0=BD?=
+ =?UTF-8?q?=20=D0=BF=D1=80=D0=BE=D0=B2=D0=B5=D1=80=D0=BA=D0=B8=20=D0=B8=20?=
+ =?UTF-8?q?=D0=BF=D1=80=D0=B8=D0=B2=D1=8F=D0=B7=D0=BA=D1=83=20=D0=BA=20?=
+ =?UTF-8?q?=D1=84=D0=BE=D1=82=D0=BE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../9f3eb14dc683_review_image_reference.py    | 17 ++++++
+ app/api/task_block_feedback.py                | 54 ++++++++++++++++---
+ app/models/task_block_feedback.py             |  2 +
+ app/services/task_block_feedback.py           |  1 +
+ app/static/css/curator_review.css             |  2 +
+ app/static/js/curator_review.js               | 28 ++++++++--
+ app/templates/_curator_nav.html               |  6 +--
+ app/templates/task_block_feedback_detail.html | 29 ++++++++--
+ tests/test_feedback_draft_autosave.py         | 45 ++++++++++++++--
+ 9 files changed, 161 insertions(+), 23 deletions(-)
+ create mode 100644 alembic/versions/9f3eb14dc683_review_image_reference.py
+
+diff --git a/alembic/versions/9f3eb14dc683_review_image_reference.py b/alembic/versions/9f3eb14dc683_review_image_reference.py
+new file mode 100644
+index 0000000..d08d158
+--- /dev/null
++++ b/alembic/versions/9f3eb14dc683_review_image_reference.py
+@@ -0,0 +1,17 @@
++"""Keep the submitted image referenced by a review remark."""
++
++import sqlalchemy as sa
++from alembic import op
++
++revision = "9f3eb14dc683"
++down_revision = "c2a92dd7416b"
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    op.add_column("task_block_feedback_messages", sa.Column("review_image_id", sa.Integer()))
++
++
++def downgrade():
++    op.drop_column("task_block_feedback_messages", "review_image_id")
+diff --git a/app/api/task_block_feedback.py b/app/api/task_block_feedback.py
+index 84dc18b..92d9330 100644
+--- a/app/api/task_block_feedback.py
++++ b/app/api/task_block_feedback.py
+@@ -24,7 +24,7 @@ from app.dependencies import (
+ )
+ from app.models.feedback_rating import DIALOG_TASK_BLOCK
+ from app.models.notification import Notification
+-from app.models.task_block import TaskBlock, TaskBlockSubmission
++from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockSubmissionImage
+ from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+ from app.models.tracker import TrackerTask
+ from app.models.user import User
+@@ -138,7 +138,9 @@ def _draft_revision(message: TaskBlockFeedbackMessage) -> str:
+     stamp = message.edited_at or message.created_at
+     if stamp.tzinfo is None:
+         stamp = stamp.replace(tzinfo=timezone.utc)
+-    return sha256(f"{message.id}|{stamp.isoformat()}|{message.text}".encode("utf-8")).hexdigest()
++    return sha256(
++        f"{message.id}|{stamp.isoformat()}|{message.text}|{message.review_image_id}".encode("utf-8")
++    ).hexdigest()
+ 
+ 
+ def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int) -> dict:
+@@ -146,7 +148,8 @@ def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int)
+     return {
+         "cursor": max((message.id for message in own), default=0),
+         "drafts": [
+-            {"id": message.id, "text": message.text, "revision": _draft_revision(message)}
++            {"id": message.id, "text": message.text, "revision": _draft_revision(message),
++             "image_id": message.review_image_id}
+             for message in own if _editable_text_draft(message)
+         ],
+     }
+@@ -215,6 +218,22 @@ def _render(
+             from app.services.curator_review_queue import review_neighbors
+ 
+             queue_navigation = review_neighbors(db, user["user_id"], submission, request.query_params)
++    group = work_group(db, submission)
++    submission_images = list_submission_images(db, submission.id)
++    if group:
++        image_choices = {
++            image.id: (f"{work.task_title} · Фото {number}", image.image_s3_url)
++            for work in group.works
++            for number, image in enumerate(
++                submission_images if work.submission.id == submission.id
++                else list_submission_images(db, work.submission.id), 1
++            )
++        }
++    else:
++        image_choices = {
++            image.id: (f"Фото {number}", image.image_s3_url)
++            for number, image in enumerate(submission_images, 1)
++        }
+     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
+         "request": request,
+         "user": user,
+@@ -236,14 +255,15 @@ def _render(
+         "student": student,
+         "submission": submission,
+         "past_works": past_works,
++        "review_images": image_choices,
+         "queue_navigation": queue_navigation,
+         # Общая ОС на несколько заданий (13.10.2026): прошлые работы ученика,
+         # на которые этот ответ тоже. None — работа одна.
+-        "group": work_group(db, submission),
++        "group": group,
+         # Работа сама входит в общую ОС, а главная ещё не сдана: ответа по
+         # ней отдельно не будет (`linked_feedback`).
+         "awaits_group": awaits_group,
+-        "submission_images": list_submission_images(db, submission.id),
++        "submission_images": submission_images,
+         # Сколько и когда ученик менял сданную работу и что было до правки
+         # (владелец 07.10.2026) — для проверяющего, ученику не показываем.
+         "change_history": (
+@@ -535,6 +555,7 @@ class DraftUpdate(BaseModel):
+     message_id: int | None = Field(default=None, gt=0)
+     revision: str | None = Field(default=None, min_length=64, max_length=64)
+     cursor: int = Field(ge=0)
++    image_id: int | None = Field(default=None, gt=0)
+ 
+ 
+ def _draft_response(message: TaskBlockFeedbackMessage | None, cursor: int) -> JSONResponse:
+@@ -583,13 +604,29 @@ def save_feedback_draft(
+     )
+     newest = own_query.order_by(TaskBlockFeedbackMessage.id.desc()).first()
+     cursor = newest.id if newest else 0
++    message = db.get(TaskBlockFeedbackMessage, data.message_id) if data.message_id else None
++    image_id = data.image_id
++    if message is not None and "image_id" not in data.model_fields_set:
++        image_id = message.review_image_id
++    if content and image_id is not None and (message is None or image_id != message.review_image_id):
++        image = db.get(TaskBlockSubmissionImage, image_id)
++        if image is None:
++            return _error(422, "Фото больше недоступно.")
++        if image.submission_id != submission.id:
++            target = db.get(TaskBlockSubmission, image.submission_id)
++            main = (
++                main_submission_for(db, target)
++                if target and target.submitted_at and target.user_id == submission.user_id else None
++            )
++            if main is None or main.id != submission.id:
++                return _error(422, "Выберите фото работы из этого диалога.")
+     if data.message_id is None:
+         if cursor != data.cursor:
+             # Если ответ первого PUT потерялся, повтор не создаёт второе сообщение.
+             # Отправленное или изменённое сообщение повтором не открываем заново.
+             if (
+                 newest is not None and cursor > data.cursor and _editable_text_draft(newest)
+-                and newest.text == content and own_query.filter(
++                and newest.text == content and newest.review_image_id == image_id and own_query.filter(
+                     TaskBlockFeedbackMessage.id > data.cursor,
+                 ).count() == 1
+             ):
+@@ -600,24 +637,25 @@ def save_feedback_draft(
+         message = TaskBlockFeedbackMessage(
+             feedback_id=feedback.id, sender_id=author_id,
+             sender_role=role_from_rank(user["role_rank"]), text=content, is_draft=True,
++            review_image_id=image_id,
+         )
+         db.add(message)
+         db.flush()
+         cursor = message.id
+     else:
+-        message = db.get(TaskBlockFeedbackMessage, data.message_id)
+         if message is None and not content and cursor <= data.cursor:
+             return _draft_response(None, cursor)
+         if message is None or message.feedback_id != feedback.id or message.sender_id != author_id:
+             return _error(409, "Черновик больше недоступен. Обновите страницу.")
+         if not _editable_text_draft(message):
+             return _error(409, "Сообщение уже отправлено или изменилось. Обновите страницу.")
+-        if message.text == content:
++        if message.text == content and message.review_image_id == image_id:
+             return _draft_response(message, cursor)
+         if data.revision != _draft_revision(message):
+             return _error(409, "Замечание изменилось в другом окне. Обновите страницу перед сохранением.")
+         if content:
+             message.text = content
++            message.review_image_id = image_id
+             message.edited_at = datetime.now(timezone.utc)
+         else:
+             db.delete(message)
+diff --git a/app/models/task_block_feedback.py b/app/models/task_block_feedback.py
+index bb5edbd..c8c938e 100644
+--- a/app/models/task_block_feedback.py
++++ b/app/models/task_block_feedback.py
+@@ -72,6 +72,8 @@ class TaskBlockFeedbackMessage(Base):
+     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+     sender_role: Mapped[str] = mapped_column(String(20), nullable=False)
+     text: Mapped[str | None] = mapped_column(Text, nullable=True)
++    # Keep the reference when a submitted image is removed.
++    review_image_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+     photo_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+     video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+diff --git a/app/services/task_block_feedback.py b/app/services/task_block_feedback.py
+index 776502e..e3915da 100644
+--- a/app/services/task_block_feedback.py
++++ b/app/services/task_block_feedback.py
+@@ -547,6 +547,7 @@ def serialize_messages(
+             "sender_name": sender_name,
+             "sender_role_label": sender_role_label,
+             "text": message.text,
++            "review_image_id": message.review_image_id,
+             "photo_s3_url": message.photo_s3_url,
+             "video_s3_url": message.video_s3_url,
+             "video_url": message.video_url,
+diff --git a/app/static/css/curator_review.css b/app/static/css/curator_review.css
+index d9ee90d..27e6aaf 100644
+--- a/app/static/css/curator_review.css
++++ b/app/static/css/curator_review.css
+@@ -15,5 +15,7 @@
+ .review-history { list-style: none; padding: 0; }
+ .review-history a { display: flex; align-items: center; gap: var(--s-2); padding-block: var(--s-2); }
+ .review-history img { width: 52px; height: 52px; object-fit: contain; }
++.review-reference { display: flex; align-items: center; gap: var(--s-2); text-align: start; }
++.review-reference img { width: 52px; height: 52px; object-fit: contain; }
+ .review-feedback-sections { border: 0; padding: 0; margin: var(--s-2) 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+ @media (max-width: 600px) { .review-student-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+diff --git a/app/static/js/curator_review.js b/app/static/js/curator_review.js
+index 43900a6..8a49349 100644
+--- a/app/static/js/curator_review.js
++++ b/app/static/js/curator_review.js
+@@ -18,6 +18,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+     const form = document.querySelector('[data-review-draft-url]');
+     if (!form) return;
+     const input = form.elements.text;
++    const image = form.querySelector('[data-review-image]');
+     const status = form.querySelector('[data-review-save-status]');
+     const retry = form.querySelector('[data-review-save-retry]');
+     const send = document.querySelector('[data-send-feedback]');
+@@ -31,6 +32,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+     let revision = active?.revision ?? null;
+     let cursor = initial.cursor;
+     let savedText = active?.text ?? '';
++    let savedImage = active?.image_id ?? null;
+     let timer;
+     let inFlight;
+     let pendingRequest;
+@@ -48,6 +50,14 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+         if (send) send.disabled = busy || !(otherDrafts || id !== null || input.value.trim());
+     }
+ 
++    function currentImage() {
++        return input.value.trim() && image?.value ? Number(image.value) : null;
++    }
++
++    function hasChanges() {
++        return input.value.trim() !== savedText || currentImage() !== savedImage;
++    }
++
+     function saveError(error) {
+         status.textContent = error.message || 'Не удалось сохранить. Текст остался в редакторе.';
+         status.classList.add('is-error');
+@@ -77,6 +87,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+         revision = data.revision;
+         cursor = data.cursor;
+         savedText = payload.text;
++        savedImage = payload.image_id;
+         pendingRequest = null;
+         remember();
+         status.textContent = id === null ? 'Черновик очищен.' : 'Черновик сохранён.';
+@@ -86,8 +97,8 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+         clearTimeout(timer);
+         if (!inFlight) {
+             inFlight = (async () => {
+-                while (pendingRequest || input.value.trim() !== savedText) {
+-                    pendingRequest ||= {text: input.value.trim(), message_id: id, revision, cursor};
++                while (pendingRequest || hasChanges()) {
++                    pendingRequest ||= {text: input.value.trim(), image_id: currentImage(), message_id: id, revision, cursor};
+                     await saveOnce(pendingRequest);
+                 }
+             })().catch((error) => {
+@@ -101,7 +112,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+     function schedule() {
+         clearTimeout(timer);
+         updateSend();
+-        if (pendingRequest || input.value.trim() !== savedText) {
++        if (pendingRequest || hasChanges()) {
+             status.textContent = 'Есть изменения.';
+             status.classList.remove('is-error');
+             timer = setTimeout(() => flush().catch(() => {}), 650);
+@@ -110,6 +121,13 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+ 
+     if (active) {
+         input.value = active.text;
++        if (image && savedImage !== null) {
++            const value = String(savedImage);
++            if (!Array.from(image.options).some((option) => option.value === value)) {
++                image.add(new Option('Фото больше недоступно', value));
++            }
++            image.value = value;
++        }
+         window.RichTextField?.refresh(input);
+         status.textContent = 'Черновик восстановлен.';
+         const bubble = document.querySelector(`[data-own-review-draft="${active.id}"]`);
+@@ -118,6 +136,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+     remember();
+     updateSend();
+     input.addEventListener('input', schedule);
++    image?.addEventListener('change', schedule);
+     retry.addEventListener('click', () => flush().catch(() => {}));
+     form.addEventListener('focusout', (event) => {
+         if (event.target === input || event.target === input._rtEditable) {
+@@ -138,7 +157,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+         });
+     });
+     window.addEventListener('beforeunload', (event) => {
+-        if (!pendingRequest && !inFlight && input.value.trim() === savedText) return;
++        if (!pendingRequest && !inFlight && !hasChanges()) return;
+         event.preventDefault();
+         event.returnValue = '';
+     });
+@@ -149,6 +168,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
+         setBusy: (value) => {
+             busy = value;
+             input.readOnly = value;
++            if (image) image.disabled = value;
+             if (input._rtEditable) input._rtEditable.contentEditable = value ? 'false' : 'true';
+             form.querySelectorAll('[data-review-section]').forEach((button) => { button.disabled = value; });
+             updateSend();
+diff --git a/app/templates/_curator_nav.html b/app/templates/_curator_nav.html
+index 068b40e..5e091f9 100644
+--- a/app/templates/_curator_nav.html
++++ b/app/templates/_curator_nav.html
+@@ -10,9 +10,9 @@
+ {% set curator_items = curator_nav_items(user.closed_sections, user.granted_sections) %}
+ {% if nav_active|default('') in ('curator_demo', 'students_review') %}
+     {% set curator_items = curator_items|list + [dict(key='profile', href='/cabinet/curator/profile', label='Профиль')] %}
+-    {% if 'students_review' not in (user.closed_sections or ()) %}
+-        {% set curator_items = curator_items + [dict(key='students_review', href='/cabinet/staff/students-review/queue', label='Проверка')] %}
+-    {% endif %}
++{% endif %}
++{% if 'students_review' not in (user.closed_sections or ()) and 'students_review' not in (curator_items | map(attribute='key') | list) %}
++    {% set curator_items = curator_items | list + [dict(key='students_review', href='/cabinet/staff/students-review/queue', label='Проверка')] %}
+ {% endif %}
+ {# Экраны ГП, куда куратора пустил открытый раздел, `nav_active` не задают —
+    подсвечиваем пункт по адресу. #}
+diff --git a/app/templates/task_block_feedback_detail.html b/app/templates/task_block_feedback_detail.html
+index 15f1cee..7b8c50d 100644
+--- a/app/templates/task_block_feedback_detail.html
++++ b/app/templates/task_block_feedback_detail.html
+@@ -5,14 +5,14 @@
+ <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
+ <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
+ <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
+-{% if viewer_role != 'student' %}<link rel="stylesheet" href="/static/css/curator_review.css?v=1">{% endif %}
++<link rel="stylesheet" href="/static/css/curator_review.css?v=2">
+ {% endblock %}
+ {% block content %}
+ <div class="ios-homework prg-page">
+     {% if viewer_role != 'student' %}
+     <a class="back-link" data-review-navigation href="{{ queue_navigation.queue_url if queue_navigation else '/cabinet/staff/students-review/queue' }}">← Очередь проверки</a>
+     {% endif %}
+-    <a class="back-link" href="{{ back_url }}">← Назад</a>
++    <a class="back-link" {% if viewer_role != 'student' %}data-review-navigation{% endif %} href="{{ back_url }}">← Назад</a>
+     <div class="prg-head">
+         <div class="prg-head-copy">
+             <h1>Обратная связь по работе</h1>
+@@ -109,13 +109,13 @@
+         <h2 class="section-label">Прошлые работы</h2>
+         <ul class="review-history">
+             {% for item in past_works %}
+-            <li><a href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback">
++            <li><a data-review-navigation href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback">
+                 {% if item.images %}<img src="{{ item.images[0] }}" loading="lazy" alt="">{% endif %}
+                 <span>{{ item.task_title }} · {{ item.submitted_at | msk_text }}</span>
+             </a></li>
+             {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
+         </ul>
+-        <a class="btn-outline" href="/cabinet/students?student={{ submission.user_id }}">Карточка ученика и портфолио</a>
++        <a class="btn-outline" data-review-navigation href="/cabinet/students?student={{ submission.user_id }}&amp;tab=portfolio">Портфолио ученика</a>
+     </section>
+     {% endif %}
+ 
+@@ -208,6 +208,15 @@
+             <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}"{% if viewer_role != 'student' and message.draft and message.sender_id == user.user_id %} data-own-review-draft="{{ message.id }}"{% endif %}>
+                 <div class="hw-msg-bubble">
+                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
++                    {% if message.review_image_id %}
++                    {% set image = review_images.get(message.review_image_id) %}
++                    {% if image %}
++                    <button class="photo-zoom-button review-reference" type="button" onclick="openGallery(this.firstElementChild)">
++                        <img src="{{ image[1] }}" alt="" loading="lazy">
++                        <span>{{ image[0] }}</span>
++                    </button>
++                    {% else %}<p class="hw-msg-meta">Фото к замечанию больше недоступно.</p>{% endif %}
++                    {% endif %}
+                     {% if message.text %}<p class="hw-msg-text">{{ message.text | rich_text | safe }}</p>{% endif %}
+                     {% if message.photo_s3_url %}<button type="button" class="photo-zoom-button hw-msg-photo-btn" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy"></button>{% endif %}
+                     {% if message.video_s3_url %}<video class="{{ 'msg-video-note' if message.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
+@@ -272,6 +281,16 @@
+                 {% endfor %}
+             </fieldset>
+             {% endif %}
++            {% if autosave is defined and autosave is not none %}
++            <label class="prg-field" for="review-image">К какому фото замечание
++                <select id="review-image" class="field-input" data-review-image>
++                    <option value="">К работе целиком</option>
++                    {% for id, image in review_images.items() %}
++                    <option value="{{ id }}">{{ image[0] }}</option>
++                    {% endfor %}
++                </select>
++            </label>
++            {% endif %}
+             <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"{% if autosave is defined and autosave is not none %} maxlength="20000"{% endif %}></textarea>
+             {% if autosave is defined and autosave is not none and viewer_role != 'student' %}
+             <script type="application/json" data-review-draft-state>{{ autosave|tojson }}</script>
+@@ -340,7 +359,7 @@
+ </div>
+ 
+ {% include "partials/lightbox.html" %}
+-{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=2" defer></script>{% endif %}
++{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=3" defer></script>{% endif %}
+ <script src="/static/js/rich-text-field.js?v=4"></script>
+ <script src="/static/js/media-recorder-field.js?v=9"></script>
+ <script src="/static/js/feedback-rating.js?v=2"></script>
+diff --git a/tests/test_feedback_draft_autosave.py b/tests/test_feedback_draft_autosave.py
+index ba8a7a1..70e13fa 100644
+--- a/tests/test_feedback_draft_autosave.py
++++ b/tests/test_feedback_draft_autosave.py
+@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
+ from app.dependencies import require_csrf_header
+ from app.models.notification import Notification
+ from app.models.section_access import SectionAccessRule
+-from app.models.task_block import TaskBlock
++from app.models.task_block import TaskBlock, TaskBlockSubmissionImage
+ from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+ from app.services.linked_feedback import sync_links
+ from tests.test_feedback_rating import (
+@@ -71,6 +71,37 @@ def test_autosave_clears_only_its_draft_and_does_not_create_empty_dialog(db, use
+     assert [row.text for row in db.query(TaskBlockFeedbackMessage).all()] == ["Другой черновик"]
+ 
+ 
++def test_photo_reference_survives_sending_and_removal(db, user_factory, session_factory, client):
++    curator, student, _, submission = _setup_block(db, user_factory, base=995_091)
++    _, _, _, foreign = _setup_block(db, user_factory, base=995_093)
++    photo = TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url="https://example.test/local.png")
++    other_photo = TaskBlockSubmissionImage(submission_id=foreign.id, image_s3_url="https://example.test/foreign.png")
++    db.add_all([photo, other_photo])
++    db.commit()
++    _login(client, session_factory, curator)
++    page_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
++    draft_url = f"/cabinet/staff/task-block-submissions/{submission.id}/draft"
++    student_url = f"/cabinet/task-block-submissions/{submission.id}/feedback"
++    page = client.get(page_url)
++    assert page.status_code == 200
++    assert "Прошлые работы" in page.text and "Портфолио ученика" in page.text
++    payload = {"text": "Замечание к фото", "cursor": 0, "image_id": photo.id}
++    assert client.put(draft_url, json={**payload, "image_id": other_photo.id}).status_code == 422
++    saved = client.put(draft_url, json=payload)
++    assert saved.status_code == 200, saved.text
++    assert client.put(draft_url, json=payload).json() == saved.json()
++    assert db.query(TaskBlockFeedbackMessage).one().review_image_id == photo.id
++    _login(client, session_factory, student)
++    assert payload["text"] not in client.get(student_url).text
++    _login(client, session_factory, curator)
++    assert _send(client, submission).status_code == 200
++    _login(client, session_factory, student)
++    assert payload["text"] in client.get(student_url).text
++    db.delete(photo)
++    db.commit()
++    assert "Фото к замечанию больше недоступно." in client.get(student_url).text
++
++
+ def test_autosave_checks_csrf_and_does_not_allow_foreign_draft(db, user_factory, session_factory, client):
+     curator, student, _, submission = _setup_block(db, user_factory, base=995_021)
+     other = user_factory(vk_id=995_023, name="Другой куратор", role_name="куратор")
+@@ -106,9 +137,17 @@ def test_autosave_keeps_linked_work_in_main_dialog(db, user_factory, session_fac
+     assert db.query(TaskBlockFeedback).count() == 0
+ 
+     latest = _submit(db, main, student, datetime.now(timezone.utc))
++    photo = TaskBlockSubmissionImage(submission_id=first.id, image_s3_url="https://example.test/linked.png")
++    db.add(photo)
+     db.commit()
+-    assert _save(client, latest, "Общий разбор").status_code == 200
+-    assert db.query(TaskBlockFeedback).one().submission_id == latest.id
++    result = client.put(
++        f"/cabinet/staff/task-block-submissions/{latest.id}/draft",
++        json={"text": "Общий разбор", "cursor": 0, "image_id": photo.id},
++    )
++    assert result.status_code == 200, result.text
++    feedback = db.query(TaskBlockFeedback).one()
++    assert feedback.submission_id == latest.id
++    assert feedback.messages[0].review_image_id == photo.id
+ 
+ 
+ def test_autosave_rejects_late_save_after_dialog_closes(db, user_factory, session_factory, client):
+-- 
+2.56.1.windows.1
+
