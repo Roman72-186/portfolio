@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlencode
+from urllib.parse import urlencode, parse_qsl, urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session as DBSession
 
@@ -491,6 +491,18 @@ def payment_subject(db: DBSession, payment: Payment) -> str:
     return period_label(payment.period)
 
 
+def _payer_contact_link(link: str) -> str:
+    """Переиздать сохранённую ссылку без контактов, не создавая новый заказ."""
+    parts = urlsplit(link)
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if not any(key in {"customer_email", "customer_phone"} for key, _ in pairs):
+        return link
+    pairs = [(key, value) for key, value in pairs
+             if key not in {"customer_email", "customer_phone", "signature"}]
+    signature = prodamus_sign(nest_form(pairs), settings.prodamus_secret_key)
+    return urlunsplit(parts._replace(query=urlencode(pairs + [("signature", signature)])))
+
+
 def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink | None = None,
                public_purchase: bool = False) -> str:
     """Подписанная ссылка на платёжную страницу Продамуса.
@@ -535,10 +547,8 @@ def build_link(payment: Payment, user: User, base_url: str, *, track: IntakeLink
         "sys": "",
         "do": "pay",
     }
-    if user.phone:
-        data["customer_phone"] = user.phone
-    if user.email:
-        data["customer_email"] = user.email
+    # Контакты для чека вводит плательщик, которым может быть родитель.
+    # Заказ связан с учеником через order_id и Payment.user_id.
     if payment.link_expires_at is not None:
         data["link_expired"] = (
             _as_utc(payment.link_expires_at).astimezone(MSK_TZ).strftime("%Y-%m-%d %H:%M")
@@ -599,6 +609,7 @@ def get_or_create_payment(db: DBSession, user: User, now: datetime, base_url: st
         same_page = (row.link_url or "").startswith(settings.prodamus_form_url)
         if (row.amount_kop == amount and alive and row.link_url and same_page
                 and row.tariff == tariff_to_pay(user)):
+            row.link_url = _payer_contact_link(row.link_url)
             return row
         row.status = STATUS_CANCELLED
         row.note = _append_note(row.note, "ссылка заменена новой")
@@ -691,6 +702,7 @@ def get_or_create_track_payment(
         alive = row.link_expires_at is None or _as_utc(row.link_expires_at) > _as_utc(now)
         same_page = (row.link_url or "").startswith(settings.prodamus_form_url)
         if row.amount_kop == track.price_kop and alive and row.link_url and same_page:
+            row.link_url = _payer_contact_link(row.link_url)
             return row
         row.status = STATUS_CANCELLED
         row.note = _append_note(row.note, "ссылка заменена новой")

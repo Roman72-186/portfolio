@@ -978,3 +978,28 @@ def test_link_on_old_page_address_is_replaced(db, payer, prodamus, monkeypatch):
     assert second.id != first.id
     assert second.link_url.startswith("https://new-school.payform.ru/")
     assert first.status == STATUS_CANCELLED
+
+def test_receipt_contacts_are_entered_by_payer(db, payer, prices, prodamus):
+    payer.email = 'student@example.com'
+    payer.phone = '+79990000000'
+    now = _msk(2026, 11, 12)
+    payment = ps.get_or_create_payment(db, payer, now, 'https://testserver')
+    query = dict(parse_qsl(urlsplit(payment.link_url).query))
+    assert 'customer_email' not in query and 'customer_phone' not in query
+    assert query['order_id'] == ps.order_number(payment)
+    assert payment.user_id == payer.id
+    old_id = payment.id
+    from urllib.parse import urlencode
+    pairs = parse_qsl(urlsplit(payment.link_url).query)
+    pairs = [(k,v) for k,v in pairs if k != 'signature']
+    pairs += [('customer_email', payer.email), ('customer_phone', payer.phone)]
+    pairs += [('signature', ps.prodamus_sign(ps.nest_form(pairs), KEY))]
+    payment.link_url = FORM_URL + '?' + urlencode(pairs)
+    renewed = ps.get_or_create_payment(db, payer, now, 'https://testserver')
+    data = ps.nest_form(parse_qsl(urlsplit(renewed.link_url).query, keep_blank_values=True))
+    signature = data.pop('signature')
+    assert ps.prodamus_verify(data, KEY, signature)
+    assert 'customer_email' not in data and 'customer_phone' not in data
+    assert renewed.id == old_id and renewed.user_id == payer.id
+    assert db.query(Payment).count() == 1
+    assert data['urlReturn'] == query['urlReturn']
