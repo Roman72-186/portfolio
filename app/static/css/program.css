@@ -416,16 +416,24 @@
     display: grid;
     gap: 8px;
 }
-.prg-universal summary {
-    cursor: pointer;
-    min-height: 44px;
-    align-content: center;
-    overflow-wrap: anywhere;
+.prg-universal-section-head { flex-wrap: wrap; }
+.prg-universal-section-toggle {
+    display: inline-flex; align-items: center; gap: 8px;
+    flex: 1 1 6rem; min-width: 0; min-height: 44px;
+    padding: 4px 0; border: 0; background: transparent; color: var(--text);
+    font: inherit; font-weight: 700; text-align: start;
+    overflow-wrap: anywhere; cursor: pointer;
 }
-.prg-universal summary:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 2px;
+.prg-universal-section-toggle::before {
+    content: ""; flex: 0 0 auto; width: 7px; height: 7px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
 }
+.prg-universal-section-toggle[aria-expanded="true"]::before { transform: rotate(45deg); }
+.prg-universal-section-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.prg-universal-section-head > .prg-blk-actions { gap: 6px; margin-inline-start: auto; }
+.prg-universal-section-panel { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+.prg-universal-section-panel[hidden] { display: none; }
 
 .prg-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 /* Флажки и переключатели исключены намеренно: их размер задаёт общее правило

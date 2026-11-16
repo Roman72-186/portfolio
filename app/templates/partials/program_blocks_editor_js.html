@@ -1713,35 +1713,50 @@ function createUniversalCard(holder, key, month) {
         sections.insertAdjacentHTML('beforeend', blockRowHTML(picker.value));
         var row = sections.lastElementChild;
         picker.value = '';
-        prepareUniversalSection(row, true);
+        var toggle = prepareUniversalSection(row, true);
         window.RichTextField.enhanceAll(row);
         syncBlockOptions(row);
         renumberBlocks(holder);
-        row.querySelector('summary').focus();
+        toggle.focus({preventScroll: true});
     });
     holder.appendChild(card);
     return card;
 }
 
+var universalSectionSequence = 0;
+
 function prepareUniversalSection(row, open) {
-    var wrap = row.querySelector('[data-wrap-universal]');
-    if (wrap) wrap.remove();
-    var details = document.createElement('details');
-    details.open = open;
-    var summary = document.createElement('summary');
+    var header = row.querySelector('.prg-ticket-head');
+    header.classList.add('prg-universal-section-head');
+    header.querySelector('[data-wrap-universal]').remove();
+
+    var panel = document.createElement('div');
+    panel.id = 'prg-universal-section-' + (++universalSectionSequence);
+    panel.className = 'prg-universal-section-panel';
+    // Move the existing inputs together so collapsing keeps edits and widget state.
+    while (header.nextSibling) panel.appendChild(header.nextSibling);
+    row.appendChild(panel);
+
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'prg-universal-section-toggle';
+    toggle.setAttribute('aria-controls', panel.id);
     var label = BLOCK_LABELS[row.dataset.blockType] || row.dataset.blockType;
-    var title = row.querySelector('[data-b-title]');
-    var update = function () {
-        summary.textContent = title && title.value.trim()
-            ? label + ' · ' + title.value.trim()
-            : label;
-    };
-    if (title) title.addEventListener('input', update);
-    update();
-    details.appendChild(summary);
-    // Keep the original row and form inputs so draft and widget state survive toggling.
-    while (row.firstChild) details.appendChild(row.firstChild);
-    row.appendChild(details);
+    var title = panel.querySelector('[data-b-title]');
+    function updateTitle() {
+        var value = title ? title.value.trim() : '';
+        toggle.textContent = value && value !== label ? label + ' · ' + value : label;
+    }
+    function setExpanded(expanded) {
+        toggle.setAttribute('aria-expanded', String(expanded));
+        panel.hidden = !expanded;
+    }
+    if (title) title.addEventListener('input', updateTitle);
+    toggle.addEventListener('click', function () { setExpanded(panel.hidden); });
+    header.firstElementChild.replaceWith(toggle);
+    updateTitle();
+    setExpanded(open);
+    return toggle;
 }
 
 function wrapUniversalSection(row) {
@@ -1751,9 +1766,9 @@ function wrapUniversalSection(row) {
     var card = previous && previous.dataset.universalKey ? previous : createUniversalCard(holder);
     if (card !== previous) row.before(card);
     card.querySelector('[data-universal-sections]').appendChild(row);
-    prepareUniversalSection(row, true);
+    var toggle = prepareUniversalSection(row, true);
     renumberBlocks(holder);
-    row.querySelector('summary').focus();
+    toggle.focus({preventScroll: true});
 }
 
 function addUniversalCard(form) {
