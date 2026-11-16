@@ -15,5 +15,7 @@
 .review-history { list-style: none; padding: 0; }
 .review-history a { display: flex; align-items: center; gap: var(--s-2); padding-block: var(--s-2); }
 .review-history img { width: 52px; height: 52px; object-fit: contain; }
+.review-reference { display: flex; align-items: center; gap: var(--s-2); text-align: start; }
+.review-reference img { width: 52px; height: 52px; object-fit: contain; }
 .review-feedback-sections { border: 0; padding: 0; margin: var(--s-2) 0; display: flex; flex-wrap: wrap; gap: var(--s-2); }
 @media (max-width: 600px) { .review-student-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

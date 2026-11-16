@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.dependencies import require_csrf_header
 from app.models.notification import Notification
 from app.models.section_access import SectionAccessRule
-from app.models.task_block import TaskBlock
+from app.models.task_block import TaskBlock, TaskBlockSubmissionImage
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services.linked_feedback import sync_links
 from tests.test_feedback_rating import (
@@ -71,6 +71,37 @@ def test_autosave_clears_only_its_draft_and_does_not_create_empty_dialog(db, use
     assert [row.text for row in db.query(TaskBlockFeedbackMessage).all()] == ["Другой черновик"]
 
 
+def test_photo_reference_survives_sending_and_removal(db, user_factory, session_factory, client):
+    curator, student, _, submission = _setup_block(db, user_factory, base=995_091)
+    _, _, _, foreign = _setup_block(db, user_factory, base=995_093)
+    photo = TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url="https://example.test/local.png")
+    other_photo = TaskBlockSubmissionImage(submission_id=foreign.id, image_s3_url="https://example.test/foreign.png")
+    db.add_all([photo, other_photo])
+    db.commit()
+    _login(client, session_factory, curator)
+    page_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
+    draft_url = f"/cabinet/staff/task-block-submissions/{submission.id}/draft"
+    student_url = f"/cabinet/task-block-submissions/{submission.id}/feedback"
+    page = client.get(page_url)
+    assert page.status_code == 200
+    assert "Прошлые работы" in page.text and "Портфолио ученика" in page.text
+    payload = {"text": "Замечание к фото", "cursor": 0, "image_id": photo.id}
+    assert client.put(draft_url, json={**payload, "image_id": other_photo.id}).status_code == 422
+    saved = client.put(draft_url, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert client.put(draft_url, json=payload).json() == saved.json()
+    assert db.query(TaskBlockFeedbackMessage).one().review_image_id == photo.id
+    _login(client, session_factory, student)
+    assert payload["text"] not in client.get(student_url).text
+    _login(client, session_factory, curator)
+    assert _send(client, submission).status_code == 200
+    _login(client, session_factory, student)
+    assert payload["text"] in client.get(student_url).text
+    db.delete(photo)
+    db.commit()
+    assert "Фото к замечанию больше недоступно." in client.get(student_url).text
+
+
 def test_autosave_checks_csrf_and_does_not_allow_foreign_draft(db, user_factory, session_factory, client):
     curator, student, _, submission = _setup_block(db, user_factory, base=995_021)
     other = user_factory(vk_id=995_023, name="Другой куратор", role_name="куратор")
@@ -106,9 +137,17 @@ def test_autosave_keeps_linked_work_in_main_dialog(db, user_factory, session_fac
     assert db.query(TaskBlockFeedback).count() == 0
 
     latest = _submit(db, main, student, datetime.now(timezone.utc))
+    photo = TaskBlockSubmissionImage(submission_id=first.id, image_s3_url="https://example.test/linked.png")
+    db.add(photo)
     db.commit()
-    assert _save(client, latest, "Общий разбор").status_code == 200
-    assert db.query(TaskBlockFeedback).one().submission_id == latest.id
+    result = client.put(
+        f"/cabinet/staff/task-block-submissions/{latest.id}/draft",
+        json={"text": "Общий разбор", "cursor": 0, "image_id": photo.id},
+    )
+    assert result.status_code == 200, result.text
+    feedback = db.query(TaskBlockFeedback).one()
+    assert feedback.submission_id == latest.id
+    assert feedback.messages[0].review_image_id == photo.id
 
 
 def test_autosave_rejects_late_save_after_dialog_closes(db, user_factory, session_factory, client):

@@ -18,6 +18,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     const form = document.querySelector('[data-review-draft-url]');
     if (!form) return;
     const input = form.elements.text;
+    const image = form.querySelector('[data-review-image]');
     const status = form.querySelector('[data-review-save-status]');
     const retry = form.querySelector('[data-review-save-retry]');
     const send = document.querySelector('[data-send-feedback]');
@@ -31,6 +32,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     let revision = active?.revision ?? null;
     let cursor = initial.cursor;
     let savedText = active?.text ?? '';
+    let savedImage = active?.image_id ?? null;
     let timer;
     let inFlight;
     let pendingRequest;
@@ -46,6 +48,14 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
 
     function updateSend() {
         if (send) send.disabled = busy || !(otherDrafts || id !== null || input.value.trim());
+    }
+
+    function currentImage() {
+        return input.value.trim() && image?.value ? Number(image.value) : null;
+    }
+
+    function hasChanges() {
+        return input.value.trim() !== savedText || currentImage() !== savedImage;
     }
 
     function saveError(error) {
@@ -77,6 +87,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         revision = data.revision;
         cursor = data.cursor;
         savedText = payload.text;
+        savedImage = payload.image_id;
         pendingRequest = null;
         remember();
         status.textContent = id === null ? 'Черновик очищен.' : 'Черновик сохранён.';
@@ -86,8 +97,8 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         clearTimeout(timer);
         if (!inFlight) {
             inFlight = (async () => {
-                while (pendingRequest || input.value.trim() !== savedText) {
-                    pendingRequest ||= {text: input.value.trim(), message_id: id, revision, cursor};
+                while (pendingRequest || hasChanges()) {
+                    pendingRequest ||= {text: input.value.trim(), image_id: currentImage(), message_id: id, revision, cursor};
                     await saveOnce(pendingRequest);
                 }
             })().catch((error) => {
@@ -101,7 +112,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     function schedule() {
         clearTimeout(timer);
         updateSend();
-        if (pendingRequest || input.value.trim() !== savedText) {
+        if (pendingRequest || hasChanges()) {
             status.textContent = 'Есть изменения.';
             status.classList.remove('is-error');
             timer = setTimeout(() => flush().catch(() => {}), 650);
@@ -110,6 +121,13 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
 
     if (active) {
         input.value = active.text;
+        if (image && savedImage !== null) {
+            const value = String(savedImage);
+            if (!Array.from(image.options).some((option) => option.value === value)) {
+                image.add(new Option('Фото больше недоступно', value));
+            }
+            image.value = value;
+        }
         window.RichTextField?.refresh(input);
         status.textContent = 'Черновик восстановлен.';
         const bubble = document.querySelector(`[data-own-review-draft="${active.id}"]`);
@@ -118,6 +136,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     remember();
     updateSend();
     input.addEventListener('input', schedule);
+    image?.addEventListener('change', schedule);
     retry.addEventListener('click', () => flush().catch(() => {}));
     form.addEventListener('focusout', (event) => {
         if (event.target === input || event.target === input._rtEditable) {
@@ -138,7 +157,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         });
     });
     window.addEventListener('beforeunload', (event) => {
-        if (!pendingRequest && !inFlight && input.value.trim() === savedText) return;
+        if (!pendingRequest && !inFlight && !hasChanges()) return;
         event.preventDefault();
         event.returnValue = '';
     });
@@ -149,6 +168,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         setBusy: (value) => {
             busy = value;
             input.readOnly = value;
+            if (image) image.disabled = value;
             if (input._rtEditable) input._rtEditable.contentEditable = value ? 'false' : 'true';
             form.querySelectorAll('[data-review-section]').forEach((button) => { button.disabled = value; });
             updateSend();

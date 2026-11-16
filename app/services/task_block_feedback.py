@@ -547,6 +547,7 @@ def serialize_messages(
             "sender_name": sender_name,
             "sender_role_label": sender_role_label,
             "text": message.text,
+            "review_image_id": message.review_image_id,
             "photo_s3_url": message.photo_s3_url,
             "video_s3_url": message.video_s3_url,
             "video_url": message.video_url,

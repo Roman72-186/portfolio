@@ -72,6 +72,8 @@ class TaskBlockFeedbackMessage(Base):
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     sender_role: Mapped[str] = mapped_column(String(20), nullable=False)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Keep the reference when a submitted image is removed.
+    review_image_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     photo_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

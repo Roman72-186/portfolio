@@ -24,7 +24,7 @@ from app.dependencies import (
 )
 from app.models.feedback_rating import DIALOG_TASK_BLOCK
 from app.models.notification import Notification
-from app.models.task_block import TaskBlock, TaskBlockSubmission
+from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockSubmissionImage
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
 from app.models.user import User
@@ -138,7 +138,9 @@ def _draft_revision(message: TaskBlockFeedbackMessage) -> str:
     stamp = message.edited_at or message.created_at
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    return sha256(f"{message.id}|{stamp.isoformat()}|{message.text}".encode("utf-8")).hexdigest()
+    return sha256(
+        f"{message.id}|{stamp.isoformat()}|{message.text}|{message.review_image_id}".encode("utf-8")
+    ).hexdigest()
 
 
 def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int) -> dict:
@@ -146,7 +148,8 @@ def _autosave_context(messages: list[TaskBlockFeedbackMessage], author_id: int) 
     return {
         "cursor": max((message.id for message in own), default=0),
         "drafts": [
-            {"id": message.id, "text": message.text, "revision": _draft_revision(message)}
+            {"id": message.id, "text": message.text, "revision": _draft_revision(message),
+             "image_id": message.review_image_id}
             for message in own if _editable_text_draft(message)
         ],
     }
@@ -215,6 +218,22 @@ def _render(
             from app.services.curator_review_queue import review_neighbors
 
             queue_navigation = review_neighbors(db, user["user_id"], submission, request.query_params)
+    group = work_group(db, submission)
+    submission_images = list_submission_images(db, submission.id)
+    if group:
+        image_choices = {
+            image.id: (f"{work.task_title} · Фото {number}", image.image_s3_url)
+            for work in group.works
+            for number, image in enumerate(
+                submission_images if work.submission.id == submission.id
+                else list_submission_images(db, work.submission.id), 1
+            )
+        }
+    else:
+        image_choices = {
+            image.id: (f"Фото {number}", image.image_s3_url)
+            for number, image in enumerate(submission_images, 1)
+        }
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
         "request": request,
         "user": user,
@@ -236,14 +255,15 @@ def _render(
         "student": student,
         "submission": submission,
         "past_works": past_works,
+        "review_images": image_choices,
         "queue_navigation": queue_navigation,
         # Общая ОС на несколько заданий (13.10.2026): прошлые работы ученика,
         # на которые этот ответ тоже. None — работа одна.
-        "group": work_group(db, submission),
+        "group": group,
         # Работа сама входит в общую ОС, а главная ещё не сдана: ответа по
         # ней отдельно не будет (`linked_feedback`).
         "awaits_group": awaits_group,
-        "submission_images": list_submission_images(db, submission.id),
+        "submission_images": submission_images,
         # Сколько и когда ученик менял сданную работу и что было до правки
         # (владелец 07.10.2026) — для проверяющего, ученику не показываем.
         "change_history": (
@@ -535,6 +555,7 @@ class DraftUpdate(BaseModel):
     message_id: int | None = Field(default=None, gt=0)
     revision: str | None = Field(default=None, min_length=64, max_length=64)
     cursor: int = Field(ge=0)
+    image_id: int | None = Field(default=None, gt=0)
 
 
 def _draft_response(message: TaskBlockFeedbackMessage | None, cursor: int) -> JSONResponse:
@@ -583,13 +604,29 @@ def save_feedback_draft(
     )
     newest = own_query.order_by(TaskBlockFeedbackMessage.id.desc()).first()
     cursor = newest.id if newest else 0
+    message = db.get(TaskBlockFeedbackMessage, data.message_id) if data.message_id else None
+    image_id = data.image_id
+    if message is not None and "image_id" not in data.model_fields_set:
+        image_id = message.review_image_id
+    if content and image_id is not None and (message is None or image_id != message.review_image_id):
+        image = db.get(TaskBlockSubmissionImage, image_id)
+        if image is None:
+            return _error(422, "Фото больше недоступно.")
+        if image.submission_id != submission.id:
+            target = db.get(TaskBlockSubmission, image.submission_id)
+            main = (
+                main_submission_for(db, target)
+                if target and target.submitted_at and target.user_id == submission.user_id else None
+            )
+            if main is None or main.id != submission.id:
+                return _error(422, "Выберите фото работы из этого диалога.")
     if data.message_id is None:
         if cursor != data.cursor:
             # Если ответ первого PUT потерялся, повтор не создаёт второе сообщение.
             # Отправленное или изменённое сообщение повтором не открываем заново.
             if (
                 newest is not None and cursor > data.cursor and _editable_text_draft(newest)
-                and newest.text == content and own_query.filter(
+                and newest.text == content and newest.review_image_id == image_id and own_query.filter(
                     TaskBlockFeedbackMessage.id > data.cursor,
                 ).count() == 1
             ):
@@ -600,24 +637,25 @@ def save_feedback_draft(
         message = TaskBlockFeedbackMessage(
             feedback_id=feedback.id, sender_id=author_id,
             sender_role=role_from_rank(user["role_rank"]), text=content, is_draft=True,
+            review_image_id=image_id,
         )
         db.add(message)
         db.flush()
         cursor = message.id
     else:
-        message = db.get(TaskBlockFeedbackMessage, data.message_id)
         if message is None and not content and cursor <= data.cursor:
             return _draft_response(None, cursor)
         if message is None or message.feedback_id != feedback.id or message.sender_id != author_id:
             return _error(409, "Черновик больше недоступен. Обновите страницу.")
         if not _editable_text_draft(message):
             return _error(409, "Сообщение уже отправлено или изменилось. Обновите страницу.")
-        if message.text == content:
+        if message.text == content and message.review_image_id == image_id:
             return _draft_response(message, cursor)
         if data.revision != _draft_revision(message):
             return _error(409, "Замечание изменилось в другом окне. Обновите страницу перед сохранением.")
         if content:
             message.text = content
+            message.review_image_id = image_id
             message.edited_at = datetime.now(timezone.utc)
         else:
             db.delete(message)
