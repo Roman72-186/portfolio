@@ -222,3 +222,109 @@ def test_section_target_and_preview_snapshot(db, user_factory, session_factory, 
     assert "Графическое решение" in page.text
     assert "Текст самостоятельного диалога" not in page.text
     assert db.query(TaskBlockFeedbackMessage).filter_by(is_draft=True).one().text == "Текст самостоятельного диалога"
+
+
+import pytest
+
+
+@pytest.mark.parametrize("mask", range(1, 32))
+def test_mixed_content_stays_in_one_message_and_reaches_student(
+    db, user_factory, session_factory, client, monkeypatch, mask,
+):
+    from app.api import task_block_feedback as routes
+    from app.services import task_block_feedback as service
+
+    curator, student, _, submission = _setup_block(db, user_factory, base=996_001)
+    _login(client, session_factory, curator)
+    text = "Совместное замечание" if mask & 1 else ""
+    draft = _save(client, submission, text).json() if text else None
+
+    async def photo_payload(value):
+        return ("photo.jpg", b"photo") if mask & 2 else None
+
+    async def video_payload(value):
+        return ("video.mp4", b"video", "video/mp4") if mask & 4 else None
+
+    async def audio_payload(value):
+        return ("audio.webm", b"audio", "audio/webm") if mask & 8 else None
+
+    async def upload(*args, **kwargs):
+        return "synthetic/path", "https://example.test/attachment"
+
+    monkeypatch.setattr(routes, "_photo_payload", photo_payload)
+    monkeypatch.setattr(routes, "read_video_upload", video_payload)
+    monkeypatch.setattr(routes, "read_audio_upload", audio_payload)
+    for kind in ("photo", "video", "audio"):
+        monkeypatch.setattr(service, "_upload_" + kind, upload)
+    payload = {"text": text, "video_link": "https://example.test/video" if mask & 16 else ""}
+    if draft:
+        payload.update(draft_id=draft["id"], draft_revision=draft["revision"])
+    # Текст без вложений уже добавлен автосохранением; форма не дублирует его.
+    if mask != 1:
+        result = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages", data=payload,
+        )
+        assert result.status_code == 200, result.text
+    db.expire_all()
+    message = db.query(TaskBlockFeedbackMessage).one()
+    assert message.text == (text or None)
+    assert bool(message.photo_s3_url) == bool(mask & 2)
+    assert bool(message.video_s3_url) == bool(mask & 4)
+    assert bool(message.audio_s3_url) == bool(mask & 8)
+    assert bool(message.video_url) == bool(mask & 16)
+    assert message.is_draft
+    if draft:
+        assert message.id == draft["id"]
+    assert _send(client, submission).status_code == 200
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
+    assert page.status_code == 200
+    if text:
+        assert text in page.text
+    if mask & 14:
+        assert "https://example.test/attachment" in page.text
+    if mask & 16:
+        assert "https://example.test/video" in page.text
+
+
+def test_attachment_rejects_stale_draft(db, user_factory, session_factory, client):
+    curator, _, _, submission = _setup_block(db, user_factory, base=996_101)
+    _login(client, session_factory, curator)
+    draft = _save(client, submission, "Сохранённый текст").json()
+    result = client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+        data={"draft_id": draft["id"], "draft_revision": "stale", "video_link": "https://example.test/video"},
+    )
+    assert result.status_code == 409
+    assert db.query(TaskBlockFeedbackMessage).one().text == "Сохранённый текст"
+
+
+@pytest.mark.parametrize("failure", [None, ("path", None)])
+def test_failed_attachment_preserves_saved_text(
+    db, user_factory, session_factory, client, monkeypatch, failure,
+):
+    from app.api import task_block_feedback as routes
+    from app.services import task_block_feedback as service
+
+    curator, _, _, submission = _setup_block(db, user_factory, base=996_201)
+    _login(client, session_factory, curator)
+    draft = _save(client, submission, "Текст не должен пропасть").json()
+
+    async def photo_payload(value):
+        return "photo.jpg", b"photo"
+
+    async def upload(*args, **kwargs):
+        return failure
+
+    monkeypatch.setattr(routes, "_photo_payload", photo_payload)
+    monkeypatch.setattr(service, "_upload_photo", upload)
+    result = client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+        data={"draft_id": draft["id"], "draft_revision": draft["revision"]},
+    )
+    assert result.status_code == 422
+    db.expire_all()
+    message = db.query(TaskBlockFeedbackMessage).one()
+    assert message.text == "Текст не должен пропасть"
+    assert message.photo_s3_url is None
+    assert message.is_draft

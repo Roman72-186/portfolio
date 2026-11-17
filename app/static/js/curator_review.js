@@ -72,7 +72,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
             const excerpt = draft.text.replace(/\s+/g, ' ').slice(0, 45);
             options.push(new Option([label, excerpt].filter(Boolean).join(' · '), draft.id));
             const bubble = document.querySelector(`[data-own-review-draft="${draft.id}"]`);
-            if (bubble) bubble.hidden = true;
+            if (bubble) bubble.hidden = false;
         }
         picker.replaceChildren(...options);
         picker.value = id ?? '';
@@ -242,6 +242,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     window.curatorReviewDraft = {
         flush,
         hasDraft: () => id !== null,
+        attachmentTarget: () => id === null ? null : {id, revision},
         setBusy,
         detach: () => {
             id = null;

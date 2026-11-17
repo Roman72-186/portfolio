@@ -469,6 +469,7 @@ async def _post_message(
     video_link: str, background_tasks: BackgroundTasks,
     video: UploadFile | None = None, audio: UploadFile | None = None,
     video_note: str = "",
+    draft: TaskBlockFeedbackMessage | None = None,
 ) -> JSONResponse:
     try:
         photo_data = await _photo_payload(photo)
@@ -479,7 +480,7 @@ async def _post_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=role_from_rank(user.get("role_rank", 1)), text=text,
             photo=photo_data, video=video_data, audio=audio_data,
-            video_link=video_link_clean, video_is_note=video_note == "1",
+            video_link=video_link_clean, video_is_note=video_note == "1", draft=draft,
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
@@ -513,6 +514,8 @@ async def staff_message(
     video: UploadFile | None = File(default=None),
     audio: UploadFile | None = File(default=None),
     video_note: str = Form(default=""),
+    draft_id: int | None = Form(default=None),
+    draft_revision: str = Form(default=""),
 ):
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
@@ -526,16 +529,24 @@ async def staff_message(
     feedback, _ = get_or_create_feedback(
         db, submission_id=submission.id, initiator_id=user["user_id"],
     )
+    feedback = _locked_feedback(db, submission.id) or feedback
     if is_closed(feedback):
         # «Завершить ОС» закрывает диалог для обеих сторон (О25).
         return JSONResponse(
             {"ok": False, "error": "Обратная связь завершена – диалог закрыт."},
             status_code=403,
         )
+    draft = None
+    if draft_id is not None:
+        draft = db.get(TaskBlockFeedbackMessage, draft_id)
+        if (draft is None or draft.feedback_id != feedback.id
+                or draft.sender_id != user["user_id"] or not _editable_text_draft(draft)
+                or _draft_revision(draft) != draft_revision):
+            return _error(409, "Черновик изменился. Обновите страницу перед добавлением вложений.")
     return await _post_message(
         submission=submission, feedback=feedback, db=db, user=user, text=text,
         photo=photo, video_link=video_link, background_tasks=background_tasks,
-        video=video, audio=audio, video_note=video_note,
+        video=video, audio=audio, video_note=video_note, draft=draft,
     )
 
 

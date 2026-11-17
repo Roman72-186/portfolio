@@ -322,6 +322,7 @@ async def send_message(
     audio: tuple[str, bytes, str] | None = None,
     video_link: str | None = None,
     video_is_note: bool = False,
+    draft: TaskBlockFeedbackMessage | None = None,
 ) -> TaskBlockFeedbackMessage:
     """По образцу `app/services/feedback.py::send_message` (владелец
     17.09.2026: у диалога по блокам задания должны быть те же вложения,
@@ -331,8 +332,9 @@ async def send_message(
     photo_url = None
     if photo is not None:
         uploaded = await _upload_photo(feedback.submission_id, photo[0], photo[1])
-        if uploaded is not None:
-            photo_path, photo_url = uploaded
+        if uploaded is None or not uploaded[1]:
+            raise ValueError("Не удалось загрузить вложение. Повторите отправку.")
+        photo_path, photo_url = uploaded
     video_path = None
     video_url = None
     if video is not None:
@@ -340,14 +342,16 @@ async def send_message(
             feedback.submission_id, video[0], video[1], video[2],
             note=video_is_note and sender_role != ROLE_STUDENT,
         )
-        if uploaded is not None:
-            video_path, video_url = uploaded
+        if uploaded is None or not uploaded[1]:
+            raise ValueError("Не удалось загрузить вложение. Повторите отправку.")
+        video_path, video_url = uploaded
     audio_path = None
     audio_url = None
     if audio is not None:
         uploaded = await _upload_audio(feedback.submission_id, audio[0], audio[1], audio[2])
-        if uploaded is not None:
-            audio_path, audio_url = uploaded
+        if uploaded is None or not uploaded[1]:
+            raise ValueError("Не удалось загрузить вложение. Повторите отправку.")
+        audio_path, audio_url = uploaded
     if (
         text_clean is None and photo_url is None and video_url is None
         and audio_url is None and not video_link
@@ -376,6 +380,13 @@ async def send_message(
         is_draft=sender_role != ROLE_STUDENT,
         sent_at=datetime.now(timezone.utc) if sender_role == ROLE_STUDENT else None,
     )
+    if draft is not None:
+        # Дополняем тот же автосохранённый текст, сохраняя привязку к работе.
+        for field in ("photo_s3_path", "photo_s3_url", "video_s3_path", "video_s3_url",
+                      "audio_s3_path", "audio_s3_url", "video_url", "video_is_note"):
+            setattr(draft, field, getattr(message, field))
+        draft.edited_at = datetime.now(timezone.utc)
+        message = draft
     db.add(message)
     db.flush()
     return message

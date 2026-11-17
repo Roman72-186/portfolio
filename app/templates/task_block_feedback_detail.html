@@ -418,7 +418,7 @@
 {% include "partials/lightbox.html" %}
 {% if viewer_role != 'student' %}
 <script src="/static/js/hint.js?v=1" defer></script>
-<script src="/static/js/curator_review.js?v=4" defer></script>
+<script src="/static/js/curator_review.js?v=5" defer></script>
 {% endif %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
@@ -667,8 +667,12 @@
                         if (!draft.hasDraft()) throw new Error('Добавьте текст или вложение.');
                         return null;
                     }
-                    // Текст уже сохранён. Вложения добавляются существующей формой.
-                    body.delete('text');
+                    // Вложения дополняют автосохранённый текст в том же сообщении.
+                    var target = draft.attachmentTarget();
+                    if (target) {
+                        body.set('draft_id', target.id);
+                        body.set('draft_revision', target.revision);
+                    }
                 }
                 return fetch(form.action, {
                     method: 'POST', credentials: 'same-origin',
