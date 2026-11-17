@@ -804,6 +804,7 @@ def _submission_payload(
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
         "upload_button_label": block.upload_button_label,
+        "submitted": bool(submission and submission.submitted_at is not None),
         # Old portfolio uploads have no block_id. Keep them in their original
         # location rather than guessing which homework each photo belonged to.
         "legacy_portfolio_url": (
@@ -1208,19 +1209,15 @@ def cabinet_tracker_task_blocks(
                 {"url": i.image_s3_url} for i in images.get(block.id, [])
             ]
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
-            item["done"] = (
-                _portfolio_block_done(db, block, user["user_id"])
-                if block.accepts_inline_portfolio_submission
-                else bool(state and state.status == STATUS_DONE)
-            )
+            item["done"] = bool(state and state.status == STATUS_DONE)
             item.update(_submission_payload(
                 db, task, block, user["user_id"],
                 user_tariff=user.get("tariff"),
                 tariff_deadlines=submit_deadlines.get(block.id),
                 task_tariff_deadlines=task_submit_deadlines,
             ))
-            if block.accepts_inline_portfolio_submission and item["done"] and not item["submitted_files"]:
-                item["legacy_portfolio_url"] = "/cabinet/portfolio"
+            if block.accepts_inline_portfolio_submission:
+                item["done"] = item["submitted"]
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             # Всегда в раздел «До» (владелец 09.09.2026: «по этой кнопке работы

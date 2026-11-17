@@ -418,10 +418,16 @@ def test_inline_portfolio_block_keeps_legacy_form_and_accepts_assignment_upload(
     legacy = _post_before(client)
     assert legacy.status_code == 200 and legacy.json()["success"]
     work = db.query(Work).filter_by(user_id=student.id).one()
+    steps = build_cycle_feed(
+        db, user_id=student.id, user_tariff=student.tariff, start=TODAY, end=TODAY,
+    )
+    stage = next(step for step in steps if step["block"] and step["block"].id == block.id)
+    assert stage["status"] != "done"
 
     payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
     assert payload["block_type"] == "photo_upload"
     assert payload["upload_button_label"] == "Загрузить работу"
+    assert not payload["done"]
     with patch("app.api.cabinet_tracker.s3_service.upload_to_s3", return_value="https://s3.example/new.jpg"):
         uploaded = client.post(
             payload["upload_endpoint"],
@@ -431,3 +437,6 @@ def test_inline_portfolio_block_keeps_legacy_form_and_accepts_assignment_upload(
     saved = db.query(TaskBlockSubmission).filter_by(block_id=block.id, user_id=student.id).one()
     assert saved.submitted_at is not None
     assert db.get(Work, work.id).status == "success"
+    payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
+    assert payload["done"]
+    assert len(payload["submitted_files"]) == 1

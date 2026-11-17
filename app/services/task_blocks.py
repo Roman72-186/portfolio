@@ -2628,7 +2628,11 @@ def block_still_doable(
     очередь, но не этап, или наоборот.
     """
     moment = now or _now()
-    if block.block_type == BLOCK_PORTFOLIO and block.portfolio_window_hours:
+    if (
+        block.block_type == BLOCK_PORTFOLIO
+        and not block.accepts_inline_portfolio_submission
+        and block.portfolio_window_hours
+    ):
         return not portfolio_window_expired(block, state, now=moment)
     closes_at = block.closes_at
     if closes_at is None:

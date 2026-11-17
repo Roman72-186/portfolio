@@ -332,9 +332,11 @@ def build_cycle_feed(
         # Флаг задания над флагами блоков, опрос, диагностика — одно правило
         # с `feed_state` и кнопкой «Завершить задание».
         # Запись занятия — только тем, кто на нём не был (27.10.2026).
+        from app.services.first_week_attendance import recording_exemptions
         required_by_block.update(required_by_block_for_task(
             task, task_blocks, is_intake_student=is_intake_student,
             attended_link_ids=attended_links_for(db, user_id, task_blocks),
+            recording_exempt_ids=recording_exemptions(db, user_id, task_blocks),
         ))
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
@@ -352,12 +354,14 @@ def build_cycle_feed(
     pending_uploads = [
         block for block in ordered_blocks
         if block.block_type == BLOCK_PORTFOLIO
+        and not block.accepts_inline_portfolio_submission
         and (block.id not in states or states[block.id].status != STATUS_DONE)
     ]
     closed_upload = False
     from app.services.portfolio_onboarding import uploaded as onboarding_uploaded
     managed_portfolio_done = onboarding_uploaded(db, user_id) if any(
-        block.block_type == BLOCK_PORTFOLIO for block in ordered_blocks
+        block.block_type == BLOCK_PORTFOLIO and not block.accepts_inline_portfolio_submission
+        for block in ordered_blocks
     ) else None
     for block in pending_uploads:
         state = states.get(block.id)
