@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
@@ -95,7 +96,7 @@ def _portfolio_blocks_by_task(db: DBSession, user_id: int) -> dict[int, list[Tas
         db.query(TaskBlock, TrackerTask)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .filter(
-            TaskBlock.block_type == BLOCK_PORTFOLIO,
+            or_(TaskBlock.block_type == BLOCK_PORTFOLIO, TaskBlock.retains_legacy_portfolio_window),
             TrackerTask.deleted_at.is_(None),
             TrackerTask.is_published.is_(True),
         )
@@ -142,6 +143,7 @@ def portfolio_windows(
     блоков сразу.
     """
     windows: list[PortfolioWindow] = []
+    now = now_msk()
     for task_id, blocks in _portfolio_blocks_by_task(db, user_id).items():
         wanted_ids = {block.id for block in blocks}
         # Этапы (владелец 24.09.2026): цикл задания стал архивным для ученика —
@@ -184,6 +186,10 @@ def portfolio_windows(
                         not archived
                         and entry["status"] != "locked"
                         and (not uses_personal_window or personal_deadline is not None)
+                        and (
+                            not block.retains_legacy_portfolio_window
+                            or (personal_deadline is not None and personal_deadline > now)
+                        )
                     ),
                 )
             )

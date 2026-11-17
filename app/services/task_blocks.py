@@ -1613,6 +1613,9 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             db.add(row)
         else:
             matched_ids.add(row.id)
+            # A staff tab opened earlier may still submit the old type for this ID.
+            if row.retains_legacy_portfolio_window and block_type == BLOCK_PORTFOLIO:
+                block_type = BLOCK_PHOTO_UPLOAD
             if (
                 row.block_type == BLOCK_PORTFOLIO
                 and block_type != BLOCK_PORTFOLIO
@@ -1698,10 +1701,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             int(required) if block_type in SUBMISSION_BLOCK_TYPES and required else None
         )
         window_hours = item.get("portfolio_window_hours")
-        row.portfolio_window_hours = (
-            int(window_hours)
-            if block_type == BLOCK_PORTFOLIO and window_hours else None
-        )
+        if not row.retains_legacy_portfolio_window:
+            row.portfolio_window_hours = (
+                int(window_hours)
+                if block_type == BLOCK_PORTFOLIO and window_hours else None
+            )
         # Открытие несёт время суток с 27.09.2026 (владелец: «нужны не только
         # даты, а время»). До этого поле было `type="date"` и сервер считал
         # `msk_midnight`, то есть открыть задание к 10:00 было нечем. Формат
@@ -2284,7 +2288,7 @@ def portfolio_window_deadline(
 ) -> datetime | None:
     """Персональный дедлайн блока или None, пока отсчёт не начался."""
     if (
-        block.block_type != BLOCK_PORTFOLIO
+        (block.block_type != BLOCK_PORTFOLIO and not block.retains_legacy_portfolio_window)
         or not block.portfolio_window_hours
         or state is None
         or state.started_at is None

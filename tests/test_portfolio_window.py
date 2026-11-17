@@ -411,6 +411,9 @@ def test_inline_portfolio_block_keeps_legacy_form_and_accepts_assignment_upload(
     old_payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
     assert old_payload["block_type"] == "portfolio"
 
+    block.portfolio_window_hours = 48
+    db.add(TaskBlockState(block_id=block.id, user_id=student.id, started_at=now_msk()))
+    block.block_type = "photo_upload"
     block.upload_button_label = "Загрузить работу"
     block.universal_key = "rollout"
     block.portfolio_month = "2026-11"
@@ -440,3 +443,8 @@ def test_inline_portfolio_block_keeps_legacy_form_and_accepts_assignment_upload(
     payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
     assert payload["done"]
     assert len(payload["submitted_files"]) == 1
+    assert block.retains_legacy_portfolio_window
+    sync_blocks(db, task_id=block.task_id, items=[{
+        "id": block.id, "block_type": "portfolio", "title": block.title,
+    }])
+    assert block.block_type == "photo_upload" and block.portfolio_window_hours == 48

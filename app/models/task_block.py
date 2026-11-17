@@ -49,6 +49,7 @@ from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text,
     UniqueConstraint,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -497,6 +498,25 @@ class TaskBlock(Base):
     @property
     def accepts_inline_portfolio_submission(self) -> bool:
         return self.block_type == BLOCK_PORTFOLIO and bool(self.upload_button_label)
+
+    @hybrid_property
+    def retains_legacy_portfolio_window(self) -> bool:
+        """Converted sections retain the original personal window for old tabs."""
+        return (
+            self.block_type == BLOCK_PHOTO_UPLOAD
+            and self.upload_button_label is not None
+            and self.universal_key is not None
+            and self.portfolio_window_hours is not None
+        )
+
+    @retains_legacy_portfolio_window.expression
+    def retains_legacy_portfolio_window(cls):
+        return (
+            (cls.block_type == BLOCK_PHOTO_UPLOAD)
+            & cls.upload_button_label.is_not(None)
+            & cls.universal_key.is_not(None)
+            & cls.portfolio_window_hours.is_not(None)
+        )
 
     # «Настройка диалога» (владелец 01.10.2026): сколько сообщений ученик
     # может отправить в диалоге обратной связи по своей сдаче. Считаются только

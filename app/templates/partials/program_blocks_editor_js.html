@@ -1701,7 +1701,7 @@ function createUniversalCard(holder, key, month) {
         + '<option value="scale">Шкала навыков</option><option value="rules">Правила с галочками</option>'
         + '<option value="compare">Сравнение работ</option></optgroup>'
         + '<optgroup label="Сдача"><option value="upload">Сдача работы</option>'
-        + '<option value="photo_upload">Фото, видео и сдача</option>'
+        + '<option value="photo_upload">Сдача работы</option>'
         + '<option value="timed">Работа на время</option>'
         + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
     var monthInput = card.querySelector('[data-universal-month]');
@@ -1741,7 +1741,8 @@ function prepareUniversalSection(row, open) {
     toggle.type = 'button';
     toggle.className = 'prg-universal-section-toggle';
     toggle.setAttribute('aria-controls', panel.id);
-    var label = BLOCK_LABELS[row.dataset.blockType] || row.dataset.blockType;
+    var type = row.dataset.blockType;
+    var label = type === 'photo_upload' ? 'Сдача работы' : (BLOCK_LABELS[type] || type);
     var title = panel.querySelector('[data-b-title]');
     function updateTitle() {
         var value = title ? title.value.trim() : '';
