@@ -1,0 +1,176 @@
+From b00c0a49a466c44363f2cc10ada62210cd8f6aff Mon Sep 17 00:00:00 2001
+From: Portfolio SaaS <magigigogi2026@gmail.com>
+Date: Tue, 17 Nov 2026 09:07:19 +0500
+Subject: [PATCH] =?UTF-8?q?=D0=94=D0=BE=D0=B1=D0=B0=D0=B2=D0=B8=D1=82?=
+ =?UTF-8?q?=D1=8C=20=D0=BF=D0=BE=D0=B4=D1=81=D0=BA=D0=B0=D0=B7=D0=BA=D0=B8?=
+ =?UTF-8?q?=20=D0=B2=20=D0=BF=D1=80=D0=BE=D0=B2=D0=B5=D1=80=D0=BA=D1=83=20?=
+ =?UTF-8?q?=D0=BA=D1=83=D1=80=D0=B0=D1=82=D0=BE=D1=80=D0=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/static/css/curator_review.css             |  9 +++-
+ app/templates/task_block_feedback_detail.html | 46 +++++++++++++------
+ 2 files changed, 41 insertions(+), 14 deletions(-)
+
+diff --git a/app/static/css/curator_review.css b/app/static/css/curator_review.css
+index cbcccd92159f4de169a8083c1c9c00f7c7666071..a54d4a913427159207dec6438ea58b90f32f0f86 100644
+--- a/app/static/css/curator_review.css
++++ b/app/static/css/curator_review.css
+@@ -54,7 +54,7 @@
+ }
+ .review-editor-drafts { grid-template-columns: minmax(0, 1fr) auto; }
+ .review-editor-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+-.review-editor-row > label {
++.review-editor-row > .prg-field {
+     min-inline-size: 0;
+     grid-template-columns: minmax(0, 1fr);
+ }
+@@ -74,3 +74,10 @@
+     .ios-homework .review-editor-drafts > button,
+     .review-editor-drafts select { min-block-size: 54px; }
+ }
++
++.review-help-label {
++    display: flex;
++    align-items: center;
++    gap: var(--s-2);
++    line-height: 1.25;
++}
+diff --git a/app/templates/task_block_feedback_detail.html b/app/templates/task_block_feedback_detail.html
+index 56987d2d5407c40200bd3e7477faa2fa8e80edcb..6de9010d326c84c6bd0fc029752a48bcc8deba31 100644
+--- a/app/templates/task_block_feedback_detail.html
++++ b/app/templates/task_block_feedback_detail.html
+@@ -1,16 +1,18 @@
+ {% extends "base.html" %}
++{% from "components/hint.html" import hint %}
+ {% block title %}Обратная связь – {{ task.title }}{% endblock %}
+ {% block extra_styles %}
+ <link rel="stylesheet" href="/static/css/program.css?v=59">
+ <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
+ <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
+ <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
+-<link rel="stylesheet" href="/static/css/curator_review.css?v=4">
++<link rel="stylesheet" href="/static/css/curator_review.css?v=5">
+ {% endblock %}
+ {% block content %}
+ <div class="ios-homework prg-page">
+     {% if viewer_role != 'student' %}
+     <a class="back-link" data-review-navigation href="{{ queue_navigation.queue_url if queue_navigation else '/cabinet/staff/students-review/queue' }}">← Очередь проверки</a>
++    {{ hint("«Очередь проверки» открывает список работ. Стрелки под заголовком ведут к соседним ученикам в этой очереди.", "Как перемещаться по очереди") }}
+     {% endif %}
+     <a class="back-link" {% if viewer_role != 'student' %}data-review-navigation{% endif %} href="{{ back_url }}">← Назад</a>
+     <div class="prg-head">
+@@ -116,11 +118,14 @@
+             {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
+         </ul>
+         <a class="btn-outline" data-review-navigation href="/cabinet/students?student={{ submission.user_id }}&amp;tab=portfolio">Портфолио ученика</a>
++        {{ hint("Откроет портфолио ученика, где можно посмотреть его работы вне этого задания.", "Что откроется в портфолио") }}
+     </section>
+     {% endif %}
+ 
+     <section class="card">
+-        <h2 class="section-label">Оценка</h2>
++        <h2 class="section-label">Оценка
++            {{ hint("«Пометить проверенной» убирает работу из списка непроверенных. «Вернуть в очередь» отменяет эту отметку. «Вернуть на доработку» открывает поле для комментария перед отправкой ученику.", "Что делают кнопки проверки") }}
++        </h2>
+         {# Баллы прошлых работ общей ОС — здесь, рядом с баллом этой: лента
+            работ выше только показывает. #}
+         {% if group %}
+@@ -282,38 +287,42 @@
+             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
+             {% if autosave is defined and autosave is not none %}
+             <div class="review-editor-row review-editor-drafts">
+-                <label class="prg-field" for="review-draft">Черновики
++                <div class="prg-field">
++                    <span class="review-help-label"><label for="review-draft">Черновики</label> {{ hint("Выбери сохранённый черновик, чтобы продолжить правку. Кнопка «Новое замечание» сохраняет текущий текст и открывает пустое поле для следующего.", "Как пользоваться черновиками") }}</span>
+                     <select id="review-draft" class="field-input" data-review-draft-picker>
+                         <option value="">Новое замечание</option>
+                     </select>
+-                </label>
++                </div>
+                 <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
+             </div>
+             <div class="review-editor-row review-editor-fields">
+-                <label class="prg-field" for="review-section">Раздел замечания
++                <div class="prg-field">
++                    <span class="review-help-label"><label for="review-section">Раздел замечания</label> {{ hint("Ученик увидит раздел рядом с замечанием. Выбирай по теме. Задание – условия, композиция – расположение на листе, конструкция – форма и пропорции, графика – линии и тон, рекомендации – что потренировать. Общий комментарий можно оставить без раздела.", "Как выбрать раздел замечания") }}</span>
+                     <select id="review-section" class="field-input" data-review-section>
+                         <option value="">Без раздела</option>
+                         {% for key, label in review_sections.items() %}
+                         <option value="{{ key }}">{{ label }}</option>
+                         {% endfor %}
+                     </select>
+-                </label>
+-                <label class="prg-field" for="review-work">Работа
++                </div>
++                <div class="prg-field">
++                    <span class="review-help-label"><label for="review-work">Работа</label> {{ hint("В общем диалоге можно указать, к какой сдаче относится замечание. Для комментария обо всех сдачах выбери «Весь диалог».", "Как выбрать работу") }}</span>
+                     <select id="review-work" class="field-input" data-review-work>
+                         <option value="">{{ 'Весь диалог' if group else 'Вся работа' }}</option>
+                         {% for id, label in review_works.items() %}
+                         <option value="{{ id }}">{{ label }}</option>
+                         {% endfor %}
+                     </select>
+-                </label>
+-                <label class="prg-field" for="review-image">Фото работы
++                </div>
++                <div class="prg-field">
++                    <span class="review-help-label"><label for="review-image">Фото работы</label> {{ hint("Выбери снимок из сдачи, если замечание относится именно к нему. Чтобы добавить свой снимок, воспользуйся полем «Фото» ниже.", "Как привязать замечание к фото") }}</span>
+                     <select id="review-image" class="field-input" data-review-image>
+                         <option value="">Без фото</option>
+                         {% for id, image in review_images.items() %}
+                         <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
+                         {% endfor %}
+                     </select>
+-                </label>
++                </div>
+             </div>
+             {% elif viewer_role != 'student' %}
+             <fieldset class="review-feedback-sections" data-review-sections>
+@@ -339,6 +348,9 @@
+             <label class="form-label hw-label-gap" for="feedback-audio">Голосовое, необязательно (до 25 МБ)</label>
+             <input id="feedback-audio" type="file" class="field-input" name="audio" accept="audio/*">
+             <button type="submit" class="{{ 'btn-blue' if viewer_role == 'student' else 'btn-outline' }} hw-submit">{{ 'Отправить' if viewer_role == 'student' else 'Добавить сообщение' }}</button>
++            {% if viewer_role != 'student' %}
++            {{ hint("Добавляет текст или вложения в черновики. Чтобы ученик увидел сообщение, открой «Предпросмотр ОС» и подтверди отправку.", "Что делает кнопка «Добавить сообщение»") }}
++            {% endif %}
+             <p class="prg-message" aria-live="polite"></p>
+         </form>
+         {% elif viewer_role == 'student' %}
+@@ -348,12 +360,17 @@
+            открывает их ученику и шлёт одно уведомление (владелец 22.10.2026). #}
+         {% if viewer_role != 'student' and (draft_count or (autosave is defined and autosave is not none and not rating_panel.closed)) %}
+         <div class="hw-hint">
+-            <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
++            <div class="review-help-label">
++                <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
++                {{ hint("Предпросмотр показывает, какие замечания и вложения получит ученик.", "Что показывает предпросмотр") }}
++            </div>
+             <div class="prg-actions">
+                 <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Предпросмотр ОС</button>
+             </div>
+             <dialog class="card review-preview" data-review-preview aria-labelledby="review-preview-title">
+-                <h3 id="review-preview-title" class="section-label">Состав обратной связи</h3>
++                <h3 id="review-preview-title" class="section-label">Состав обратной связи
++                    {{ hint("«Отправить ОС» откроет ученику замечания и вложения из списка. «Вернуться к правке» закроет предпросмотр и оставит черновики в редакторе.", "Что делают кнопки предпросмотра") }}
++                </h3>
+                 <ol class="review-preview-items" data-review-preview-items></ol>
+                 <div class="modal-actions">
+                     <button type="button" class="btn-outline" data-review-preview-cancel>Вернуться к правке</button>
+@@ -399,7 +416,10 @@
+ </div>
+ 
+ {% include "partials/lightbox.html" %}
+-{% if viewer_role != 'student' %}<script src="/static/js/curator_review.js?v=4" defer></script>{% endif %}
++{% if viewer_role != 'student' %}
++<script src="/static/js/hint.js?v=1" defer></script>
++<script src="/static/js/curator_review.js?v=4" defer></script>
++{% endif %}
+ <script src="/static/js/rich-text-field.js?v=4"></script>
+ <script src="/static/js/media-recorder-field.js?v=9"></script>
+ <script src="/static/js/feedback-rating.js?v=2"></script>
+-- 
+2.56.1.windows.1
+
