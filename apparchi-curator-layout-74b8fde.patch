@@ -1,0 +1,183 @@
+From 74b8fde2e23e4fe086e6d0853c3ac60d632f4d22 Mon Sep 17 00:00:00 2001
+From: Portfolio SaaS <magigigogi2026@gmail.com>
+Date: Tue, 17 Nov 2026 08:51:56 +0500
+Subject: [PATCH] =?UTF-8?q?=D0=92=D1=8B=D1=80=D0=BE=D0=B2=D0=BD=D1=8F?=
+ =?UTF-8?q?=D1=82=D1=8C=20=D0=BA=D0=BD=D0=BE=D0=BF=D0=BA=D0=B8=20=D0=BF?=
+ =?UTF-8?q?=D1=80=D0=BE=D0=B2=D0=B5=D1=80=D0=BA=D0=B8=20=D0=BA=D1=83=D1=80?=
+ =?UTF-8?q?=D0=B0=D1=82=D0=BE=D1=80=D0=B0=20=D0=BD=D0=B0=20=D1=82=D0=B5?=
+ =?UTF-8?q?=D0=BB=D0=B5=D1=84=D0=BE=D0=BD=D0=B5?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ app/static/css/curator_review.css             | 50 ++++++++++++++
+ .../partials/curator_review_navigation.html   |  2 +-
+ app/templates/task_block_feedback_detail.html | 68 ++++++++++---------
+ 3 files changed, 87 insertions(+), 33 deletions(-)
+
+diff --git a/app/static/css/curator_review.css b/app/static/css/curator_review.css
+index a92c2cb9410716d895a605c7dc5a9887bd8e4c6c..cbcccd92159f4de169a8083c1c9c00f7c7666071 100644
+--- a/app/static/css/curator_review.css
++++ b/app/static/css/curator_review.css
+@@ -24,3 +24,53 @@
+ .review-preview-items { padding-inline-start: 1.5em; overflow-wrap: anywhere; }
+ .review-preview-items p { white-space: pre-wrap; }
+ .hw-msg[data-own-review-draft][hidden] { display: none; }
++
++.prg-actions.review-action-row {
++    display: grid;
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++    max-inline-size: 32rem;
++}
++
++.review-queue-nav { margin-block-end: var(--s-3); }
++.review-action-row > [data-review-status] { grid-column: 1 / -1; }
++.review-action-row > [data-review-status]:empty { margin: 0; }
++
++.ios-homework :is(.review-action-row, .review-editor-row) > :is(a, button) {
++    min-inline-size: 0;
++    min-block-size: 44px;
++    justify-content: center;
++    padding: var(--s-2);
++    line-height: 1.25;
++    text-align: center;
++    white-space: normal;
++    overflow-wrap: anywhere;
++}
++
++.review-editor-row {
++    display: grid;
++    align-items: end;
++    gap: var(--s-2);
++    margin-block-end: var(--s-2);
++}
++.review-editor-drafts { grid-template-columns: minmax(0, 1fr) auto; }
++.review-editor-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
++.review-editor-row > label {
++    min-inline-size: 0;
++    grid-template-columns: minmax(0, 1fr);
++}
++.review-editor-row select {
++    min-inline-size: 0;
++    text-overflow: ellipsis;
++}
++
++@media (max-width: 600px) {
++    .review-editor-drafts, .review-editor-fields {
++        grid-template-columns: repeat(2, minmax(0, 1fr));
++    }
++    .review-editor-fields > :first-child { grid-column: 1 / -1; }
++}
++
++@media (max-width: 360px) {
++    .ios-homework .review-editor-drafts > button,
++    .review-editor-drafts select { min-block-size: 54px; }
++}
+diff --git a/app/templates/partials/curator_review_navigation.html b/app/templates/partials/curator_review_navigation.html
+index 7580b42a4acdbc69b0eae2e423f1ca0ed031d8b3..b9fae938346a07fac78ac67a34077396a8253de7 100644
+--- a/app/templates/partials/curator_review_navigation.html
++++ b/app/templates/partials/curator_review_navigation.html
+@@ -1,5 +1,5 @@
+ {% if queue_navigation %}
+-<nav class="prg-actions" aria-label="Ученики в очереди проверки">
++<nav class="prg-actions review-action-row review-queue-nav" aria-label="Ученики в очереди проверки">
+     {% if queue_navigation.previous_url %}
+     <a class="btn-outline" data-review-navigation rel="prev" href="{{ queue_navigation.previous_url }}">← Предыдущий ученик</a>
+     {% else %}
+diff --git a/app/templates/task_block_feedback_detail.html b/app/templates/task_block_feedback_detail.html
+index 44ad4472877870d977310f006ad0e4fe98154de3..56987d2d5407c40200bd3e7477faa2fa8e80edcb 100644
+--- a/app/templates/task_block_feedback_detail.html
++++ b/app/templates/task_block_feedback_detail.html
+@@ -5,7 +5,7 @@
+ <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
+ <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
+ <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
+-<link rel="stylesheet" href="/static/css/curator_review.css?v=3">
++<link rel="stylesheet" href="/static/css/curator_review.css?v=4">
+ {% endblock %}
+ {% block content %}
+ <div class="ios-homework prg-page">
+@@ -163,7 +163,7 @@
+         <p class="card-desc">Главный преподаватель ещё не поставил оценку.</p>
+         {% endif %}
+         {% if not submission.needs_revision %}
+-        <div class="prg-actions">
++        <div class="prg-actions review-action-row">
+             <button type="button" class="btn-outline" data-review-toggle
+                     data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">
+                 {{ 'Вернуть в очередь' if submission.reviewed_at else 'Пометить проверенной' }}
+@@ -281,36 +281,40 @@
+             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
+             {% if autosave is defined and autosave is not none %}
+-            <label class="prg-field" for="review-draft">Черновики
+-                <select id="review-draft" class="field-input" data-review-draft-picker>
+-                    <option value="">Новое замечание</option>
+-                </select>
+-            </label>
+-            <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
+-            <label class="prg-field" for="review-section">Раздел замечания
+-                <select id="review-section" class="field-input" data-review-section>
+-                    <option value="">Без раздела</option>
+-                    {% for key, label in review_sections.items() %}
+-                    <option value="{{ key }}">{{ label }}</option>
+-                    {% endfor %}
+-                </select>
+-            </label>
+-            <label class="prg-field" for="review-work">Работа
+-                <select id="review-work" class="field-input" data-review-work>
+-                    <option value="">{{ 'Ко всему диалогу' if group else 'К работе целиком' }}</option>
+-                    {% for id, label in review_works.items() %}
+-                    <option value="{{ id }}">{{ label }}</option>
+-                    {% endfor %}
+-                </select>
+-            </label>
+-            <label class="prg-field" for="review-image">Фото работы
+-                <select id="review-image" class="field-input" data-review-image>
+-                    <option value="">Без привязки к фото</option>
+-                    {% for id, image in review_images.items() %}
+-                    <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
+-                    {% endfor %}
+-                </select>
+-            </label>
++            <div class="review-editor-row review-editor-drafts">
++                <label class="prg-field" for="review-draft">Черновики
++                    <select id="review-draft" class="field-input" data-review-draft-picker>
++                        <option value="">Новое замечание</option>
++                    </select>
++                </label>
++                <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
++            </div>
++            <div class="review-editor-row review-editor-fields">
++                <label class="prg-field" for="review-section">Раздел замечания
++                    <select id="review-section" class="field-input" data-review-section>
++                        <option value="">Без раздела</option>
++                        {% for key, label in review_sections.items() %}
++                        <option value="{{ key }}">{{ label }}</option>
++                        {% endfor %}
++                    </select>
++                </label>
++                <label class="prg-field" for="review-work">Работа
++                    <select id="review-work" class="field-input" data-review-work>
++                        <option value="">{{ 'Весь диалог' if group else 'Вся работа' }}</option>
++                        {% for id, label in review_works.items() %}
++                        <option value="{{ id }}">{{ label }}</option>
++                        {% endfor %}
++                    </select>
++                </label>
++                <label class="prg-field" for="review-image">Фото работы
++                    <select id="review-image" class="field-input" data-review-image>
++                        <option value="">Без фото</option>
++                        {% for id, image in review_images.items() %}
++                        <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
++                        {% endfor %}
++                    </select>
++                </label>
++            </div>
+             {% elif viewer_role != 'student' %}
+             <fieldset class="review-feedback-sections" data-review-sections>
+                 <legend>Раздел замечания</legend>
+-- 
+2.56.1.windows.1
+
