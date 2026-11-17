@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=3">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -163,7 +163,7 @@
         <p class="card-desc">Главный преподаватель ещё не поставил оценку.</p>
         {% endif %}
         {% if not submission.needs_revision %}
-        <div class="prg-actions">
+        <div class="prg-actions review-action-row">
             <button type="button" class="btn-outline" data-review-toggle
                     data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">
                 {{ 'Вернуть в очередь' if submission.reviewed_at else 'Пометить проверенной' }}
@@ -281,36 +281,40 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
             {% if autosave is defined and autosave is not none %}
-            <label class="prg-field" for="review-draft">Черновики
-                <select id="review-draft" class="field-input" data-review-draft-picker>
-                    <option value="">Новое замечание</option>
-                </select>
-            </label>
-            <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
-            <label class="prg-field" for="review-section">Раздел замечания
-                <select id="review-section" class="field-input" data-review-section>
-                    <option value="">Без раздела</option>
-                    {% for key, label in review_sections.items() %}
-                    <option value="{{ key }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label class="prg-field" for="review-work">Работа
-                <select id="review-work" class="field-input" data-review-work>
-                    <option value="">{{ 'Ко всему диалогу' if group else 'К работе целиком' }}</option>
-                    {% for id, label in review_works.items() %}
-                    <option value="{{ id }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label class="prg-field" for="review-image">Фото работы
-                <select id="review-image" class="field-input" data-review-image>
-                    <option value="">Без привязки к фото</option>
-                    {% for id, image in review_images.items() %}
-                    <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
-                    {% endfor %}
-                </select>
-            </label>
+            <div class="review-editor-row review-editor-drafts">
+                <label class="prg-field" for="review-draft">Черновики
+                    <select id="review-draft" class="field-input" data-review-draft-picker>
+                        <option value="">Новое замечание</option>
+                    </select>
+                </label>
+                <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
+            </div>
+            <div class="review-editor-row review-editor-fields">
+                <label class="prg-field" for="review-section">Раздел замечания
+                    <select id="review-section" class="field-input" data-review-section>
+                        <option value="">Без раздела</option>
+                        {% for key, label in review_sections.items() %}
+                        <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="prg-field" for="review-work">Работа
+                    <select id="review-work" class="field-input" data-review-work>
+                        <option value="">{{ 'Весь диалог' if group else 'Вся работа' }}</option>
+                        {% for id, label in review_works.items() %}
+                        <option value="{{ id }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="prg-field" for="review-image">Фото работы
+                    <select id="review-image" class="field-input" data-review-image>
+                        <option value="">Без фото</option>
+                        {% for id, image in review_images.items() %}
+                        <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
             {% elif viewer_role != 'student' %}
             <fieldset class="review-feedback-sections" data-review-sections>
                 <legend>Раздел замечания</legend>
