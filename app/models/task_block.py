@@ -490,8 +490,13 @@ class TaskBlock(Base):
     # видит. NULL — прежнее правило: до MAX_SUBMISSION_IMAGES, сдано с первого.
     required_photos: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Optional caption for the existing homework upload form.
+    # A caption on a legacy portfolio block opts it into inline assignment
+    # submission while leaving its old portfolio window available to open tabs.
     upload_button_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    @property
+    def accepts_inline_portfolio_submission(self) -> bool:
+        return self.block_type == BLOCK_PORTFOLIO and bool(self.upload_button_label)
 
     # «Настройка диалога» (владелец 01.10.2026): сколько сообщений ученик
     # может отправить в диалоге обратной связи по своей сдаче. Считаются только

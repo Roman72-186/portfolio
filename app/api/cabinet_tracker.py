@@ -1195,7 +1195,8 @@ def cabinet_tracker_task_blocks(
                 tariff_deadlines=submit_deadlines.get(block.id),
                 task_tariff_deadlines=task_submit_deadlines,
             ))
-        elif block.block_type == BLOCK_PHOTO_UPLOAD:
+        elif block.block_type == BLOCK_PHOTO_UPLOAD or block.accepts_inline_portfolio_submission:
+            item["block_type"] = BLOCK_PHOTO_UPLOAD
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
@@ -1207,13 +1208,19 @@ def cabinet_tracker_task_blocks(
                 {"url": i.image_s3_url} for i in images.get(block.id, [])
             ]
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
-            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["done"] = (
+                _portfolio_block_done(db, block, user["user_id"])
+                if block.accepts_inline_portfolio_submission
+                else bool(state and state.status == STATUS_DONE)
+            )
             item.update(_submission_payload(
                 db, task, block, user["user_id"],
                 user_tariff=user.get("tariff"),
                 tariff_deadlines=submit_deadlines.get(block.id),
                 task_tariff_deadlines=task_submit_deadlines,
             ))
+            if block.accepts_inline_portfolio_submission and item["done"] and not item["submitted_files"]:
+                item["legacy_portfolio_url"] = "/cabinet/portfolio"
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             # Всегда в раздел «До» (владелец 09.09.2026: «по этой кнопке работы
@@ -1644,7 +1651,9 @@ async def upload_task_block_work(
     совсем другое.
     """
     block = db.get(TaskBlock, block_id)
-    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+    if block is None or not (
+        block.block_type in SUBMISSION_BLOCK_TYPES or block.accepts_inline_portfolio_submission
+    ):
         raise HTTPException(status_code=404, detail="Блок не найден")
     await run_in_threadpool(_lock_block_submission, db, block.id, user["user_id"])
     task = _writable_task_or_404(
@@ -1800,7 +1809,9 @@ def edit_task_block_comment(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     block = db.get(TaskBlock, block_id)
-    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+    if block is None or not (
+        block.block_type in SUBMISSION_BLOCK_TYPES or block.accepts_inline_portfolio_submission
+    ):
         raise HTTPException(status_code=404, detail="Блок не найден")
     _lock_block_submission(db, block.id, user["user_id"])
     task = _writable_task_or_404(
@@ -1833,7 +1844,9 @@ def delete_task_block_image(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     block = db.get(TaskBlock, block_id)
-    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+    if block is None or not (
+        block.block_type in SUBMISSION_BLOCK_TYPES or block.accepts_inline_portfolio_submission
+    ):
         raise HTTPException(status_code=404, detail="Блок не найден")
     _lock_block_submission(db, block.id, user["user_id"])
     task = _writable_task_or_404(

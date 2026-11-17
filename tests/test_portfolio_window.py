@@ -400,3 +400,34 @@ def test_legacy_tab_survives_universal_switch_and_ui_rollback(auth_client, db):
     assert len(works) == 2
     assert works[0].id == kept_id and works[0].s3_url
     assert works[1].portfolio_source_block_id == block.id
+
+
+def test_inline_portfolio_block_keeps_legacy_form_and_accepts_assignment_upload(auth_client, db):
+    from app.models.task_block import TaskBlockSubmission
+
+    client, student = auth_client
+    block = _open_window(db, student)
+    assert client.get(f"/upload?section=before&block={block.id}").status_code == 200
+    old_payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
+    assert old_payload["block_type"] == "portfolio"
+
+    block.upload_button_label = "Загрузить работу"
+    block.universal_key = "rollout"
+    block.portfolio_month = "2026-11"
+    db.commit()
+    legacy = _post_before(client)
+    assert legacy.status_code == 200 and legacy.json()["success"]
+    work = db.query(Work).filter_by(user_id=student.id).one()
+
+    payload = client.get(f"/cabinet/tracker/tasks/{block.task_id}/blocks").json()["blocks"][0]
+    assert payload["block_type"] == "photo_upload"
+    assert payload["upload_button_label"] == "Загрузить работу"
+    with patch("app.api.cabinet_tracker.s3_service.upload_to_s3", return_value="https://s3.example/new.jpg"):
+        uploaded = client.post(
+            payload["upload_endpoint"],
+            files=[("photos", ("work.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+    assert uploaded.status_code == 200 and uploaded.json()["ok"], uploaded.text
+    saved = db.query(TaskBlockSubmission).filter_by(block_id=block.id, user_id=student.id).one()
+    assert saved.submitted_at is not None
+    assert db.get(Work, work.id).status == "success"

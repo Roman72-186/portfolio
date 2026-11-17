@@ -113,9 +113,9 @@ def late_first_submission(block: TaskBlock, submission: TaskBlockSubmission | No
     пишется по первой сдаче, и замена спрятала бы его
     (`LATE_SUBMISSION_BLOCK_TYPES`).
     """
-    return block.block_type in LATE_SUBMISSION_BLOCK_TYPES and (
-        submission is None or submission.submitted_at is None
-    )
+    return (
+        block.block_type in LATE_SUBMISSION_BLOCK_TYPES or block.accepts_inline_portfolio_submission
+    ) and (submission is None or submission.submitted_at is None)
 
 
 def block_work_reason(
