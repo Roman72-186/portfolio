@@ -47,7 +47,7 @@ def _render(request, db, user, *, error=None):
     amount = (payment.amount_kop if payment else
               payments.reference_price_kop(db, enrollment.selected_tariff, COHORT_FROM))
     # Адрес приглашения даже не попадает в контекст до оплаты и анкеты.
-    waiting = public_purchase.waiting_for_start(now, payment)
+    waiting = public_purchase.waiting_for_start(datetime.now(timezone.utc), payment)
     invitation = public_purchase.invite_url() if payment and student.profile_completed and not waiting else ""
     return templates.TemplateResponse(request, "public_purchase.html", {
         "request": request, "user": user, "enrollment": enrollment,
