@@ -8,7 +8,16 @@ from app.models.payment import COHORT_FROM, KIND_MONTH, STATUS_PAID, Payment
 from app.models.public_enrollment import PublicEnrollment
 from app.models.user import User
 from app.services import payments
-from app.services.tz import _as_utc
+from app.services.tz import MSK_TZ, _as_utc
+
+NOVEMBER_PRESALE = datetime(2026, 11, 18, tzinfo=MSK_TZ)
+NOVEMBER_START = datetime(2026, 11, 22, tzinfo=MSK_TZ)
+
+
+def waiting_for_start(now, payment=None):
+    return (NOVEMBER_PRESALE <= _as_utc(now) < NOVEMBER_START
+            and (payment is None or (payment.paid_at is not None
+                 and _as_utc(payment.paid_at) >= NOVEMBER_PRESALE)))
 
 PURCHASE_REQUIRED = "public_purchase_required"
 AFTER_PAYMENT_TEXT = (
@@ -95,7 +104,8 @@ def activate(db, user_id: int, now: datetime) -> bool:
         return False
     if enrollment.activated_at:
         return True
-    if (not confirmed_payment(db, enrollment) or not user.profile_completed
+    payment = confirmed_payment(db, enrollment)
+    if (not payment or waiting_for_start(now, payment) or not user.profile_completed
             or not user.is_active or user.deleted_at is not None or not user.is_group_member
             or user.paid_until is None or _as_utc(user.paid_until) <= _as_utc(now)):
         return False

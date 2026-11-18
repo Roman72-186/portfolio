@@ -9,6 +9,7 @@
 {% if not sales_ready %}
 <p class="alert" role="status" id="public-sales-status">Приём оплат пока закрыт. Если хочешь присоединиться к курсу, напиши в службу заботы.</p>
 {% endif %}
+{% if waiting_for_start %}<p class="alert" role="status">Можно оплатить курс сейчас. Доступ к АОП откроется 22 ноября в 00:00 по Москве.</p>{% endif %}
 {% for item in tariffs %}
 <section class="card">
     <h2 class="card-title">{{ item.tariff | tariff_label }}</h2>
