@@ -47,10 +47,10 @@ def _payment(db, buyer):
     return public_purchase.checkout(db, buyer[0], 'https://testserver', datetime.now(timezone.utc))
 
 
-def _settle(db, payment, *, amount='1000.00', order_id='purchase-1'):
+def _settle(db, payment, *, amount='1000.00', order_id='purchase-1', paid_at=None):
     data = {'order_num': payments.order_number(payment), 'order_id': order_id,
             'payment_status': 'success', 'sum': amount}
-    result = payments.process_webhook(db, data, datetime.now(timezone.utc))
+    result = payments.process_webhook(db, data, paid_at or datetime(2026, 11, 12, tzinfo=timezone.utc))
     db.commit()
     return result
 
@@ -567,3 +567,18 @@ def test_purchase_start_disabled(client):
     response = client.get('/purchase/start', params={'tariff': 'fake'}, follow_redirects=False)
     assert response.status_code == 302
     assert response.headers['location'] == '/tariffs'
+
+
+def test_november_presale_access_boundary(client, db, buyer):
+    payment = _payment(db, buyer)
+    _settle(db, payment, paid_at=public_purchase.NOVEMBER_PRESALE)
+    student, enrollment = buyer
+    student.profile_completed = student.is_group_member = True
+    student.paid_until = public_purchase.NOVEMBER_START + timedelta(days=10)
+    db.commit()
+    assert client.get('/cabinet/learning', follow_redirects=False).status_code in (302, 303)
+    start = public_purchase.NOVEMBER_START
+    assert not public_purchase.activate(db, student.id, start - timedelta(microseconds=1))
+    assert enrollment.activated_at is None
+    assert public_purchase.activate(db, student.id, start)
+    assert enrollment.activated_at == start

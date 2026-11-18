@@ -48,6 +48,7 @@ def tariffs(request: Request, db: Annotated[Session, Depends(get_db)]):
     return templates.TemplateResponse(request, "public_tariffs.html", {
         "request": request, "tariffs": public_purchase.catalog(db),
         "sales_ready": public_purchase.sales_ready(), "rub_text": payments.rub_text,
+        "waiting_for_start": public_purchase.waiting_for_start(datetime.now(timezone.utc)),
     }, headers={"Cache-Control": "no-store"})
 
 
@@ -85,6 +86,7 @@ def _render(request, db, user, *, error=None):
         "payment": payment, "amount": amount, "rub_text": payments.rub_text,
         "period": payments.period_label(payment.period if payment else pending.period if pending else payments.due_period(student, now)),
         "sales_ready": public_purchase.sales_ready(), "invite_url": invitation,
+        "waiting_for_start": public_purchase.waiting_for_start(now, payment),
         "after_payment_text": public_purchase.AFTER_PAYMENT_TEXT, "error": error,
         "paid_expired": bool(payment and (student.paid_until is None
                               or _as_utc(student.paid_until) <= datetime.now(timezone.utc))),
@@ -123,6 +125,8 @@ async def check_channel(request: Request, user: Annotated[dict, Depends(get_curr
         return RedirectResponse("/cabinet", status_code=303)
     if not public_purchase.confirmed_payment(db, enrollment) or not user["profile_completed"]:
         return _render(request, db, user, error="Сначала оплати курс и заполни анкету.")
+    if public_purchase.waiting_for_start(datetime.now(timezone.utc), public_purchase.confirmed_payment(db, enrollment)):
+        return _render(request, db, user)
     member = await telegram.check_channel_membership(user["telegram_chat_id"])
     if member is not True:
         error = ("Пока не видим тебя в канале. Вступи по ссылке и проверь участие ещё раз."
