@@ -569,7 +569,7 @@ def test_purchase_start_disabled(client):
     assert response.headers['location'] == '/tariffs'
 
 
-def test_november_presale_access_boundary(client, db, buyer):
+def test_november_presale_access_boundary(client, db, buyer, monkeypatch):
     payment = _payment(db, buyer)
     _settle(db, payment, paid_at=public_purchase.NOVEMBER_PRESALE)
     student, enrollment = buyer
@@ -578,6 +578,17 @@ def test_november_presale_access_boundary(client, db, buyer):
     db.commit()
     assert client.get('/cabinet/learning', follow_redirects=False).status_code in (302, 303)
     start = public_purchase.NOVEMBER_START
+    from app.api import public_purchase as routes
+    for instant, visible in [(start - timedelta(microseconds=1), False), (start, True)]:
+        class Clock:
+            @staticmethod
+            def now(tz):
+                return instant.astimezone(tz)
+        monkeypatch.setattr(routes, 'datetime', Clock)
+        page = client.get('/purchase')
+        assert page.status_code == 200
+        assert (INVITE in page.text) == visible
+        assert ('action="/purchase/check-channel"' in page.text) == visible
     assert not public_purchase.activate(db, student.id, start - timedelta(microseconds=1))
     assert enrollment.activated_at is None
     assert public_purchase.activate(db, student.id, start)

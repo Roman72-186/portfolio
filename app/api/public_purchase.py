@@ -80,13 +80,14 @@ def _render(request, db, user, *, error=None):
         Payment.amount_kop == amount, Payment.link_expires_at > now,
     ).order_by(Payment.id.desc()).first()
     # Адрес приглашения даже не попадает в контекст до оплаты и анкеты.
-    invitation = public_purchase.invite_url() if payment and student.profile_completed else ""
+    waiting = public_purchase.waiting_for_start(now, payment)
+    invitation = public_purchase.invite_url() if payment and student.profile_completed and not waiting else ""
     return templates.TemplateResponse(request, "public_purchase.html", {
         "request": request, "user": user, "enrollment": enrollment,
         "payment": payment, "amount": amount, "rub_text": payments.rub_text,
         "period": payments.period_label(payment.period if payment else pending.period if pending else payments.due_period(student, now)),
         "sales_ready": public_purchase.sales_ready(), "invite_url": invitation,
-        "waiting_for_start": public_purchase.waiting_for_start(now, payment),
+        "waiting_for_start": waiting,
         "after_payment_text": public_purchase.AFTER_PAYMENT_TEXT, "error": error,
         "paid_expired": bool(payment and (student.paid_until is None
                               or _as_utc(student.paid_until) <= datetime.now(timezone.utc))),

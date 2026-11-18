@@ -6,23 +6,24 @@
     <h1 class="page-title">{% if payment %}Оплата прошла, спасибо!{% else %}Оплата годового курса{% endif %}</h1>
     <p class="page-subtitle">{{ (payment.tariff if payment else enrollment.selected_tariff) | tariff_label }}{% if amount %} · {{ rub_text(amount) }}{% endif %} · {{ period }}</p>
 </div>
-{% if waiting_for_start %}<p class="alert" role="status">Можно оплатить курс сейчас. Доступ к АОП откроется 22 ноября в 00:00 по Москве.</p>{% endif %}
+{% if waiting_for_start %}<p class="alert" role="status">Можно оплатить курс сейчас. Канал «Путь к сотке» и АОП откроются 22 ноября в 00:00 по Москве.</p>{% endif %}
 {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 {% if paid_expired %}
 <p class="alert" role="status">Срок оплаты уже закончился. Напиши в службу заботы, чтобы продолжить обучение.</p>
 {% elif payment and not user.profile_completed %}
-<p>{{ after_payment_text }}</p>
+<p>{% if waiting_for_start %}Заполни анкету годового курса. Приглашение появится здесь в день старта.{% else %}{{ after_payment_text }}{% endif %}</p>
 <a class="btn-blue" href="/cabinet/profile">Заполнить анкету</a>
+{% elif payment and waiting_for_start %}
+<p>Анкета сохранена. Вернись сюда 22 ноября за ссылкой на канал «Путь к сотке».</p>
 {% elif payment and user.profile_completed %}
 <p>Анкета сохранена. Перейди в канал «Путь к сотке», затем вернись сюда и проверь участие.</p>
 {% if invite_url %}
 <div class="purchase-actions">
     <a class="btn-blue" href="{{ invite_url }}" target="_blank" rel="noopener noreferrer">Перейти в канал</a>
-    {% if waiting_for_start %}<p>С 22 ноября открой эту страницу и проверь участие, чтобы войти в программу.</p>{% else %}
     <form method="post" action="/purchase/check-channel">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <button class="btn-outline" type="submit">Проверить участие</button>
-    </form>{% endif %}
+    </form>
 </div>
 <p class="text-muted">Если вход в канал по заявке, дождись её одобрения и проверь участие ещё раз.</p>
 {% else %}
@@ -31,7 +32,7 @@
 {% elif enrollment.first_payment_id %}
 <p class="alert" role="status">Оплата больше не подтверждена. Напиши в службу заботы.</p>
 {% else %}
-<p>После оплаты заполни анкету годового курса – затем получишь ссылку в «Путь к сотке».</p>
+<p>После оплаты заполни анкету годового курса – {% if waiting_for_start %}ссылка в «Путь к сотке» появится 22 ноября.{% else %}затем получишь ссылку в «Путь к сотке».{% endif %}</p>
 {% if sales_ready and amount %}
 <form method="post" action="/purchase/pay">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
