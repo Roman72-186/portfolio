@@ -39,7 +39,7 @@ from app.models.feedback import Feedback, FeedbackMessage
 from app.models.feedback_rating import DIALOG_MOCK_EXAM, DIALOG_TASK_BLOCK
 from app.models.notification import Notification
 from app.models.work import Work
-from app.services.feedback import ROLE_STUDENT
+from app.services.feedback import CHIEF_TEACHER_LABEL_RU, ROLE_STUDENT
 from app.services.feedback_rating import _absolute, get_rating, has_staff_message, is_closed
 
 # Вложения, которые можно убрать из сообщения: ключ формы → поля строки.
@@ -122,6 +122,8 @@ def task_block_return_refusal(db: DBSession, feedback) -> str | None:
 DELETED_FEEDBACK_NOTIFICATION_TITLES = (
     "Преподаватель оставил обратную связь по работе",
     "Преподаватель оставил обратную связь по работам",
+    f"{CHIEF_TEACHER_LABEL_RU} оставил обратную связь по работе",
+    f"{CHIEF_TEACHER_LABEL_RU} оставил обратную связь по работам",
 )
 
 
@@ -215,7 +217,7 @@ def edited_feedback_notification(
     notification = Notification(
         user_id=student_id,
         title="Обратная связь обновлена",
-        text=f"Преподаватель обновил обратную связь по работе {subject}: {_absolute(link_path)}",
+        text=f"{CHIEF_TEACHER_LABEL_RU} обновил обратную связь по работе {subject}: {_absolute(link_path)}",
         task_block_submission_id=task_block_submission_id,
     )
     db.add(notification)

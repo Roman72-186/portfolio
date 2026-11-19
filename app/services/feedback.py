@@ -133,10 +133,12 @@ ROLE_ADMIN = "admin"
 ROLE_SUPERADMIN = "superadmin"
 STAFF_ROLES = {ROLE_CURATOR, ROLE_ADMIN, ROLE_SUPERADMIN}
 
+CHIEF_TEACHER_LABEL_RU = "Главный преподаватель"
+
 ROLE_LABELS_RU = {
     ROLE_STUDENT: "Ученик",
     ROLE_CURATOR: "Куратор",
-    ROLE_ADMIN: "Главный преподаватель",
+    ROLE_ADMIN: CHIEF_TEACHER_LABEL_RU,
     ROLE_SUPERADMIN: "Суперадмин",
 }
 
@@ -150,16 +152,17 @@ def role_label_ru(sender_role: str) -> str:
 STAFF_SENDER_LABEL_RU = "Преподаватель"
 
 
-def dialog_sender(sender_role: str, name: str | None) -> tuple[str | None, str]:
+def dialog_sender(
+    sender_role: str, name: str | None, *, staff_label: str = STAFF_SENDER_LABEL_RU,
+) -> tuple[str | None, str]:
     """Имя и подпись отправителя для диалога ОС по сдаче: `(sender_name,
     sender_role_label)`. Сообщения сотрудников обезличены для всех — и для
     ученика, и для staff (владелец 04.10.2026: «в обратной связи должно быть
     обезличено… при проверке работ»), как давно сделано в диалоге пробника
-    (`cabinet_feedback_detail.html`, `anon_staff`). Должность тоже не
-    пишется: «Главный преподаватель» в маленькой команде — почти имя."""
+    (`cabinet_feedback_detail.html`, `anon_staff`). Общую подпись задаёт диалог."""
     if sender_role == ROLE_STUDENT:
         return name, role_label_ru(sender_role)
-    return None, STAFF_SENDER_LABEL_RU
+    return None, staff_label
 
 
 def role_from_rank(role_rank: int) -> str:

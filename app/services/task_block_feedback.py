@@ -18,7 +18,7 @@ from app.models.user import User
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
 from app.services import media_transcode, s3 as s3_service
-from app.services.feedback import ROLE_STUDENT, dialog_sender, role_from_rank
+from app.services.feedback import CHIEF_TEACHER_LABEL_RU, ROLE_STUDENT, dialog_sender, role_from_rank
 from app.services.tz import msk_date_text, msk_text
 from app.services.utils import compress_image
 
@@ -140,7 +140,7 @@ def student_can_reply(
     if feedback is not None and feedback.feedback_closed_at is not None:
         return ReplyState(
             False,
-            "Преподаватель завершил обратную связь – диалог закрыт.",
+            "Главный преподаватель завершил обратную связь – диалог закрыт.",
             "Обратная связь завершена – диалог закрыт.",
         )
     limit = reply_limit(db, submission)
@@ -150,7 +150,7 @@ def student_can_reply(
     if not any(_is_sent_staff(message) for message in messages):
         return ReplyState(
             False,
-            "Задать вопрос можно после первого сообщения преподавателя.",
+            "Задать вопрос можно после первого сообщения главного преподавателя.",
             f"Ученик сможет задать вопрос: до {limit} {_messages_word(limit)}.",
         )
     sent = sum(1 for message in messages if message.sender_role == ROLE_STUDENT)
@@ -158,7 +158,7 @@ def student_can_reply(
     if left <= 0:
         return ReplyState(
             False,
-            "Вопрос отправлен – ответ преподавателя придёт сюда.",
+            "Вопрос отправлен – ответ главного преподавателя придёт сюда.",
             "Ученик отправил все свои сообщения. Ответить ему можно.",
         )
     return ReplyState(
@@ -412,7 +412,7 @@ def notify_counterpart(
     title = (
         "Ученик ответил по сданной работе"
         if sender_role == ROLE_STUDENT
-        else "Преподаватель оставил обратную связь по работе"
+        else f"{CHIEF_TEACHER_LABEL_RU} оставил обратную связь по работе"
     )
     text = f"По сданной работе #{submission.id} есть новое сообщение."
     if sender_role != ROLE_STUDENT:
@@ -421,7 +421,7 @@ def notify_counterpart(
 
         label = group_works_label(submission, absorbed_for_mains(db, [submission]).get(submission.id))
         if label:
-            title = "Преподаватель оставил обратную связь по работам"
+            title = f"{CHIEF_TEACHER_LABEL_RU} оставил обратную связь по работам"
             text = f"{label}. Есть новое сообщение."
     notification = Notification(
         user_id=recipient_id,
@@ -549,7 +549,7 @@ def serialize_messages(
     result = []
     for message in messages:
         sender_name, sender_role_label = dialog_sender(
-            message.sender_role, names.get(message.sender_id),
+            message.sender_role, names.get(message.sender_id), staff_label=CHIEF_TEACHER_LABEL_RU,
         )
         result.append({
             "id": message.id,

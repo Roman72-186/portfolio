@@ -25,8 +25,8 @@ from tests.test_feedback_rating import (
 )
 
 FEEDBACK_TITLES = (
-    "Преподаватель оставил обратную связь по работе",
-    "Преподаватель оставил обратную связь по работам",
+    "Главный преподаватель оставил обратную связь по работе",
+    "Главный преподаватель оставил обратную связь по работам",
 )
 
 
@@ -77,7 +77,7 @@ def test_student_does_not_see_drafts(db, user_factory, session_factory, client):
     page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
     assert page.status_code == 200
     assert "Секретный черновик" not in page.text
-    assert "Преподаватель ещё не оставил обратную связь" in page.text
+    assert "Главный преподаватель ещё не оставил обратную связь" in page.text
     tab = client.get("/cabinet/cycle")
     assert "Домашка недели" not in tab.text
 
@@ -91,6 +91,9 @@ def test_student_does_not_see_drafts(db, user_factory, session_factory, client):
     _login(client, session_factory, student)
     page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
     assert "Секретный черновик" in page.text
+    assert '<span class="chip">Главный преподаватель</span>' in page.text
+    assert curator.name not in page.text
+    assert _messages(db, submission)[0].sender_role == "curator"
 
 
 def test_student_cannot_reply_to_draft(db, user_factory, session_factory, client):

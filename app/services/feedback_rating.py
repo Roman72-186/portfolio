@@ -49,7 +49,7 @@ from app.models.task_block import BLOCK_TIMED
 from app.models.user import User
 from app.services import s3 as s3_service, telegram as telegram_service
 from app.services.contacts import normalize_tg_username
-from app.services.feedback import ROLE_STUDENT
+from app.services.feedback import CHIEF_TEACHER_LABEL_RU, ROLE_STUDENT, STAFF_SENDER_LABEL_RU
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 
@@ -274,11 +274,12 @@ def rate_request_notification(
     """Одно уведомление «оцени ОС» (О26): колокольчик + личное сообщение бота.
     Ссылка на диалог — в тексте: бот шлёт заголовок и текст, ссылки
     уведомления (`task_block_submission_id`, `work_id`) он не видит."""
+    staff_label = CHIEF_TEACHER_LABEL_RU if task_block_submission_id is not None else STAFF_SENDER_LABEL_RU
     notification = Notification(
         user_id=student_id,
         title="Оцени обратную связь",
         text=(
-            f"Преподаватель завершил обратную связь – {subject}. "
+            f"{staff_label} завершил обратную связь – {subject}. "
             f"Поставь оценку от 1 до 5 и напиши пару слов: {_absolute(link_path)}"
         ),
         task_block_submission_id=task_block_submission_id,

@@ -292,7 +292,7 @@ def test_answer_locks_linked_works_and_reaches_student_as_one_card(
     assert open_cards[0]["group_label"].startswith("Общая обратная связь: работы с ")
     assert open_cards[0]["group_label"].endswith("(3)")
     note = db.query(Notification).filter_by(user_id=group["student"].id).one()
-    assert note.title == "Преподаватель оставил обратную связь по работам"
+    assert note.title == "Главный преподаватель оставил обратную связь по работам"
     assert note.task_block_submission_id == main.id
 
 
