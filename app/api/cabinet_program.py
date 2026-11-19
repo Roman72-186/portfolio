@@ -678,6 +678,7 @@ def _edit_payloads(
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
                 "required_photos": b.required_photos,
+                "upload_button_label": b.upload_button_label,
                 "portfolio_window_hours": b.portfolio_window_hours,
                 # «Настройка диалога» (01.10.2026): без неё повторное
                 # сохранение молча закрыло бы ученикам открытый ответ.

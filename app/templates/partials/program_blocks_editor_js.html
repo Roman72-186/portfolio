@@ -1435,6 +1435,7 @@ document.addEventListener('click', function (event) {
 });
 
 function fillBlockRow(row, block) {
+    if (block.upload_button_label) row.dataset.uploadButtonLabel = block.upload_button_label;
     if (block.id) row.setAttribute('data-block-id', block.id);
     var body = row.querySelector('[data-b-body]');
     if (body) body.value = block.body || '';
@@ -1800,6 +1801,7 @@ function collectFormBlocks(form) {
         var type = row.getAttribute('data-block-type');
         var idAttr = row.getAttribute('data-block-id');
         var item = {id: idAttr ? Number(idAttr) : null, block_type: type};
+        if (row.dataset.uploadButtonLabel) item.upload_button_label = row.dataset.uploadButtonLabel;
         var card = row.closest('[data-universal-key]');
         if (card) {
             item.universal_key = card.dataset.universalKey;
