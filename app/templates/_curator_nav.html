@@ -11,8 +11,8 @@
 {% if nav_active|default('') in ('curator_demo', 'students_review') %}
     {% set curator_items = curator_items|list + [dict(key='profile', href='/cabinet/curator/profile', label='Профиль')] %}
 {% endif %}
-{% if 'students_review' not in (user.closed_sections or ()) and 'students_review' not in (curator_items | map(attribute='key') | list) %}
-    {% set curator_items = curator_items | list + [dict(key='students_review', href='/cabinet/staff/students-review/queue', label='Проверка')] %}
+{% if review_demo and 'students_review' not in (user.closed_sections or ()) %}
+    {% set curator_items = curator_items | list + [dict(key='students_review', href='/cabinet/staff/students-review/queue?review_demo=1', label='Проверка · демо')] %}
 {% endif %}
 {# Экраны ГП, куда куратора пустил открытый раздел, `nav_active` не задают —
    подсвечиваем пункт по адресу. #}

@@ -84,18 +84,39 @@ def students_review_list(
     subject: str = "",
     cycle_id: int | None = None,
 ):
-    if user["role_rank"] < FULL_ACCESS_RANK:
-        if not request.url.path.endswith("/queue"):
-            return RedirectResponse("/cabinet/students", status_code=302)
+    from app.services.curator_review_demo import can_preview_review, demo_review_url
+
+    can_demo = can_preview_review(db, user)
+    if request.url.path.endswith("/queue"):
+        from app.models.role import Role
         from app.services.curator_review_queue import build_review_queue
 
+        if not can_demo:
+            return RedirectResponse("/cabinet/students", status_code=302)
+        curators = db.query(User).join(Role, User.role_id == Role.id).filter(
+            Role.rank == 2, User.is_active.is_(True), User.deleted_at.is_(None),
+        ).order_by(User.name, User.id).all()
+        selected = request.query_params.get("review_curator", str(user["user_id"]))
+        selected_curator = next((item for item in curators if str(item.id) == selected), None)
+        if selected_curator is None and curators:
+            selected_curator = curators[0]
+        curator_id = selected_curator.id if selected_curator else user["user_id"]
         queue = build_review_queue(
-            db, user["user_id"], subject=subject, tariff=tariff, cycle_id=cycle_id, status=status,
+            db, curator_id, subject=subject, tariff=tariff, cycle_id=cycle_id, status=status,
         )
+        for card in queue["cards"]:
+            for work in card["works"]:
+                work["url"] = demo_review_url(work["url"], curator_id)
+        queue["subject_links"] = {
+            key: demo_review_url(url, curator_id) for key, url in queue["subject_links"].items()
+        }
+        queue["queue_url"] = demo_review_url(queue["queue_url"], curator_id)
         return templates.TemplateResponse(request, "curator_review_queue.html", {
             "request": request, "user": user, "nav_active": "students_review",
-            **queue,
+            "demo_curators": curators, "demo_curator_id": curator_id, "review_demo": True, **queue,
         })
+    if (user.get("nav_rank") or user["role_rank"]) < FULL_ACCESS_RANK:
+        return RedirectResponse("/cabinet/students", status_code=302)
     all_rows = aggregate_student_review_counts(db, user)
     rows = filter_review_rows(
         all_rows, q=q, status=status, tariff=tariff, curator=curator,
@@ -108,6 +129,7 @@ def students_review_list(
             {**row, "href": student_tasks_url(row["student"].id)} for row in rows
         ],
         "total": len(all_rows),
+        "can_demo_review": can_demo,
         "filters": {"q": q, "status": status, "tariff": tariff, "curator": curator},
         "is_filtered": bool(q.strip() or status or tariff or curator),
         # Тарифы — по ученикам этого списка (`tariffs_for_data`, инвариант

@@ -23,6 +23,10 @@ tests/test_reuse_ratchet.py.
         </div>
     </div>
 
+    {% if can_demo_review %}
+    <a class="btn-outline" href="/cabinet/staff/students-review/queue?review_demo=1">Новая проверка · демо</a>
+    {% endif %}
+
     {#
     Поиск и фильтры (владелец 28.09.2026) — GET-форма на prg-form/prg-field.
     Фильтруют на сервере (`review_aggregate.filter_review_rows`): список

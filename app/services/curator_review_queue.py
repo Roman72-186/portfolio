@@ -21,7 +21,7 @@ def _feedback_url(submission_id: int, query: str) -> str:
 def build_review_queue(
     db: Session, curator_id: int, *, subject: str, tariff: str, cycle_id: int | None, status: str,
 ) -> dict:
-    subject = subject if subject in MOCK_SUBJECTS else ""
+    subject = subject if subject in MOCK_SUBJECTS else "Рисунок"
     tariff = tariff if tariff in CURATOR_STATS_TARIFFS else ""
     status = "all" if status == "all" else ""
     period = _period(db, datetime.now(MSK_TZ).date(), None, cycle_id)
@@ -31,7 +31,7 @@ def build_review_queue(
         filters["cycle_id"] = cycle.id
     feedback_query = urlencode({f"review_{key}": value for key, value in filters.items()})
     cards = {}
-    if subject and cycle:
+    if cycle:
         rows = submission_review_queue(
             db, curator_id=curator_id, subject=subject, tariff=tariff or None,
             cycle_id=cycle.id, limit=1000,
@@ -53,7 +53,11 @@ def build_review_queue(
                 continue
             card["works"].append({**row, "url": _feedback_url(row["submission_id"], feedback_query)})
     return {
-        "subject": subject, "subjects": MOCK_SUBJECTS, "tariff": tariff, "tariffs": CURATOR_STATS_TARIFFS,
+        "subject": subject, "tariff": tariff, "tariffs": CURATOR_STATS_TARIFFS,
+        "subject_links": {
+            name: QUEUE_URL + "?" + urlencode({**filters, "subject": name})
+            for name in MOCK_SUBJECTS
+        },
         "period": period, "status": status, "cards": [card for card in cards.values() if card["works"]],
         "anchors": cards, "queue_url": QUEUE_URL + "?" + urlencode(filters),
     }

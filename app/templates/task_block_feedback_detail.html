@@ -10,7 +10,7 @@
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
-    {% if viewer_role != 'student' %}
+    {% if review_demo %}
     <a class="back-link" data-review-navigation href="{{ queue_navigation.queue_url if queue_navigation else '/cabinet/staff/students-review/queue' }}">← Очередь проверки</a>
     {{ hint("«Очередь проверки» открывает список работ. Стрелки под заголовком ведут к соседним ученикам в этой очереди.", "Как перемещаться по очереди") }}
     {% endif %}
@@ -22,7 +22,10 @@
         </div>
     </div>
 
+    {% if review_demo %}
+    <p class="card-desc">Демо новой проверки. Сохранение и отправка относятся к настоящему диалогу ученика.</p>
     {% include "partials/curator_review_navigation.html" %}
+    {% endif %}
 
     <section class="card">
         <h2 class="section-label">{{ 'Работы ученика' if group else 'Работа ученика' }}</h2>
@@ -37,7 +40,7 @@
            «проверено» и «Завершить ОС» — общие, ниже; балл — у каждой работы. #}
         {% if group %}
         <p class="card-desc">{{ group.period_label }}. Ответ в диалоге ниже – один на все эти работы{% if viewer_role != 'student' %}, ученик увидит его по каждой{% endif %}.</p>
-        <div class="photo-grid hw-group-strip{% if viewer_role != 'student' %} review-photo-strip{% endif %}" data-gallery="group-{{ submission.id }}">
+        <div class="photo-grid hw-group-strip{% if review_demo %} review-photo-strip{% endif %}" data-gallery="group-{{ submission.id }}">
             {% for work in group.works %}
             {% for url in work.images %}
             <figure class="hw-group-work">
@@ -61,7 +64,7 @@
         {% if submission.comment %}<p>{{ submission.comment | rich_text | safe }}</p>{% endif %}
         {% endif %}
         {% if submission_images and not group %}
-        <div class="photo-grid{% if viewer_role != 'student' %} review-photo-strip{% endif %}" data-gallery="submission-{{ submission.id }}">
+        <div class="photo-grid{% if review_demo %} review-photo-strip{% endif %}" data-gallery="submission-{{ submission.id }}">
             {% for image in submission_images %}
             <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото работы">
                 <img src="{{ image.image_s3_url }}" alt="Работа ученика" loading="lazy">
@@ -99,7 +102,7 @@
         {% endif %}
     </section>
 
-    {% if viewer_role != 'student' %}
+    {% if review_demo %}
     <section class="card">
         <details open>
             <summary class="section-label">Задание · {{ task.title }}</summary>
@@ -111,7 +114,7 @@
         <h2 class="section-label">Прошлые работы</h2>
         <ul class="review-history">
             {% for item in past_works %}
-            <li><a data-review-navigation href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback">
+            <li><a data-review-navigation href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback?review_demo=1">
                 {% if item.images %}<img src="{{ item.images[0] }}" loading="lazy" alt="">{% endif %}
                 <span>{{ item.task_title }} · {{ item.submitted_at | msk_text }}</span>
             </a></li>
@@ -324,7 +327,7 @@
                     </select>
                 </div>
             </div>
-            {% elif viewer_role != 'student' %}
+            {% elif review_demo %}
             <fieldset class="review-feedback-sections" data-review-sections>
                 <legend>Раздел замечания</legend>
                 {% for section in ('Композиционное решение', 'Конструктивное решение', 'Графическое решение', 'Рекомендации') %}
@@ -349,7 +352,7 @@
             <input id="feedback-audio" type="file" class="field-input" name="audio" accept="audio/*">
             <button type="submit" class="{{ 'btn-blue' if viewer_role == 'student' else 'btn-outline' }} hw-submit">{{ 'Отправить' if viewer_role == 'student' else 'Добавить сообщение' }}</button>
             {% if viewer_role != 'student' %}
-            {{ hint("Добавляет текст или вложения в черновики. Чтобы ученик увидел сообщение, открой «Предпросмотр ОС» и подтверди отправку.", "Что делает кнопка «Добавить сообщение»") }}
+            {{ hint("Добавляет текст или вложения в черновики. Чтобы ученик увидел сообщение, нажми кнопку отправки ОС.", "Что делает кнопка «Добавить сообщение»") }}
             {% endif %}
             <p class="prg-message" aria-live="polite"></p>
         </form>
@@ -362,11 +365,14 @@
         <div class="hw-hint">
             <div class="review-help-label">
                 <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
+                {% if review_demo %}
                 {{ hint("Предпросмотр показывает, какие замечания и вложения получит ученик.", "Что показывает предпросмотр") }}
+                {% endif %}
             </div>
             <div class="prg-actions">
-                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Предпросмотр ОС</button>
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>{{ 'Предпросмотр ОС' if review_demo else 'Отправить ОС' }}</button>
             </div>
+            {% if review_demo %}
             <dialog class="card review-preview" data-review-preview aria-labelledby="review-preview-title">
                 <h3 id="review-preview-title" class="section-label">Состав обратной связи
                     {{ hint("«Отправить ОС» откроет ученику замечания и вложения из списка. «Вернуться к правке» закроет предпросмотр и оставит черновики в редакторе.", "Что делают кнопки предпросмотра") }}
@@ -377,6 +383,7 @@
                     <button type="button" class="btn-blue" data-review-preview-send>Отправить ОС</button>
                 </div>
             </dialog>
+            {% endif %}
             <p class="prg-message" data-send-status aria-live="polite"></p>
         </div>
         {% endif %}
@@ -580,6 +587,7 @@
         });
     });
 
+    {% if review_demo %}
     var sendButton = document.querySelector('[data-send-feedback]');
     if (sendButton) {
         var preview = document.querySelector('[data-review-preview]');
@@ -604,6 +612,7 @@
         }
 
         sendButton.addEventListener('click', async function () {
+
             lockEditor(true);
             sendStatus.textContent = '';
             try {
@@ -646,6 +655,24 @@
             }
         });
     }
+
+    {% else %}
+    document.querySelectorAll('[data-send-feedback]').forEach(function (button) {
+        button.addEventListener('click', async function () {
+            button.disabled = true;
+            var status = document.querySelector('[data-send-status]');
+            try {
+                var response = await window.csrfFetch(button.dataset.sendFeedback, {method: 'POST'});
+                var data = await response.json().catch(function () { return {}; });
+                if (!response.ok || !data.ok) throw new Error(data.error || 'Не получилось отправить ОС.');
+                window.location.reload();
+            } catch (error) {
+                button.disabled = false;
+                showError(status, error.message);
+            }
+        });
+    });
+    {% endif %}
 
     document.querySelectorAll('.hw-async-form').forEach(function (form) {
         form.addEventListener('submit', function (event) {

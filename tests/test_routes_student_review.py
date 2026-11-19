@@ -9,14 +9,46 @@
 экрана `/cabinet/staff/review` 02.09.2026 — контракт «куратор не видит и не
 трогает чужих учеников» тот же.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
+from app.constants import TARIFF_CONFIDENT_MAX
 from app.models.exam_cycle import ExamCycle
+from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_QUESTION, QUESTION_TEXT, TaskBlock, TaskBlockAnswer
 from app.models.tracker import TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.review_aggregate import unreviewed_counts_by_student
 from app.services.task_blocks import save_response
+
+
+def test_curator_queue_switches_subject_and_keeps_filters(db, user_factory, session_factory, client, rendered):
+    curator = user_factory(vk_id=860_105, role_name="куратор")
+    chief = user_factory(vk_id=860_106, role_name="админ")
+    client.cookies.set("session_id", session_factory(chief).id)
+    now = datetime.now(timezone.utc)
+    cycle = LearningTopic(
+        title="3 неделя", opens_at=now - timedelta(days=1),
+        ends_at=now + timedelta(days=1), is_published=True,
+    )
+    db.add(cycle)
+    db.commit()
+    queue_url = "/cabinet/staff/students-review/queue"
+
+    opening = client.get(queue_url)
+    assert opening.status_code == 200
+    queue = rendered("curator_review_queue.html")
+    assert queue["subject"] == "Рисунок"
+    assert 'aria-current="page">Рисунок' in opening.text
+
+    client.get(queue_url, params={"cycle_id": cycle.id, "tariff": TARIFF_CONFIDENT_MAX, "status": "all"})
+    queue = rendered("curator_review_queue.html")
+    switched = client.get(queue["subject_links"]["Композиция"])
+    assert switched.status_code == 200
+    assert 'aria-current="page">Композиция' in switched.text
+    queue = rendered("curator_review_queue.html")
+    assert queue["period"]["cycle"].id == cycle.id
+    assert queue["tariff"] == TARIFF_CONFIDENT_MAX
+    assert queue["status"] == "all"
 
 
 def _task_with_question(db, title="Материал"):

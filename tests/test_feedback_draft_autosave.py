@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.dependencies import require_csrf_header
 from app.models.notification import Notification
 from app.models.section_access import SectionAccessRule
@@ -9,12 +11,31 @@ from app.models.task_block import TaskBlock, TaskBlockSubmissionImage
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services.linked_feedback import sync_links
 from tests.test_feedback_rating import (
-    _login,
+    _login as _base_login,
     _quiet_side_effects,  # noqa: F401 — проверка диалога без доставки уведомлений
     _send,
     _setup_block,
 )
 from tests.test_linked_feedback import _submit, _task_with_block
+
+
+@pytest.fixture(autouse=True)
+def _demo_login(db, user_factory, monkeypatch):
+    """Демо тестируется ГП в штатном режиме просмотра куратора."""
+    chief = user_factory(vk_id=995_999, role_name="админ", name="ГП демо")
+
+    def login(client, session_factory, user):
+        session = session_factory(user)
+        if user.role.rank == 2:
+            session.impersonated_by_id = chief.id
+            db.commit()
+        client.cookies.clear()
+        client.cookies.set("session_id", session.id)
+
+    monkeypatch.setattr(__name__ + "._login", login)
+
+
+_login = _base_login
 
 
 def _save(client, submission, text, *, cursor=0, draft=None):
@@ -79,7 +100,7 @@ def test_photo_reference_survives_sending_and_removal(db, user_factory, session_
     db.add_all([photo, other_photo])
     db.commit()
     _login(client, session_factory, curator)
-    page_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
+    page_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback?review_demo=1"
     draft_url = f"/cabinet/staff/task-block-submissions/{submission.id}/draft"
     student_url = f"/cabinet/task-block-submissions/{submission.id}/feedback"
     page = client.get(page_url)

@@ -227,6 +227,11 @@ def _render(
     request: Request, db: DBSession, *, submission: TaskBlockSubmission,
     user: dict, viewer_role: str, student: User | None,
 ) -> HTMLResponse:
+    from app.services.curator_review_demo import can_preview_review, demo_review_url
+
+    review_demo = viewer_role != "student" and request.query_params.get("review_demo") == "1"
+    if review_demo and not can_preview_review(db, user):
+        raise HTTPException(403, "Демо новой проверки доступно руководителю.")
     block, task = _context(db, submission)
     feedback = _feedback(db, submission.id)
     awaits_group = absorbed_main_block(db, submission) is not None
@@ -255,18 +260,26 @@ def _render(
             row for row in submission_review_queue(db, student_id=submission.user_id, limit=12)
             if row["submission_id"] != submission.id and row["submitted_at"] < submission.submitted_at
         ][:4] if submission.submitted_at else []
-        if (user.get("nav_rank") or user["role_rank"]) == 2 and can(user, "students_review", "view"):
+        if review_demo and can(user, "students_review", "view"):
             from app.services.curator_review_queue import review_neighbors
 
-            queue_navigation = review_neighbors(db, user["user_id"], submission, request.query_params)
+            student_curator = db.get(User, submission.user_id).curator_id
+            curator_id = student_curator or user["user_id"]
+            queue_navigation = review_neighbors(db, curator_id, submission, request.query_params)
+            if queue_navigation:
+                queue_navigation = {
+                    key: demo_review_url(url, curator_id) if url else None
+                    for key, url in queue_navigation.items()
+                }
     group, submission_images, work_choices, image_choices = _review_choices(db, submission, task)
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
         "request": request,
         "user": user,
         "viewer_role": viewer_role,
+        "review_demo": review_demo,
         "autosave": (
             _autosave_context(messages, user["user_id"])
-            if viewer_role != "student" and not is_closed(feedback)
+            if review_demo and not is_closed(feedback)
             and not awaits_group and can(user, "students_review") else None
         ),
         # Балл ставит только ГП и выше; куратор видит его только для чтения.
@@ -627,6 +640,10 @@ def save_feedback_draft(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     """Сохранить текстовое замечание. Ученику оно откроется по «Отправить ОС»."""
+    from app.services.curator_review_demo import can_preview_review
+
+    if not can_preview_review(db, user):
+        return _error(403, "Демо новой проверки доступно руководителю.")
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
     if not can(user, "students_review"):
@@ -743,6 +760,10 @@ def send_feedback(
     snapshot: str | None = None,
 ):
     """Предпросмотр и отправка всех черновиков выбранного диалога."""
+    from app.services.curator_review_demo import can_preview_review
+
+    if (preview or snapshot is not None) and not can_preview_review(db, user):
+        return _error(403, "Демо новой проверки доступно руководителю.")
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
     if (preview or snapshot is not None) and (
