@@ -10,6 +10,8 @@ from app.db.database import get_db
 from app.dependencies import get_current_user, require_csrf, require_csrf_header
 from app.limiter import limiter
 from app.models.user import User
+from app.models.session import Session as LoginSession
+from app.models.public_enrollment import PublicEnrollment
 from app.models.payment import COHORT_FROM, Payment, KIND_MONTH, STATUS_PENDING
 from app.services import payments, public_purchase, telegram
 from app.services.tz import _as_utc
@@ -43,8 +45,26 @@ def payment_link(request: Request, user: Annotated[dict, Depends(get_current_use
     return JSONResponse({"url": payment.link_url}, headers=headers)
 
 
+def _resume_purchase(request, db):
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        return None
+    pending = db.query(PublicEnrollment.user_id).join(
+        LoginSession, LoginSession.user_id == PublicEnrollment.user_id
+    ).filter(LoginSession.id == session_id, LoginSession.is_active.is_(True),
+             LoginSession.expires_at > datetime.now(timezone.utc),
+             PublicEnrollment.activated_at.is_(None)).first()
+    if pending:
+        # Авторизацию и все проверки доступа выполняет сам /purchase.
+        return RedirectResponse("/purchase", status_code=302, headers={"Cache-Control": "no-store"})
+    return None
+
+
 @router.get("/tariffs")
 def tariffs(request: Request, db: Annotated[Session, Depends(get_db)]):
+    resume = _resume_purchase(request, db)
+    if resume is not None:
+        return resume
     return templates.TemplateResponse(request, "public_tariffs.html", {
         "request": request, "tariffs": public_purchase.catalog(db),
         "sales_ready": public_purchase.sales_ready(), "rub_text": payments.rub_text,
@@ -55,6 +75,9 @@ def tariffs(request: Request, db: Annotated[Session, Depends(get_db)]):
 @router.get("/purchase/start")
 @limiter.limit("20/minute")
 def start(request: Request, db: Annotated[Session, Depends(get_db)], tariff: str = ""):
+    resume = _resume_purchase(request, db)
+    if resume is not None:
+        return resume
     if not public_purchase.sales_ready() or tariff not in {t["tariff"] for t in public_purchase.catalog(db)}:
         return RedirectResponse("/tariffs", status_code=302)
     from app.api.auth import telegram_oauth_redirect

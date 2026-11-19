@@ -593,3 +593,12 @@ def test_november_presale_access_boundary(client, db, buyer, monkeypatch):
     assert enrollment.activated_at is None
     assert public_purchase.activate(db, student.id, start)
     assert enrollment.activated_at == start
+
+
+@pytest.mark.parametrize('path', ['/tariffs', '/purchase/start'])
+def test_return_to_catalog_resumes_authenticated_purchase(client, db, buyer, path):
+    response = client.get(path, params={'tariff': TARIFF}, follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers['location'] == '/purchase'
+    assert client.get('/purchase').status_code == 200
+    assert db.query(PublicEnrollment).count() == 1
