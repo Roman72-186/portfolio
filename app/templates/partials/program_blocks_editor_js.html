@@ -593,22 +593,14 @@ function blockBodyHTML(type) {
             + '<p class="prg-hint">Ученик загрузит фото с описанием прямо в задании. Работа уйдёт на проверку, шаг закроется, когда загружено нужное число фото.</p>';
     }
     if (type === 'photo_upload') {
-        // Комбинированный блок «Фото + сдача работы» (владелец 12.09.2026:
-        // «нужно сделать ещё один блок универсальный, где будем загружать
-        // фото и по ним ученики будут делать работы и здесь же загружать
-        // работы»). Фото-задание — тот же виджет галереи, что у типа
-        // «Фото», приём результата — то же пояснение, что у «Загрузить
-        // работы»; своей механики у блока нет.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Срисуйте натюрморт»"></label>'
-            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
-            + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото задания"></label>'
-            + '<p class="prg-hint" data-b-photo-status></p>'
-            + '<div class="prg-blk-gallery" data-b-images></div>'
+            + '<label class="prg-field">Название стадии<input type="text" data-b-title maxlength="200" placeholder="Например, Стадия 4"></label>'
+            + '<label class="prg-field">Видео<select data-b-video><option value="">Без видео</option>' + videoOptionsHTML() + '</select></label>'
+            + '<label class="prg-field">Текст задания<textarea data-rich-text data-b-body maxlength="5000" placeholder="Что нужно сделать и прислать"></textarea></label>'
             + REQUIRED_PHOTOS_FIELD
-            + '<label class="prg-field"><select data-b-video aria-label="Видеоинструкция, необязательно">'
-            + '<option value="">Без видеоинструкции</option>' + videoOptionsHTML() + '</select></label>'
-            + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу прямо здесь.</p>';
+            + '<details><summary>Фото к условию</summary>'
+            + '<input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото задания">'
+            + '<p class="prg-hint" data-b-photo-status></p><div class="prg-blk-gallery" data-b-images></div></details>';
     }
     if (type === 'compare') {
         // Сравнение работ (Лиза 27.09.2026): ученик видит работы парами и
@@ -1700,8 +1692,8 @@ function createUniversalCard(holder, key, month) {
         + '<optgroup label="Интерактив"><option value="question">Опрос</option>'
         + '<option value="scale">Шкала навыков</option><option value="rules">Правила с галочками</option>'
         + '<option value="compare">Сравнение работ</option></optgroup>'
-        + '<optgroup label="Сдача"><option value="upload">Сдача работы</option>'
-        + '<option value="photo_upload">Сдача работы</option>'
+        + '<optgroup label="Сдача">'
+        + '<option value="photo_upload">Домашнее задание</option>'
         + '<option value="timed">Работа на время</option>'
         + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
     var monthInput = card.querySelector('[data-universal-month]');
@@ -1742,7 +1734,7 @@ function prepareUniversalSection(row, open) {
     toggle.className = 'prg-universal-section-toggle';
     toggle.setAttribute('aria-controls', panel.id);
     var type = row.dataset.blockType;
-    var label = type === 'photo_upload' ? 'Сдача работы' : (BLOCK_LABELS[type] || type);
+    var label = BLOCK_LABELS[type] || type;
     var title = panel.querySelector('[data-b-title]');
     function updateTitle() {
         var value = title ? title.value.trim() : '';

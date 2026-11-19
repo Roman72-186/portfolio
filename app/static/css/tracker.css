@@ -1334,6 +1334,26 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     background: var(--surface-2);
 }
 
+/* Each universal stage has one card around its instructions and form. */
+.lrn-universal-block {
+    padding: 14px;
+    background: var(--card);
+}
+.lrn-universal-block > .prg-preview-blk,
+.lrn-universal-block > .lrn-step,
+.lrn-universal-block .lrn-blk {
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+}
+/* In a composed homework card show the instructions before the submission. */
+.lrn-universal-block > [data-block-type="video"],
+.lrn-universal-block > .lrn-blk-video,
+.lrn-universal-block > .lrn-step:has(.lrn-blk-video) { order: -1; }
+.lrn-universal-block > :is([data-block-type="photo_upload"], [data-block-type="upload"], .lrn-blk-photo-upload, .lrn-blk-upload),
+.lrn-universal-block > .lrn-step:has(.lrn-blk-photo-upload, .lrn-blk-upload) { order: 1; }
+
 .lrn-step {
     background: var(--card);
     border: 1px solid var(--line);

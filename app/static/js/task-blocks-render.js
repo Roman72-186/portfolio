@@ -999,7 +999,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(remove);
                 });
 
-                var left = (block.max_files || 10) - uploaded;
+                var left = (required || block.max_files || 10) - uploaded;
                 if (left <= 0 && !required) wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
                 var replaceMode = false;
                 // Сколько фото должно быть выбрано: без заданного числа — любое.
