@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_csrf
+from app.services.section_access import can
 from app.tmpl import templates
 
 router = APIRouter()
@@ -24,7 +25,7 @@ PAGE = "/cabinet/superadmin/stats/telegram"
 STATISTICS_HOME = "/cabinet/staff/statistics"
 DB = Annotated[Session, Depends(get_db)]
 CSRF = Annotated[None, Depends(require_csrf)]
-UTM = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
+UTM = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term")
 MSK = timezone(timedelta(hours=3))
 
 
@@ -35,7 +36,7 @@ def require_report_user(user: Annotated[dict, Depends(get_current_user)]) -> dic
 
 
 def can_edit_links(user: dict) -> bool:
-    return user["role_name"] in ("админ", "суперадмин")
+    return can(user, "statistics:bot_links")
 
 
 def require_link_editor(user: Annotated[dict, Depends(require_report_user)]) -> dict:
@@ -118,14 +119,16 @@ def create_link(db: DB, user: Admin, csrf: CSRF,
                 utm_source: Annotated[str, Form(min_length=1, max_length=150)],
                 utm_medium: Annotated[str, Form(min_length=1, max_length=150)],
                 utm_campaign: Annotated[str, Form(min_length=1, max_length=150)],
-                utm_content: Annotated[str, Form(max_length=150)] = ""):
+                utm_content: Annotated[str, Form(max_length=150)] = "",
+                utm_term: Annotated[str, Form(max_length=150)] = ""):
     if not all(field.strip() for field in (title, utm_source, utm_medium, utm_campaign)):
         raise HTTPException(422, "Заполните название, источник, канал и кампанию")
     db.execute(text("""
-        INSERT INTO bot_links (code, title, utm_source, utm_medium, utm_campaign, utm_content)
-        VALUES (:code, :title, :utm_source, :utm_medium, :utm_campaign, :utm_content)
+        INSERT INTO bot_links (code, title, utm_source, utm_medium, utm_campaign, utm_content, utm_term)
+        VALUES (:code, :title, :utm_source, :utm_medium, :utm_campaign, :utm_content, :utm_term)
     """), dict(code=secrets.token_urlsafe(12), title=title.strip(), utm_source=utm_source.strip(),
-               utm_medium=utm_medium.strip(), utm_campaign=utm_campaign.strip(), utm_content=utm_content.strip()))
+               utm_medium=utm_medium.strip(), utm_campaign=utm_campaign.strip(),
+               utm_content=utm_content.strip(), utm_term=utm_term.strip()))
     db.commit()
     return RedirectResponse(PAGE, status_code=303)
 
@@ -177,6 +180,8 @@ def report(request: Request, db: DB, user: ReportUser, since: date | None = None
     history = []
     for event in events:
         kind = event["kind"]
+        if user["role_name"] == "модератор" and kind == "payment_click":
+            continue
         key = event["code"] if kind == "click" else event["first_code"]
         person = event["uid"]
         if kind == "start" and event["code"] is not None and event["code"] in selected:

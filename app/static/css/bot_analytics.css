@@ -1,3 +1,27 @@
+.bot-link-builder > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.bot-link-builder > summary::-webkit-details-marker {
+    display: none;
+}
+
+.bot-link-builder > summary::before {
+    content: "+";
+}
+
+.bot-link-builder[open] > summary::before {
+    content: "−";
+}
+
+.bot-link-builder > form {
+    margin-top: 12px;
+}
+
 .bot-stats-table {
     overflow-x: auto;
     margin-block: 12px 24px;

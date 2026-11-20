@@ -2,7 +2,7 @@
 {% block title %}Статистика Telegram-бота{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
-<link rel="stylesheet" href="/static/css/bot_analytics.css?v=1">
+<link rel="stylesheet" href="/static/css/bot_analytics.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="ss-wrap ios-ss">
@@ -14,19 +14,20 @@
     {% endif %}
     <h1 class="ss-title">Telegram-бот</h1>
   </div>
-  {% if can_edit_links %}<details>
-    <summary>Создать ссылку</summary>
+  <h2>Ссылки</h2>
+  {% if can_edit_links %}<details class="bot-link-builder">
+    <summary class="ss-export-btn">Создать ссылку</summary>
     <form method="post" action="{{ page }}" class="ss-filters">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-      <label>Название <input name="title" placeholder="TikTok · профиль" maxlength="150" required></label>
-      <label>Источник <input name="utm_source" placeholder="tiktok" maxlength="150" required></label>
-      <label>Канал <input name="utm_medium" placeholder="social" maxlength="150" required></label>
-      <label>Кампания <input name="utm_campaign" maxlength="150" required></label>
-      <label>Публикация <input name="utm_content" maxlength="150"></label>
-      <button type="submit">Создать</button>
+      <label>Название ссылки <input name="title" maxlength="150" required></label>
+      <label>Источник (utm_source) <input name="utm_source" maxlength="150" required></label>
+      <label>Канал (utm_medium) <input name="utm_medium" maxlength="150" required></label>
+      <label>Кампания (utm_campaign) <input name="utm_campaign" maxlength="150" required></label>
+      <label>Ключевое слово (utm_term) <input name="utm_term" maxlength="150"></label>
+      <label>Объявление или публикация (utm_content) <input name="utm_content" maxlength="150"></label>
+      <button type="submit" class="ss-export-btn">Создать</button>
     </form>
   </details>{% endif %}
-  <h2>Ссылки</h2>
   <div class="bot-stats-table">
   <table>
     <thead><tr><th>Название</th><th>Источник</th><th>Кампания</th><th>Ссылка</th><th>Действие</th></tr></thead>

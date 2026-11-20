@@ -7,23 +7,29 @@ from uuid import uuid4
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
+from app.models.section_access import SectionAccessRule
 
 
 def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory, session_factory):
-    path = Path(__file__).resolve().parents[1] / "alembic/versions/b239f86d57ca_bot_analytics.py"
-    spec = importlib.util.spec_from_file_location("bot_analytics_migration", path)
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
-    migration.op = Operations(MigrationContext.configure(db.connection()))
-    migration.upgrade()
+    versions = Path(__file__).resolve().parents[1] / "alembic/versions"
+    for name in ("b239f86d57ca_bot_analytics", "4db761e2cf38_bot_link_utm_term"):
+        spec = importlib.util.spec_from_file_location(name, versions / f"{name}.py")
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        migration.op = Operations(MigrationContext.configure(db.connection()))
+        migration.upgrade()
     db.commit()
     monkeypatch.setenv("FUNNEL_BOT_USERNAME", "test_funnel_bot")
     monkeypatch.setenv("FUNNEL_ANALYTICS_KEY", "test-key")
     client, _ = admin_client
     page = "/cabinet/superadmin/stats/telegram"
+    form = client.get(page).text
+    assert '<summary class="ss-export-btn">Создать ссылку</summary>' in form
+    assert 'name="utm_term"' in form and 'placeholder="tiktok"' not in form
     for title in ("TikTok profile", "TikTok video"):
         response = client.post(page, data={
             "title": title, "utm_source": "tiktok", "utm_medium": "social", "utm_campaign": "trial",
+            "utm_term": "drawing",
         }, follow_redirects=False)
         assert response.status_code == 303
     first, second = db.execute(text("SELECT code FROM bot_links ORDER BY title")).scalars().all()
@@ -50,7 +56,9 @@ def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory
     assert db.execute(text("SELECT COUNT(*) FROM bot_events WHERE kind='start'")).scalar() == 2
     ref = hmac.digest(b"test-key", b"funnel-payment:1234", "sha256").hex()
     payment = client.get("/go/telegram-payment", params={"ref": ref}, follow_redirects=False)
-    assert payment.headers["location"] == "/testpodgotovki?utm_source=tiktok&utm_medium=social&utm_campaign=trial"
+    assert payment.headers["location"] == (
+        "/testpodgotovki?utm_source=tiktok&utm_medium=social&utm_campaign=trial&utm_term=drawing"
+    )
     assert client.post("/internal/telegram-analytics", json=event("step", "offer")).status_code == 401
     assert client.get(page, params={"uid": 1234}).status_code == 200
     assert client.post(f"{page}/{first}/archive", follow_redirects=False).status_code == 303
@@ -77,3 +85,13 @@ def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory
             assert f'href="{page}"' in client.get(entry).text
             home = client.get("/cabinet/staff/statistics")
             assert home.status_code == 200 and f'href="{page}"' in home.text
+        if role == "модератор":
+            assert "payment_click" not in client.get(page, params={"export": "events"}).text
+            db.add(SectionAccessRule(section_key="statistics:bot_links", user_id=user.id, level="edit"))
+            db.commit()
+            assert f'<form method="post" action="{page}"' in client.get(page).text
+            assert client.post(page, data={
+                "title": "Кампания", "utm_source": "source", "utm_medium": "channel",
+                "utm_campaign": "campaign",
+            }, follow_redirects=False).status_code == 303
+            assert client.post(f"{page}/{first}/archive", follow_redirects=False).status_code == 303

@@ -290,7 +290,8 @@ def test_default_levels_repeat_the_role_matrix(db, user_factory):
 TODAY_ACTIONS = {
     "куратор": set(),
     "модератор": set(),
-    "админ": {"people:students", "people:block", "people:role", "people:login", "people:impersonate"},
+    "админ": {"people:students", "people:block", "people:role", "people:login", "people:impersonate",
+              "statistics:bot_links"},
 }
 
 
@@ -305,6 +306,7 @@ def test_action_defaults_repeat_todays_rights(db, user_factory, role_name):
     for key, pattern, methods in section_access._ACTION_RULES:
         # Пример адреса из шаблона: число вместо `\d+`, первая ветка из `(a|b)`.
         path = pattern.pattern.strip("^$").replace(r"\d+", "5")
+        path = path.replace("[A-Za-z0-9_-]+", "test-code")
         path = re.sub(r"\(([^|)]*)\|[^)]*\)", r"\1", path).replace("\\", "")
         assert pattern.match(path), path
         method = sorted(methods)[0]

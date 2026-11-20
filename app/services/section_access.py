@@ -238,7 +238,9 @@ _RULES: tuple[_Rule, ...] = (
     _rule("statistics", _exact("/cabinet/curator/statistics")),
     _rule("statistics", _exact("/cabinet/curator/demo")),
     _rule("statistics", _exact("/cabinet/curator/overview")),
-    _rule("statistics", _tree("/cabinet/superadmin/stats")),
+    _rule("statistics", r"^/cabinet/superadmin/stats(?:$|/(?!telegram(?:/|$)).*)"),
+    _rule("statistics", _exact("/cabinet/superadmin/stats/telegram"), _GET),
+    _rule("statistics", _exact("/cabinet/staff/statistics"), _GET),
     _rule("statistics", _exact("/cabinet/admin/registration-stats.xlsx")),
     _rule("statistics", _exact("/cabinet/superadmin/registration-stats.xlsx")),
     _rule("statistics", r"^/cabinet/staff/program/cycles/\d+/stats$"),
@@ -351,13 +353,15 @@ class Action:
     min_rank: int = 4
     # Доступ к чужим аккаунтам — экран просит подтвердить.
     risky: bool = False
+    default_edit_roles: tuple[str, ...] = ()
 
 
 ACTIONS: tuple[Action, ...] = (
     # Расширяет только выборку учебной статистики, без подъёма ранга роли.
     # Отдельного адреса действия нет: его проверяет страница куратора.
     Action("statistics:all_students", "Статистика всех учеников курса", "statistics", False),
-    Action("students:first_week_attendance", "Посещаемость очников первой недели", "students", False),
+    Action("statistics:bot_links", "Создавать и архивировать ссылки Telegram-бота",
+           "statistics", False, min_rank=3, default_edit_roles=(ROLE_HEAD,)),
     Action("people:students", "Куратор, тариф, когорта и теги ученика", "people", True),
     Action("people:block", "Заблокировать и удалить", "people", True),
     Action("people:role", "Менять роль", "people", True, risky=True),
@@ -389,8 +393,8 @@ _POST = ("POST",)
 _ACTION_RULES: tuple[tuple[str, re.Pattern, frozenset[str]], ...] = tuple(
     (key, re.compile(pattern), frozenset(methods))
     for key, pattern, methods in (
-        ("students:first_week_attendance", r"^/cabinet/staff/first-week-attendance$", ("GET", "HEAD")),
-        ("students:first_week_attendance", r"^/cabinet/staff/first-week-attendance/\d+/\d+$", _POST),
+        ("statistics:bot_links", _exact("/cabinet/superadmin/stats/telegram"), _POST),
+        ("statistics:bot_links", r"^/cabinet/superadmin/stats/telegram/[A-Za-z0-9_-]+/archive$", _POST),
         # `labels`, `access-until` и `payment` — блок «Управление» в карточке «Учеников»
         # (05.10.2026): та же правка ученика, что в форме «Людей».
         ("people:students", _USER + "/(tags|curator|tariff|cohort-tag|labels|access-until|payment)$", _POST),
@@ -432,9 +436,9 @@ def action_of(method: str, path: str) -> Action | None:
     return None
 
 
-def inherited_action_level(action: Action, section_level: str | None) -> str:
+def inherited_action_level(action: Action, section_level: str | None, role_name: str | None = None) -> str:
     """Уровень действия без своего правила: повторяет «Менять» раздела или закрыт."""
-    if action.inherits and section_level == LEVEL_EDIT:
+    if (action.inherits and section_level == LEVEL_EDIT) or role_name in action.default_edit_roles:
         return LEVEL_EDIT
     return LEVEL_NONE
 
@@ -442,7 +446,7 @@ def inherited_action_level(action: Action, section_level: str | None) -> str:
 def native_action_level(action: Action, role_name: str | None) -> str:
     """Что действие у роли сегодня, без единой строки в базе."""
     section = SECTIONS_BY_KEY.get(action.section) if action.section else None
-    return inherited_action_level(action, native_level(section, role_name) if section else None)
+    return inherited_action_level(action, native_level(section, role_name) if section else None, role_name)
 
 
 def is_configurable_role(role_name: str | None) -> bool:
@@ -581,7 +585,7 @@ def resolve_levels(
         for s in SECTIONS
     }
     for a in ACTIONS:
-        levels[a.key] = _action_level(by_user.get(a.key, by_role.get(a.key)), a, levels)
+        levels[a.key] = _action_level(by_user.get(a.key, by_role.get(a.key)), a, levels, role_name)
     return levels
 
 
@@ -597,12 +601,12 @@ def tariff_viewer_levels() -> dict[str, str]:
     return levels
 
 
-def _action_level(stored: str | None, action: Action, section_levels: dict[str, str]) -> str:
+def _action_level(stored: str | None, action: Action, section_levels: dict[str, str], role_name: str | None) -> str:
     """Уровень действия: своё правило (только «можно» или «нельзя») или
     уровень по умолчанию от раздела."""
     if stored == LEVEL_EDIT or stored == LEVEL_NONE:
         return stored
-    return inherited_action_level(action, section_levels.get(action.section) if action.section else None)
+    return inherited_action_level(action, section_levels.get(action.section) if action.section else None, role_name)
 
 
 def closed_sections(levels: dict[str, str], role_name: str | None) -> frozenset[str]:
@@ -725,7 +729,7 @@ def role_levels(db: DBSession) -> dict[str, dict[str, str]]:
         role_rows = stored.get(role.id, {}) if role else {}
         levels = {s.key: role_rows.get(s.key, native_level(s, name)) for s in SECTIONS}
         for a in ACTIONS:
-            levels[a.key] = _action_level(role_rows.get(a.key), a, levels)
+            levels[a.key] = _action_level(role_rows.get(a.key), a, levels, name)
         result[name] = levels
     return result
 
@@ -812,7 +816,7 @@ def save_role_levels(db: DBSession, *, actor_id: int, desired: dict[str, dict[st
                 # правило не трогаем, а без него оно идёт за разделом.
                 continue
             inherited = inherited_action_level(
-                action, new_levels.get(action.section) if action.section else None,
+                action, new_levels.get(action.section) if action.section else None, name,
             )
             target = None if level == inherited else level
             if stored.get((role.id, action.key)) != target:
@@ -860,7 +864,7 @@ def user_rules(db: DBSession, target: User) -> list[dict]:
         for a in ACTIONS:
             if a.section != section_key:
                 continue
-            default = _action_level(by_role.get(a.key), a, effective_sections)
+            default = _action_level(by_role.get(a.key), a, effective_sections, role_name)
             rows.append({
                 "key": a.key,
                 "label": a.label,
