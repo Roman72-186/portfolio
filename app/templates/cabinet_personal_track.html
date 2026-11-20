@@ -5,7 +5,8 @@
    продаже. Вид — карточки «Личной информации» (`personal_ios.css`), кнопка и окно
    оплаты — общий `partials/pay_opening.html`. Карточки треков белые, название
    в цвете курса, сумма отдельной крупной строкой (служба заботы 19.10.2026). #}
-{% block title %}Каникулярный набор{% endblock %}
+{% set is_trial_offer = request.query_params.get("offer") == "testpodgotovki" %}
+{% block title %}{{ 'Попробуй подготовку' if is_trial_offer else 'Каникулярный набор' }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/personal_ios.css?v=25">
 {% endblock %}
@@ -13,11 +14,13 @@
 <div class="prs-page ios-personal">
 
     <div class="prs-hero">
-        <h1>Каникулярный набор</h1>
+        <h1>{{ 'Попробуй подготовку' if is_trial_offer else 'Каникулярный набор' }}</h1>
+        {% if not is_trial_offer %}
         {% if owned %}
         <p>Твои треки и то, что ещё можно добавить.</p>
         {% else %}
         <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.{% if program_opens_text %} Программа откроется {{ program_opens_text }} по Москве.{% endif %}</p>
+        {% endif %}
         {% endif %}
     </div>
 
