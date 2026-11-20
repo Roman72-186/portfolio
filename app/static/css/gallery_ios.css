@@ -43,12 +43,13 @@
 /* ── Фильтр-вкладки (iOS segmented control, капсулы) ── */
 .ios-gallery .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
 .ios-gallery .filter-tab {
+    position: relative;
     display: inline-flex; align-items: center; gap: 6px;
     padding: 7px 14px; border-radius: 999px;
     border: none; background: var(--ios-card-bg);
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     font: 600 13px/1 var(--ios-font); color: var(--ios-label-2);
-    transition: background-color 100ms ease-out, color 100ms ease-out;
+    transition: background-color var(--duration-fast) var(--ease-out);
 }
 .ios-gallery .filter-tab:hover { border-color: transparent; color: var(--ios-label-2); background: var(--ios-card-bg); }
 .ios-gallery .filter-tab.active { background: var(--blue-fill); color: #fff; border-color: transparent; box-shadow: none; }
@@ -57,6 +58,19 @@
     background: rgba(60,60,67,0.08); color: var(--ios-label-2);
     border-radius: 20px; padding: 1px 6px;
 }
+.ios-gallery .filter-tab-motion {
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--blue-fill);
+    border-radius: inherit;
+    pointer-events: none;
+    transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-gallery .filter-tab { transition: none; }
+}
+
 /* Затемнение, а не осветление: белое на осветлённом фиолетовом — 3.73 (аудит 11.4б). */
 .ios-gallery .filter-tab.active .tab-count { background: color-mix(in srgb, black 14%, transparent); color: #fff; }
 .ios-gallery .filter-tab:not(.active) .tab-count { background: rgba(60,60,67,0.08); color: var(--ios-label-2); opacity: 1; }
