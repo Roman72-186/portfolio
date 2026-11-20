@@ -408,6 +408,16 @@ def student_nav_items(
 # ссылок, отвечающих «Нет доступа».
 MODERATOR_NAV_KEYS = ("students", "archive", "activity")
 
+MODERATOR_BOT_ANALYTICS_ITEM = StaffNavItem(
+    key="bot_analytics",
+    href="/cabinet/superadmin/stats/telegram",
+    sidebar_label="Статистика по Telegram-боту",
+    pill_label="Telegram-бот",
+    aria_label="Статистика по Telegram-боту",
+    tooltip="Переходы, запуски и прохождение шагов в боте",
+    icon="cases",
+)
+
 # «Статистика активности» — пункт только модератора: у ГП и суперадмина она
 # открывается с дашборда, их меню эта правка не меняет.
 MODERATOR_ONLY_NAV_ITEMS: tuple[StaffNavItem, ...] = (
@@ -477,6 +487,7 @@ def staff_nav_items(
     closed_sections: frozenset[str] | None = None,
     granted_sections: frozenset[str] | None = None,
     payments: bool = False,
+    bot_links: bool = False,
 ) -> tuple[StaffNavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
     if role_name == "модератор":
@@ -490,6 +501,8 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         items = tuple(by_key[key] for key in keys)
+        if bot_links and "statistics" not in (closed_sections or ()):
+            items += (MODERATOR_BOT_ANALYTICS_ITEM,)
         return items + (PAYMENTS_NAV_ITEM,) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные

@@ -86,10 +86,15 @@ def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory
             home = client.get("/cabinet/staff/statistics")
             assert home.status_code == 200 and f'href="{page}"' in home.text
         if role == "модератор":
+            assert 'aria-label="Статистика по Telegram-боту"' not in view.text
             assert "payment_click" not in client.get(page, params={"export": "events"}).text
             db.add(SectionAccessRule(section_key="statistics:bot_links", user_id=user.id, level="edit"))
             db.commit()
-            assert f'<form method="post" action="{page}"' in client.get(page).text
+            marketer_view = client.get(page).text
+            assert f'<form method="post" action="{page}"' in marketer_view
+            assert 'aria-label="Статистика по Telegram-боту"' in marketer_view
+            activity = client.get("/cabinet/superadmin/activity").text
+            assert f'<a href="{page}" class="ss-export-btn">' not in activity
             assert client.post(page, data={
                 "title": "Кампания", "utm_source": "source", "utm_medium": "channel",
                 "utm_campaign": "campaign",
