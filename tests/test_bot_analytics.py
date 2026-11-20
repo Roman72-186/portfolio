@@ -72,6 +72,8 @@ def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory
         ), role
         if can_view:
             assert (f'<form method="post" action="{page}"' in view.text) == can_edit
-            assert 'href="/cabinet/staff/statistics"' in view.text
+            assert 'href="/cabinet/staff/statistics"' not in view.text
+            entry = "/cabinet/admin-panel" if can_edit else "/cabinet/superadmin/activity"
+            assert f'href="{page}"' in client.get(entry).text
             home = client.get("/cabinet/staff/statistics")
             assert home.status_code == 200 and f'href="{page}"' in home.text

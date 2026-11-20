@@ -7,7 +7,11 @@
 {% block content %}
 <div class="ss-wrap ios-ss">
   <div class="ss-header">
-    <a href="/cabinet/staff/statistics">← Статистика</a>
+    {% if user.role_name == "модератор" %}
+    <a href="/cabinet/superadmin/activity">← Статистика активности</a>
+    {% else %}
+    <a href="/cabinet">← Кабинет</a>
+    {% endif %}
     <h1 class="ss-title">Telegram-бот</h1>
   </div>
   {% if can_edit_links %}<details>

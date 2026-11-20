@@ -142,6 +142,9 @@
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="ss-title">Статистика активности</h1>
+        {% if user.role_name == "модератор" %}
+        <a href="/cabinet/superadmin/stats/telegram" class="ss-export-btn">Telegram-бот</a>
+        {% endif %}
         <span class="ss-since">Данные о входах, реакциях и правках собираются с 11.07.2026</span>
     </div>
 
