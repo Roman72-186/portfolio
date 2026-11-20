@@ -16,16 +16,41 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf
+from app.dependencies import get_current_user, require_csrf
 from app.tmpl import templates
 
 router = APIRouter()
 PAGE = "/cabinet/superadmin/stats/telegram"
+STATISTICS_HOME = "/cabinet/staff/statistics"
 DB = Annotated[Session, Depends(get_db)]
-Admin = Annotated[dict, Depends(require_admin_role)]
 CSRF = Annotated[None, Depends(require_csrf)]
 UTM = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
 MSK = timezone(timedelta(hours=3))
+
+
+def require_report_user(user: Annotated[dict, Depends(get_current_user)]) -> dict:
+    if user["nav_rank"] < 3:
+        raise HTTPException(403)
+    return user
+
+
+def can_edit_links(user: dict) -> bool:
+    return user["role_name"] in ("админ", "суперадмин")
+
+
+def require_link_editor(user: Annotated[dict, Depends(require_report_user)]) -> dict:
+    if not can_edit_links(user):
+        raise HTTPException(403)
+    return user
+
+
+ReportUser = Annotated[dict, Depends(require_report_user)]
+Admin = Annotated[dict, Depends(require_link_editor)]
+
+
+@router.get(STATISTICS_HOME)
+def statistics_home(request: Request, user: ReportUser):
+    return templates.TemplateResponse(request, "staff_statistics.html", {"user": user, "page": PAGE})
 
 
 def record(db, kind, code=None, uid=None, value="", event_key=None, payment_ref=None, at=None):
@@ -125,7 +150,7 @@ def csv_response(headers, rows, filename):
 
 
 @router.get(PAGE)
-def report(request: Request, db: DB, user: Admin, since: date | None = None,
+def report(request: Request, db: DB, user: ReportUser, since: date | None = None,
            until: date | None = None, code: str = "", source: str = "", campaign: str = "",
            uid: Annotated[int | None, Query(gt=0, lt=2**63)] = None,
            export: Literal["summary", "events"] | None = None):
@@ -188,6 +213,7 @@ def report(request: Request, db: DB, user: Admin, since: date | None = None,
             if row["kind"] != "start" or "start" not in profile:
                 profile[row["kind"]] = row
     return templates.TemplateResponse(request, "bot_analytics.html", {
-        "user": user, "page": PAGE, "links": links, "summary": summary, "history": history,
+        "user": user, "can_edit_links": can_edit_links(user), "page": PAGE,
+        "links": links, "summary": summary, "history": history,
         "filters": filters, "query": urlencode(filters), "profile": profile, "selected": selected,
     }, headers={"Cache-Control": "no-store"})

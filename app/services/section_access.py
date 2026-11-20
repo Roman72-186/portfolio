@@ -172,7 +172,7 @@ SECTIONS: tuple[Section, ...] = (
     ),
     Section(
         "statistics", "Статистика", "Статистика активности, выгрузки, статистика циклов",
-        (ROLE_CURATOR, ROLE_MODERATOR, ROLE_HEAD), ("statistics", "activity", "curator_demo"),
+        (ROLE_CURATOR, ROLE_MODERATOR, ROLE_HEAD), ("statistics", "activity", "curator_demo", "bot_analytics"),
     ),
     Section(
         "guest_exam", "Гостевой пробник", "Ссылка, билеты и работы гостей",
@@ -238,7 +238,9 @@ _RULES: tuple[_Rule, ...] = (
     _rule("statistics", _exact("/cabinet/curator/statistics")),
     _rule("statistics", _exact("/cabinet/curator/demo")),
     _rule("statistics", _exact("/cabinet/curator/overview")),
-    _rule("statistics", _tree("/cabinet/superadmin/stats")),
+    _rule("statistics", r"^/cabinet/superadmin/stats(?:$|/(?!telegram(?:/|$)).*)"),
+    _rule("statistics", _exact("/cabinet/superadmin/stats/telegram"), _GET),
+    _rule("statistics", _exact("/cabinet/staff/statistics"), _GET),
     _rule("statistics", _exact("/cabinet/admin/registration-stats.xlsx")),
     _rule("statistics", _exact("/cabinet/superadmin/registration-stats.xlsx")),
     _rule("statistics", r"^/cabinet/staff/program/cycles/\d+/stats$"),

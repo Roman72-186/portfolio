@@ -300,6 +300,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         min_rank=4,
     ),
     StaffNavItem(
+        key="bot_analytics",
+        href="/cabinet/staff/statistics",
+        sidebar_label="Статистика",
+        pill_label="Статистика",
+        aria_label="Статистика",
+        tooltip="Статистика Telegram-бота",
+        icon="tracker",
+        min_rank=3,
+    ),
+    StaffNavItem(
         key="reports",
         href="/cabinet/curator/reports",
         sidebar_label="Видео-отчёты",
@@ -406,7 +416,7 @@ def student_nav_items(
 # разделы, открытые ему сверх роли (`section_access.py`, 03.10.2026). Ранг у
 # него как у ГП, поэтому по `min_rank` меню собралось бы целиком — из
 # ссылок, отвечающих «Нет доступа».
-MODERATOR_NAV_KEYS = ("students", "archive", "activity")
+MODERATOR_NAV_KEYS = ("students", "archive", "activity", "bot_analytics")
 
 # «Статистика активности» — пункт только модератора: у ГП и суперадмина она
 # открывается с дашборда, их меню эта правка не меняет.

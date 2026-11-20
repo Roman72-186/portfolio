@@ -1,0 +1,33 @@
+.bot-stats-table {
+    overflow-x: auto;
+    margin-block: 12px 24px;
+    border: 1px solid var(--ios-separator);
+    border-radius: 14px;
+    background: var(--ios-secondary-grouped-bg);
+}
+
+.bot-stats-table table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.bot-stats-table th,
+.bot-stats-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--ios-separator);
+    vertical-align: middle;
+}
+
+.bot-stats-table th {
+    background: var(--ios-grouped-bg);
+    white-space: nowrap;
+}
+
+.bot-stats-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.bot-stats-table input {
+    min-width: 15rem;
+}

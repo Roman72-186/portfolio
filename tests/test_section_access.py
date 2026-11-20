@@ -544,7 +544,7 @@ def test_moderator_open_section_is_read_only(client, db, session_factory, supera
     assert resp.status_code == 403
     assert "Модератору открыты" in resp.text
     keys = [i.key for i in staff_nav_items(4, "модератор", None, frozenset({"program", "people"}))]
-    assert keys == ["students", "archive", "activity", "program", "people"]
+    assert keys == ["students", "archive", "activity", "bot_analytics", "program", "people"]
 
 
 def test_moderator_home_falls_back_to_granted_section(client, db, session_factory, superadmin, moderator):

@@ -9,7 +9,7 @@ from alembic.operations import Operations
 from sqlalchemy import text
 
 
-def test_link_report_and_event_retry(db, admin_client, monkeypatch):
+def test_link_report_and_event_retry(db, admin_client, monkeypatch, user_factory, session_factory):
     path = Path(__file__).resolve().parents[1] / "alembic/versions/b239f86d57ca_bot_analytics.py"
     spec = importlib.util.spec_from_file_location("bot_analytics_migration", path)
     migration = importlib.util.module_from_spec(spec)
@@ -55,3 +55,23 @@ def test_link_report_and_event_retry(db, admin_client, monkeypatch):
     assert client.get(page, params={"uid": 1234}).status_code == 200
     assert client.post(f"{page}/{first}/archive", follow_redirects=False).status_code == 303
     assert client.get(f"/go/telegram/{first}", follow_redirects=False).status_code == 307
+
+    for index, (role, can_view, can_edit) in enumerate((
+        ("модератор", True, False),
+        ("админ", True, True),
+        ("куратор", False, False),
+        ("ученик", False, False),
+    )):
+        user = user_factory(vk_id=840_100 + index, role_name=role)
+        client.cookies.set("session_id", session_factory(user).id)
+        view = client.get(page)
+        assert view.status_code == (200 if can_view else 403), role
+        assert client.get(page, params={"export": "events"}).status_code == (200 if can_view else 403), role
+        assert client.post(f"{page}/{first}/archive", follow_redirects=False).status_code == (
+            303 if can_edit else 403
+        ), role
+        if can_view:
+            assert (f'<form method="post" action="{page}"' in view.text) == can_edit
+            assert 'href="/cabinet/staff/statistics"' in view.text
+            home = client.get("/cabinet/staff/statistics")
+            assert home.status_code == 200 and f'href="{page}"' in home.text

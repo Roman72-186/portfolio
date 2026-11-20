@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Статистика{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
+{% endblock %}
+{% block content %}
+<div class="ss-wrap ios-ss">
+  <header class="ss-header"><h1 class="ss-title">Статистика</h1></header>
+  <a href="{{ page }}" class="ss-export-btn">Telegram-бот</a>
+</div>
+{% endblock %}

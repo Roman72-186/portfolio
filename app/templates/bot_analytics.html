@@ -2,14 +2,15 @@
 {% block title %}Статистика Telegram-бота{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
+<link rel="stylesheet" href="/static/css/bot_analytics.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="ss-wrap ios-ss">
   <div class="ss-header">
-    <a href="/cabinet/superadmin/stats">← Статистика</a>
+    <a href="/cabinet/staff/statistics">← Статистика</a>
     <h1 class="ss-title">Telegram-бот</h1>
   </div>
-  <details>
+  {% if can_edit_links %}<details>
     <summary>Создать ссылку</summary>
     <form method="post" action="{{ page }}" class="ss-filters">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -20,16 +21,26 @@
       <label>Публикация <input name="utm_content" maxlength="150"></label>
       <button type="submit">Создать</button>
     </form>
-  </details>
+  </details>{% endif %}
   <h2>Ссылки</h2>
+  <div class="bot-stats-table">
+  <table>
+    <thead><tr><th>Название</th><th>Источник</th><th>Кампания</th><th>Ссылка</th><th>Действие</th></tr></thead>
+    <tbody>
   {% for link in links %}
-    <form method="post" action="{{ page }}/{{ link.code }}/archive" class="ss-filters">
+    <tr>
+      <td><a href="{{ page }}?code={{ link.code }}">{{ link.title }}</a></td>
+      <td>{{ link.utm_source }}</td><td>{{ link.utm_campaign }}</td>
+      <td><input aria-label="Ссылка для публикации" readonly value="{{ request.base_url }}go/telegram/{{ link.code }}"></td>
+      <td><form method="post" action="{{ page }}/{{ link.code }}/archive">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-      <a href="{{ page }}?code={{ link.code }}">{{ link.title }}</a>
-      <label>Ссылка <input readonly value="{{ request.base_url }}go/telegram/{{ link.code }}"></label>
-      {% if link.archived %}<span>В архиве</span>{% else %}<button type="submit">Архивировать</button>{% endif %}
-    </form>
-  {% else %}<p>Пока нет ссылок.</p>{% endfor %}
+      {% if link.archived %}<span>В архиве</span>{% elif can_edit_links %}<button type="submit">Архивировать</button>{% endif %}
+      </form></td>
+    </tr>
+  {% else %}<tr><td colspan="5">Пока нет ссылок.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
   <h2>Отчёт</h2>
   <form method="get" action="{{ page }}" class="ss-filters">
     <label>С <input type="date" name="since" value="{{ filters.since }}"></label>
@@ -47,13 +58,13 @@
   <p><a href="{{ page }}?{{ query }}&amp;export=summary">Скачать сводку CSV</a> ·
     <a href="{{ page }}?{{ query }}&amp;export=events">Скачать историю CSV</a></p>
   {% set labels = {'click': 'Переходы по ссылке', 'tagged_start': 'Запустили бота по ссылке', 'start': 'Пользователи воронки', 'payment_click': 'Перешли к оплате', 'button': 'Нажали кнопку', 'step': 'Прошли шаг', 'situation': 'Выбрали ситуацию', 'material': 'Получили материал'} %}
-  <table>
+  <div class="bot-stats-table"><table>
     <thead><tr><th>Ссылка</th><th>Показатель</th><th>Количество</th></tr></thead>
     <tbody>{% for code, title, metric, count in summary %}
       {% set kind, _, detail = metric.partition('/') %}
       <tr><td>{{ title }}</td><td>{{ labels[kind] }}{% if detail %} · {{ detail }}{% endif %}</td><td>{{ count }}</td></tr>
     {% endfor %}</tbody>
-  </table>
+  </table></div>
   <h2>Последние события</h2>
   {% if profile %}
     <dl>
@@ -63,7 +74,7 @@
       <dt>Последний выполненный шаг</dt><dd>{{ profile.step.value if profile.step else '—' }}</dd>
     </dl>
   {% endif %}
-  <div style="overflow-x:auto">
+  <div class="bot-stats-table">
     <table>
       <thead><tr><th>Telegram ID</th><th>Дата</th><th>Событие</th><th>Действие</th><th>Ссылка события</th><th>Первый запуск</th><th>Первая ссылка</th></tr></thead>
       <tbody>{% for event in history %}
