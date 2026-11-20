@@ -207,7 +207,7 @@ def cabinet_personal_track(
     if not _is_holiday(user):
         if request.query_params.get("offer") == "testpodgotovki":
             return templates.TemplateResponse(request, "november_trial_entry.html", {
-                "user": user, "checkout_unavailable": True, "support_url": SUPPORT_URL,
+                "checkout_unavailable": True, "support_url": SUPPORT_URL,
             }, status_code=403)
         return RedirectResponse("/cabinet/personal", status_code=302)
     owned = intake_link_service.tracks_of(db, user["user_id"])

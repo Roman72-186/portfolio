@@ -219,18 +219,20 @@ def needs_track(db: DBSession, user: User) -> bool:
     return user.program == PROGRAM_HOLIDAY and track_of(db, user.id) is None
 
 
-def program_opens_at() -> datetime:
+def program_opens_at(tracks=()) -> datetime:
     """Когда каникулярному открывается программа — `constants.HOLIDAY_PROGRAM_OPENS_AT`.
     Читается через модуль, а не копией имени: тесты двигают дату в одном месте."""
+    if tracks and all(track.slug == "testpodgotovki" for track in tracks):
+        return datetime(2026, 11, 22, 5, tzinfo=timezone.utc)
     return constants.HOLIDAY_PROGRAM_OPENS_AT
 
 
-def waits_for_program(user_id: int, now: datetime) -> bool:
+def waits_for_program(user_id: int, now: datetime, tracks=()) -> bool:
     """Программа набора ещё не открылась, и этот человек её ждёт (служба заботы
     19.10.2026). Служебные (`REPORT_EXCLUDED_USER_IDS`) не ждут: ими проверяют
     программу, пока её наполняют. Что закрыто на время ожидания —
     `dependencies.get_current_user`."""
-    return now < program_opens_at() and user_id not in constants.REPORT_EXCLUDED_USER_IDS
+    return now < program_opens_at(tracks) and user_id not in constants.REPORT_EXCLUDED_USER_IDS
 
 
 def create_entry_link(
