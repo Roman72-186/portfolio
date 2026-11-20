@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Попробуй подготовку{% endblock %}
+{% block content %}
+<div class="card status-card">
+    <h1>Попробуй подготовку</h1>
+    {% if checkout_unavailable %}
+    <p>Оплата этого набора доступна участникам каникулярной программы. Если ты хочешь записаться с этого аккаунта, обратись в Службу заботы.</p>
+    <a class="btn-primary" href="{{ support_url }}">Написать в Службу заботы</a>
+    {% else %}
+    <p>Открытие заданий – {{ opens_text }} МСК.</p>
+    <p>Закрытие доступа – {{ closes_text }} МСК.</p>
+    <a class="btn-primary" href="/testpodgotovki?login=telegram">Войти через Telegram</a>
+    {% endif %}
+</div>
+{% endblock %}

@@ -110,6 +110,9 @@ def test_annual_student_never_sees_track_page(auth_client):
     resp = client.get("/cabinet/personal/track", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/personal"
+    checkout = client.get("/cabinet/personal/track?offer=testpodgotovki", follow_redirects=False)
+    assert checkout.status_code == 403
+    assert "Написать в Службу заботы" in checkout.text
 
 
 def test_hidden_tracks_are_not_sold(client, db, user_factory, session_factory):
