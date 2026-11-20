@@ -394,6 +394,9 @@ app.add_middleware(BodySizeLimitMiddleware)
 
 
 # Routers
+from app.api import bot_analytics
+
+app.include_router(bot_analytics.router)
 app.include_router(auth.router)
 app.include_router(cabinet.router)
 app.include_router(cabinet_student.router)
