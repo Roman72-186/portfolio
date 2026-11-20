@@ -5,6 +5,7 @@
 остаются в `task_block_submissions`, копий в `works` не появляется.
 """
 from datetime import date, datetime, timedelta, timezone
+import re
 
 from app.models.task_block import (
     BLOCK_UPLOAD,
@@ -156,15 +157,26 @@ def test_scored_assignment_shows_five_named_neighbors_per_side_once(auth_client,
     client, student = auth_client
     own = _submission(db, student, submitted_at=_january(), images=2)
     own.score = 70
+    _work(db, student, month="февраль")
     db.commit()
+    photo_ids = {}
     for n, score in enumerate([60, 61, 62, 63, 64, 65, 70, 71, 72, 73, 74, 75, 76]):
         peer = user_factory(vk_id=710_000 + n, name=f"Имя{n} Фамилия")
         peer.first_name = f"Имя{n}"
         peer.last_name = "Фамилия"
-        db.add(TaskBlockSubmission(
+        submission = TaskBlockSubmission(
             block_id=own.block_id, user_id=peer.id,
             submitted_at=_utc(_january()), score=score,
-        ))
+        )
+        db.add(submission)
+        db.flush()
+        photo = TaskBlockSubmissionImage(
+            submission_id=submission.id, image_s3_url=f"https://s3.example/peer-{n}.jpg",
+            image_s3_path=f"peer-{n}.jpg",
+        )
+        db.add(photo)
+        db.flush()
+        photo_ids[score] = photo.id
     staff = user_factory(vk_id=710_100, name="Сотрудник Школы", role_name="куратор")
     db.add(TaskBlockSubmission(
         block_id=own.block_id, user_id=staff.id,
@@ -176,7 +188,7 @@ def test_scored_assignment_shows_five_named_neighbors_per_side_once(auth_client,
     db.commit()
 
     groups = student_portfolio_after_groups(db, student.id, include_score_comparisons=True)
-    comparisons = groups[0]["score_comparisons"]
+    comparisons = next(g["score_comparisons"] for g in groups if g["month"] == "январь")
     assert len(comparisons) == 1  # два фото одной сдачи
     assert [p["score"] for p in comparisons[0]["below"]] == [65, 64, 63, 62, 61]
     assert [p["score"] for p in comparisons[0]["above"]] == [71, 72, 73, 74, 75]
@@ -184,11 +196,124 @@ def test_scored_assignment_shows_five_named_neighbors_per_side_once(auth_client,
 
     response = client.get("/cabinet/portfolio")
     assert response.status_code == 200
-    assert response.text.count("Твой балл: 70 / 100") == 1
+    own_score = "Твой балл: <span>70 / 100</span>"
+    assert response.text.count(own_score) == 1
     assert "Имя7 Ф." in response.text
     assert "Имя6 Ф." not in response.text  # равный балл не объявляем ниже
     assert "Сотрудник" not in response.text
     assert "Другой У." not in response.text
+    left = f"/cabinet/api/portfolio/submission-peer-photo/{photo_ids[71]}"
+    right = f"/cabinet/api/portfolio/submission-peer-photo/{photo_ids[65]}"
+    center = response.text.index(own_score)
+    assert response.text.index(left) < center < response.text.index(right)
+    assert 'class="pf-mblock open" id="pfblk-after-2026-1"' in response.text
+    assert f"https://s3.example/submission-{own.id}-0.jpg" in response.text
+    assert "https://s3.example/peer-" not in response.text
+
+
+def test_peer_photo_follows_impersonated_student_and_assessment(
+    client, db, user_factory, session_factory, monkeypatch,
+):
+    from app.csrf import generate_csrf_token
+    from app.services import s3
+
+    sa = user_factory(vk_id=730_001, role_name="суперадмин")
+    student = user_factory(vk_id=730_002, role_name="ученик")
+    peer = user_factory(vk_id=730_003, role_name="ученик")
+    own = _submission(db, student, submitted_at=_january())
+    scored = _submission(db, peer, submitted_at=_january())
+    own.score = 70
+    scored.score = 75
+    photo = db.query(TaskBlockSubmissionImage).filter_by(submission_id=scored.id).one()
+    photo.image_s3_path = "test-peer.jpg"
+    db.commit()
+    url = f"/cabinet/api/portfolio/submission-peer-photo/{photo.id}"
+    downloads = []
+
+    def download(path):
+        downloads.append(path)
+        return b"photo"
+
+    monkeypatch.setattr(s3, "download_from_s3", download)
+    sa_session = session_factory(sa)
+    client.cookies.set("session_id", sa_session.id)
+    response = client.post(
+        f"/cabinet/superadmin/impersonate/{student.id}",
+        data={"csrf_token": generate_csrf_token(sa_session.id)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert client.get(url).status_code == 404  # другая контрольная
+    scored.block_id = own.block_id
+    own.score = None
+    db.commit()
+    assert client.get(url).status_code == 404  # своей оценки пока нет
+    assert downloads == []
+
+    own.score = 70
+    db.commit()
+    page = client.get("/cabinet/portfolio")
+    assert page.status_code == 200
+    assert url in page.text
+    image = client.get(url)
+    assert image.status_code == 200
+    assert image.content == b"photo"
+    assert image.headers["content-type"] == "image/jpeg"
+    assert "no-store" in image.headers["cache-control"]
+    assert downloads == ["test-peer.jpg"]
+
+    scored.needs_revision = True
+    db.commit()
+    assert client.get(url).status_code == 404
+
+
+def test_portfolio_opens_only_latest_scored_assignment_in_each_month(auth_client, db, user_factory):
+    client, student = auth_client
+    assignments = [
+        (11, 14, "Подготовка к контрольной", 65),
+        (11, 19, "Контрольная по рисунку", 70),
+        (11, 10, "Основы перспективы", 80),
+        (11, 17, "Контрольная по композиции", 75),
+        (11, 8, "Свет и тень", 85),
+        (10, 26, "Октябрьская контрольная", 90),
+    ]
+    for month, day, title, score in assignments:
+        submitted_at = datetime(2026, month, day, 12, tzinfo=timezone.utc)
+        submission = _submission(db, student, submitted_at=submitted_at)
+        submission.score = score
+        block = db.get(TaskBlock, submission.block_id)
+        db.get(TrackerTask, block.task_id).title = title
+        if score == 70:
+            for vk_id, name, peer_score in ((740_001, "Лиза Титова", 75), (740_002, "Мила Романова", 65)):
+                peer = user_factory(vk_id=vk_id, name=name)
+                peer_submission = TaskBlockSubmission(
+                    block_id=block.id, user_id=peer.id, submitted_at=_utc(submitted_at), score=peer_score,
+                )
+                db.add(peer_submission)
+                db.flush()
+                db.add(TaskBlockSubmissionImage(
+                    submission_id=peer_submission.id,
+                    image_s3_url=f"https://s3.example/peer-{peer_score}.jpg",
+                    image_s3_path=f"peer-{peer_score}.jpg",
+                ))
+        db.commit()
+
+    page = client.get("/cabinet/portfolio")
+    assert page.status_code == 200
+    rows = re.findall(
+        r'<details class="pf-score-comparison" name="([^"]+)"( open)?>\s*'
+        r'<summary class="pf-score-summary">\s*<span class="pf-score-title">([^<]+)</span>\s*'
+        r'<strong class="pf-score-summary-value">([^<]+)</strong>',
+        page.text,
+    )
+    assert rows == [
+        ("pfblk-after-2026-0-scores", " open", "Контрольная по рисунку", "70 / 100"),
+        ("pfblk-after-2026-0-scores", "", "Контрольная по композиции", "75 / 100"),
+        ("pfblk-after-2026-0-scores", "", "Подготовка к контрольной", "65 / 100"),
+        ("pfblk-after-2026-0-scores", "", "Основы перспективы", "80 / 100"),
+        ("pfblk-after-2026-0-scores", "", "Свет и тень", "85 / 100"),
+        ("pfblk-after-2026-1-scores", " open", "Октябрьская контрольная", "90 / 100"),
+    ]
 
 
 def test_scored_mock_exam_shows_names_from_same_ticket(auth_client, db, user_factory):
@@ -227,7 +352,8 @@ def test_scored_mock_exam_shows_names_from_same_ticket(auth_client, db, user_fac
     assert response.status_code == 200
     assert "Капитель" in response.text
     assert "Мария С." in response.text
-    assert "Твой балл: 70 / 100" in response.text
+    assert "Твой балл: <span>70 / 100</span>" in response.text
+    assert "/cabinet/api/portfolio/peer-photo/" in response.text
 
 
 def test_staff_json_marks_the_source_of_every_photo(client, db, user_factory, session_factory):

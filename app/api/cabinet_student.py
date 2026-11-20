@@ -60,7 +60,7 @@ from app.services.contacts import (
 from app.services.tags import ensure_grade_tag
 from app.services.tz import MSK_TZ, msk_text, now_msk, today_msk
 from app.services.user_management import log_tariff_change
-from app.services.portfolio import student_portfolio_after_groups
+from app.services.portfolio import find_peer_submission_photo, student_portfolio_after_groups
 from app.services.utils import compress_image
 from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
@@ -1374,15 +1374,33 @@ def get_peer_photo(
     if not shares_ticket:
         raise HTTPException(404)
 
-    s3_path = _resolve_peer_display_path(db, peer)
+    return _portfolio_peer_image(_resolve_peer_display_path(db, peer))
+
+
+@router.get("/api/portfolio/submission-peer-photo/{image_id}")
+def get_peer_submission_photo(
+    image_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    image = find_peer_submission_photo(db, viewer_id=user["user_id"], image_id=image_id)
+    if not image:
+        raise HTTPException(404)
+    path = image.image_s3_path or s3_service.s3_path_from_public_url(image.image_s3_url)
+    return _portfolio_peer_image(path)
+
+
+def _portfolio_peer_image(s3_path: str | None) -> Response:
     if not s3_path:
+        raise HTTPException(404)
+    content_type = s3_service.safe_content_type(mimetypes.guess_type(s3_path)[0] or "image/jpeg")
+    if not content_type or not content_type.startswith("image/"):
         raise HTTPException(404)
     data = s3_service.download_from_s3(s3_path)
     if not data:
         raise HTTPException(404)
-    content_type = mimetypes.guess_type(s3_path)[0] or "image/jpeg"
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Cache-Control": "private, max-age=3600"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )

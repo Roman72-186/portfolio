@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import true
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.constants import MONTHS
 from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
@@ -317,6 +317,38 @@ def _peer_name(user: User) -> str:
     return f"{first} {last[0]}." if last else first
 
 
+def _scored_submission(submission):
+    return (
+        submission.submitted_at.isnot(None),
+        submission.score.isnot(None),
+        submission.needs_revision.is_(False),
+    )
+
+
+def find_peer_submission_photo(
+    db: DBSession, *, viewer_id: int, image_id: int,
+) -> TaskBlockSubmissionImage | None:
+    """Открыть фото только ученику с оценённой сдачей в том же блоке."""
+    own = aliased(TaskBlockSubmission)
+    return (
+        db.query(TaskBlockSubmissionImage)
+        .join(TaskBlockSubmission, TaskBlockSubmissionImage.submission_id == TaskBlockSubmission.id)
+        .join(User, TaskBlockSubmission.user_id == User.id)
+        .join(Role, User.role_id == Role.id)
+        .join(own, own.block_id == TaskBlockSubmission.block_id)
+        .filter(
+            TaskBlockSubmissionImage.id == image_id,
+            own.user_id == viewer_id,
+            *_scored_submission(own),
+            TaskBlockSubmission.user_id != viewer_id,
+            *_scored_submission(TaskBlockSubmission),
+            User.deleted_at.is_(None),
+            Role.name == "ученик",
+        )
+        .first()
+    )
+
+
 def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -> None:
     """Соседние оценки по тому же билету или блоку сдачи, одним батчем на страницу.
 
@@ -343,9 +375,7 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
                 .filter(
                     TaskBlockSubmission.id.in_(submission_ids),
                     TaskBlockSubmission.user_id == user_id,
-                    TaskBlockSubmission.submitted_at.isnot(None),
-                    TaskBlockSubmission.score.isnot(None),
-                    TaskBlockSubmission.needs_revision.is_(False),
+                    *_scored_submission(TaskBlockSubmission),
                 )
                 .all()
             )
@@ -376,9 +406,7 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
             .filter(
                 TaskBlockSubmission.block_id.in_(block_ids),
                 TaskBlockSubmission.user_id != user_id,
-                TaskBlockSubmission.submitted_at.isnot(None),
-                TaskBlockSubmission.score.isnot(None),
-                TaskBlockSubmission.needs_revision.is_(False),
+                *_scored_submission(TaskBlockSubmission),
                 User.deleted_at.is_(None),
                 Role.name == "ученик",
             )
@@ -393,10 +421,10 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
     picked_by_submission: dict[int, dict] = {}
     for work in mock_works:
         cycle = cycles.get(work.cycle_id)
-        if cycle and cycle.ticket_id:
-            picked = pick_score_neighbors(float(work.score), mock_candidates.get(cycle.ticket_id, []))
-            picked_by_work[work.id] = picked
-            selected_mock.update(peer_id for side in picked.values() for _score, peer_id in side)
+        ticket_id = cycle.ticket_id if cycle else None
+        picked = pick_score_neighbors(float(work.score), mock_candidates.get(ticket_id, []))
+        picked_by_work[work.id] = picked
+        selected_mock.update(peer_id for side in picked.values() for _score, peer_id in side)
     for submission, _title in own_submissions.values():
         picked = pick_score_neighbors(float(submission.score), block_candidates.get(submission.block_id, []))
         picked_by_submission[submission.id] = picked
@@ -417,10 +445,38 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
         ):
             peer_names[("submission", submission.id)] = _peer_name(student)
 
+    # Одна обложка на работу. Берём первое фото в порядке сдачи.
+    submission_covers: dict[int, tuple[int, str]] = {}
+    if own_submissions or selected_submissions:
+        for image_id, submission_id, photo_url in (
+            db.query(TaskBlockSubmissionImage.id, TaskBlockSubmissionImage.submission_id,
+                     TaskBlockSubmissionImage.image_s3_url)
+            .filter(
+                TaskBlockSubmissionImage.submission_id.in_(set(own_submissions) | selected_submissions),
+                TaskBlockSubmissionImage.image_s3_url != "",
+            )
+            .order_by(TaskBlockSubmissionImage.sort_order, TaskBlockSubmissionImage.id)
+        ):
+            submission_covers.setdefault(submission_id, (image_id, photo_url))
+
+    peer_photo_urls = {
+        ("mock", work_id): f"/cabinet/api/portfolio/peer-photo/{work_id}"
+        for work_id in selected_mock
+    }
+    peer_photo_urls.update({
+        ("submission", submission_id): f"/cabinet/api/portfolio/submission-peer-photo/{image_id}"
+        for submission_id, (image_id, _url) in submission_covers.items()
+        if submission_id in selected_submissions
+    })
+
     def neighbors(picked: dict, kind: str) -> dict[str, list[dict]]:
         return {
             side: [
-                {"name": peer_names[(kind, peer_id)], "score": score}
+                {
+                    "name": peer_names[(kind, peer_id)],
+                    "score": score,
+                    "photo_url": peer_photo_urls.get((kind, peer_id)),
+                }
                 for score, peer_id in (reversed(picked[side]) if side == "below" else picked[side])
                 if (kind, peer_id) in peer_names
             ]
@@ -432,10 +488,11 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
         seen_submissions: set[int] = set()
         for item in group["works"]:
             if isinstance(item, Work) and item.id in picked_by_work:
-                cycle = cycles[item.cycle_id]
+                cycle = cycles.get(item.cycle_id)
                 comparisons.append({
-                    "title": ticket_titles.get(cycle.ticket_id, "Пробный экзамен"),
+                    "title": ticket_titles.get(cycle.ticket_id if cycle else None, "Пробный экзамен"),
                     "score": float(item.score),
+                    "photo_url": item.s3_url,
                     **neighbors(picked_by_work[item.id], "mock"),
                 })
             elif isinstance(item, SubmissionPhoto) and item.task_submission_id in own_submissions:
@@ -447,6 +504,7 @@ def _attach_score_comparisons(db: DBSession, user_id: int, groups: list[dict]) -
                 comparisons.append({
                     "title": title,
                     "score": float(submission.score),
+                    "photo_url": submission_covers.get(submission_id, (None, item.s3_url))[1],
                     **neighbors(picked_by_submission[submission_id], "submission"),
                 })
         group["score_comparisons"] = comparisons

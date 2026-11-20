@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Моё портфолио{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=8">
+<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=10">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
@@ -14,6 +14,31 @@
     {% else %}
     <div class="pf-work-unavailable" title="{{ w.filename }}">Фото недоступно</div>
     {% endif %}
+{% endmacro %}
+{% macro pf_score_cards(peers) %}
+    <ol>
+        {% for peer in peers %}
+        <li>
+            {{ pf_photo({'thumb': peer.photo_url, 's3_url': '', 'filename': 'Работа на ' ~ ('%g'|format(peer.score)) ~ ' баллов'}) }}
+            <strong>{{ '%g'|format(peer.score) }}</strong>
+            <span>{{ peer.name }}</span>
+        </li>
+        {% endfor %}
+    </ol>
+{% endmacro %}
+{% macro pf_score_peers(title, peers) %}
+    <div class="pf-score-side">
+        <p class="pf-score-side-title">{{ title }}</p>
+        {% if peers %}
+            {{ pf_score_cards(peers[:1]) }}
+            {% if peers|length > 1 %}
+            <details class="pf-score-more">
+                <summary>Ещё {{ peers|length - 1 }}</summary>
+                {{ pf_score_cards(peers[1:]) }}
+            </details>
+            {% endif %}
+        {% else %}<p class="pf-score-empty">Пока нет работ</p>{% endif %}
+    </div>
 {% endmacro %}
 {# Плоская лента без месяцев — раздел «До» (владелец 09.09.2026: «в До
    добавляется не по месяцам»). Стартовый набор ученик грузит один раз в
@@ -36,51 +61,45 @@
 {% endmacro %}
 {% macro pf_blocks(key, groups, empty_title, empty_text) %}
   {% if groups %}
+    {% set first_compared = groups|selectattr('score_comparisons')|first %}
     {% for g in groups %}
     {% set safe_id = "pfblk-" ~ key ~ "-" ~ g.year ~ "-" ~ loop.index0 %}
-    <div class="pf-mblock{% if loop.first %} open{% endif %}" id="{{ safe_id }}">
+    {% set expanded = loop.first or g is sameas(first_compared) %}
+    <div class="pf-mblock{% if expanded %} open{% endif %}" id="{{ safe_id }}">
         <div class="pf-mhead">
-            <button type="button" class="pf-mtoggle" aria-expanded="{{ 'true' if loop.first else 'false' }}" onclick="pfToggleMonth('{{ safe_id }}')">
+            <button type="button" class="pf-mtoggle" aria-expanded="{{ 'true' if expanded else 'false' }}" onclick="pfToggleMonth('{{ safe_id }}')">
                 <span class="pf-mchevron">▼</span>
                 <span class="pf-mlabel">{{ g.month }} {{ g.year }}</span>
+                {% if g.score_comparisons %}<span class="pf-score-empty">Сравнение работ</span>{% endif %}
             </button>
             <span class="pf-mcount">{{ g.total }} фото</span>
         </div>
+        {% if g.score_comparisons %}
+        <div class="pf-score-comparisons">
+            {% for c in g.score_comparisons %}
+            <details class="pf-score-comparison" name="{{ safe_id }}-scores"{% if loop.first %} open{% endif %}>
+                <summary class="pf-score-summary">
+                    <span class="pf-score-title">{{ c.title }}</span>
+                    <strong class="pf-score-summary-value">{{ '%g'|format(c.score) }} / 100</strong>
+                </summary>
+                <div class="pf-score-sides" data-gallery="pf-compare-{{ safe_id }}-{{ loop.index0 }}">
+                    {{ pf_score_peers('Баллы выше', c.above) }}
+                    <div class="pf-score-center">
+                        <p class="pf-score-side-title">Твоя работа</p>
+                        {{ pf_photo({'thumb': c.photo_url, 's3_url': '', 'filename': 'Твоя работа'}) }}
+                        <strong class="pf-score-own">Твой балл: <span>{{ '%g'|format(c.score) }} / 100</span></strong>
+                    </div>
+                    {{ pf_score_peers('Баллы ниже', c.below) }}
+                </div>
+            </details>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="pf-mgrid" data-gallery="pf-{{ key }}-{{ g.year }}-{{ g.month }}">
             {% for w in g.works %}
             {{ pf_photo(w) }}
             {% endfor %}
         </div>
-        {% if g.score_comparisons %}
-        <div class="pf-score-comparisons">
-            {% for c in g.score_comparisons %}
-            <section class="pf-score-comparison" aria-label="Сравнение по работе {{ c.title }}">
-                <div class="pf-score-head">
-                    <span class="pf-score-title">{{ c.title }}</span>
-                    <strong class="pf-score-own">Твой балл: {{ c.score|int }} / 100</strong>
-                </div>
-                {% if c.above or c.below %}
-                <div class="pf-score-sides">
-                    <div class="pf-score-side">
-                        <div class="pf-score-side-title">Балл выше</div>
-                        {% if c.above %}
-                        <ol>{% for peer in c.above %}<li><span>{{ peer.name }}</span><strong>{{ peer.score|int }}</strong></li>{% endfor %}</ol>
-                        {% else %}<p>Пока никого</p>{% endif %}
-                    </div>
-                    <div class="pf-score-side">
-                        <div class="pf-score-side-title">Балл ниже</div>
-                        {% if c.below %}
-                        <ol>{% for peer in c.below %}<li><span>{{ peer.name }}</span><strong>{{ peer.score|int }}</strong></li>{% endfor %}</ol>
-                        {% else %}<p>Пока никого</p>{% endif %}
-                    </div>
-                </div>
-                {% else %}
-                <p class="pf-score-empty">Другие работы по этому заданию пока не оценены.</p>
-                {% endif %}
-            </section>
-            {% endfor %}
-        </div>
-        {% endif %}
     </div>
     {% endfor %}
   {% else %}
