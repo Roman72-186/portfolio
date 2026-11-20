@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Загрузка фото{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/upload_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/upload_ios.css?v=8">
 {% endblock %}
 {% block content %}
 <div class="upload-wrap ios-upload">
@@ -43,6 +43,7 @@
 
     {% if success %}
     <div class="alert alert-success" role="status" aria-live="polite" style="margin-bottom:20px">
+        {% if not fail_count %}<span aria-hidden="true">&#10003;</span>{% endif %}
         Загружено {{ success_count }} фото!
         {% if fail_count %}<br><span class="ios-warn-text">Не удалось: {{ fail_count }}</span>{% endif %}
         <a href="/upload?section={{ mode }}" style="margin-left:8px;font-weight:700">Загрузить ещё →</a>
@@ -420,8 +421,10 @@ uploadForm.addEventListener('submit', function(ev) {
 
         xhr.upload.onprogress = function(e) {
             if (!e.lengthComputable) return;
-            var pct = Math.round((e.loaded / e.total) * 100);
-            submitBtn.innerHTML = '<span class="spinner"></span>Загружаем ' + pct + '%…';
+            var pct = Math.floor((e.loaded / e.total) * 100);
+            submitBtn.innerHTML = '<span class="spinner"></span>' + (e.loaded >= e.total
+                ? 'Сохраняем фото…'
+                : 'Загружаем ' + pct + '%…');
         };
         xhr.onerror = function() {
             restoreForm();
@@ -434,9 +437,12 @@ uploadForm.addEventListener('submit', function(ev) {
             if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
                 var msg = 'Загружено ' + data.created + ' фото!';
                 if (data.failed) msg += ' <span style="color:#fbbf24">Не удалось: ' + data.failed + '</span>';
+                if (!data.failed) msg = '<span class="upload-complete-icon" aria-hidden="true">✓</span> ' + msg;
                 showAlert('success', msg, { autoHide: false });
                 resetForm();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                submitBtn.innerHTML = btnOriginal;
+                var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                window.scrollTo({ top: 0, behavior: reduceMotion ? 'instant' : 'smooth' });
                 // Возвращаемся на страницу заново (18.09.2026): только так в списке
                 // «Уже загружено» появятся свежие фото с кнопкой удаления — их id и
                 // ссылки знает сервер, а не этот ответ. Итог загрузки переезжает
