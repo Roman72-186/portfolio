@@ -1323,6 +1323,24 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     color: var(--blue-text);
 }
 
+.lrn-progress-meter {
+    position: relative;
+    display: block;
+    appearance: none;
+    width: min(100%, 320px);
+    height: 8px;
+    margin-top: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--blue-soft);
+    color: var(--blue);
+    accent-color: var(--blue);
+    overflow: hidden;
+}
+.lrn-progress-meter::-webkit-progress-bar { background: var(--blue-soft); }
+.lrn-progress-meter::-webkit-progress-value { background: var(--blue); border-radius: 999px; }
+.lrn-progress-meter::-moz-progress-bar { background: var(--blue); border-radius: 999px; }
+
 .lrn-feed { display: flex; flex-direction: column; gap: 12px; }
 .lrn-universal-block {
     display: grid;
@@ -1388,6 +1406,17 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 /* Раскрывает кнопка «Показать», а не наведение (аудит 30.09.2026): на
    телефоне наведения нет, а касание мимо снова сворачивало материал. */
 .lrn-step--done.is-open .lrn-step-body { display: block; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .lrn-step--done.is-open > .lrn-step-body {
+        animation: lrn-step-reveal var(--duration-base) var(--ease-out);
+    }
+
+    @keyframes lrn-step-reveal {
+        from { opacity: 0; clip-path: inset(0 0 16px 0); }
+        to { opacity: 1; clip-path: inset(0); }
+    }
+}
 /* Надпись маленькая, цель касания — 44px: отрицательные поля по вертикали
    оставляют строку меток прежней высоты. */
 .lrn-step-toggle {

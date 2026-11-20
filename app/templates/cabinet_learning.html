@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=92">
+<link rel="stylesheet" href="/static/css/tracker.css?v=93">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -42,7 +42,9 @@
         <p>Задания идут по порядку: следующее открывается, когда сделано предыдущее.</p>
         {% endif %}
         {% if feed.total_count %}
-        <p class="lrn-progress">Сделано {{ feed.done_count }} из {{ feed.total_count }}</p>
+        <p class="lrn-progress" id="cycle-progress-label">Сделано {{ feed.done_count }} из {{ feed.total_count }}</p>
+        <progress class="lrn-progress-meter" value="{{ feed.done_count }}" max="{{ feed.total_count }}"
+                  aria-labelledby="cycle-progress-label"></progress>
         {% endif %}
         {# Срок цикла (владелец 06.10.2026: «показывать ученику, что по какой у
            него срок идёт») — «по» его тарифа или конец цикла, тот же, по
