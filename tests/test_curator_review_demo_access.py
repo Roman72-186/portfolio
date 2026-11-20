@@ -68,17 +68,29 @@ def test_impersonation_requires_head(db, user_factory, session_factory, client):
         assert client.get(url).status_code == expected
 
 
-def test_superadmin_viewing_head_has_no_demo(db, user_factory, session_factory, client):
+@pytest.mark.parametrize("is_liza", [True, False])
+def test_superadmin_viewing_head_can_open_only_liza_demo(
+    db, user_factory, session_factory, client, monkeypatch, is_liza,
+):
     _, _, _, submission = _setup_block(db, user_factory, base=998_501)
     chief = user_factory(vk_id=998_511, role_name="админ")
     boss = user_factory(vk_id=998_512, role_name="суперадмин")
+    monkeypatch.setattr("app.config.settings.view_origin", str(client.base_url))
+    monkeypatch.setattr(
+        "app.services.curator_review_demo.LIZA_HEAD_USER_ID",
+        chief.id if is_liza else chief.id + 1000,
+    )
     session = session_factory(chief)
     session.impersonated_by_id = boss.id
     db.commit()
     client.cookies.set("session_id", session.id)
     url = f"/cabinet/staff/task-block-submissions/{submission.id}"
-    assert client.get(url + "/feedback?review_demo=1").status_code == 403
-    assert client.put(url + "/draft", json={"text": "Закрыто", "cursor": 0}).status_code == 403
     page = client.get("/cabinet/staff/students-review")
     assert page.status_code == 200
-    assert "Новая проверка · демо" not in page.text
+    assert ("Новая проверка · демо" in page.text) == is_liza
+    queue = client.get("/cabinet/staff/students-review/queue?review_demo=1", follow_redirects=False)
+    assert queue.status_code == (200 if is_liza else 302)
+    expected = 200 if is_liza else 403
+    assert client.get(url + "/feedback?review_demo=1").status_code == expected
+    assert client.put(url + "/draft", json={"text": "Тест", "cursor": 0}).status_code == expected
+    assert client.post(url + "/send-feedback?preview=true").status_code == expected
