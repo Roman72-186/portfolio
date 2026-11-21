@@ -90,7 +90,7 @@ FORM: Operate, расширение существующего кабинета 
                         <div class="vam-meta">
                             <span>{{ video.original_filename or 'Добавлено из хранилища' }}</span>
                             {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
-                            {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
+                            {% if video.status == 'processing' and video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
                             {% if video.topic_id %}<span>Тема: {{ topic_titles.get(video.topic_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
                         </div>
                         </div>

@@ -1926,6 +1926,9 @@ class BlockItem(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     body: str | None = Field(default=None, max_length=5000)
     video_id: int | None = Field(default=None, ge=1)
+    # Existing converted blocks return their button caption for preview.
+    # Only the migration owns this marker; editing a block must preserve it.
+    upload_button_label: str | None = Field(default=None, max_length=200, exclude=True)
     images: list[BlockImageItem] = Field(
         default_factory=list, max_length=MAX_BLOCK_IMAGES
     )

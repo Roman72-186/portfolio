@@ -375,6 +375,8 @@ def test_edit_form_sent_back_whole_keeps_links(db, user_factory, session_factory
 
     payload = _edit_payloads(db, [db.get(TrackerTask, task_id)], {})[task_id]
     block = payload["blocks"][0]
+    # The editor echoes preview captions from converted blocks.
+    block["upload_button_label"] = "Отправить работу"
     assert sorted(block["linked_block_ids"]) == sorted([first.id, second.id])
     assert {choice["id"] for choice in block["linked_blocks"]} == {first.id, second.id}
     updated = client.post(
@@ -389,6 +391,7 @@ def test_edit_form_sent_back_whole_keeps_links(db, user_factory, session_factory
     assert updated.status_code == 200, updated.text
     db.expire_all()
     main = db.query(TaskBlock).filter_by(task_id=task_id).one()
+    assert main.upload_button_label is None
     assert {
         link.linked_block_id
         for link in db.query(TaskBlockFeedbackLink).filter_by(block_id=main.id)

@@ -46,6 +46,18 @@ def test_student_cannot_open_video_admin(auth_client):
     assert client.get("/cabinet/admin/videos").status_code == 403
 
 
+def test_progress_percentage_only_shown_while_processing(admin_client, db):
+    client, _ = admin_client
+    for status, percent in (("ready", 5), ("processing", 27)):
+        db.add(LearningVideo(bunny_library_id=720058, bunny_video_id=status,
+                             title=status, status=status, encode_progress=percent))
+    db.commit()
+    response = client.get("/cabinet/admin/videos")
+    assert response.status_code == 200
+    assert "Обработка: 5%" not in response.text
+    assert "Обработка: 27%" in response.text
+
+
 def test_admin_can_create_direct_tus_upload(
     client, db, user_factory, session_factory, monkeypatch
 ):
