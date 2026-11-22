@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
-from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
+from app.constants import ANNUAL_NEWCOMER_TAG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
 from app.models.learning_topic import (
     TOPIC_KIND_PERIOD,
     TOPIC_KIND_WEEK,
@@ -25,6 +25,7 @@ from app.models.learning_topic import (
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
+from app.services.adaptation import first_december_cycle, november_cycle
 from app.services.tz import now_msk
 
 STUDENT_ROLE_RANK = 1
@@ -118,9 +119,11 @@ def accessible_topic_ids(
     архив. Время берём через `tz.now_msk()` — в контейнере UTC, иначе фильтр
     уезжает на три часа.
     """
-    user_tag_ids = (
-        db.query(UserTag.tag_id).filter(UserTag.user_id == user_id).scalar_subquery()
-    )
+    adaptation = november_cycle(db, user_id)
+    user_tags = db.query(UserTag.tag_id).filter(UserTag.user_id == user_id)
+    if adaptation is not None:
+        user_tags = user_tags.join(Tag, Tag.id == UserTag.tag_id).filter(Tag.name != ANNUAL_NEWCOMER_TAG)
+    user_tag_ids = user_tags.scalar_subquery()
     tagged_topic_ids = (
         db.query(LearningTopicTag.topic_id)
         .filter(LearningTopicTag.tag_id.in_(user_tag_ids))
@@ -163,7 +166,7 @@ def accessible_topic_ids(
     tariff_ok_topic_ids = tariff_rows.scalar_subquery()
     time_filters = () if include_upcoming else (LearningTopic.opens_at <= now,)
     rows = (
-        db.query(LearningTopic.id)
+        db.query(LearningTopic.id, LearningTopic.kind, LearningTopic.opens_at)
         .filter(
             LearningTopic.deleted_at.is_(None),
             LearningTopic.is_published.is_(True),
@@ -184,7 +187,26 @@ def accessible_topic_ids(
         )
         .all()
     )
-    return {row[0] for row in rows}
+    if adaptation is None:
+        return {row.id for row in rows}
+
+    # PostgreSQL returns timezone-aware timestamps. SQLite tests use UTC.
+    ends_at = adaptation.ends_at
+    if ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=timezone.utc)
+    if now < ends_at:
+        return {
+            row.id for row in rows
+            if row.kind != TOPIC_KIND_WEEK or row.id == adaptation.id
+        }
+
+    first = first_december_cycle(db)
+    starts_at = next((row.opens_at for row in rows if first and row.id == first.id), None)
+    return {
+        row.id for row in rows
+        if row.kind != TOPIC_KIND_WEEK
+        or (starts_at is not None and row.id != adaptation.id and row.opens_at >= starts_at)
+    }
 
 
 def upcoming_topic_ids(db: Session, user_id: int) -> set[int]:

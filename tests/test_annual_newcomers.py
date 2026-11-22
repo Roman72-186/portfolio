@@ -8,7 +8,7 @@
 (`user_management.tag_annual_newcomer`).
 """
 import asyncio
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 from itertools import count
 
 import pytest
@@ -18,6 +18,7 @@ from app.constants import ANNUAL_NEWCOMER_TAG, PROGRAM_HOLIDAY
 from app.models.learning_topic import LearningTopic
 from app.models.tag import Tag, UserTag
 from app.models.user import User
+from app.services.adaptation import NOVEMBER_INTAKE_TAG
 from app.services.cycle_stats import cycle_debtors
 from app.services.tags import add_tag_to_user, get_or_create_tag
 from app.services.tracker import cycle_debt, effective_cycle
@@ -98,6 +99,45 @@ def test_newcomer_sees_only_adaptation_old_student_only_week(db, regular_user, u
     assert topic_audience_user_ids(db, week.id) >= {old.id}
     assert new.id not in topic_audience_user_ids(db, week.id)
     assert topic_audience_user_ids(db, adaptation.id) == {new.id}
+
+
+def test_november_intake_switches_from_adaptation_to_published_december_week(
+    db, regular_user, user_factory, monkeypatch,
+):
+    legacy_tag, old_week, adaptation = _october(db, regular_user)
+    cohort = get_or_create_tag(db, NOVEMBER_INTAKE_TAG)
+    set_topic_tags(db, adaptation, [legacy_tag.id, cohort.id])
+    adaptation.opens_at = datetime(2026, 11, 21, 21, tzinfo=timezone.utc)
+    adaptation.ends_at = datetime(2026, 12, 6, 21, tzinfo=timezone.utc)
+    stage = _topic(
+        db, regular_user, title="Декабрь",
+        starts_on=date(2026, 12, 7), ends_on=date(2027, 1, 3),
+    )
+    stage.kind = "stage"
+    first = _topic(
+        db, regular_user, title="1 неделя",
+        starts_on=date(2026, 12, 7), ends_on=date(2026, 12, 13),
+    )
+    first.parent_id = stage.id
+    first.is_published = False
+    set_topic_excluded_tags(db, first, [legacy_tag.id])
+    add_tag_to_user(db, regular_user.id, cohort.id)
+    add_tag_to_user(db, regular_user.id, legacy_tag.id)
+    db.commit()
+
+    clock = "app.services.video_topics.now_msk"
+    monkeypatch.setattr(clock, lambda: datetime(2026, 11, 23, tzinfo=timezone.utc))
+    assert adaptation.id in accessible_topic_ids(db, regular_user.id)
+    assert old_week.id not in accessible_topic_ids(db, regular_user.id)
+    assert first.id not in accessible_topic_ids(db, regular_user.id, include_upcoming=True)
+
+    monkeypatch.setattr(clock, lambda: datetime(2026, 12, 7, 12, tzinfo=timezone.utc))
+    assert adaptation.id not in accessible_topic_ids(db, regular_user.id)
+    assert first.id not in accessible_topic_ids(db, regular_user.id)
+    first.is_published = True
+    db.flush()
+    assert first.id in accessible_topic_ids(db, regular_user.id)
+    assert effective_cycle(db, regular_user.id, date(2026, 12, 7)).id == first.id
 
 
 def test_excluded_tag_beats_addressing(db, regular_user, user_factory):

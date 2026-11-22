@@ -15,6 +15,12 @@
         <h1>Актуальное образовательное пространство</h1>
     </div>
 
+    {% if adaptation_waiting %}
+    <div class="lrn-card lrn-waiting" data-role="adaptation-waiting">
+        <div class="lrn-card-title">Первая неделя декабря скоро откроется</div>
+        <p class="lrn-card-note">Задания появятся здесь после публикации недели.</p>
+    </div>
+    {% else %}
     <div class="lrn-card lrn-waiting" data-role="holiday-waiting">
         <div class="lrn-card-title">Оплата прошла, трек твой</div>
         <p class="lrn-card-note">
@@ -22,6 +28,7 @@
             Задания появятся здесь, на этой странице.
         </p>
     </div>
+    {% endif %}
 
 </div>
 
