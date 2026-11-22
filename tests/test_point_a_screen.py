@@ -14,8 +14,11 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from app.constants import PROGRAM_HOLIDAY
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
+from app.models.intake_link import IntakeLink
+from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work
 from app.services.point_a import student_point_a
@@ -152,6 +155,43 @@ def test_archived_student_is_not_in_the_list(
     _as(client, session_factory, admin)
 
     assert gone.name not in client.get(LIST_URL).text
+
+
+def test_point_a_lists_only_active_participants_of_november_trial(
+    client, db, user_factory, session_factory, admin,
+):
+    tag = Tag(name="Ноябрьский тест-драйв")
+    db.add(tag)
+    db.flush()
+    db.add(IntakeLink(
+        slug="testpodgotovki", title="Попробуй подготовку",
+        program=PROGRAM_HOLIDAY, tag_id=tag.id,
+    ))
+    participant = user_factory(vk_id=880_020, name="Участник тест-драйва")
+    expired = user_factory(vk_id=880_021, name="Участник с истёкшим доступом")
+    other = user_factory(vk_id=880_022, name="Другой каникулярный ученик")
+    for student in (participant, expired, other):
+        student.program = PROGRAM_HOLIDAY
+    expired.access_until = datetime.now(timezone.utc) - timedelta(days=1)
+    db.add_all([UserTag(user_id=student.id, tag_id=tag.id) for student in (participant, expired)])
+    db.commit()
+    _as(client, session_factory, admin)
+
+    annual = user_factory(vk_id=880_023, name="Ученик годового курса")
+    annual_page = client.get(LIST_URL)
+    response = client.get(LIST_URL, params={"cohort": "trial", "sort": "name"})
+
+    assert annual_page.status_code == 200
+    assert DETAIL_URL.format(annual.id) in annual_page.text
+    assert DETAIL_URL.format(participant.id) not in annual_page.text
+    assert response.status_code == 200
+    assert DETAIL_URL.format(annual.id) not in response.text
+    assert f'{DETAIL_URL.format(participant.id)}?cohort=trial&amp;sort=name' in response.text
+    assert 'aria-current="page">Попробуй подготовку</a>' in response.text
+    detail = client.get(DETAIL_URL.format(participant.id), params={"cohort": "trial", "sort": "name"})
+    assert f'href="{LIST_URL}?cohort=trial&amp;sort=name"' in detail.text
+    assert DETAIL_URL.format(expired.id) not in response.text
+    assert DETAIL_URL.format(other.id) not in response.text
 
 
 def test_list_does_not_load_photos(db, user_factory):
@@ -350,6 +390,9 @@ def test_done_students_sink_to_the_bottom(db, user_factory):
 
     assert [row["point_a"].student.id for row in rows] == [pending.id, done.id]
     assert rows[1]["point_a"].is_done is True
+
+    by_name = point_a_rows(db, [pending, done], pending_first=False)
+    assert [row["point_a"].student.id for row in by_name] == [done.id, pending.id]
 
 
 # ── балл за портфолио «После» ───────────────────────────────────────────────

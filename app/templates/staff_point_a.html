@@ -24,11 +24,23 @@ tests/test_reuse_ratchet.py. Приглушение разобранной ст�
 
     <p><a class="btn-outline" href="/cabinet/staff/point-a-audio">🎙 Голосовые по уровням</a></p>
 
+    {% include "partials/program_switch.html" %}
+    <form method="get" action="/cabinet/staff/point-a">
+        <input type="hidden" name="cohort" value="{{ cohort }}">
+        <label class="prg-field prg-field--row">Сортировка
+            <select name="sort">
+                <option value="pending"{% if sort == "pending" %} selected{% endif %}>Сначала незавершённые</option>
+                <option value="name"{% if sort == "name" %} selected{% endif %}>По фамилии и имени</option>
+            </select>
+        </label>
+        <button type="submit" class="btn-outline">Применить</button>
+    </form>
+
     <section class="prg-items">
         {% if rows %}
         {% for row in rows %}
         {% set pa = row.point_a %}
-        <a class="prg-item{{ ' is-done' if pa.is_done }}" href="/cabinet/staff/point-a/{{ pa.student.id }}">
+        <a class="prg-item{{ ' is-done' if pa.is_done }}" href="/cabinet/staff/point-a/{{ pa.student.id }}{{ point_a_query }}">
             <div>
                 <h3>{{ '✓ ' if pa.is_done }}{{ pa.student.name }}</h3>
                 <div class="prg-meta">

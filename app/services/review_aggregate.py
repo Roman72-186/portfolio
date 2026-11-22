@@ -442,7 +442,9 @@ def _exam_cycle_items(
 # --- кого видит сотрудник и сколько у кого непроверенного -------------------
 
 
-def _accessible_students(db: DBSession, user: dict) -> list:
+def _accessible_students(
+    db: DBSession, user: dict, *, holiday_track: str | None = None,
+) -> list:
     """Канонический список — `_get_accessible_students` (решение владельца,
     вопрос 2): куратор (и модератор, `FULL_ACCESS_RANK`) видит `curator_id` +
     `is_active`, admin+ — всех активных.
@@ -454,13 +456,25 @@ def _accessible_students(db: DBSession, user: dict) -> list:
 
     Без каникулярного набора (`User.program`, созвон 13.10.2026): отдельный
     список, его работы видны в его карточке через «Учеников» с фильтром
-    «Каникулярный набор»."""
+    «Каникулярный набор». Экран точки А может выбрать отдельный трек
+    по тегу участия."""
     from app.constants import PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
     from app.models.role import Role
     from app.models.user import User
     from app.services.access_state import access_open_clause
 
     access_open = access_open_clause(datetime.now(timezone.utc))
+    program_scope = User.program != PROGRAM_HOLIDAY
+    if holiday_track is not None:
+        from app.models.intake_link import IntakeLink
+        from app.models.tag import UserTag
+
+        track_users = (
+            db.query(UserTag.user_id)
+            .join(IntakeLink, IntakeLink.tag_id == UserTag.tag_id)
+            .filter(IntakeLink.program == PROGRAM_HOLIDAY, IntakeLink.slug == holiday_track)
+        )
+        program_scope = (User.program == PROGRAM_HOLIDAY) & User.id.in_(track_users.statement)
 
     if user["role_rank"] < FULL_ACCESS_RANK:
         return (
@@ -470,7 +484,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
                 User.is_active == True,  # noqa: E712
                 User.id.notin_(REPORT_EXCLUDED_USER_IDS),
                 access_open,
-                User.program != PROGRAM_HOLIDAY,
+                program_scope,
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -485,7 +499,7 @@ def _accessible_students(db: DBSession, user: dict) -> list:
             User.is_active == True,  # noqa: E712
             User.id.notin_(REPORT_EXCLUDED_USER_IDS),
             access_open,
-            User.program != PROGRAM_HOLIDAY,
+            program_scope,
         )
         .order_by(User.last_name, User.first_name)
         .all()

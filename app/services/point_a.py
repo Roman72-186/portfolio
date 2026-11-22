@@ -389,7 +389,9 @@ def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | N
     return notification
 
 
-def point_a_rows(db: DBSession, students: list[User]) -> list[dict]:
+def point_a_rows(
+    db: DBSession, students: list[User], *, pending_first: bool = True,
+) -> list[dict]:
     """Строки входного списка: по ученику на строку, разобранные — вниз.
 
     Разобранные не прячутся, а уезжают вниз и гаснут: Лиза 14.09.2026 —
@@ -412,7 +414,7 @@ def point_a_rows(db: DBSession, students: list[User]) -> list[dict]:
         for student in students
     ]
     rows.sort(key=lambda row: (
-        row["point_a"].is_done,
+        pending_first and row["point_a"].is_done,
         (row["point_a"].student.last_name or ""),
         (row["point_a"].student.first_name or row["point_a"].student.name or ""),
     ))

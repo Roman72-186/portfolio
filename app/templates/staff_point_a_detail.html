@@ -40,7 +40,7 @@
                 Уведомление ещё не отправлено
                 {% endif %}
             </p>
-            <form method="post" action="/cabinet/staff/point-a/{{ student.id }}/renotify">
+            <form method="post" action="/cabinet/staff/point-a/{{ student.id }}/renotify{{ point_a_query }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <button type="submit" class="btn-outline">{{ 'Отправить уведомление ещё раз' if student.point_a_notified_at else 'Отправить уведомление' }}</button>
             </form>
@@ -75,7 +75,7 @@
                    обратно на этот же экран (redirect_to проверяется сервером). #}
                 <form method="post" action="/cabinet/admin/works/{{ plate.work_id }}/score">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                    <input type="hidden" name="redirect_to" value="/cabinet/staff/point-a/{{ student.id }}">
+                    <input type="hidden" name="redirect_to" value="/cabinet/staff/point-a/{{ student.id }}{{ point_a_query }}">
                     <label class="prg-field prg-field--row">Балл 0–100
                         <input type="number" name="score" min="0" max="100" step="1" required
                                value="{{ plate.score if plate.score is not none else '' }}">
@@ -97,7 +97,7 @@
     <p class="prg-empty">Ученик пока ничего не сдал — оценивать нечего.</p>
     {% endif %}
 
-    <p><a class="btn-outline" href="/cabinet/staff/point-a">← Ко всем ученикам</a></p>
+    <p><a class="btn-outline" href="/cabinet/staff/point-a{{ point_a_query }}">← К списку учеников</a></p>
 </div>
 
 {% include "partials/lightbox.html" %}

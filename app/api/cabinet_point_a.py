@@ -22,7 +22,7 @@ students-review` — см. докстринг `app/services/point_a.py`. Зде�
 """
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -38,7 +38,18 @@ from app.services.point_a import maybe_notify_point_a_level, point_a_rows, stude
 from app.services.review_aggregate import _accessible_students
 from app.tmpl import templates
 
-router = APIRouter(prefix="/cabinet/staff/point-a")
+POINT_A_PATH = "/cabinet/staff/point-a"
+TRIAL_TRACK = "testpodgotovki"
+PointACohort = Literal["annual", "trial"]
+PointASort = Literal["pending", "name"]
+
+router = APIRouter(prefix=POINT_A_PATH)
+
+
+def _point_a_query(cohort: PointACohort, sort: PointASort) -> str:
+    if cohort == "annual" and sort == "pending":
+        return ""
+    return f"?cohort={cohort}&sort={sort}"
 
 
 def _student_or_404(db: DBSession, student_id: int) -> User:
@@ -60,12 +71,29 @@ def point_a_list(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    cohort: PointACohort = "annual",
+    sort: PointASort = "pending",
 ):
-    rows = point_a_rows(db, _accessible_students(db, user))
+    students = _accessible_students(db, user, holiday_track=TRIAL_TRACK if cohort == "trial" else None)
+    rows = point_a_rows(db, students, pending_first=sort == "pending")
     return templates.TemplateResponse(request, "staff_point_a.html", {
         "request": request,
         "user": user,
         "rows": rows,
+        "cohort": cohort,
+        "sort": sort,
+        "point_a_query": _point_a_query(cohort, sort),
+        "program_switch": {
+            "aria_label": "Набор",
+            "current": cohort,
+            "options": [
+                {"value": value, "label": label, "href": POINT_A_PATH + _point_a_query(value, sort)}
+                for value, label in (
+                    ("annual", "Годовой курс"),
+                    ("trial", "Попробуй подготовку"),
+                )
+            ],
+        },
         "nav_active": "point_a",
     })
 
@@ -76,12 +104,15 @@ def point_a_detail(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    cohort: PointACohort = "annual",
+    sort: PointASort = "pending",
 ):
     student = _student_or_404(db, student_id)
     return templates.TemplateResponse(request, "staff_point_a_detail.html", {
         "request": request,
         "user": user,
         "student": student,
+        "point_a_query": _point_a_query(cohort, sort),
         "point_a": student_point_a(db, student),
         "nav_active": "point_a",
     })
@@ -127,6 +158,8 @@ def point_a_renotify(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     background_tasks: BackgroundTasks,
+    cohort: PointACohort = "annual",
+    sort: PointASort = "pending",
 ):
     """Сбросить `point_a_notified_at` и отправить уведомление заново.
 
@@ -142,4 +175,4 @@ def point_a_renotify(
     if notification is not None:
         invalidate_unread(student.id)
         background_tasks.add_task(notify, notification.id)
-    return RedirectResponse(f"/cabinet/staff/point-a/{student_id}", status_code=302)
+    return RedirectResponse(f"{POINT_A_PATH}/{student_id}{_point_a_query(cohort, sort)}", status_code=302)
