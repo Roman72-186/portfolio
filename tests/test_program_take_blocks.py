@@ -116,6 +116,20 @@ def test_lesson_end_roundtrip_and_copy_clears_calendar_time(client, db, user_fac
     assert copied["subject"] == "Рисунок"
 
 
+def test_copy_keeps_submission_photo_count_and_clears_deadline(client, db, user_factory, session_factory):
+    _login_chief(client, user_factory, session_factory)
+    stage = _stage(client, db, "Ноябрь")
+    cycle = _cycle_in(db, stage, "1 неделя")
+    task_id = _create_item(client, cycle.id, "Эскизы", [{
+        "block_type": "photo_upload", "body": "Пришлите эскизы",
+        "required_photos": 2, "submit_until": "2026-11-29T18:30",
+    }])
+
+    copied = client.get(f"{PROGRAM}/blocks-source/{task_id}").json()["blocks"][0]
+    assert copied["required_photos"] == 2
+    assert not copied.get("submit_until")
+
+
 def _dated_tasks_with_content(db, owner_id, count):
     """Задания дня с блоками, в прошлом и в будущем — как в календаре."""
     base = datetime.now(timezone.utc)

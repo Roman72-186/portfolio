@@ -85,6 +85,9 @@
         {% if holiday and not stages %}
         <p class="prg-hint">Каникулярных этапов пока нет. Заведите период и этап на вкладках «Периоды» и «Этапы», потом цикл.</p>
         {% endif %}
+        <details class="prg-settings">
+            <summary>Доступ по тарифам и тегам</summary>
+            <div class="prg-settings-body">
         {% if holiday %}
         {# Группы каникулярного набора — теги курса (созвон 13.10.2026:
            «каждой группе свой цикл, доступ по тегам, без тарифов»). #}
@@ -181,6 +184,8 @@
                 {% endif %}
             </div>
         </div>
+            </div>
+        </details>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>

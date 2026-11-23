@@ -692,6 +692,17 @@
    варианта ответа — здесь только то, чего у них нет. Токены из base.css. */
 
 .prg-blocks { margin-top: 16px; }
+.prg-block-tools + .prg-block-tools {
+    margin-top: var(--s-4);
+    padding-top: var(--s-3);
+}
+.prg-preview-condition { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (min-width: 1024px) {
+    .prg-form[data-item-form] .prg-form-actions.cta-sticky {
+        position: sticky;
+        bottom: var(--s-3);
+    }
+}
 
 /* Строки блоков слипались друг с другом и с кнопками ниже — margin-top
    у `.prg-ticket` (10px) рассчитан на компактные билеты Пробника, для

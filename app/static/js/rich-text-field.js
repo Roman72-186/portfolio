@@ -66,7 +66,7 @@
 
         result = result.replace(LINK_RE, function (m, label, url) {
             return isSafeLink(url)
-                ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
+                ? '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
                 : m;
         });
         result = result.replace(BOLD_RE, '<strong>$1</strong>');

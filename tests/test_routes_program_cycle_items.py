@@ -16,8 +16,11 @@ import subprocess
 import tempfile
 from datetime import timedelta
 
+import pytest
+
 from app.models.learning_topic import LearningTopic
 from app.models.tracker import TrackerTask
+from app.services.task_blocks import get_blocks
 from app.services.tz import today_msk
 
 # Тот же набор, что у test_program_day_script.py — платформенные глобальные,
@@ -28,7 +31,7 @@ KNOWN_GLOBALS = {
     "Array", "Object", "JSON", "String", "Number", "Boolean", "Promise",
     "Date", "Math", "Set", "Map", "RegExp", "Error", "FormData", "URL",
     "URLSearchParams", "Blob", "File", "FileReader", "IntersectionObserver",
-    "MutationObserver", "CustomEvent", "Event",
+    "MutationObserver", "CustomEvent", "Event", "Uint8Array",
     "fetch", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
     "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
     "clearInterval", "requestAnimationFrame", "alert", "confirm", "prompt",
@@ -69,6 +72,48 @@ def _make_cycle(client, *, title="Цикл"):
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["cycle_id"]
+
+
+@pytest.mark.parametrize("block_type", ["photo", "video", "link", "photo_upload"])
+def test_cycle_item_rejects_incomplete_block(client, db, user_factory, session_factory, block_type):
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    headers = {"X-CSRF-Token": "x"}
+    title = "Эскизы"
+    blocks = [{"block_type": block_type}]
+
+    rejected = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": title, "blocks": blocks}, headers=headers,
+    )
+    assert rejected.status_code == 422
+    assert "1" in rejected.json()["detail"]
+    assert not db.query(TrackerTask).filter_by(topic_id=cycle_id).count()
+
+
+def test_cycle_item_keeps_saved_submission_when_condition_is_cleared(
+    client, db, user_factory, session_factory,
+):
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    headers = {"X-CSRF-Token": "x"}
+    block = {"block_type": "photo_upload", "body": "Пришлите два эскиза", "required_photos": 2}
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Эскизы", "blocks": [block]}, headers=headers,
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    saved = get_blocks(db, task_id)[0]
+    rejected = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={"title": "Новое название", "blocks": [{**block, "id": saved.id, "body": ""}]},
+        headers=headers,
+    )
+    assert rejected.status_code == 422
+    db.expire_all()
+    assert get_blocks(db, task_id)[0].body == block["body"]
+    assert db.get(TrackerTask, task_id).title == "Эскизы"
 
 
 def test_cycle_items_page_script_calls_only_defined_functions(

@@ -15,7 +15,7 @@
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=67">
+<link rel="stylesheet" href="/static/css/program.css?v=68">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=27">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -38,7 +38,7 @@
 {# Подсказки «?» у пунктов «Доступности блока» (06.10.2026). #}
 <script src="/static/js/hint.js?v=2" defer></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
-<script src="/static/js/rich-text-field.js?v=4"></script>
+<script src="/static/js/rich-text-field.js?v=5"></script>
 <script src="/static/js/media-recorder-field.js?v=9"></script>
 {# «Смотреть» в АОП (шаг 2 плана тонких доступов): нет входов в правку —
    плитки «Задание», стрелок, «Изменить», «Удалить». Скрытая форма остаётся в
@@ -104,9 +104,9 @@
         <h2 data-item-form-title>Новое задание</h2>
         <input type="hidden" data-item-id value="">
         <div class="prg-grid2">
-            <label class="prg-field">
+            <label class="prg-field">Название задания
                 <input type="text" data-item-title maxlength="200" autocomplete="off"
-                       aria-label="Тема учебного дня" placeholder="Тема учебного дня">
+                       placeholder="Например, Эскизы к композиции">
             </label>
             <label class="prg-field">Предмет
                 <select data-item-subject>
@@ -117,10 +117,10 @@
                 </select>
             </label>
         </div>
-        <label class="prg-field">
+        <label class="prg-field">Условие задания
             <textarea data-rich-text data-item-description maxlength="5000"
-                      aria-label="Описание, необязательно"
-                      placeholder="Описание, необязательно"></textarea>
+                      aria-label="Условие задания"
+                      placeholder="Что предстоит сделать ученику"></textarea>
         </label>
         {# Обязательность, открытие и срок свёрнуты в одну панель (владелец
            28.09.2026) — та же, что в форме задания на экране дня. #}
@@ -152,20 +152,42 @@
             <div class="prg-preview" data-diagnostic-trainer-box hidden></div>
         </div>
         <div class="prg-blocks" data-blocks-wrap>
-            <h3>Задачи учебного дня</h3>
-            <p class="prg-hint">Добавьте, что должен увидеть ученик: видео из загруженных, ссылку, вопрос, фото для примеров, домашнее задание. Порядок меняется стрелками ↑ ↓.</p>
-            <div data-blocks></div>
-            <div class="prg-actions prg-blocks-add">
-                {# Кнопки — по `block_add_types`, см. комментарий в
-                   `cabinet_program_day.html`: «+ Текст» снят (владелец
-                   16.09.2026), «+ Домашнее задание» и «+ Фото + сдача
-                   работы» слиты в одну кнопку 17.09.2026. #}
-                <button type="button" class="btn-outline" data-add-universal>+ Универсальный блок</button>
-        {% for kind, label in block_add_types %}
-                <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
-                {% endfor %}
-                <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
+            {% set material_types = ('photo', 'video', 'link', 'media') %}
+            {% set submission_types = ('photo_upload', 'timed', 'portfolio') %}
+            <section class="prg-block-tools">
+                <h3>Материалы для ученика</h3>
+                <p class="prg-hint">Добавьте примеры, пояснения или видео к условию.</p>
+                <div class="prg-actions prg-blocks-add">
+                    {% for kind, label in block_add_types if kind in material_types %}
+                    <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
+                    {% endfor %}
+                </div>
+            </section>
+            <section class="prg-block-tools">
+                <h3>Что сдаёт ученик</h3>
+                <p class="prg-hint">Для каждого этапа укажите, что отправить и сколько фото приложить.</p>
+                <div class="prg-actions prg-blocks-add">
+                    {% for kind, label in block_add_types if kind in submission_types %}
+                    <button type="button" class="btn-outline" data-add-block="{{ kind }}">{{ 'Добавить этап сдачи' if kind == 'photo_upload' else '+ ' ~ label }}</button>
+                    {% endfor %}
+                </div>
+            </section>
+            <details class="prg-block-tools prg-settings">
+                <summary>Опросы и другие блоки</summary>
+                <div class="prg-actions prg-blocks-add">
+                    {% for kind, label in block_add_types if kind not in material_types and kind not in submission_types %}
+                    <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
+                    {% endfor %}
+                    <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
+                    <button type="button" class="btn-outline" data-add-universal>+ Универсальный блок</button>
+                </div>
+                <p class="prg-hint">Универсальный блок объединяет несколько секций в один шаг ленты.</p>
+            </details>
+            <div class="prg-block-tools" data-block-order hidden>
+                <h3>Порядок в ленте ученика</h3>
+                <p class="prg-hint">Стрелками ↑ ↓ можно переставить шаги.</p>
             </div>
+            <div data-blocks></div>
         </div>
 
         {# Предпросмотр (владелец 31.08.2026, возвращён на этот экран
@@ -178,6 +200,7 @@
         <div class="prg-actions prg-blocks-take" data-preview-wrap>
             <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
             <button type="button" class="btn-outline" data-take-blocks>Взять содержимое из другого задания</button>
+            <p class="prg-hint" data-copy-deadline-hint hidden>Сроки сдачи задайте заново после копирования.</p>
             {% include "partials/program_take_blocks_picker.html" %}
             <p class="prg-hint" data-take-status></p>
         </div>
@@ -187,7 +210,7 @@
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
             <button type="button" class="btn-blue" data-item-save>Сохранить</button>
         </div>
-        <p class="prg-message" data-form-message></p>
+        <p class="prg-message" data-form-message role="alert" tabindex="-1"></p>
     </form>
 
     <section class="prg-items" data-deadline-scope>
@@ -279,6 +302,7 @@ var editPayloads = {{ edit_payloads|tojson }};
 
 // Рендер карточки блока любого типа и панель «Доступность блока» — общие
 // функции конструктора (см. partials/program_blocks_editor_js.html).
+{% set cycle_assignment_editor = true %}
 {% include "partials/program_blocks_editor_js.html" %}
 
 // Срок задания: сбор и заполнение полей формы (владелец 27.09.2026).
@@ -508,11 +532,17 @@ function uploadImage(file, url) {
             blocks = blocks.concat(diagnosticPreviewBlocks(diagnosticBuilder.questions()));
         }
         blocks = blocks.concat(previewBlocksOf(collectFormBlocks(form)));
-        box.innerHTML = '';
-        if (!blocks.length) {
-            box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
-            box.hidden = false;
-            return;
+        box.replaceChildren(el('h3', '', 'Предпросмотр задания'));
+        var title = fields.title.value.trim();
+        var condition = fields.description.value.trim();
+        if (title) box.appendChild(el('h4', '', title));
+        if (condition) {
+            var note = el('div', 'prg-preview-condition');
+            note.innerHTML = window.RichTextField.markdownToHtml(condition);
+            box.appendChild(note);
+        }
+        if (!title && !condition && !blocks.length) {
+            box.appendChild(el('p', 'prg-hint', 'Добавьте условие или блок, чтобы увидеть задание.'));
         }
         renderPreviewBlocks(box, blocks, 0);
         freezePreview(box);
@@ -700,6 +730,7 @@ function uploadImage(file, url) {
         form.querySelector('[data-take-picker]').hidden = true;
         form.querySelector('[data-take-search]').value = '';
         form.querySelector('[data-take-status]').textContent = '';
+        form.querySelector('[data-copy-deadline-hint]').hidden = true;
     }
 
     function openForm() {
@@ -798,13 +829,56 @@ function uploadImage(file, url) {
     {% include "partials/program_task_draft_js.html" %}
 
     form.querySelector('[data-item-save]').addEventListener('click', function () {
+        var previousError = form.querySelector('[data-block-error]');
+        if (previousError) previousError.remove();
+        var previousField = form.querySelector('[aria-describedby="cycle-block-error"]');
+        if (previousField) {
+            previousField.removeAttribute('aria-invalid');
+            previousField.removeAttribute('aria-describedby');
+        }
         var title = fields.title.value.trim();
         if (!title) {
-            message.textContent = 'Укажите тему учебного дня.';
+            message.textContent = 'Укажите название задания.';
             message.classList.add('is-error');
+            fields.title.focus();
             return;
         }
+        message.textContent = '';
         message.classList.remove('is-error');
+        var incompleteBlock;
+        var blocks = form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form, function (row, blockNumber, instruction, field) {
+            if (incompleteBlock) return;
+            incompleteBlock = {row: row, instruction: 'Блок ' + blockNumber + '. ' + instruction, field: field};
+        });
+        if (!incompleteBlock && form.dataset.itemKind !== 'archi_profile') {
+            var emptyGroup = Array.from(form.querySelectorAll('[data-blocks] [data-universal-key]')).find(function (group) {
+                return !group.querySelector('[data-block]');
+            });
+            if (emptyGroup) incompleteBlock = {
+                row: emptyGroup,
+                instruction: 'Добавьте секцию в универсальный блок или уберите его.'
+            };
+        }
+        if (incompleteBlock) {
+            var blockError = el('p', 'prg-message is-error', incompleteBlock.instruction);
+            blockError.setAttribute('data-block-error', '');
+            blockError.setAttribute('role', 'alert');
+            blockError.id = 'cycle-block-error';
+            blockError.tabIndex = -1;
+            if (incompleteBlock.field) {
+                var sectionToggle = incompleteBlock.row.querySelector('.prg-universal-section-toggle[aria-expanded="false"]');
+                if (sectionToggle) sectionToggle.click();
+                incompleteBlock.field.closest('label').after(blockError);
+                incompleteBlock.field.setAttribute('aria-invalid', 'true');
+                incompleteBlock.field.setAttribute('aria-describedby', blockError.id);
+                incompleteBlock.field.focus({preventScroll: true});
+            } else {
+                incompleteBlock.row.prepend(blockError);
+                blockError.focus({preventScroll: true});
+            }
+            blockError.scrollIntoView({block: 'center'});
+            return;
+        }
         // Отдельный вид archi_profile ни во что не кладёт payload.blocks
         // (сервер их игнорирует), поэтому у него это всегда пусто. У
         // «Задания» — обычные блоки плюс, если добавлена, диагностика одной
@@ -816,7 +890,7 @@ function uploadImage(file, url) {
             description: fields.description.value.trim() || null,
             is_required: fields.required.checked,
             starts_on: fields.starts.value || null,
-            blocks: form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form)
+            blocks: blocks
         };
         // Срок задания — те же два поля, что у блока, собирает общий партиал.
         Object.assign(payload, taskDeadlinePayload(form));
@@ -877,6 +951,7 @@ function uploadImage(file, url) {
             message.textContent = (err.status === 422 && err.message !== 'request_failed')
                 ? err.message : 'Не удалось сохранить задание.';
             message.classList.add('is-error');
+            message.focus();
             // Поле, о котором ошибка, может лежать под свёрнутой панелью.
             openCustomSettingsPanels(form);
         });
@@ -987,6 +1062,7 @@ function uploadImage(file, url) {
             return;
         }
         if (event.target.closest('[data-take-blocks]')) {
+            form.querySelector('[data-copy-deadline-hint]').hidden = false;
             fillTakeSources(
                 form.querySelector('[data-take-source]'),
                 form.querySelector('[data-take-status]')
@@ -1031,7 +1107,11 @@ function uploadImage(file, url) {
             // экране дня).
             syncBlockOptions(holder.lastElementChild);
             renumberBlocks(holder);
-            holder.lastElementChild.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            var newBlock = holder.lastElementChild;
+            var blockHeader = newBlock.querySelector('.prg-ticket-head');
+            blockHeader.tabIndex = -1;
+            blockHeader.focus({preventScroll: true});
+            newBlock.scrollIntoView({block: 'start'});
             return;
         }
         // Переставить и убрать — общие функции конструктора

@@ -1581,6 +1581,27 @@ def _is_empty(block_type: str, item: dict) -> bool:
     return not (item.get("body") or "").strip()
 
 
+def validate_cycle_blocks(items: list[dict], *, legacy_empty_submission_ids: set[int]) -> None:
+    """Reject incomplete blocks before sync can silently discard them."""
+    for index, item in enumerate(items, start=1):
+        block_type = item["block_type"]
+        if block_type not in BLOCK_TYPES:
+            # The editor validates compound polls and diagnostics separately.
+            continue
+        if _is_empty(block_type, item):
+            raise ValueError(f"Заполните блок {index} или уберите его.")
+        if (
+            block_type == BLOCK_PHOTO_UPLOAD
+            and item.get("id") not in legacy_empty_submission_ids
+            and not (
+                (item.get("body") or "").strip()
+                or item.get("video_id")
+                or item.get("images")
+            )
+        ):
+            raise ValueError(f"Добавьте условие для этапа сдачи в блоке {index}.")
+
+
 def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskBlock]:
     """Развести список блоков из конструктора с уже сохранёнными в базе.
 

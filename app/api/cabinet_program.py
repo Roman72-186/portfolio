@@ -47,6 +47,7 @@ from app.models.learning_video import LearningVideo
 from app.models.tag import Tag
 from app.models.task_block import (
     BLOCK_COMPARE,
+    BLOCK_PHOTO_UPLOAD,
     BLOCK_QUESTION,
     BLOCK_RULES,
     BLOCK_SCALE,
@@ -99,6 +100,7 @@ from app.services.task_blocks import (
     sync_submit_deadlines as sync_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
     sync_task_submit_deadlines as sync_task_level_submit_deadlines,
+    validate_cycle_blocks,
 )
 from app.services.cycle_stats import cycle_debtors, cycle_stats, reminder_message, remind_cycle_debtors
 from app.services.exam_cycle import MAX_INTERMEDIATE_PER_FINAL
@@ -2547,6 +2549,21 @@ def _blocks_with_diagnostic_expanded(
     return items
 
 
+def _validate_cycle_editor_blocks(db: DBSession, blocks: list[BlockItem], task_id: int | None = None) -> None:
+    # Allow untouched submission-only blocks from before this validation.
+    candidates = {
+        block.id
+        for block in (get_task_blocks(db, task_id) if task_id is not None else [])
+        if block.block_type == BLOCK_PHOTO_UPLOAD
+        and not ((block.body or "").strip() or block.video_id)
+    }
+    legacy_ids = candidates - get_task_block_images(db, list(candidates)).keys()
+    try:
+        validate_cycle_blocks([block.model_dump() for block in blocks], legacy_empty_submission_ids=legacy_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db: DBSession, kind: str):
     """Новое задание в цикле — без дня и без своей темы: `topic_id` ставится
     прямо на цикл (`LearningTopic(kind='week')`), а не на одноразовую тему
@@ -2557,6 +2574,8 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
     topic = get_topic(db, topic_id, kinds=_ITEM_HOLDER_KINDS)
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
+    if kind == ITEM_MATERIAL:
+        _validate_cycle_editor_blocks(db, payload.blocks)
     task = create_task(
         db,
         title=payload.title,
@@ -2995,6 +3014,7 @@ def blocks_source_content(
             # от абсолютных opens_at/closes_at она начнёт отсчёт заново у
             # каждого ученика, когда копия блока станет доступна.
             "portfolio_window_hours": b.portfolio_window_hours,
+            "required_photos": b.required_photos,
             # Право ответа от даты не зависит — копируется, как тарифы.
             "dialog_tariffs": sorted(dialog_tariffs.get(b.id, set())),
             "dialog_reply_limit": b.dialog_reply_limit,
@@ -4442,6 +4462,8 @@ def _update_simple_item(
 
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None and topic.kind in _ITEM_HOLDER_KINDS and kind == ITEM_MATERIAL:
+            _validate_cycle_editor_blocks(db, payload.blocks, task.id)
         # Служебная тема элемента (`program_item`) — это и есть её название,
         # правка задания правит и её. Тема цикла (`week`) — это сам цикл, а
         # не тема одного задания: переименовывать её правкой одного задания

@@ -41,6 +41,9 @@ var BLOCK_LABELS = {{ block_types|tojson }}.reduce(function (acc, pair) {
 // сервер разворачивает её в вопросы (`cabinet_program.py::_expand_polls`).
 // Кнопка добавления осталась на типе `question` («+ Опрос»), подпись та же.
 BLOCK_LABELS.poll = BLOCK_LABELS.question;
+{% if cycle_assignment_editor %}
+BLOCK_LABELS.photo_upload = 'Этап сдачи';
+{% endif %}
 
 // Типы со сдачей — работа, ответ, шкала, правила, сравнение, контрольная
 // (владелец 06.10.2026: «досдать свыше срока всегда можно»): после срока
@@ -594,10 +597,17 @@ function blockBodyHTML(type) {
     }
     if (type === 'photo_upload') {
         return ''
+            {% if cycle_assignment_editor %}
+            + '<label class="prg-field">Название этапа<input type="text" data-b-title maxlength="200" placeholder="Например, Чистовой вариант"></label>'
+            + '<label class="prg-field">Что сдать<textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Например, пришлите фото двух эскизов"></textarea></label>'
+            + REQUIRED_PHOTOS_FIELD
+            + '<label class="prg-field">Видео к этапу<select data-b-video><option value="">Без видео</option>' + videoOptionsHTML() + '</select></label>'
+            {% else %}
             + '<label class="prg-field">Название стадии<input type="text" data-b-title maxlength="200" placeholder="Например, Стадия 4"></label>'
             + '<label class="prg-field">Видео<select data-b-video><option value="">Без видео</option>' + videoOptionsHTML() + '</select></label>'
             + '<label class="prg-field">Текст задания<textarea data-rich-text data-b-body maxlength="5000" placeholder="Что нужно сделать и прислать"></textarea></label>'
             + REQUIRED_PHOTOS_FIELD
+            {% endif %}
             + '<details><summary>Фото к условию</summary>'
             + '<input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото задания">'
             + '<p class="prg-hint" data-b-photo-status></p><div class="prg-blk-gallery" data-b-images></div></details>';
@@ -1435,6 +1445,9 @@ document.addEventListener('click', function (event) {
 });
 
 function fillBlockRow(row, block) {
+    if (block.block_type === 'photo_upload' && (block.body || block.video_id || block.images && block.images.length)) {
+        row.dataset.hadSubmissionCondition = 'true';
+    }
     if (block.upload_button_label) row.dataset.uploadButtonLabel = block.upload_button_label;
     if (block.id) row.setAttribute('data-block-id', block.id);
     var body = row.querySelector('[data-b-body]');
@@ -1602,6 +1615,11 @@ function fillBlockRow(row, block) {
 // номер даёт зацепку взгляду без чтения текста внутри (ревью 03.09.2026).
 function renumberBlocks(holder) {
     if (!holder) return;
+    var orderHeading = holder.parentElement.querySelector('[data-block-order]');
+    if (orderHeading) orderHeading.hidden = !holder.querySelector('[data-block], [data-universal-key]');
+    holder.querySelectorAll('[data-universal-remove]').forEach(function (button) {
+        button.hidden = !!button.closest('[data-universal-key]').querySelector('[data-block]');
+    });
     holder.querySelectorAll('[data-block]').forEach(function (row, index) {
         var num = row.querySelector('[data-block-number]');
         if (num) num.textContent = String(index + 1) + '.';
@@ -1678,10 +1696,12 @@ function createUniversalCard(holder, key, month) {
         function (byte) { return byte.toString(16).padStart(2, '0'); }
     ).join('');
     // У формы дня учебный месяц определяется по самому дню.
-    var monthField = holder.closest('[data-item-form]')
+    var cycleForm = holder.closest('[data-item-form]');
+    var monthField = cycleForm
         ? '<label class="prg-field">Учебный месяц<input type="month" data-universal-month></label>'
         : '';
     card.innerHTML = '<legend>Универсальный блок</legend>'
+        + (cycleForm ? '<div class="prg-ticket-head"><button type="button" class="btn-outline" data-universal-remove>Убрать пустой блок</button></div>' : '')
         + '<div data-universal-sections></div>'
         + monthField
         + '<label class="prg-field">Добавить секцию<select data-universal-type>'
@@ -1699,6 +1719,14 @@ function createUniversalCard(holder, key, month) {
         + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
     var monthInput = card.querySelector('[data-universal-month]');
     if (monthInput) monthInput.value = month || '';
+    var remove = card.querySelector('[data-universal-remove]');
+    if (remove) {
+        remove.addEventListener('click', function () {
+            if (card.querySelector('[data-block]')) return;
+            card.remove();
+            renumberBlocks(holder);
+        });
+    }
     var picker = card.querySelector('[data-universal-type]');
     picker.addEventListener('change', function () {
         if (!picker.value) return;
@@ -1711,6 +1739,7 @@ function createUniversalCard(holder, key, month) {
         syncBlockOptions(row);
         renumberBlocks(holder);
         toggle.focus({preventScroll: true});
+        if (cycleForm) row.scrollIntoView({block: 'start'});
     });
     holder.appendChild(card);
     return card;
@@ -1766,9 +1795,12 @@ function wrapUniversalSection(row) {
 }
 
 function addUniversalCard(form) {
-    var card = createUniversalCard(form.querySelector('[data-blocks]'));
-    card.scrollIntoView({block: 'nearest'});
-    card.querySelector('[data-universal-type]').focus({preventScroll: true});
+    var holder = form.querySelector('[data-blocks]');
+    var card = createUniversalCard(holder);
+    renumberBlocks(holder);
+    var picker = card.querySelector('[data-universal-type]');
+    picker.focus({preventScroll: true});
+    picker.scrollIntoView({block: 'center'});
 }
 
 function renderFormBlocks(form, rows) {
@@ -1793,12 +1825,15 @@ function renderFormBlocks(form, rows) {
     renumberBlocks(holder);
 }
 
-function collectFormBlocks(form) {
+function collectFormBlocks(form, onIncomplete) {
     var items = [];
     var holder = form.querySelector('[data-blocks]');
     if (!holder) return items;
-    holder.querySelectorAll('[data-block]').forEach(function (row) {
+    holder.querySelectorAll('[data-block]').forEach(function (row, index) {
         var type = row.getAttribute('data-block-type');
+        function incomplete(instruction, field) {
+            if (onIncomplete) onIncomplete(row, index + 1, instruction, field);
+        }
         var idAttr = row.getAttribute('data-block-id');
         var item = {id: idAttr ? Number(idAttr) : null, block_type: type};
         if (row.dataset.uploadButtonLabel) item.upload_button_label = row.dataset.uploadButtonLabel;
@@ -1835,6 +1870,9 @@ function collectFormBlocks(form) {
         item.time_limit_minutes = (limitField && limitField.value)
             ? Number(limitField.value) : null;
         var requiredPhotos = row.querySelector('[data-b-required-photos]');
+        if (onIncomplete && requiredPhotos && !requiredPhotos.validity.valid) {
+            return incomplete('Укажите целое число фото от 1 до 10.', requiredPhotos);
+        }
         item.required_photos = (requiredPhotos && requiredPhotos.value)
             ? Number(requiredPhotos.value) : null;
         var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
@@ -1906,7 +1944,7 @@ function collectFormBlocks(form) {
         }
         if (type === 'link') {
             item.url = (row.querySelector('[data-b-url]').value || '').trim();
-            if (!item.url) return;
+            if (!item.url) return incomplete('Вставьте адрес ссылки.');
         }
         if (type === 'media') {
             var mediaHolder = row.querySelector('[data-b-media]');
@@ -1914,11 +1952,11 @@ function collectFormBlocks(form) {
             item.media_kind = mediaHolder.getAttribute('data-media-kind') || null;
             item.media_path = mediaHolder.getAttribute('data-media-path') || null;
             // Без записи блок пустой — сервер отбросил бы его и сам.
-            if (!item.media_url) return;
+            if (!item.media_url) return incomplete('Добавьте голосовое или кружок.');
         }
         if (type === 'video') {
             var picked = row.querySelector('[data-b-video]').value;
-            if (!picked) return;
+            if (!picked) return incomplete('Выберите видео.');
             item.video_id = Number(picked);
         }
         if (type === 'photo') {
@@ -1929,7 +1967,7 @@ function collectFormBlocks(form) {
                     path: thumb.getAttribute('data-path') || null
                 });
             });
-            if (!item.images.length) return;
+            if (!item.images.length) return incomplete('Добавьте хотя бы одно фото.');
         }
         if (type === 'portfolio') {
             // Видео и галерея необязательны — без них остаётся прежняя
@@ -1959,6 +1997,10 @@ function collectFormBlocks(form) {
                     path: thumb.getAttribute('data-path') || null
                 });
             });
+            if (onIncomplete && type === 'photo_upload' && (!item.id || row.dataset.hadSubmissionCondition)
+                && !item.body && !item.video_id && !item.images.length) {
+                return incomplete('Опишите, что сдать на этом этапе, или добавьте фото либо видео к условию.');
+            }
         }
         if (type === 'compare') {
             // Без `return` на нехватке работ или отметки: пусть сервер
@@ -1972,7 +2014,7 @@ function collectFormBlocks(form) {
                 var rule = collectRuleItem(optionRow);
                 if (rule) item.options.push(rule);
             });
-            if (!item.options.length) return;
+            if (!item.options.length) return incomplete('Добавьте хотя бы один пункт правил.');
         }
         if (type === 'scale') {
             item.options = [];
@@ -1993,10 +2035,10 @@ function collectFormBlocks(form) {
                     scale_max_label: maxLabelField ? maxLabelField.value.trim() : ''
                 });
             });
-            if (!item.options.length) return;
+            if (!item.options.length) return incomplete('Добавьте хотя бы один навык.');
         }
         if (type === 'question') {
-            if (!item.body) return;
+            if (!item.body) return incomplete('Напишите вопрос.');
             item.question_type = row.querySelector('[data-b-question-type]').value;
             item.hidden_until_done = !!row.querySelector('[data-b-hidden-until-done]:checked');
             item.options = [];
@@ -2020,9 +2062,11 @@ function collectFormBlocks(form) {
             // Совсем пустой опрос (добавили и ничего не вписали) — пустая
             // заготовка, как пустой блок. Опрос с названием, но без вопросов
             // уходит: сервер ответит «нужен хотя бы один вопрос».
-            if (!item.questions.length && !item.title && !item.body) return;
+            if (!item.questions.length && (onIncomplete || (!item.title && !item.body))) {
+                return incomplete('Добавьте хотя бы один вопрос.');
+            }
         }
-        if (type === 'text' && !item.body) return;
+        if (type === 'text' && !item.body) return incomplete('Введите текст.');
         // portfolio: пустой заголовок и пояснение допустимы — кнопка
         // самодостаточна.
         items.push(item);
