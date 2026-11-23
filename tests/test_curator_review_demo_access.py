@@ -2,7 +2,7 @@
 import pytest
 
 from app.models.task_block_feedback import TaskBlockFeedbackMessage
-from tests.test_feedback_rating import _setup_block, _login, _send, _quiet_side_effects
+from tests.test_feedback_rating import _setup_block, _login, _png, _send, _quiet_side_effects
 
 
 @pytest.mark.parametrize("role", ["куратор", "суперадмин", "модератор"])
@@ -51,7 +51,53 @@ def test_head_can_test_queue_and_editor(db, user_factory, session_factory, clien
     assert page.status_code == 200
     assert 'id="review-section"' in page.text
     assert "data-review-draft-url=" in page.text
+    assert 'data-demo-record="note"' in page.text
+    assert 'data-demo-record="voice"' in page.text
+    assert "Сохранить в черновики" not in page.text
+    assert page.text.index("Сохранить оценку") < page.text.index("Задание ·")
+    assert page.text.index("Задание ·") < page.text.index("Сообщение ученику")
+    assert page.text.index("Сообщение ученику") < page.text.index("Прошлые работы")
+    curator_view = client.get(base + f"/feedback?review_demo=1&review_curator={curator.id}")
+    assert curator_view.status_code == 200
+    assert 'data-demo-file="video"' in curator_view.text
+    assert "data-demo-record=" not in curator_view.text
+    assert 'data-demo-file="audio"' not in curator_view.text
     assert client.put(base + "/draft", json={"text": "Демо ГП", "cursor": 0}).status_code == 200
+
+
+def test_demo_attachment_requires_role_and_current_cursor(db, user_factory, session_factory, client, monkeypatch):
+    curator, student, _, submission = _setup_block(db, user_factory, base=998_601)
+    chief = user_factory(vk_id=998_611, role_name="админ")
+    _login(client, session_factory, chief)
+    base = f"/cabinet/staff/task-block-submissions/{submission.id}"
+    curator_upload = base + f"/messages?review_demo=true&review_curator={curator.id}"
+    assert client.post(curator_upload, data={"demo_cursor": 0, "video_note": "1"}).status_code == 403
+    assert client.post(
+        curator_upload, data={"demo_cursor": 0}, files={"audio": ("voice.ogg", b"voice", "audio/ogg")},
+    ).status_code == 403
+
+    async def upload_photo(*args):
+        return "demo/photo.png", "https://s3.test/demo/photo.png"
+
+    monkeypatch.setattr("app.services.task_block_feedback._upload_photo", upload_photo)
+    response = client.post(curator_upload, data={"demo_cursor": 0}, files={"photo": _png()})
+    assert response.status_code == 200, response.text
+    cursor = response.json()["cursor"]
+    assert client.post(curator_upload, data={"demo_cursor": 0}, files={"photo": _png()}).status_code == 409
+    message = db.get(TaskBlockFeedbackMessage, cursor)
+    assert message.is_draft
+    assert message.photo_s3_url == "https://s3.test/demo/photo.png"
+
+    _login(client, session_factory, student)
+    student_page = f"/cabinet/task-block-submissions/{submission.id}/feedback"
+    assert message.photo_s3_url not in client.get(student_page).text
+    _login(client, session_factory, chief)
+    preview = client.post(base + "/send-feedback?preview=true")
+    params = {"snapshot": preview.json()["snapshot"]}
+    assert client.post(base + "/send-feedback", params=params).status_code == 200
+    assert client.post(base + "/send-feedback", params=params).status_code == 409
+    _login(client, session_factory, student)
+    assert message.photo_s3_url in client.get(student_page).text
 
 
 def test_impersonation_requires_head(db, user_factory, session_factory, client):

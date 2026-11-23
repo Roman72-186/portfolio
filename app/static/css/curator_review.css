@@ -1,4 +1,37 @@
 .curator-review { max-width: 960px; margin-inline: auto; }
+.review-composer-tools { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.review-composer-menu { position: relative; }
+.review-composer-menu > summary {
+    display: inline-flex;
+    inline-size: 44px;
+    block-size: 44px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    list-style: none;
+}
+.review-composer-menu > summary::-webkit-details-marker { display: none; }
+.review-composer-options {
+    position: absolute;
+    inset-block-start: calc(100% + var(--s-1));
+    inset-inline-start: 0;
+    z-index: 2;
+    display: grid;
+    gap: var(--s-1);
+    min-inline-size: max-content;
+    padding: var(--s-2);
+}
+.review-composer-options.card,
+.review-composer-options.card:hover { box-shadow: var(--sh-md); transform: none; }
+.review-composer-options button { justify-content: flex-start; }
+.review-composer-details { margin-block-end: var(--s-2); }
+.review-composer-details > summary { cursor: pointer; }
+.review-composer-files { padding: 0; list-style: none; }
+.review-composer-files li:not([hidden]) { display: flex; gap: var(--s-2); align-items: center; }
+.review-composer-files span { overflow-wrap: anywhere; }
+[data-demo-composer] [hidden],
+[data-demo-recorder] [data-mrf-idle] { display: none; }
 .review-subjects, .review-student-grid { display: grid; gap: var(--s-3); }
 .review-student-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
 .review-subject { min-height: 130px; display: grid; align-items: end; background: var(--blue-soft); color: var(--blue-text); font-size: var(--fs-h2); font-weight: 800; }

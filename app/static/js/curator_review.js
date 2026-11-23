@@ -1,19 +1,3 @@
-document.querySelector('[data-review-sections]')?.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-review-heading]');
-    const input = document.getElementById('feedback-text');
-    if (!button || !input) return;
-    const heading = `**${button.dataset.reviewHeading}**`;
-    if (input.value.split('\n').includes(heading)) return;
-    input.value = `${input.value.trimEnd()}${input.value.trim() ? '\n\n' : ''}${heading}\n`;
-    if (input._rtEditable && window.RichTextField?.refresh) {
-        window.RichTextField.refresh(input);
-        input._rtEditable.focus();
-    } else {
-        input.focus();
-    }
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-});
-
 (function setupDraft() {
     const form = document.querySelector('[data-review-draft-url]');
     if (!form) return;
@@ -23,7 +7,11 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     const work = form.querySelector('[data-review-work]');
     const picker = form.querySelector('[data-review-draft-picker]');
     const newDraft = form.querySelector('[data-review-new]');
-    const addMessage = form.querySelector('button[type="submit"]');
+    const draftControls = form.querySelector('[data-review-draft-controls]');
+    const tools = form.querySelector('.review-composer-tools');
+    const files = form.querySelector('[data-demo-files]');
+    const recorder = form.querySelector('[data-demo-recorder]');
+    const fileFields = ['photo', 'video', 'audio'];
     const status = form.querySelector('[data-review-save-status]');
     const retry = form.querySelector('[data-review-save-retry]');
     const send = document.querySelector('[data-send-feedback]');
@@ -32,7 +20,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     let activeId = null;
     try { activeId = Number(sessionStorage.getItem(storageKey)); } catch (_) { /* Storage can be disabled. */ }
     const drafts = new Map(initial.drafts.map((draft) => [draft.id, draft]));
-    const otherDrafts = Number(send?.dataset.reviewDraftCount || 0) > drafts.size;
+    let otherDrafts = Number(send?.dataset.reviewDraftCount || 0) > drafts.size;
     const imageOptions = Array.from(image.options);
     let id = null;
     let revision = null;
@@ -43,6 +31,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     let pendingRequest;
     let leaving = false;
     let busy = false;
+    let hasFiles = false;
 
     function remember() {
         try {
@@ -52,7 +41,8 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     }
 
     function updateSend() {
-        if (send) send.disabled = busy || !(otherDrafts || drafts.size || input.value.trim());
+        if (send) send.disabled = busy || recorder?.hasAttribute('data-mrf-busy')
+            || !(otherDrafts || drafts.size || input.value.trim() || hasFiles);
     }
 
     function draftPayload() {
@@ -76,6 +66,7 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         }
         picker.replaceChildren(...options);
         picker.value = id ?? '';
+        draftControls.hidden = drafts.size === 0;
     }
 
     function hasChanges() {
@@ -186,13 +177,21 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     function setBusy(value) {
         busy = value;
         input.readOnly = value;
-        [image, work, section, picker, newDraft, addMessage].forEach((control) => { control.disabled = value; });
+        [image, work, section, picker, newDraft].forEach((control) => { control.disabled = value; });
+        tools.querySelectorAll('details').forEach((menu) => { menu.open = false; });
+        tools.querySelectorAll('button:not([data-send-feedback])').forEach((button) => { button.disabled = value; });
+        files.inert = value;
         if (input._rtEditable) input._rtEditable.contentEditable = value ? 'false' : 'true';
         updateSend();
     }
 
     async function switchDraft(nextId) {
         if (busy || leaving) return;
+        if (hasFiles || recorder?.hasAttribute('data-mrf-busy')) {
+            picker.value = id ?? '';
+            status.textContent = 'Сначала откройте предпросмотр или уберите вложение.';
+            return;
+        }
         setBusy(true);
         try {
             await flush();
@@ -205,6 +204,108 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
     }
 
     openDraft(drafts.get(activeId));
+
+    function showFiles() {
+        const body = new FormData(form);
+        files.replaceChildren();
+        hasFiles = false;
+        for (const kind of fileFields) {
+            const file = body.get(kind);
+            if (!file?.size) continue;
+            hasFiles = true;
+            // The recorder already renders a player and a remove button.
+            const recorded = recorder?.querySelector('[data-mrf-preview]:not([hidden]) [data-mrf-player]');
+            if ((kind === 'audio' && recorded?.querySelector('audio'))
+                || (kind === 'video' && recorded?.querySelector('video'))) continue;
+            const item = document.createElement('li');
+            const name = document.createElement('span');
+            name.textContent = file.name;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn-outline';
+            remove.textContent = 'Убрать';
+            remove.setAttribute('aria-label', `Убрать вложение: ${file.name}`);
+            remove.addEventListener('click', () => {
+                form.elements[kind].value = '';
+                showFiles();
+            });
+            item.append(name, remove);
+            files.append(item);
+        }
+        files.hidden = !files.childElementCount;
+        updateSend();
+    }
+
+    async function preparePreview() {
+        await flush();
+        const body = new FormData(form);
+        if (!fileFields.some((kind) => body.get(kind)?.size)) return;
+        body.set('demo_cursor', cursor);
+        if (id !== null) {
+            body.set('draft_id', id);
+            body.set('draft_revision', revision);
+        }
+        let response;
+        try {
+            response = await window.csrfFetch(form.action, {method: 'POST', body});
+        } catch (_) {
+            throw new Error('Не удалось загрузить вложение. Проверьте соединение и снова откройте предпросмотр.');
+        }
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) {
+            throw new Error(window.csrfFailure(response.status, result, 'Не удалось загрузить вложение. Повторите попытку.'));
+        }
+        cursor = result.cursor;
+        otherDrafts = true;
+        drafts.delete(id);
+        recorder?.querySelector('[data-mrf-preview]:not([hidden]) [data-mrf-remove]')?.click();
+        for (const kind of fileFields) {
+            if (form.elements[kind]) form.elements[kind].value = '';
+        }
+        openDraft(null);
+        showFiles();
+        return true;
+    }
+
+    tools.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-demo-file], [data-demo-record]');
+        if (!action || busy || recorder?.hasAttribute('data-mrf-busy')) return;
+        action.closest('details').open = false;
+        if (action.dataset.demoRecord) {
+            if (recorder?.querySelector('[data-mrf-preview]:not([hidden])')) {
+                status.textContent = 'Сначала уберите текущую запись или откройте предпросмотр.';
+                return;
+            }
+            recorder?.querySelector(`[data-mrf-start="${action.dataset.demoRecord}"]`)?.click();
+        } else {
+            form.elements[action.dataset.demoFile].click();
+        }
+    });
+    tools.querySelectorAll('details').forEach((menu) => {
+        menu.addEventListener('toggle', () => {
+            if (!menu.open) return;
+            tools.querySelectorAll('details[open]').forEach((other) => {
+                if (other !== menu) other.open = false;
+            });
+        });
+        menu.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !menu.open) return;
+            menu.open = false;
+            menu.querySelector('summary').focus();
+        });
+    });
+    document.addEventListener('click', (event) => {
+        tools.querySelectorAll('details[open]').forEach((menu) => {
+            if (!menu.contains(event.target)) menu.open = false;
+        });
+    });
+    form.addEventListener('submit', (event) => event.preventDefault());
+    form.addEventListener('change', (event) => {
+        if (event.target.type === 'file') queueMicrotask(showFiles);
+    });
+    if (recorder) {
+        new MutationObserver(showFiles).observe(recorder, {attributeFilter: ['data-mrf-busy']});
+    }
     picker.addEventListener('change', () => switchDraft(Number(picker.value)));
     newDraft.addEventListener('click', () => switchDraft(null));
     input.addEventListener('input', schedule);
@@ -226,6 +327,8 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         if (leaving || busy) return;
+        if ((hasFiles || recorder?.hasAttribute('data-mrf-busy'))
+            && !window.confirm('Уйти со страницы? Выбранные вложения ещё не сохранены.')) return;
         leaving = true;
         flush().then(() => { window.location.assign(link.href); }).catch(() => {
             leaving = false;
@@ -234,15 +337,14 @@ document.querySelector('[data-review-sections]')?.addEventListener('click', (eve
         });
     });
     window.addEventListener('beforeunload', (event) => {
-        if (!pendingRequest && !inFlight && !hasChanges()) return;
+        if (!pendingRequest && !inFlight && !hasChanges() && (leaving || !hasFiles && !recorder?.hasAttribute('data-mrf-busy'))) return;
         event.preventDefault();
         event.returnValue = '';
     });
 
     window.curatorReviewDraft = {
         flush,
-        hasDraft: () => id !== null,
-        attachmentTarget: () => id === null ? null : {id, revision},
+        preparePreview,
         setBusy,
         detach: () => {
             id = null;

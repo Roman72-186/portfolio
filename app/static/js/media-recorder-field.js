@@ -300,9 +300,13 @@
                 width: {ideal: this.quality.side},
                 height: {ideal: this.quality.side}
             }};
+        // The compact editor must wait while the browser asks for permission.
+        var compact = this.root.hasAttribute('data-demo-recorder');
+        if (compact) this.setBusy(true);
         navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
             self.prepare(kind, stream);
         }).catch(function (err) {
+            if (compact) self.setBusy(false);
             self.setError(errorText(err, kind));
         });
     };

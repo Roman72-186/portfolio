@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=5">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-5">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -24,6 +24,9 @@
 
     {% if review_demo %}
     <p class="card-desc">Демо новой проверки. Сохранение и отправка относятся к настоящему диалогу ученика.</p>
+    {% if demo_can_switch_to_head %}
+    <a class="btn-outline" data-review-navigation href="?review_demo=1">Открыть как ГП</a>
+    {% endif %}
     {% include "partials/curator_review_navigation.html" %}
     {% endif %}
 
@@ -102,28 +105,6 @@
         {% endif %}
     </section>
 
-    {% if review_demo %}
-    <section class="card">
-        <details open>
-            <summary class="section-label">Задание · {{ task.title }}</summary>
-            {% if task.description %}<div>{{ task.description | rich_text | safe }}</div>{% endif %}
-            {% if block.title %}<p>{{ block.title }}</p>{% endif %}
-        </details>
-    </section>
-    <section class="card">
-        <h2 class="section-label">Прошлые работы</h2>
-        <ul class="review-history">
-            {% for item in past_works %}
-            <li><a data-review-navigation href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback?review_demo=1">
-                {% if item.images %}<img src="{{ item.images[0] }}" loading="lazy" alt="">{% endif %}
-                <span>{{ item.task_title }} · {{ item.submitted_at | msk_text }}</span>
-            </a></li>
-            {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
-        </ul>
-        <a class="btn-outline" data-review-navigation href="/cabinet/students?student={{ submission.user_id }}&amp;tab=portfolio">Портфолио ученика</a>
-        {{ hint("Откроет портфолио ученика, где можно посмотреть его работы вне этого задания.", "Что откроется в портфолио") }}
-    </section>
-    {% endif %}
 
     <section class="card">
         <h2 class="section-label">Оценка
@@ -208,8 +189,18 @@
         {% endif %}
     </section>
 
+    {% if review_demo %}
     <section class="card">
-        <h2 class="section-label">Диалог</h2>
+        <details open>
+            <summary class="section-label">Задание · {{ task.title }}</summary>
+            {% if task.description %}<div>{{ task.description | rich_text | safe }}</div>{% endif %}
+            {% if block.title %}<p>{{ block.title }}</p>{% endif %}
+        </details>
+    </section>
+    {% endif %}
+
+    <section class="card">
+        <h2 class="section-label">{{ 'Обратная связь' if review_demo else 'Диалог' }}</h2>
         {% if messages %}
         <div class="hw-messages">
             {% for message in messages %}
@@ -266,7 +257,7 @@
             </div>
             {% endfor %}
         </div>
-        {% else %}
+        {% elif not review_demo or autosave is none %}
         <div class="empty-state"><div class="empty-text">
             {% if viewer_role == 'student' %}Главный преподаватель ещё не оставил обратную связь.{% else %}Сообщений пока нет – напиши первым.{% endif %}
         </div></div>
@@ -279,17 +270,17 @@
         <p class="card-desc hw-hint" data-reply-state>{{ reply.staff_text }}</p>
         {% endif %}
         {# «Завершить ОС» закрывает диалог и сотруднику (ОС, фаза 2, О25). #}
-        {% if (viewer_role != 'student' and not rating_panel.closed) or reply.allowed %}
+        {% if (viewer_role != 'student' and not rating_panel.closed and (not review_demo or autosave is not none)) or (viewer_role == 'student' and reply.allowed) %}
         {% if viewer_role == 'student' %}<p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>{% endif %}
-        <form class="hw-async-form hw-form" method="post"
+        <form class="hw-form{% if not review_demo %} hw-async-form{% endif %}" method="post"{% if review_demo %} data-demo-composer{% endif %}
               {% if autosave is defined and autosave is not none and viewer_role != 'student' %}data-review-draft-url="/cabinet/staff/task-block-submissions/{{ submission.id }}/draft"
               data-review-draft-key="{{ user.user_id }}:{{ submission.id }}"{% endif %}
-              action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}"
+              action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}{% if review_demo %}?review_demo=true{% if demo_curator is not none %}&amp;review_curator={{ demo_curator|urlencode }}{% endif %}{% endif %}"
               enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
             {% if autosave is defined and autosave is not none %}
-            <div class="review-editor-row review-editor-drafts">
+            <div class="review-editor-row review-editor-drafts" data-review-draft-controls hidden>
                 <div class="prg-field">
                     <span class="review-help-label"><label for="review-draft">Черновики</label> {{ hint("Выбери сохранённый черновик, чтобы продолжить правку. Кнопка «Новое замечание» сохраняет текущий текст и открывает пустое поле для следующего.", "Как пользоваться черновиками") }}</span>
                     <select id="review-draft" class="field-input" data-review-draft-picker>
@@ -298,6 +289,8 @@
                 </div>
                 <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
             </div>
+            <details class="review-composer-details">
+                <summary>Привязать замечание</summary>
             <div class="review-editor-row review-editor-fields">
                 <div class="prg-field">
                     <span class="review-help-label"><label for="review-section">Раздел замечания</label> {{ hint("Ученик увидит раздел рядом с замечанием. Выбирай по теме. Задание – условия, композиция – расположение на листе, конструкция – форма и пропорции, графика – линии и тон, рекомендации – что потренировать. Общий комментарий можно оставить без раздела.", "Как выбрать раздел замечания") }}</span>
@@ -318,7 +311,7 @@
                     </select>
                 </div>
                 <div class="prg-field">
-                    <span class="review-help-label"><label for="review-image">Фото работы</label> {{ hint("Выбери снимок из сдачи, если замечание относится именно к нему. Чтобы добавить свой снимок, воспользуйся полем «Фото» ниже.", "Как привязать замечание к фото") }}</span>
+                    <span class="review-help-label"><label for="review-image">Фото работы</label> {{ hint("Выбери снимок из сдачи, если замечание относится именно к нему. Чтобы добавить свой снимок, выбери «Прикрепить фото» в меню вложений.", "Как привязать замечание к фото") }}</span>
                     <select id="review-image" class="field-input" data-review-image>
                         <option value="">Без фото</option>
                         {% for id, image in review_images.items() %}
@@ -327,13 +320,7 @@
                     </select>
                 </div>
             </div>
-            {% elif review_demo %}
-            <fieldset class="review-feedback-sections" data-review-sections>
-                <legend>Раздел замечания</legend>
-                {% for section in ('Композиционное решение', 'Конструктивное решение', 'Графическое решение', 'Рекомендации') %}
-                <button type="button" class="btn-outline" data-review-heading="{{ section }}">{{ section }}</button>
-                {% endfor %}
-            </fieldset>
+            </details>
             {% endif %}
             <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"{% if autosave is defined and autosave is not none %} maxlength="20000"{% endif %}></textarea>
             {% if autosave is defined and autosave is not none and viewer_role != 'student' %}
@@ -341,6 +328,39 @@
             <p class="card-desc" data-review-save-status role="status">Текст сохраняется как черновик.</p>
             <button type="button" class="btn-outline" data-review-save-retry hidden>Повторить сохранение</button>
             {% endif %}
+            {% if review_demo %}
+            <div class="review-composer-tools">
+                <details class="review-composer-menu">
+                    <summary class="btn-outline" aria-label="Вложения" title="Вложения">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 11.5l-8.7 8.7a5 5 0 0 1-7.1-7.1L15 3.4a3.5 3.5 0 0 1 5 5l-9.8 9.8a2 2 0 0 1-2.8-2.8l8.7-8.7"/></svg>
+                    </summary>
+                    <div class="card review-composer-options">
+                        <button type="button" class="btn-outline" data-demo-file="photo">Прикрепить фото</button>
+                        <button type="button" class="btn-outline" data-demo-file="video">Прикрепить видео</button>
+                        {% if demo_recording %}<button type="button" class="btn-outline" data-demo-record="note">Записать кружок</button>{% endif %}
+                    </div>
+                </details>
+                {% if demo_recording %}
+                <details class="review-composer-menu">
+                    <summary class="btn-outline" aria-label="Голосовое" title="Голосовое">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/></svg>
+                    </summary>
+                    <div class="card review-composer-options">
+                        <button type="button" class="btn-outline" data-demo-record="voice">Записать голосовое</button>
+                        <button type="button" class="btn-outline" data-demo-file="audio">Прикрепить аудио</button>
+                    </div>
+                </details>
+                {% endif %}
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Предпросмотр</button>
+            </div>
+            <input hidden type="file" name="photo" accept="image/*">
+            <input hidden type="file" name="video" accept="video/*">
+            {% if demo_recording %}
+            <input hidden type="file" name="audio" accept="audio/*">
+            <div data-media-recorder data-demo-recorder data-mrf-form-status="Готово к предпросмотру"></div>
+            {% endif %}
+            <ul class="review-composer-files" data-demo-files hidden></ul>
+            {% else %}
             {% if viewer_role != 'student' %}<div data-media-recorder></div>{% endif %}
             <label class="form-label hw-label-gap" for="feedback-photo">Фото, необязательно</label>
             <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
@@ -354,6 +374,7 @@
             {% if viewer_role != 'student' %}
             {{ hint("Добавляет текст или вложения в черновики. Чтобы ученик увидел сообщение, нажми кнопку отправки ОС.", "Что делает кнопка «Добавить сообщение»") }}
             {% endif %}
+            {% endif %}
             <p class="prg-message" aria-live="polite"></p>
         </form>
         {% elif viewer_role == 'student' %}
@@ -363,15 +384,14 @@
            открывает их ученику и шлёт одно уведомление (владелец 22.10.2026). #}
         {% if viewer_role != 'student' and (draft_count or (autosave is defined and autosave is not none and not rating_panel.closed)) %}
         <div class="hw-hint">
+            {% if not review_demo %}
             <div class="review-help-label">
                 <p class="card-desc">Ученик увидит черновики после нажатия «Отправить ОС».</p>
-                {% if review_demo %}
-                {{ hint("Предпросмотр показывает, какие замечания и вложения получит ученик.", "Что показывает предпросмотр") }}
-                {% endif %}
             </div>
             <div class="prg-actions">
-                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>{{ 'Предпросмотр ОС' if review_demo else 'Отправить ОС' }}</button>
+                <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Отправить ОС</button>
             </div>
+            {% endif %}
             {% if review_demo %}
             <dialog class="card review-preview" data-review-preview aria-labelledby="review-preview-title">
                 <h3 id="review-preview-title" class="section-label">Состав обратной связи
@@ -422,15 +442,31 @@
         <p class="prg-message" data-delete-status aria-live="polite"></p>
     </section>
     {% endif %}
+    {% if review_demo %}
+    <section class="card">
+        <h2 class="section-label">Прошлые работы</h2>
+        <ul class="review-history">
+            {% for item in past_works %}
+            <li><a data-review-navigation href="/cabinet/staff/task-block-submissions/{{ item.submission_id }}/feedback?review_demo=1{% if demo_curator is not none %}&amp;review_curator={{ demo_curator|urlencode }}{% endif %}">
+                {% if item.images %}<img src="{{ item.images[0] }}" loading="lazy" alt="">{% endif %}
+                <span>{{ item.task_title }} · {{ item.submitted_at | msk_text }}</span>
+            </a></li>
+            {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
+        </ul>
+        <a class="btn-outline" data-review-navigation href="/cabinet/students?student={{ submission.user_id }}&amp;tab=portfolio">Портфолио ученика</a>
+        {{ hint("Откроет портфолио ученика, где можно посмотреть его работы вне этого задания.", "Что откроется в портфолио") }}
+    </section>
+    {% endif %}
+
 </div>
 
 {% include "partials/lightbox.html" %}
 {% if viewer_role != 'student' %}
 <script src="/static/js/hint.js?v=1" defer></script>
-<script src="/static/js/curator_review.js?v=5" defer></script>
+<script src="/static/js/curator_review.js?v=6" defer></script>
 {% endif %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
-<script src="/static/js/media-recorder-field.js?v=9"></script>
+<script src="/static/js/media-recorder-field.js?v=10"></script>
 <script src="/static/js/feedback-rating.js?v=2"></script>
 <script>
 (function () {
@@ -598,6 +634,7 @@
         var sendStatus = document.querySelector('[data-send-status]');
         var snapshot;
         var sending = false;
+        var stagedAttachment = false;
 
         function lockEditor(locked) {
             if (window.curatorReviewDraft) window.curatorReviewDraft.setBusy(locked);
@@ -617,8 +654,9 @@
 
             lockEditor(true);
             sendStatus.textContent = '';
+            sendStatus.classList.remove('is-error');
             try {
-                await window.curatorReviewDraft?.flush();
+                stagedAttachment = (await window.curatorReviewDraft?.preparePreview()) || stagedAttachment;
                 var data = await sendRequest('?preview=true');
                 snapshot = data.snapshot;
                 var items = data.items.map(function (item) {
@@ -638,9 +676,16 @@
                 showError(sendStatus, error.message);
             }
         });
-        cancelSend.addEventListener('click', function () { preview.close(); });
+        function returnToEditor() {
+            preview.close();
+            // После загрузки редактирование вложенного сообщения доступно в истории.
+            if (stagedAttachment) window.location.reload();
+        }
+
+        cancelSend.addEventListener('click', returnToEditor);
         preview.addEventListener('cancel', function (event) {
-            if (sending) event.preventDefault();
+            event.preventDefault();
+            if (!sending) returnToEditor();
         });
         preview.addEventListener('close', function () { lockEditor(false); });
         confirmSend.addEventListener('click', async function () {
@@ -682,42 +727,17 @@
             var message = form.querySelector('.prg-message');
             var button = form.querySelector('button[type=submit]');
             button.disabled = true;
-            var draft = form.hasAttribute('data-review-draft-url') ? window.curatorReviewDraft : null;
-            var body = new FormData(form);
-            if (draft) draft.setBusy(true);
-            var save = draft ? draft.flush() : Promise.resolve();
-            save.then(function () {
-                if (draft) {
-                    var attachment = ['photo', 'video', 'audio'].some(function (key) {
-                        var value = body.get(key);
-                        return value && value.size > 0;
-                    }) || !!String(body.get('video_link') || '').trim();
-                    if (!attachment) {
-                        if (!draft.hasDraft()) throw new Error('Добавьте текст или вложение.');
-                        return null;
-                    }
-                    // Вложения дополняют автосохранённый текст в том же сообщении.
-                    var target = draft.attachmentTarget();
-                    if (target) {
-                        body.set('draft_id', target.id);
-                        body.set('draft_revision', target.revision);
-                    }
-                }
-                return fetch(form.action, {
-                    method: 'POST', credentials: 'same-origin',
-                    headers: {'X-CSRF-Token': csrfToken}, body: body
-                });
+            fetch(form.action, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrfToken}, body: new FormData(form)
             }).then(function (response) {
-                if (!response) return;
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) throw new Error(data.error || 'Не получилось отправить сообщение.');
                 });
             }).then(function () {
-                if (draft) draft.detach();
                 window.location.reload();
             }).catch(function (error) {
                 button.disabled = false;
-                if (draft) draft.setBusy(false);
                 message.classList.add('is-error');
                 message.textContent = error.message;
             });

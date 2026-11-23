@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
@@ -227,11 +228,17 @@ def _render(
     request: Request, db: DBSession, *, submission: TaskBlockSubmission,
     user: dict, viewer_role: str, student: User | None,
 ) -> HTMLResponse:
-    from app.services.curator_review_demo import can_preview_review, demo_review_url
+    from app.services.curator_review_demo import (
+        can_preview_review,
+        can_use_demo_recording,
+        demo_review_url,
+    )
 
     review_demo = viewer_role != "student" and request.query_params.get("review_demo") == "1"
     if review_demo and not can_preview_review(db, user):
         raise HTTPException(403, "Демо новой проверки доступно руководителю.")
+    selected_curator = request.query_params.get("review_curator") if review_demo else None
+    demo_recording = review_demo and can_use_demo_recording(user, selected_curator)
     block, task = _context(db, submission)
     feedback = _feedback(db, submission.id)
     awaits_group = absorbed_main_block(db, submission) is not None
@@ -267,8 +274,9 @@ def _render(
             curator_id = student_curator or user["user_id"]
             queue_navigation = review_neighbors(db, curator_id, submission, request.query_params)
             if queue_navigation:
+                detail_viewer_id = user["user_id"] if demo_recording else curator_id
                 queue_navigation = {
-                    key: demo_review_url(url, curator_id) if url else None
+                    key: demo_review_url(url, curator_id if key == "queue_url" else detail_viewer_id) if url else None
                     for key, url in queue_navigation.items()
                 }
     group, submission_images, work_choices, image_choices = _review_choices(db, submission, task)
@@ -277,13 +285,19 @@ def _render(
         "user": user,
         "viewer_role": viewer_role,
         "review_demo": review_demo,
+        "demo_recording": demo_recording,
+        "demo_curator": selected_curator,
+        "demo_can_switch_to_head": review_demo and not demo_recording and can_use_demo_recording(user, None),
         "autosave": (
             _autosave_context(messages, user["user_id"])
             if review_demo and not is_closed(feedback)
             and not awaits_group and can(user, "students_review") else None
         ),
         # Балл ставит только ГП и выше; куратор видит его только для чтения.
-        "can_score": viewer_role != "student" and can_score(user.get("role_rank", 1)),
+        "can_score": (
+            viewer_role != "student" and (not review_demo or demo_recording)
+            and can_score(user.get("role_rank", 1))
+        ),
         # «Вернуть на доработку» — только здесь, в диалоге (владелец 14.10.2026),
         # куратор и выше (`rbac.WORK_REVISION_MIN_RANK`). Раздел проверки —
         # как у кнопок проверки: модератору его не положено, и кнопка ответила бы 403.
@@ -483,13 +497,14 @@ async def _post_message(
     video: UploadFile | None = None, audio: UploadFile | None = None,
     video_note: str = "",
     draft: TaskBlockFeedbackMessage | None = None,
+    demo_cursor: int | None = None,
 ) -> JSONResponse:
     try:
         photo_data = await _photo_payload(photo)
         video_data = await read_video_upload(video)
         audio_data = await read_audio_upload(audio)
         video_link_clean = validate_video_link(video_link)
-        await send_message(
+        message = await send_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=role_from_rank(user.get("role_rank", 1)), text=text,
             photo=photo_data, video=video_data, audio=audio_data,
@@ -508,10 +523,11 @@ async def _post_message(
             db, submission=submission, recipient_id=feedback.curator_id,
             sender_role=sender_role,
         )
+    cursor = max(demo_cursor, message.id) if demo_cursor is not None else None
     db.commit()
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "cursor": cursor} if cursor is not None else {"ok": True})
 
 
 @router.post("/staff/task-block-submissions/{submission_id}/messages", response_class=JSONResponse)
@@ -529,9 +545,23 @@ async def staff_message(
     video_note: str = Form(default=""),
     draft_id: int | None = Form(default=None),
     draft_revision: str = Form(default=""),
+    demo_cursor: int | None = Form(default=None),
+    review_demo: bool = False,
+    review_curator: str | None = None,
 ):
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    if review_demo:
+        from app.services.curator_review_demo import can_preview_review, can_use_demo_recording
+
+        if not can_preview_review(db, user) or not can(user, "students_review"):
+            return _error(403, "Нет доступа к демо проверки.")
+        if ((audio and audio.filename) or video_note) and not can_use_demo_recording(user, review_curator):
+            return _error(403, "Голосовые и кружки доступны главному преподавателю.")
+        if demo_cursor is None or video_link or not any(
+            upload and upload.filename for upload in (photo, video, audio)
+        ):
+            return _error(422, "Выберите вложение для черновика.")
     if absorbed_main_block(db, submission) is not None:
         # Иначе у работы завёлся бы свой диалог рядом с общим — два ответа
         # на одну работу (открытая до связки вкладка, старая ссылка).
@@ -549,6 +579,13 @@ async def staff_message(
             {"ok": False, "error": "Обратная связь завершена – диалог закрыт."},
             status_code=403,
         )
+    if review_demo:
+        cursor = db.query(func.max(TaskBlockFeedbackMessage.id)).filter(
+            TaskBlockFeedbackMessage.feedback_id == feedback.id,
+            TaskBlockFeedbackMessage.sender_id == user["user_id"],
+        ).scalar() or 0
+        if cursor != demo_cursor:
+            return _error(409, "Черновики изменились. Обновите страницу перед добавлением вложений.")
     draft = None
     if draft_id is not None:
         draft = db.get(TaskBlockFeedbackMessage, draft_id)
@@ -560,6 +597,7 @@ async def staff_message(
         submission=submission, feedback=feedback, db=db, user=user, text=text,
         photo=photo, video_link=video_link, background_tasks=background_tasks,
         video=video, audio=audio, video_note=video_note, draft=draft,
+        demo_cursor=demo_cursor if review_demo else None,
     )
 
 

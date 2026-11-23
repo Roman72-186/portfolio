@@ -34,3 +34,12 @@ def demo_review_url(url: str, curator_id: int) -> str:
     query = dict(parse_qsl(parts.query))
     query.update(review_demo="1", review_curator=str(curator_id))
     return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def can_use_demo_recording(user: dict, selected_curator: str | None) -> bool:
+    """A curator queue previews the curator controls, even in a head session."""
+    return (
+        user.get("role_name") == "админ"
+        and (user.get("nav_rank") or user["role_rank"]) == 4
+        and selected_curator in (None, str(user["user_id"]))
+    )
