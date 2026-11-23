@@ -440,6 +440,20 @@ def test_students_by_name_has_student_mode(admin_client, db, user_factory):
     assert html.count(" data-sbn-extra>") == 8  # 4 заголовка + 4 ячейки одного ученика
 
 
+def test_student_statistics_layout_contract():
+    """Общий вид для персонала: статус отделён, лента читается по ячейкам."""
+    from pathlib import Path
+
+    template = Path("app/templates/partials/students_by_name.html").read_text(encoding="utf-8")
+    css = Path("app/static/css/superadmin_stats_ios.css").read_text(encoding="utf-8")
+    assert "['Действие', 'Статус', 'Дата']" in template
+    assert "node('span', 'sbn-feed-mark'" in template
+    assert "node('span', 'sbn-feed-date'" in template
+    assert re.search(r"\.sbn-visit\s*\{[^}]*border-inline-start", css)
+    assert re.search(r"\.sbn-feed-row\s*\{[^}]*grid-template-columns", css)
+    assert re.search(r'data-sbn-mode="student"[^\n]+\.bottom-nav[^\n]+\{\s*position: relative', css)
+
+
 # ── Кураторы, ответы Александрии 24.10.2026 ─────────────────────────────────
 
 def test_curator_overview_has_only_led_tariffs(db, user_factory):

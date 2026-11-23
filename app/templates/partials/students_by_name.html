@@ -103,7 +103,7 @@
                 <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ username }}" data-student-tariff="{{ student.tariff }}" data-student-level="{{ student.level or '' }}" data-student-last-step="{{ student.last_step or '' }}" data-student-seen="{{ student.last_seen_short or '' }}" data-student-visit-seconds="{{ student.last_visit_seconds or '' }}">
                     {# Даты — по Москве (`msk_text`): до 27.10.2026 печатались
                        `strftime` от UTC и отставали на три часа. #}
-                    <td data-label="Ученик"><div class="sbn-head"><div><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></div><div class="sbn-visit" data-sbn-visit hidden></div></div></td>
+                    <td data-label="Ученик"><div class="sbn-head"><div class="sbn-student"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}{% if student.level %} · уровень {{ student.level }}{% endif %}</span></div><div class="sbn-visit" data-sbn-visit hidden></div></div></td>
                     <td data-label="Статус" data-assignment-state>—</td>
                     <td data-label="Регистрация" class="ss-dim">{{ student.registered_at | msk_text or '—' }}</td>
                     <td data-label="Был на платформе" class="ss-dim" data-sbn-extra>{{ student.last_login | msk_text or 'Не заходил' }}</td>
@@ -568,17 +568,38 @@
         if (!isWorksOnly(row) && row.dataset.studentLastStep) {
             parts.push(node('div', 'ss-dim-sm', 'На чём остановился: ' + row.dataset.studentLastStep));
         }
+        const table = node('div', 'sbn-feed');
+        table.setAttribute('role', 'table');
+        table.setAttribute('aria-label', 'Лента последних действий');
+        const header = node('div', 'sbn-feed-row sbn-feed-header');
+        header.setAttribute('role', 'row');
+        ['Действие', 'Статус', 'Дата'].forEach(function (label) {
+            const cell = node('span', '', label);
+            cell.setAttribute('role', 'columnheader');
+            header.appendChild(cell);
+        });
+        table.appendChild(header);
         let number = 0;
         entries.forEach(function (entry) {
-            if (entry.head) { parts.push(node('div', 'sbn-feed-head', entry.head)); return; }
-            number += 1;
             const line = node('div', 'sbn-feed-row');
-            line.append(
-                node('span', '', number + '. ' + entry.label + (entry.watched ? ' (' + entry.watched + ')' : '')),
-                node('span', 'sbn-feed-mark', (entry.done ? '✅' : '❌') + (entry.when ? ' ' + entry.when : '')));
-            parts.push(line);
+            line.setAttribute('role', 'row');
+            if (entry.head) {
+                const heading = node('div', 'sbn-feed-head', entry.head);
+                heading.setAttribute('role', 'cell');
+                heading.setAttribute('aria-colspan', '3');
+                line.appendChild(heading);
+            } else {
+                number += 1;
+                const action = node('span', '', number + '. ' + entry.label);
+                if (entry.watched) action.appendChild(node('span', 'sbn-feed-progress', entry.watched));
+                const mark = node('span', 'sbn-feed-mark', entry.done ? '✅' : '❌');
+                mark.setAttribute('aria-label', entry.done ? 'Выполнено' : 'Не выполнено');
+                line.append(action, mark, node('span', 'sbn-feed-date', entry.when || '—'));
+                Array.from(line.children).forEach(function (cell) { cell.setAttribute('role', 'cell'); });
+            }
+            table.appendChild(line);
         });
-        if (!number) parts.push(node('div', 'ss-dim-sm', 'В этом периоде заданий нет'));
+        parts.push(number ? table : node('div', 'ss-dim-sm', 'В этом периоде заданий нет'));
         state.replaceChildren.apply(state, parts);
     }
 
