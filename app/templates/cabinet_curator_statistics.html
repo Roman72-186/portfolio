@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Статистика всех учеников курса' if all_students else 'Статистика моих учеников' }}{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
+<script src="/static/js/statistics-pagination.js?v=1" defer></script>
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=19">
 {% endblock %}
 
@@ -9,7 +11,7 @@
    (`api/cabinet_curator.cabinet_curator_statistics`). #}
 {% block content %}
 {% include "_curator_nav.html" %}
-<div class="ss-wrap ios-ss">
+<div class="ss-wrap ios-ss" data-stats-pagination>
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Кабинет</a>
         <h1 class="ss-title">{{ 'Статистика всех учеников курса' if all_students else 'Статистика моих учеников' }}</h1>

@@ -1,0 +1,28 @@
+[data-stats-pagination] [data-stats-page-hidden],
+.stats-pagination[hidden] { display: none !important; }
+
+.stats-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px;
+    color: var(--muted);
+    font-size: 13px;
+}
+.stats-pagination button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--blue-text);
+    background: var(--surface);
+    font: inherit;
+    cursor: pointer;
+}
+.stats-pagination button:disabled {
+    color: var(--muted);
+    cursor: default;
+    opacity: .65;
+}

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Статистика цикла{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
+<script src="/static/js/statistics-pagination.js?v=1" defer></script>
 <link rel="stylesheet" href="/static/css/program.css?v=59">
 {% endblock %}
 {% block content %}
@@ -18,7 +20,7 @@
 читалось как «пройти цикл глазами ученика» (отзыв с теста 15.09.2026).
 Переименовано в «Статистику»; URL `/stats` не трогали.
 #}
-<div class="prg-page">
+<div class="prg-page" data-stats-pagination>
     {% include "partials/program_tabs.html" %}
 
     <div class="prg-head">

@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Статистика пробников{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
+<script src="/static/js/statistics-pagination.js?v=1" defer></script>
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
 {% endblock %}
 {% block content %}
 {% set tariff_keys = (tariffs if tariffs else []) %}
 {% set status_total = status.by_tariff_mock_status.values() | map('length') | sum %}
 {% set ns_total = status.not_submitted_by_tariff.values() | map('length') | sum %}
-<div class="ss-wrap ios-ss">
+<div class="ss-wrap ios-ss" data-stats-pagination>
 
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>

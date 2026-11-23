@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
+<script src="/static/js/statistics-pagination.js?v=1" defer></script>
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=19">
 {% endblock %}
 
@@ -137,7 +139,7 @@
 {% set rt_curators = feedback_ratings | selectattr("role_group", "equalto", "curators") | list %}
 {% set rt_head = feedback_ratings | selectattr("role_group", "equalto", "head") | list %}
 {% set rt_super = feedback_ratings | selectattr("role_group", "equalto", "superadmin") | list %}
-<div class="ss-wrap ios-ss">
+<div class="ss-wrap ios-ss" data-stats-pagination>
 
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
