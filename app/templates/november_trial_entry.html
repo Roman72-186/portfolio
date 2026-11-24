@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Попробуй подготовку{% endblock %}
+{% block extra_styles %}
+<style>
+    .trial-entry { width: 100%; max-width: 480px; margin: clamp(12px, 5vw, 48px) auto 0; }
+    .trial-entry .status-card { max-width: none; padding: clamp(20px, 5vw, 32px); }
+    .trial-entry h1 { margin: 0 0 16px; font-size: clamp(24px, 5vw, 32px); }
+    .trial-entry p { color: var(--muted); }
+    .trial-entry dl { margin: 0; border-block: 1px solid var(--line); }
+    .trial-entry dl > div { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; padding: 12px 0; }
+    .trial-entry dl > div + div { border-top: 1px solid var(--line); }
+    .trial-entry dt { color: var(--muted); }
+    .trial-entry dd { margin: 0; font-weight: 600; }
+    .trial-entry-actions { display: grid; gap: 12px; margin-top: 24px; }
+    .trial-entry-actions a { justify-content: center; text-align: center; min-height: 44px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="trial-entry">
+<section class="card status-card" aria-labelledby="trial-entry-title">
+    <h1 class="page-title" id="trial-entry-title">{{ offer_title or "Попробуй подготовку" }}</h1>
+    {% if checkout_unavailable %}
+    <p>Оплата с этого аккаунта недоступна. Служба заботы поможет записаться на набор.</p>
+    <div class="trial-entry-actions">
+        <a class="btn-blue" href="{{ support_url }}">Написать в Службу заботы</a>
+        <a class="btn-outline" href="/cabinet">Вернуться в кабинет</a>
+    </div>
+    {% elif sales_text %}
+    <p>Продажи начнутся {{ sales_text }} МСК.</p>
+    {% else %}
+    <dl aria-label="Даты доступа">
+        <div><dt>Открытие заданий</dt><dd>{{ opens_text }} МСК</dd></div>
+        <div><dt>Закрытие доступа</dt><dd>{{ closes_text }} МСК</dd></div>
+    </dl>
+    <div class="trial-entry-actions">
+        <a class="btn-blue" href="{{ entry_path }}?login=telegram">Войти через Telegram</a>
+    </div>
+    {% endif %}
+</section>
+</div>
+{% endblock %}

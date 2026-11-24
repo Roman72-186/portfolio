@@ -23,6 +23,12 @@ from app.services.tz import _as_utc
 # ссылку можно было продиктовать или переписать с экрана.
 _SLUG_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 _SLUG_LENGTH = 8
+NEXT_TRIAL = "testpodgotovki-29"
+TRIAL_STARTS = {
+    "testpodgotovki": datetime(2026, 11, 22, 9, tzinfo=timezone.utc),
+    NEXT_TRIAL: datetime(2026, 11, 29, 9, tzinfo=timezone.utc),
+}
+NEXT_TRIAL_SALES = datetime(2026, 11, 25, 21, tzinfo=timezone.utc)
 
 
 def get_link(db: DBSession, slug: str) -> IntakeLink | None:
@@ -37,7 +43,26 @@ def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
     ссылку. Правило `/proba` не менялось."""
     if not (link and link.is_active and link.access_until is not None):
         return False
+    current = _as_utc(now or datetime.now(timezone.utc))
+    sales_from = link.sales_from or (NEXT_TRIAL_SALES if link.slug == NEXT_TRIAL else None)
+    if sales_from is not None and current < _as_utc(sales_from):
+        return False
+    if link.sales_until is not None and current >= _as_utc(link.sales_until):
+        return False
     return not is_holiday(link) or not date_passed(link, now)
+
+
+def show_in_flow_table(link: IntakeLink, now: datetime) -> bool:
+    if is_open(link, now):
+        return True
+    if link.access_until is None or date_passed(link, now):
+        return False
+    current = _as_utc(now)
+    if link.sales_until is not None and _as_utc(link.sales_until) <= current:
+        return False
+    starts = link.sales_from or (NEXT_TRIAL_SALES if link.slug == NEXT_TRIAL else None)
+    # Include future drafts so staff can activate them before sales begin.
+    return any(value is not None and _as_utc(value) > current for value in (starts, link.access_from))
 
 
 def date_passed(link: IntakeLink, now: datetime | None = None) -> bool:
@@ -130,8 +155,7 @@ def tracks_on_sale(db: DBSession, now: datetime | None = None) -> list[IntakeLin
     после неё оплата дала бы тег, но не доступ — кабинет уже закрыт сроком."""
     return [
         link for link in holiday_tracks(db)
-        if link.price_kop and link.is_active and link.access_until is not None
-        and not date_passed(link, now)
+        if link.price_kop and is_open(link, now)
     ]
 
 
@@ -219,18 +243,31 @@ def needs_track(db: DBSession, user: User) -> bool:
     return user.program == PROGRAM_HOLIDAY and track_of(db, user.id) is None
 
 
-def program_opens_at() -> datetime:
+def track_opens_at(track: IntakeLink) -> datetime:
+    return _as_utc(track.access_from) if track.access_from else TRIAL_STARTS.get(
+        track.slug, constants.HOLIDAY_PROGRAM_OPENS_AT,
+    )
+
+
+def is_scheduled_offer(link: IntakeLink | None) -> bool:
+    return bool(link and (link.access_from is not None or link.slug in TRIAL_STARTS))
+
+
+def program_opens_at(tracks=()) -> datetime:
     """Когда каникулярному открывается программа — `constants.HOLIDAY_PROGRAM_OPENS_AT`.
     Читается через модуль, а не копией имени: тесты двигают дату в одном месте."""
-    return constants.HOLIDAY_PROGRAM_OPENS_AT
+    return min(
+        (track_opens_at(track) for track in tracks),
+        default=constants.HOLIDAY_PROGRAM_OPENS_AT,
+    )
 
 
-def waits_for_program(user_id: int, now: datetime) -> bool:
+def waits_for_program(user_id: int, now: datetime, tracks=()) -> bool:
     """Программа набора ещё не открылась, и этот человек её ждёт (служба заботы
     19.10.2026). Служебные (`REPORT_EXCLUDED_USER_IDS`) не ждут: ими проверяют
     программу, пока её наполняют. Что закрыто на время ожидания —
     `dependencies.get_current_user`."""
-    return now < program_opens_at() and user_id not in constants.REPORT_EXCLUDED_USER_IDS
+    return now < program_opens_at(tracks) and user_id not in constants.REPORT_EXCLUDED_USER_IDS
 
 
 def create_entry_link(
@@ -256,6 +293,32 @@ def _new_slug(db: DBSession) -> str:
         slug = "".join(secrets.choice(_SLUG_ALPHABET) for _ in range(_SLUG_LENGTH))
         if slug != INTAKE_TRIAL_SLUG and get_link(db, slug) is None:
             return slug
+
+
+def offer_for_week(db: DBSession, week_id: int) -> IntakeLink | None:
+    from app.models.learning_topic import LearningTopicTag
+
+    return (
+        db.query(IntakeLink)
+        .join(LearningTopicTag, LearningTopicTag.tag_id == IntakeLink.tag_id)
+        .filter(LearningTopicTag.topic_id == week_id, IntakeLink.program == PROGRAM_HOLIDAY)
+        .order_by(IntakeLink.id)
+        .first()
+    )
+
+
+def can_attach_offer(db: DBSession, week) -> bool:
+    from app.services import video_topics
+
+    return bool(
+        week and week.kind == "week" and video_topics.topic_program(db, week) == PROGRAM_HOLIDAY
+        and week.deleted_at is None and week.ends_at is not None
+        and _as_utc(week.ends_at) > _as_utc(week.opens_at) > datetime.now(timezone.utc)
+        and not week.tariff_restricted
+        and not video_topics.get_tag_ids(db, week.id)
+        and not video_topics.get_assignee_ids(db, week.id)
+        and not video_topics.get_excluded_tag_ids(db, week.id)
+    )
 
 
 def create_holiday_link(

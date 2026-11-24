@@ -472,6 +472,17 @@ PAYMENTS_NAV_ITEM = StaffNavItem(
 )
 
 
+FLOWS_NAV_ITEM = StaffNavItem(
+    key="flows",
+    href="/cabinet/flows",
+    sidebar_label="Потоки",
+    pill_label="Потоки",
+    aria_label="Потоки",
+    tooltip="Платные ссылки и расписание потоков",
+    icon="program",
+)
+
+
 def staff_nav_items(
     role_rank: int,
     role_name: str | None = None,
@@ -491,12 +502,13 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         items = tuple(by_key[key] for key in keys)
-        return items + (PAYMENTS_NAV_ITEM,) if payments else items
+        return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные
     # разделы ГП положены по роли, так что это касается только сверх-ролевых.
     granted = set(granted_nav_keys(granted_sections))
-    return tuple(
+    items = tuple(
         item for item in STAFF_NAV_ITEMS
         if (item.is_visible_for(role_rank) or item.key in granted) and item.key not in hidden
     )
+    return items + (FLOWS_NAV_ITEM,) if payments else items

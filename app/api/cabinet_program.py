@@ -2282,12 +2282,17 @@ def program_cycle_items(
     # тарифа нет, тарифные пункты «Доступности блока» и фильтр просмотра не
     # рисуются (`HAS_TARIFFS` в `program_blocks_editor_js.html`).
     holiday = topic_program(db, topic) == PROGRAM_HOLIDAY
+    from app.services import intake_link
+
+    offer = intake_link.offer_for_week(db, topic.id) if holiday and not is_stage else None
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
             "user": user,
             "topic": topic,
             "cycle_label": cycle_label(db, topic),
+            "flow_offer": offer,
+            "can_create_flow_offer": holiday and not offer and intake_link.can_attach_offer(db, topic),
             "stage_label": stage_label,
             "stage_id": stage.id if stage is not None else None,
             "is_stage": is_stage,

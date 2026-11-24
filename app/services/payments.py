@@ -97,6 +97,7 @@ def is_payments_staff(user: dict | None) -> bool:
 _PAYMENTS_PATH = re.compile(
     r"^/cabinet/superadmin/(payments|payment-import)(/.*)?$"
     r"|^/cabinet/superadmin/users/\d+/payment$"
+    r"|^/cabinet/flows(?:/.*)?$"
 )
 
 
@@ -707,6 +708,9 @@ def get_or_create_track_payment(
         row.status = STATUS_CANCELLED
         row.note = _append_note(row.note, "ссылка заменена новой")
 
+    expires = _as_utc(now) + timedelta(days=1)
+    if track.sales_until is not None:
+        expires = min(expires, _as_utc(track.sales_until))
     payment = Payment(
         user_id=user.id,
         period=month_start(now.astimezone(MSK_TZ).date()),
@@ -716,7 +720,7 @@ def get_or_create_track_payment(
         tariff="",
         status=STATUS_PENDING,
         source=SOURCE_PRODAMUS,
-        link_expires_at=_as_utc(now) + timedelta(days=1),
+        link_expires_at=expires,
     )
     db.add(payment)
     db.flush()

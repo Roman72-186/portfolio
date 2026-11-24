@@ -29,6 +29,9 @@ class IntakeLink(Base):
     slug: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sales_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sales_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     program: Mapped[str] = mapped_column(
         String(20), nullable=False, default="annual", server_default="annual"

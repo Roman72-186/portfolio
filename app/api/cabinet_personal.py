@@ -204,7 +204,14 @@ def cabinet_personal_track(
     (17.10.2026, план `plans/2026-10-17-apparchi-оплата-трека.md`). Сюда же
     ворота `dependencies.get_current_user` уводят каникулярного без трека, и
     сюда Продамус возвращает после оплаты (`?paid=1`)."""
+    offer_slug = request.query_params.get("offer")
+    offer = intake_link_service.get_link(db, offer_slug) if offer_slug else None
+    scheduled_offer = intake_link_service.is_scheduled_offer(offer) or offer_slug in intake_link_service.TRIAL_STARTS
     if not _is_holiday(user):
+        if scheduled_offer:
+            return templates.TemplateResponse(request, "november_trial_entry.html", {
+                "checkout_unavailable": True, "support_url": SUPPORT_URL,
+            }, status_code=403)
         return RedirectResponse("/cabinet/personal", status_code=302)
     owned = intake_link_service.tracks_of(db, user["user_id"])
     owned_ids = {link.id for link in owned}
@@ -225,9 +232,15 @@ def cabinet_personal_track(
                 "description": link.description or "",
                 "price_text": payment_service.rub_text(link.price_kop),
                 "access_until_text": msk_text(link.access_until),
+                "opens_text": (
+                    msk_text(intake_link_service.program_opens_at([link]))
+                    if intake_link_service.is_scheduled_offer(link) else ""
+                ),
             }
             for link in intake_link_service.tracks_on_sale(db)
             if link.id not in owned_ids
+            and (link.slug == offer_slug if scheduled_offer
+                 else link.access_from is None and link.slug != intake_link_service.NEXT_TRIAL)
         ],
         "paid_return": request.query_params.get("paid") == "1",
         "test_return": request.query_params.get("test") == "1",
@@ -236,8 +249,8 @@ def cabinet_personal_track(
         # Когда откроется программа (служба заботы 19.10.2026) — пока не
         # открылась; служебные не ждут, им дата не печатается.
         "program_opens_text": (
-            msk_text(intake_link_service.program_opens_at())
-            if intake_link_service.waits_for_program(user["user_id"], datetime.now(timezone.utc))
+            msk_text(intake_link_service.program_opens_at(owned))
+            if intake_link_service.waits_for_program(user["user_id"], datetime.now(timezone.utc), owned)
             else ""
         ),
         "support_url": SUPPORT_URL,

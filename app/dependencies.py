@@ -389,7 +389,7 @@ def get_current_user(
     # Трек оплачен, программа ещё не открылась — тем же приёмом.
     holiday_waiting = (
         limited_cabinet and not access_expired and not holiday_unpaid
-        and intake_link_service.waits_for_program(user.id, now)
+        and intake_link_service.waits_for_program(user.id, now, intake_link_service.tracks_of(db, user.id))
     )
     if holiday_waiting and not is_path_allowed_when_holiday_waiting(request.url.path):
         raise HTTPException(status_code=403, detail=HOLIDAY_WAITING_DETAIL)

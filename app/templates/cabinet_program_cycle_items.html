@@ -48,6 +48,24 @@
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
     {% include "partials/program_path.html" %}
+    {% if prg_edit and payments_staff(user) and flow_offer %}
+        <a class="btn-outline" href="/cabinet/flows#flow-{{ flow_offer.id }}">Ссылка на оплату и настройки потока</a>
+    {% elif prg_edit and payments_staff(user) and can_create_flow_offer %}
+        <details class="card">
+            <summary>Создать ссылку на оплату</summary>
+            <form method="post" action="/cabinet/flows/weeks/{{ topic.id }}/offer">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <p>Доступ к заданиям с {{ topic.opens_at | msk_text }} до {{ topic.ends_at | msk_text }} МСК. Продажи закончатся вместе с доступом.</p>
+                <label class="form-label" for="week-offer-price">Цена, ₽</label>
+                <input class="form-input" id="week-offer-price" name="price" inputmode="decimal" required>
+                <label class="form-label" for="week-offer-start">Начало продаж (МСК)</label>
+                <input class="form-input" id="week-offer-start" name="sales_from" type="datetime-local" required>
+                <div class="form-actions">
+                    <button class="btn-blue" type="submit">Создать ссылку</button>
+                </div>
+            </form>
+        </details>
+    {% endif %}
 
     <div class="prg-head">
         <div class="prg-head-copy">

@@ -95,7 +95,7 @@ def cabinet_learning(
         return templates.TemplateResponse(request, "cabinet_learning_waiting.html", {
             "request": request,
             "user": user,
-            "opens_at": intake_link_service.program_opens_at(),
+            "opens_at": intake_link_service.program_opens_at(intake_link_service.tracks_of(db, user["user_id"])),
         })
 
     # `?cycle=` — возврат в пройденный цикл (владелец 03.09.2026: «он может

@@ -8,7 +8,7 @@
 `tests/test_intake_link.py`.
 """
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import app.api.auth as auth_module
 from app.constants import INTAKE_TRIAL_SLUG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY
@@ -18,7 +18,7 @@ from app.models.tag import Tag, UserTag
 from app.models.user import User
 
 CHAT_ID = 700_300_400
-DEADLINE = datetime(2026, 11, 1, 20, 59, tzinfo=timezone.utc)  # 01.11 23:59 МСК
+DEADLINE = datetime.now(timezone.utc) + timedelta(days=14)
 
 
 def _enable_telegram_login(monkeypatch):
@@ -267,9 +267,149 @@ def test_create_group_link_makes_tag_and_closed_link(admin_client, db):
     tag = db.get(Tag, link.tag_id)
     assert tag.name == "Каникулы 2" and tag.is_hidden is False
     assert link.is_active is False
-    assert link.access_until == DEADLINE
+    assert link.access_until == datetime(2026, 11, 1, 20, 59, tzinfo=timezone.utc)
 
     assert client.get("/cabinet/periods").status_code == 200
+
+
+def test_create_and_duplicate_scheduled_flow(admin_client, db):
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+    from app.services import intake_link, tracker
+
+    client, admin = admin_client
+    data = {
+        "csrf_token": "x", "title": "Flow A", "price": "3455",
+        "sales_from": "2099-11-26T00:00", "sales_until": "2099-11-30T00:00",
+        "access_from": "2099-11-29T12:00", "access_until": "2099-12-06T21:00",
+    }
+    url = "/cabinet/intake/flows"
+    response = client.post(url, data=data, follow_redirects=False)
+    assert response.status_code == 303, response.text
+    origin = db.query(IntakeLink).filter_by(title="Flow A").one()
+    origin_week = (
+        db.query(LearningTopic).join(LearningTopicTag)
+        .filter(LearningTopic.kind == "week", LearningTopicTag.tag_id == origin.tag_id).one()
+    )
+    task = tracker.create_task(db, title="Exercise", topic_id=origin_week.id, user_id=admin.id)
+    db.commit()
+
+    response = client.post(url, data={**data, "title": "Flow B", "source_week": origin_week.id},
+                           follow_redirects=False)
+    assert response.status_code == 303, response.text
+    copy = db.query(IntakeLink).filter_by(title="Flow B").one()
+    assert copy.slug != origin.slug and copy.tag_id != origin.tag_id
+    assert copy.price_kop == 345500 and not copy.is_active
+    topics = db.query(LearningTopic).join(LearningTopicTag).filter_by(tag_id=copy.tag_id).all()
+    assert {topic.kind for topic in topics} == {"period", "stage", "week"}
+    assert all(not topic.assign_to_all for topic in topics)
+    duplicate_week = next(topic for topic in topics if topic.kind == "week")
+    duplicate_task, = tracker.list_week_items(db, duplicate_week.id)
+    assert duplicate_task.id != task.id and duplicate_task.title == task.title
+    assert client.post(f"/cabinet/intake/{copy.slug}/toggle", data={"csrf_token": "x"},
+                       follow_redirects=False).status_code == 303
+    db.refresh(copy)
+    assert not intake_link.is_open(copy, copy.sales_from - timedelta(seconds=1))
+    assert intake_link.is_open(copy, copy.sales_from)
+    assert not intake_link.is_open(copy, copy.sales_until)
+    assert intake_link.program_opens_at([copy]) == datetime(2099, 11, 29, 9, tzinfo=timezone.utc)
+    assert client.get("/cabinet/periods").status_code == 200
+    assert db.get(IntakeLink, origin.id).is_active is False
+
+
+def test_create_offer_directly_from_future_week(admin_client, db):
+    from app.services import intake_link, tracker, video_topics
+
+    client, admin = admin_client
+    start = datetime(2099, 11, 29, 9, tzinfo=timezone.utc)
+    end = datetime(2099, 12, 6, 18, tzinfo=timezone.utc)
+    period = video_topics.create_topic(db, title="Holiday", kind="period", opens_at=start,
+                                       assign_to_all=True, user_id=admin.id)
+    period.program = PROGRAM_HOLIDAY
+    stage = video_topics.create_topic(db, title="Stage", kind="stage", opens_at=start,
+                                      parent_id=period.id, assign_to_all=True, user_id=admin.id)
+    week = video_topics.create_topic(db, title="Prepared week", opens_at=start, ends_at=end,
+                                     parent_id=stage.id, assign_to_all=True, user_id=admin.id)
+    week.program = PROGRAM_HOLIDAY
+    task = tracker.create_task(db, title="Exercise", topic_id=week.id, user_id=admin.id)
+    db.commit()
+    page = client.get(f"/cabinet/staff/program/cycles/{week.id}")
+    assert page.status_code == 200 and "week-offer-price" in page.text
+
+    url = f"/cabinet/intake/weeks/{week.id}/offer"
+    data = {"csrf_token": "x", "price": "3455", "sales_from": "2099-11-26T00:00"}
+    response = client.post(url, data=data, follow_redirects=False)
+    assert response.status_code == 303, response.text
+    offer = intake_link.offer_for_week(db, week.id)
+    assert offer.is_active and offer.price_kop == 345500
+    assert offer.access_from == start and offer.access_until == offer.sales_until == end
+    assert video_topics.get_tag_ids(db, week.id) == [offer.tag_id]
+    db.refresh(week)
+    assert not week.assign_to_all
+    assert [item.id for item in tracker.list_week_items(db, week.id)] == [task.id]
+    assert client.post(url, data=data, follow_redirects=False).status_code == 409
+    page = client.get(f"/cabinet/staff/program/cycles/{week.id}")
+    assert f"/cabinet/flows#flow-{offer.id}" in page.text
+    assert "week-offer-price" not in page.text
+
+
+def test_flow_access_for_gp_and_named_moderator(client, db, monkeypatch, user_factory, session_factory):
+    from app.services import payments
+
+    gp = user_factory(vk_id=-991, role_name="админ")
+    designated = user_factory(vk_id=-992, role_name="модератор")
+    other = user_factory(vk_id=-993, role_name="модератор")
+    monkeypatch.setattr(payments, "PAYMENTS_EXTRA_USER_IDS", frozenset({designated.id}))
+    legacy = _group_link(db)
+    data = {
+        "csrf_token": "x", "price": "3455",
+        "sales_from": "2099-11-26T00:00", "sales_until": "2099-11-30T00:00",
+        "access_from": "2099-11-29T12:00", "access_until": "2099-12-06T21:00",
+    }
+    for person in (gp, designated):
+        client.cookies.set("session_id", session_factory(person).id)
+        title = f"Flow {person.id}"
+        page = client.get("/cabinet/flows")
+        assert page.status_code == 200
+        assert 'action="/cabinet/flows"' in page.text
+        assert 'action="/cabinet/intake/links"' not in page.text
+        if person.id == gp.id:
+            periods = client.get("/cabinet/periods")
+            assert periods.status_code == 200
+            assert 'data-group-links' in periods.text
+        response = client.post("/cabinet/flows", data={**data, "title": title}, follow_redirects=False)
+        assert response.status_code == 303, response.text
+        link = db.query(IntakeLink).filter_by(title=title).one()
+        assert client.post(f"/cabinet/flows/{link.slug}/toggle", data={"csrf_token": "x"},
+                           follow_redirects=False).status_code == 303
+        assert client.post(f"/cabinet/flows/{link.slug}/track", data={"csrf_token": "x", "price": "3700"},
+                           follow_redirects=False).status_code == 303
+        db.refresh(link)
+        assert link.is_active and link.price_kop == 370000
+        assert client.post(f"/cabinet/flows/{legacy.slug}/toggle", data={"csrf_token": "x"}).status_code == 404
+
+    client.cookies.set("session_id", session_factory(other).id)
+    assert client.get("/cabinet/flows").status_code == 403
+    assert client.post("/cabinet/flows", data={**data, "title": "Denied"}).status_code == 403
+
+
+def test_flow_table_hides_past_links_and_keeps_current_and_future(admin_client, db):
+    client, _ = admin_client
+    now = datetime.now(timezone.utc)
+    current = _group_link(db, slug="current26", tag_name="Current flow")
+    past = _group_link(db, slug="pastflow26", tag_name="Past flow", access_until=now - timedelta(days=1))
+    inactive = _group_link(db, slug="disabled26", tag_name="Disabled flow", is_active=False)
+    future = _group_link(db, slug="futureflow26", tag_name="Future flow", is_active=False)
+    future.sales_from = now + timedelta(days=1)
+    future.access_from = now + timedelta(days=2)
+    future.sales_until = now + timedelta(days=3)
+    db.commit()
+    for path in ("/cabinet/periods", "/cabinet/flows"):
+        page = client.get(path)
+        assert page.status_code == 200
+        for track in (current, future):
+            assert f'id="flow-{track.id}"' in page.text
+        for track in (past, inactive):
+            assert f'id="flow-{track.id}"' not in page.text
 
 
 def test_group_link_reuses_existing_tag(admin_client, db):
@@ -304,7 +444,7 @@ def test_group_link_toggle_and_deadline_by_slug(admin_client, db):
 
     assert resp.status_code == 303
     db.refresh(link)
-    assert link.is_active is True and link.access_until == DEADLINE
+    assert link.is_active is True and link.access_until == datetime(2026, 11, 1, 20, 59, tzinfo=timezone.utc)
     # `/proba` от этого не заводится и не включается.
     assert db.query(IntakeLink).filter(IntakeLink.slug == INTAKE_TRIAL_SLUG).first() is None
 

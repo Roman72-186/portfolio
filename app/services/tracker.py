@@ -1353,7 +1353,8 @@ def week_audience(db: Session, topic: LearningTopic) -> int:
 
 
 def copy_week(
-    db: Session, source: LearningTopic, *, user_id: int, shift_days: int = 7
+    db: Session, source: LearningTopic, *, user_id: int, shift_days: int = 7,
+    shift: timedelta | None = None,
 ) -> LearningTopic:
     """Скопировать неделю целиком со сдвигом дат — прошлая неделя как образец.
 
@@ -1364,7 +1365,7 @@ def copy_week(
     Домашние задания дублируются, а не переиспользуются: иначе правка задания в
     новой неделе меняла бы задание в прошлой, уже сданной.
     """
-    shift = timedelta(days=shift_days)
+    shift = timedelta(days=shift_days) if shift is None else shift
     copy = create_topic(
         db,
         title=f"{source.title} (копия)",

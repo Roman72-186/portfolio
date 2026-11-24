@@ -23,6 +23,75 @@ KEY = "test-secret-key"
 FORM_URL = "https://apparchi-test.payform.ru/"
 
 
+def test_november_campaign_seed_and_start(db, client, monkeypatch, user_factory, session_factory):
+    import importlib.util
+    from pathlib import Path
+    from types import SimpleNamespace
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/71ec6a093bd2_november_trial.py"
+    spec = importlib.util.spec_from_file_location("november_campaign", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=db.connection))
+    migration.upgrade()
+    db.commit()
+    track = intake_link_service.get_link(db, "testpodgotovki")
+    assert track.price_kop == 345500 and track.is_active
+    topics = db.query(LearningTopic).join(LearningTopicTag).filter_by(tag_id=track.tag_id).all()
+    assert {topic.kind for topic in topics} == {"period", "stage", "week"}
+    assert all(topic.is_published and not topic.assign_to_all for topic in topics)
+    start = datetime(2026, 11, 22, 9, tzinfo=timezone.utc)
+    assert intake_link_service.waits_for_program(310001, start - timedelta(seconds=1), [track])
+    assert not intake_link_service.waits_for_program(310001, start, [track])
+    assert client.get("/testpodgotovki", follow_redirects=False).status_code in (200, 302)
+
+    track.access_until = datetime(2026, 11, 29, 18, tzinfo=timezone.utc)
+    db.commit()
+    monkeypatch.setattr(intake_link_service, "tracks_on_sale", lambda db: [track])
+    page = _login(client, session_factory, _newcomer(db, user_factory)).get(
+        "/cabinet/personal/track?offer=testpodgotovki"
+    )
+    assert page.status_code == 200
+    assert "<h1>Попробуй подготовку</h1>" in page.text
+    assert "Выбери трек и оплати его" not in page.text
+    assert "Доступ к заданиям откроется 22.11.2026 в 12:00 МСК." in page.text
+    assert "Доступ закроется 29.11.2026 в 21:00 МСК." in page.text
+
+
+def test_next_trial_has_separate_audience_and_sales_window(db, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from types import SimpleNamespace
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+
+    versions = Path(__file__).resolve().parents[1] / "alembic/versions"
+    for name in ("71ec6a093bd2_november_trial.py", "29f5f31e81b7_next_trial.py"):
+        spec = importlib.util.spec_from_file_location(name, versions / name)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=db.connection))
+        migration.upgrade()
+
+    old = intake_link_service.get_link(db, "testpodgotovki")
+    new = intake_link_service.get_link(db, "testpodgotovki-29")
+    assert new.id != old.id and new.tag_id != old.tag_id
+    assert new.price_kop == old.price_kop == 345500
+    sale = datetime(2026, 11, 25, 21, tzinfo=timezone.utc)
+    assert old in intake_link_service.tracks_on_sale(db, sale)
+    assert new not in intake_link_service.tracks_on_sale(db, sale - timedelta(seconds=1))
+    assert new in intake_link_service.tracks_on_sale(db, sale)
+    start = datetime(2026, 11, 29, 9, tzinfo=timezone.utc)
+    assert intake_link_service.waits_for_program(310001, start - timedelta(seconds=1), [new])
+    assert not intake_link_service.waits_for_program(310001, start, [new])
+    topics = db.query(LearningTopic).join(LearningTopicTag).filter_by(tag_id=new.tag_id).all()
+    assert len(topics) == 3
+    for topic in topics:
+        assert ps._as_utc(topic.opens_at) == start
+        assert not topic.assign_to_all
+        assert {row.tag_id for row in db.query(LearningTopicTag).filter_by(topic_id=topic.id)} == {new.tag_id}
+
+
 @pytest.fixture()
 def prodamus(monkeypatch):
     monkeypatch.setattr(settings, "prodamus_form_url", FORM_URL)
@@ -110,6 +179,9 @@ def test_annual_student_never_sees_track_page(auth_client):
     resp = client.get("/cabinet/personal/track", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/personal"
+    checkout = client.get("/cabinet/personal/track?offer=testpodgotovki", follow_redirects=False)
+    assert checkout.status_code == 403
+    assert "Написать в Службу заботы" in checkout.text
 
 
 def test_hidden_tracks_are_not_sold(client, db, user_factory, session_factory):

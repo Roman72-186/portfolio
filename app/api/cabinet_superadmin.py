@@ -37,7 +37,7 @@ from app.constants import (
 )
 from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
-from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user, require_action
+from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user, require_action, require_payments_staff
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
@@ -1094,16 +1094,35 @@ def periods_list(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    periods = (
-        db.query(FeaturePeriod)
-        .order_by(FeaturePeriod.feature, FeaturePeriod.start_date.desc())
-        .all()
-    )
-    today = today_msk()
-    intake_link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
+    return _render_periods(request, user, db)
+
+
+@router.get("/flows", response_class=HTMLResponse)
+def flows_list(
+    request: Request,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _render_periods(request, user, db, flows_only=True)
+
+
+def _render_periods(request, user, db, *, flows_only=False):
     base_url = str(request.base_url).rstrip("/")
     group_links = intake_link_service.holiday_tracks(db)
+    from app.constants import PROGRAM_HOLIDAY
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+
+    weeks_by_tag = {}
+    for week_id, tag_id in (
+        db.query(LearningTopic.id, LearningTopicTag.tag_id)
+        .join(LearningTopicTag, LearningTopicTag.topic_id == LearningTopic.id)
+        .filter(LearningTopic.kind == "week", LearningTopic.program == PROGRAM_HOLIDAY,
+                LearningTopicTag.tag_id.in_([link.tag_id for link in group_links]))
+        .order_by(LearningTopic.id)
+    ):
+        weeks_by_tag.setdefault(tag_id, []).append(week_id)
     entry = intake_link_service.entry_link(db)
+    now = now_msk()
     tag_names = {
         tag.id: tag.name
         for tag in db.query(Tag).filter(
@@ -1113,24 +1132,25 @@ def periods_list(
     return templates.TemplateResponse(request, "periods_management.html", {
         "request": request,
         "user": user,
-        "periods": periods,
-        "features": ALL_FEATURES,
-        "feature_labels": FEATURE_LABELS,
-        "today": today,
-        "intake_link": intake_link,
-        "intake_deadline_input": msk_input_value(intake_link.access_until if intake_link else None),
-        "intake_deadline_text": msk_text(intake_link.access_until if intake_link else None),
-        "intake_public_url": f"{base_url}/{INTAKE_TRIAL_SLUG}",
+        "flows_only": flows_only,
         # Ссылки групп каникулярного набора (созвон 13.10.2026): у каждой
         # группы своя, тег группы открывает ей каникулярный цикл.
         "group_links": [
             {
                 "slug": link.slug,
                 "id": link.id,
+                "scheduled": link.access_from is not None,
+                "show_in_table": intake_link_service.show_in_flow_table(link, now),
+                "sales_open": intake_link_service.is_open(link, now),
+                "sales_finished": bool(link.sales_until and now_msk() >= intake_link_service._as_utc(link.sales_until)),
+                "sales_from_text": msk_text(link.sales_from),
+                "sales_until_text": msk_text(link.sales_until),
+                "access_from_text": msk_text(link.access_from),
+                "week_ids": weeks_by_tag.get(link.tag_id, []),
                 "title": link.title,
                 "tag_name": tag_names.get(link.tag_id),
                 "is_active": link.is_active,
-                "url": f"{base_url}/join/{link.slug}",
+                "url": f"{base_url}/testpodgotovki" if link.slug == "testpodgotovki" else f"{base_url}/join/{link.slug}",
                 "deadline_input": msk_input_value(link.access_until),
                 "deadline_text": msk_text(link.access_until),
                 # Трек (17.10.2026): цена — продаётся на платформе, без цены —
@@ -1144,9 +1164,10 @@ def periods_list(
             for link in group_links
         ],
         # Общая ссылка набора (17.10.2026): вход без трека, трек — оплатой.
+        "has_entry_link": entry is not None,
         "entry_link": {
             "slug": entry.slug,
-            "is_active": entry.is_active,
+            "is_active": intake_link_service.is_open(entry, now),
             # Короткий адрес набора (19.10.2026) — его и отправляют ученикам.
             "url": f"{base_url}{HOLIDAY_ENTRY_PATH}",
             "deadline_input": msk_input_value(entry.access_until),
@@ -1189,6 +1210,8 @@ def intake_group_link_create(
         if access_until is None:
             raise HTTPException(status_code=400, detail="Неверный формат даты")
     tag = get_or_create_tag(db, name)
+    if db.query(IntakeLink.id).filter(IntakeLink.tag_id == tag.id, IntakeLink.access_from.is_not(None)).first():
+        raise HTTPException(409, "Этот тег закреплён за отдельным потоком. Укажите другое название.")
     # Название выбрали явно — тег должен быть виден в форме цикла и чипах.
     tag.is_hidden = False
     intake_link_service.create_holiday_link(
@@ -1197,6 +1220,136 @@ def intake_group_link_create(
     )
     db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
+
+
+@router.post("/intake/flows")
+@router.post("/flows")
+def intake_flow_create(
+    request: Request,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    title: Annotated[str, Form()],
+    price: Annotated[str, Form()],
+    sales_from: Annotated[str, Form()],
+    sales_until: Annotated[str, Form()],
+    access_from: Annotated[str, Form()],
+    access_until: Annotated[str, Form()],
+    source_week: Annotated[int, Form()] = 0,
+):
+    from app.constants import PROGRAM_HOLIDAY
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+    from app.services import tracker, video_topics
+    from app.services.tz import _as_utc
+
+    title = title.strip()
+    price_kop = payments.rub_str_to_kop(price)
+    if not title or len(title) > 50:
+        raise HTTPException(400, "Укажите название потока до 50 знаков.")
+    if not price_kop or not 0 < price_kop <= 2_147_483_647:
+        raise HTTPException(400, "Укажите положительную цену в рублях.")
+    sale_start, sale_end, start, end = map(
+        parse_msk_local, (sales_from, sales_until, access_from, access_until),
+    )
+    if not all((sale_start, sale_end, start, end)) or not (
+        sale_start < sale_end <= end and start < end
+    ):
+        raise HTTPException(400, "Проверьте даты продаж и доступа. Продажи должны закончиться до закрытия доступа или одновременно с ним.")
+    if db.query(Tag.id).filter(func.lower(Tag.name) == title.lower()).first():
+        raise HTTPException(409, "Это название уже занято. Укажите другое название потока.")
+
+    source = None
+    if source_week:
+        source = (
+            db.query(LearningTopic).join(LearningTopicTag, LearningTopicTag.topic_id == LearningTopic.id)
+            .join(IntakeLink, IntakeLink.tag_id == LearningTopicTag.tag_id)
+            .filter(LearningTopic.id == source_week, LearningTopic.kind == "week",
+                    LearningTopic.program == PROGRAM_HOLIDAY, IntakeLink.program == PROGRAM_HOLIDAY)
+            .first()
+        )
+        if source is None:
+            raise HTTPException(400, "Выберите неделю каникулярного потока.")
+
+    tag = Tag(name=title, is_hidden=False)
+    db.add(tag)
+    db.flush()
+    actor = user["user_id"]
+    link = intake_link_service.create_holiday_link(
+        db, title=title, tag_id=tag.id, access_until=end, created_by_id=actor,
+    )
+    link.price_kop = price_kop
+    link.sales_from = sale_start
+    link.sales_until = sale_end
+    link.access_from = start
+
+    parent_id = None
+    for kind, name in (("period", title), ("stage", "Программа потока"), ("week", title)):
+        if kind == "week" and source is not None:
+            topic = tracker.copy_week(db, source, user_id=actor, shift=start - _as_utc(source.opens_at))
+            topic.title = name
+            topic.parent_id = parent_id
+            topic.opens_at = start
+            topic.ends_at = end
+            topic.assign_to_all = False
+            video_topics.set_topic_assignees(db, topic, [])
+        else:
+            topic = video_topics.create_topic(
+                db, title=name, kind=kind, opens_at=start, ends_at=end,
+                parent_id=parent_id, user_id=actor,
+            )
+        topic.program = PROGRAM_HOLIDAY
+        topic.is_published = True
+        video_topics.set_topic_tags(db, topic, [tag.id])
+        parent_id = topic.id
+
+    db.commit()
+    destination = "/cabinet/flows" if request.url.path == "/cabinet/flows" else "/cabinet/periods"
+    return RedirectResponse(f"{destination}#flow-{link.id}", status_code=303)
+
+
+@router.post("/intake/weeks/{week_id}/offer")
+@router.post("/flows/weeks/{week_id}/offer")
+def intake_offer_from_week(
+    week_id: int,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    price: Annotated[str, Form()],
+    sales_from: Annotated[str, Form()],
+):
+    from app.models.learning_topic import LearningTopic
+    from app.services import video_topics
+    from app.services.tz import _as_utc
+
+    week = db.query(LearningTopic).filter(LearningTopic.id == week_id).with_for_update().first()
+    if not intake_link_service.can_attach_offer(db, week):
+        raise HTTPException(409, "Выберите будущую каникулярную неделю без назначенных учеников и тегов.")
+    price_kop = payments.rub_str_to_kop(price)
+    if not price_kop or not 0 < price_kop <= 2_147_483_647:
+        raise HTTPException(400, "Укажите положительную цену в рублях.")
+    sale = parse_msk_local(sales_from)
+    start, end = _as_utc(week.opens_at), _as_utc(week.ends_at)
+    if sale is None or sale >= end:
+        raise HTTPException(400, "Продажи должны начаться до закрытия недели.")
+
+    tag_name = f"{week.title[:33]} (#{week.id})"
+    if db.query(Tag.id).filter(Tag.name == tag_name).first():
+        raise HTTPException(409, "Тег этой недели уже существует.")
+    tag = Tag(name=tag_name, is_hidden=False)
+    db.add(tag)
+    db.flush()
+    link = intake_link_service.create_holiday_link(
+        db, title=week.title, tag_id=tag.id, access_until=end, created_by_id=user["user_id"],
+    )
+    link.price_kop = price_kop
+    link.sales_from = sale
+    link.sales_until = end
+    link.access_from = start
+    link.is_active = True
+    week.assign_to_all = False
+    video_topics.set_topic_tags(db, week, [tag.id])
+    db.commit()
+    return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 
 
 @router.post("/intake/entry")
@@ -1247,6 +1400,8 @@ def intake_track_settings(
     text = description.strip()
     if len(text) > 1000:
         raise HTTPException(status_code=400, detail="Описание — не длиннее 1000 знаков")
+    if link.access_from is not None and not price_kop:
+        raise HTTPException(400, "Укажите цену платного потока.")
     link.price_kop = price_kop
     link.description = text or None
     link.reminders_enabled = reminders == "1"
@@ -1265,6 +1420,8 @@ def intake_deadline_set(
     slug: str = INTAKE_TRIAL_SLUG,
 ):
     link = _intake_link_for_edit(db, slug, user["user_id"])
+    if link.access_from is not None:
+        raise HTTPException(400, "Срок доступа задан расписанием потока.")
     raw = deadline.strip()
     if not raw:
         # Пусто — снять дату и выключить ссылку: включённая ссылка без даты
@@ -1298,6 +1455,41 @@ def intake_toggle(
     link.is_active = not link.is_active
     db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
+
+
+def _scheduled_flow(db: DBSession, slug: str) -> IntakeLink:
+    link = intake_link_service.get_link(db, slug)
+    if not intake_link_service.is_track(link) or link.access_from is None:
+        raise HTTPException(404, "Поток не найден.")
+    return link
+
+
+@router.post("/flows/{slug}/toggle")
+def flow_toggle(
+    slug: str,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    link = _scheduled_flow(db, slug)
+    intake_toggle(user, db, _csrf, slug)
+    return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
+
+
+@router.post("/flows/{slug}/track")
+def flow_settings(
+    slug: str,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    price: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    reminders: Annotated[str, Form()] = "",
+    dialog: Annotated[str, Form()] = "",
+):
+    link = _scheduled_flow(db, slug)
+    intake_track_settings(slug, user, db, _csrf, price, description, reminders, dialog)
+    return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 
 
 @router.post("/periods/create")

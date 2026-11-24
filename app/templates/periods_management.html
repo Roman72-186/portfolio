@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Управление периодами{% endblock %}
+{% block title %}{{ "Потоки" if flows_only else "Периоды и набор" }}{% endblock %}
 {% block extra_styles %}
 <style>
-.periods-wrap { max-width: 760px; margin: 0 auto; }
+.periods-wrap { max-width: 1140px; margin: 0 auto; }
 .feature-section { margin-bottom: 32px; }
 .feature-header {
     display: flex; align-items: center; justify-content: space-between;
@@ -62,6 +62,20 @@
 .period-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .period-card-right { display: flex; align-items: center; gap: 12px; }
 
+.flow-builder { margin-bottom: 16px; }
+.flow-builder[open] > summary { margin-bottom: 16px; }
+.flow-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.flow-table { width: 100%; border-collapse: collapse; background: var(--surface); text-align: left; font-size: 14px; }
+.flow-table th, .flow-table td { padding: 12px 14px; vertical-align: top; }
+.flow-table thead th { color: var(--dim); font-weight: 600; }
+.flow-table tbody th, .flow-table tbody td { border-top: 1px solid var(--line); }
+.flow-table tbody th { min-width: 170px; }
+.flow-table-date { min-width: 150px; }
+.flow-table-meta { display: block; margin-top: 4px; color: var(--dim); font-weight: 400; }
+.flow-table .period-actions { flex-wrap: wrap; min-width: 160px; }
+.flow-table .period-status { display: inline-block; margin: 5px 0; font-size: 13px; }
+.flow-edit-row:not(:has(.create-form.open)) { display: none; }
+
 @media (max-width: 480px) {
     .period-card { flex-direction: column; align-items: stretch; }
     .period-card-right { justify-content: space-between; }
@@ -75,63 +89,23 @@
     <div style="margin-bottom:28px">
         <a href="/cabinet" class="back-link">← Кабинет</a>
         <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px;margin-top:0" class="text-accent">
-            Управление периодами
+            {{ "Потоки" if flows_only else "Периоды и набор" }}
         </h1>
         <p style="color:var(--muted);font-size:14px;margin-top:6px">
-            Включайте и выключайте доступ учеников к разделам на определённые даты.
+            {% if flows_only %}Платные ссылки, расписание продаж и программы в АОП.{% else %}Общая ссылка набора и отдельные ссылки потоков.{% endif %}
         </p>
-    </div>
-
-    <div class="feature-section">
-        <div class="feature-header">
-            <span class="feature-label">Ссылка пробного набора</span>
-        </div>
-        <div class="period-card {% if intake_link and intake_link.is_active %}active{% else %}inactive{% endif %}">
-            <div>
-                <div class="period-dates" id="intake-url-text">{{ intake_public_url }}</div>
-                <div class="period-title">
-                    {% if intake_deadline_text %}Открыт до {{ intake_deadline_text }} (МСК){% else %}Дата не задана — ссылку нельзя включить{% endif %}
-                </div>
-            </div>
-            <div class="period-card-right">
-                <span class="period-status {% if intake_link and intake_link.is_active %}status-active{% else %}status-inactive{% endif %}">
-                    {% if intake_link and intake_link.is_active %}Открыт{% else %}Закрыт{% endif %}
-                </span>
-                <div class="period-actions">
-                    <button type="button" class="btn-sm" data-url="{{ intake_public_url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
-                    <form method="post" action="/cabinet/intake/toggle" style="display:inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        {% if intake_link and intake_link.is_active %}
-                        <button type="submit" class="btn-danger">Выключить</button>
-                        {% else %}
-                        <button type="submit" class="btn-sm">Включить</button>
-                        {% endif %}
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="create-form open">
-            <form method="post" action="/cabinet/intake/deadline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <label class="form-label" for="intake-deadline">Открыт до (МСК)</label>
-                <input id="intake-deadline" class="form-input" type="datetime-local" name="deadline"
-                       value="{{ intake_deadline_input }}">
-                <div class="form-actions" style="margin-top:12px">
-                    <button type="submit" class="btn-blue btn-save">Сохранить дату</button>
-                </div>
-            </form>
-        </div>
     </div>
 
     <div class="feature-section" data-group-links>
         <div class="feature-header">
-            <span class="feature-label">Каникулярный набор: общая ссылка и треки</span>
-            <button type="button" class="btn-add" onclick="toggleForm('group-new')">+ Трек</button>
+            <span class="feature-label" id="intake-flows">Каникулярный набор и потоки</span>
+{% if not flows_only %}<button type="button" class="btn-add" onclick="toggleForm('group-new')">+ Трек</button>{% endif %}
         </div>
 
         {# Общая ссылка набора (17.10.2026): по ней входят все, трек человек
            выбирает и оплачивает на платформе (`intake_link.entry_link`). #}
-        {% if entry_link %}
+        {% if not flows_only %}
+        {% if entry_link and entry_link.is_active %}
         <div class="period-card {% if entry_link.is_active %}active{% else %}inactive{% endif %}" data-entry-link>
             <div>
                 <div class="period-dates">{{ entry_link.url }}</div>
@@ -169,7 +143,7 @@
                 </div>
             </form>
         </div>
-        {% else %}
+        {% elif not has_entry_link %}
         <form method="post" action="/cabinet/intake/entry" class="create-form open">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="entry-new-deadline">Общая ссылка набора – доступ до (МСК)</label>
@@ -204,37 +178,102 @@
             </form>
         </div>
 
-        {% for link in group_links %}
-        <div class="period-card {% if link.is_active %}active{% else %}inactive{% endif %}">
-            <div>
-                <div class="period-dates">{{ link.url }}</div>
-                <div class="period-title">
-                    Тег «{{ link.tag_name or link.title }}» ·
-                    {% if link.deadline_text %}доступ до {{ link.deadline_text }} (МСК){% else %}дата не задана – ссылку нельзя включить{% endif %}
-                    · {% if link.price_text %}{{ link.price_text }}, оплата на платформе{% else %}бесплатно, вход по своей ссылке{% endif %}
-                    {% if link.reminders_enabled %}· напоминания{% endif %}
-                    {% if link.dialog_enabled %}· переписка{% endif %}
+        {% endif %}
+        <details class="card flow-builder">
+            <summary>Создать или дублировать поток</summary>
+            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake/flows' }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label class="form-label" for="flow-source">Программа в АОП</label>
+                <select class="form-select" name="source_week" id="flow-source">
+                    <option value="0">Создать пустую неделю</option>
+                    {% for link in group_links if link.week_ids %}
+                        {% for week_id in link.week_ids %}
+                        <option value="{{ week_id }}">Скопировать неделю {{ link.title }}{% if link.week_ids|length > 1 %} (№ {{ week_id }}){% endif %}</option>
+                        {% endfor %}
+                    {% endfor %}
+                </select>
+                <div class="period-form-grid">
+                <div>
+                <label class="form-label" for="flow-title">Название нового потока</label>
+                <input class="form-input" id="flow-title" name="title" maxlength="50" required>
                 </div>
-            </div>
-            <div class="period-card-right">
-                <span class="period-status {% if link.is_active %}status-active{% else %}status-inactive{% endif %}">
-                    {% if link.is_active %}Открыт{% else %}Закрыт{% endif %}
-                </span>
-                <div class="period-actions">
-                    <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Скопировать</button>
-                    <button type="button" class="btn-sm" onclick="toggleForm('group-{{ link.id }}')">Дата</button>
-                    <button type="button" class="btn-sm" onclick="toggleForm('track-{{ link.id }}')">Трек</button>
-                    <form method="post" action="/cabinet/intake/{{ link.slug }}/toggle" style="display:inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        {% if link.is_active %}
-                        <button type="submit" class="btn-danger">Выключить</button>
-                        {% else %}
-                        <button type="submit" class="btn-sm">Включить</button>
+                <div>
+                <label class="form-label" for="flow-price">Цена, ₽</label>
+                <input class="form-input" id="flow-price" name="price" inputmode="decimal" required>
+                </div>
+                {% for field, label in [
+                    ('sales_from', 'Начало продаж'), ('sales_until', 'Окончание продаж'),
+                    ('access_from', 'Открытие заданий'), ('access_until', 'Закрытие доступа')
+                ] %}
+                <div>
+                <label class="form-label" for="flow-{{ field }}">{{ label }} (МСК)</label>
+                <input class="form-input" id="flow-{{ field }}" name="{{ field }}" type="datetime-local" required>
+                </div>
+                {% endfor %}
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-blue btn-save">Создать черновик</button>
+                </div>
+            </form>
+        </details>
+
+        <div class="flow-table-wrap" role="region" tabindex="0" aria-label="Потоки каникулярного набора">
+        <table class="flow-table" aria-label="Потоки каникулярного набора">
+            <thead><tr>
+                <th scope="col">Поток</th>
+                <th scope="col">Цена</th>
+                <th scope="col">Продажи, МСК</th>
+                <th scope="col">Доступ, МСК</th>
+                <th scope="col">Действия</th>
+            </tr></thead>
+            <tbody>
+        {% for link in group_links if link.show_in_table %}
+            <tr id="flow-{{ link.id }}">
+                <th scope="row">
+                    {{ link.title }}
+                    <span class="period-status {% if link.sales_open %}status-active{% else %}status-inactive{% endif %}">
+                        {% if not link.is_active %}Выключен
+                        {% elif link.sales_open %}{% if link.price_text %}Продажи открыты{% else %}Вход открыт{% endif %}
+                        {% elif link.sales_finished %}Продажи завершены
+                        {% elif link.scheduled %}Продажи запланированы
+                        {% else %}Вход закрыт{% endif %}
+                    </span>
+                    {% if link.reminders_enabled %}<span class="flow-table-meta">Напоминания</span>{% endif %}
+                    {% if link.dialog_enabled %}<span class="flow-table-meta">Переписка</span>{% endif %}
+                </th>
+                <td>{{ link.price_text or "Бесплатно" }}</td>
+                <td class="flow-table-date">
+                    {% if link.sales_from_text %}с {{ link.sales_from_text }}{% endif %}
+                    {% if link.sales_until_text %}<span class="flow-table-meta">до {{ link.sales_until_text }}</span>{% endif %}
+                    {% if not link.sales_from_text and not link.sales_until_text %}По состоянию ссылки{% endif %}
+                </td>
+                <td class="flow-table-date">
+                    {% if link.access_from_text %}с {{ link.access_from_text }}{% endif %}
+                    <span class="flow-table-meta">{% if link.deadline_text %}до {{ link.deadline_text }}{% else %}Срок не задан{% endif %}</span>
+                </td>
+                <td>
+                    <div class="period-actions">
+                        <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Копировать ссылку</button>
+                        {% if not flows_only and not link.scheduled %}<button type="button" class="btn-sm" onclick="toggleForm('group-{{ link.id }}')">Дата</button>{% endif %}
+                        {% if not flows_only or link.scheduled %}
+                        <button type="button" class="btn-sm" onclick="toggleForm('track-{{ link.id }}')">Настройки</button>
+                        <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/toggle">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            {% if link.is_active %}
+                            <button type="submit" class="btn-danger">Выключить</button>
+                            {% else %}
+                            <button type="submit" class="btn-sm">Включить</button>
+                            {% endif %}
+                        </form>
                         {% endif %}
-                    </form>
-                </div>
-            </div>
-        </div>
+                    </div>
+                    {% for week_id in link.week_ids %}
+                    <a class="flow-table-meta" href="/cabinet/staff/program/cycles/{{ week_id }}">Открыть АОП{% if link.week_ids|length > 1 %} № {{ week_id }}{% endif %}</a>
+                    {% endfor %}
+                </td>
+            </tr>
+            <tr class="flow-edit-row"><td colspan="5">
+        {% if not flows_only %}
         <div class="create-form" id="form-group-{{ link.id }}">
             <form method="post" action="/cabinet/intake/{{ link.slug }}/deadline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -246,8 +285,10 @@
                 </div>
             </form>
         </div>
+        {% endif %}
+        {% if not flows_only or link.scheduled %}
         <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
-            <form method="post" action="/cabinet/intake/{{ link.slug }}/track">
+            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/track">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <label class="form-label" for="track-price-{{ link.id }}">Цена, ₽ – пусто: трек бесплатный, вход по своей ссылке</label>
                 <input id="track-price-{{ link.id }}" class="form-input" type="text" inputmode="decimal" name="price"
@@ -262,102 +303,15 @@
                 </div>
             </form>
         </div>
-        {% else %}
-        <div class="empty-periods">Треков пока нет</div>
-        {% endfor %}
-    </div>
-
-    {% for feature in features %}
-    {% set label = feature_labels[feature] %}
-    {% set feature_periods = periods | selectattr('feature', 'equalto', feature) | list %}
-
-    <div class="feature-section">
-        <div class="feature-header">
-            <span class="feature-label">{{ label }}</span>
-            <button class="btn-add" onclick="toggleForm('{{ feature }}')">+ Добавить период</button>
-        </div>
-
-        <!-- Create form (hidden by default) -->
-        <div class="create-form" id="form-{{ feature }}">
-            <form method="post" action="/cabinet/periods/create">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <input type="hidden" name="feature" value="{{ feature }}">
-                <div class="period-form-grid">
-                    <div>
-                        <label class="form-label" for="start-{{ feature }}">Дата начала *</label>
-                        <input id="start-{{ feature }}" class="form-input" type="date" name="start_date" required
-                               value="{{ today.isoformat() }}">
-                    </div>
-                    <div>
-                        <label class="form-label" for="end-{{ feature }}">Дата окончания *</label>
-                        <input id="end-{{ feature }}" class="form-input" type="date" name="end_date" required
-                               value="{{ today.isoformat() }}">
-                    </div>
-                </div>
-                <div style="margin-bottom:16px">
-                    <label class="form-label" for="title-{{ feature }}">Описание (необязательно)</label>
-                    <input id="title-{{ feature }}" class="form-input" type="text" name="title"
-                           placeholder="Например: Январский поток">
-                </div>
-                <div class="form-actions" style="margin-top:0">
-                    <button type="button" class="btn-sm"
-                            onclick="toggleForm('{{ feature }}')">Отмена</button>
-                    <button type="submit" class="btn-blue btn-save">
-                        Создать период
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Periods list -->
-        {% if feature_periods %}
-        {% for p in feature_periods %}
-        {% if p.is_active and p.start_date <= today and p.end_date >= today %}
-            {% set status = "active" %}
-            {% set status_label = "Активен сейчас" %}
-        {% elif p.is_active and p.start_date > today %}
-            {% set status = "upcoming" %}
-            {% set status_label = "Запланирован" %}
-        {% elif p.is_active and p.end_date < today %}
-            {% set status = "expired" %}
-            {% set status_label = "Истёк" %}
-        {% else %}
-            {% set status = "inactive" %}
-            {% set status_label = "Отключён" %}
         {% endif %}
-
-        <div class="period-card {% if status == 'active' %}active{% elif not p.is_active %}inactive{% endif %}">
-            <div>
-                <div class="period-dates">
-                    {{ p.start_date.strftime('%d.%m.%Y') }} — {{ p.end_date.strftime('%d.%m.%Y') }}
-                </div>
-                {% if p.title %}
-                <div class="period-title">{{ p.title }}</div>
-                {% endif %}
-            </div>
-            <div class="period-card-right">
-                <span class="period-status status-{{ status }}">{{ status_label }}</span>
-                <div class="period-actions">
-                    {% if p.is_active %}
-                    <form method="post" action="/cabinet/periods/{{ p.id }}/deactivate" style="display:inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <button type="submit" class="btn-danger">Отключить</button>
-                    </form>
-                    {% else %}
-                    <form method="post" action="/cabinet/periods/{{ p.id }}/activate" style="display:inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <button type="submit" class="btn-sm">Включить</button>
-                    </form>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        {% endfor %}
+            </td></tr>
         {% else %}
-        <div class="empty-periods">Периодов пока нет — создайте первый</div>
-        {% endif %}
+            <tr><td colspan="5">Потоков пока нет</td></tr>
+        {% endfor %}
+            </tbody>
+        </table>
+        </div>
     </div>
-    {% endfor %}
 
     <div style="height:80px"></div>
 </div>

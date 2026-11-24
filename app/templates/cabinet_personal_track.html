@@ -5,7 +5,8 @@
    продаже. Вид — карточки «Личной информации» (`personal_ios.css`), кнопка и окно
    оплаты — общий `partials/pay_opening.html`. Карточки треков белые, название
    в цвете курса, сумма отдельной крупной строкой (служба заботы 19.10.2026). #}
-{% block title %}Каникулярный набор{% endblock %}
+{% set is_trial_offer = request.query_params.get("offer") == "testpodgotovki" %}
+{% block title %}{{ 'Попробуй подготовку' if is_trial_offer else 'Каникулярный набор' }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/personal_ios.css?v=25">
 {% endblock %}
@@ -13,10 +14,8 @@
 <div class="prs-page ios-personal">
 
     <div class="prs-hero">
-        <h1>Каникулярный набор</h1>
-        {% if owned %}
-        <p>Твои треки и то, что ещё можно добавить.</p>
-        {% else %}
+        <h1>{{ 'Попробуй подготовку' if is_trial_offer else 'Каникулярный набор' }}</h1>
+        {% if not is_trial_offer and not owned %}
         <p>Выбери трек и оплати его – после оплаты откроется короткая анкета, а за ней программа.{% if program_opens_text %} Программа откроется {{ program_opens_text }} по Москве.{% endif %}</p>
         {% endif %}
     </div>
@@ -30,12 +29,12 @@
 
     {% if owned %}
     <div class="prs-access-closed prs-track-card" data-owned-tracks>
-        <h2>Твои треки</h2>
+        <h2>Оплаченные треки</h2>
         {% for item in owned %}
         <p><strong class="prs-track-name{% if item.color %} prs-track--{{ item.color }}{% endif %}">{{ item.title }}</strong> – оплачен</p>
         {% endfor %}
         {% if program_opens_text %}
-        <p data-program-opens>Доступ к программе откроется {{ program_opens_text }} по Москве.</p>
+        <p data-program-opens>Программа откроется {{ program_opens_text }} по Москве.</p>
         {% endif %}
         {% if user.profile_completed %}
         <div class="prs-access-closed-actions">
@@ -60,7 +59,12 @@
         <p>{{ line }}</p>
         {% endfor %}
         <p class="prs-track-price">{{ item.price_text }}</p>
+        {% if item.opens_text %}
+        <p class="prs-track-until">Доступ к заданиям откроется {{ item.opens_text }} МСК.</p>
+        <p class="prs-track-until">Доступ закроется {{ item.access_until_text }} МСК.</p>
+        {% else %}
         <p class="prs-track-until">Доступ до {{ item.access_until_text }} по Москве</p>
+        {% endif %}
         <div class="prs-access-closed-actions">
             <button type="button" class="btn-blue" data-pay-button data-pay-url="/cabinet/personal/track/{{ item.id }}/pay">{% if test_account %}Открыть без оплаты (служебный){% else %}Оплатить{% endif %}</button>
         </div>

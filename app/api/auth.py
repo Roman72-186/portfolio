@@ -462,7 +462,44 @@ async def holiday_group_entry(
     link = intake_link_service.get_link(db, slug)
     if not intake_link_service.is_holiday(link):
         raise HTTPException(status_code=404)
+    if link.access_from is not None or slug == intake_link_service.NEXT_TRIAL:
+        return _trial_offer(request, db, slug)
     return _holiday_entry(request, db, link)
+
+
+@router.get("/testpodgotovki")
+@limiter.limit("20/minute")
+async def november_trial_entry(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _trial_offer(request, db, "testpodgotovki")
+
+
+def _trial_offer(request: Request, db: DBSession, slug: str):
+    link = intake_link_service.get_link(db, slug)
+    if not intake_link_service.is_track(link) or not link.price_kop:
+        return _intake_closed_response(request, _HOLIDAY_CLOSED_NOTE)
+    from app.services.tz import _as_utc, msk_text
+
+    if link.is_active and link.sales_from and _as_utc(link.sales_from) > datetime.now(timezone.utc):
+        return templates.TemplateResponse(request, "november_trial_entry.html", {
+            "offer_title": link.title, "sales_text": msk_text(link.sales_from),
+        })
+    if intake_link_service.is_open(link) and _has_live_session(request, db):
+        return RedirectResponse(f"/cabinet/personal/track?offer={slug}", status_code=302)
+    if not intake_link_service.is_open(link) or not _telegram_login_enabled():
+        return _intake_closed_response(request, _HOLIDAY_CLOSED_NOTE)
+    if request.query_params.get("login") == "telegram":
+        return _holiday_entry(request, db, link)
+
+    return templates.TemplateResponse(request, "november_trial_entry.html", {
+        "request": request,
+        "offer_title": link.title if link.access_from else None,
+        "entry_path": request.url.path,
+        "opens_text": msk_text(intake_link_service.program_opens_at([link])),
+        "closes_text": msk_text(link.access_until),
+    })
 
 
 @router.get(HOLIDAY_ENTRY_PATH)
@@ -717,7 +754,10 @@ async def telegram_login_callback(
         tag_annual_newcomer(db, user)
 
     db.commit()
-    return _create_session_response(db, user, request)
+    response = _create_session_response(db, user, request)
+    if intake_link_service.is_scheduled_offer(link) and intake_link_service.is_open(link):
+        response.headers["location"] = f"/cabinet/personal/track?offer={link.slug}"
+    return response
 
 
 @router.get("/auth/link", response_class=HTMLResponse)
