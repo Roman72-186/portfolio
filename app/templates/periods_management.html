@@ -59,7 +59,7 @@
     border: 1px dashed var(--line); border-radius: var(--r-sm);
     margin-bottom: 8px;
 }
-.period-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.period-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .period-card-right { display: flex; align-items: center; gap: 12px; }
 
 .flow-builder { margin-bottom: 16px; }
@@ -79,11 +79,61 @@
 .flow-table .period-actions a.btn-sm { text-decoration: none; }
 .flow-table .period-status { display: inline-block; margin: 5px 0; font-size: 13px; }
 .flow-edit-row:not(:has(.create-form.open)) { display: none; }
+.period-form-grid > div { min-width: 0; }
+.periods-wrap input[type="datetime-local"] {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+.periods-wrap input[type="datetime-local"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+}
+.flow-mobile-label { display: none; }
+
+@media (max-width: 850px) {
+    .periods-wrap { min-width: 0; }
+    .flow-table-wrap { overflow: visible; border: 0; }
+    .flow-table, .flow-table tbody { display: block; }
+    .flow-table { background: transparent; }
+    .flow-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+    .flow-table tbody tr { display: block; }
+    .flow-table tbody tr:not(.flow-edit-row) {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        padding: 12px;
+        margin-bottom: 8px;
+    }
+    .flow-table tbody th, .flow-table tbody td {
+        display: block;
+        border: 0;
+        min-width: 0;
+        padding: 5px 0;
+    }
+    .flow-table tbody th { overflow-wrap: anywhere; }
+    .flow-table .period-status { display: table; }
+    .flow-table .period-actions { flex-wrap: wrap; }
+    .flow-table .period-actions > * { min-height: 44px; }
+    .flow-table .period-actions a { display: inline-flex; align-items: center; }
+    .flow-mobile-label { display: inline; color: var(--dim); margin-right: 6px; }
+    .flow-edit-row .create-form { padding: 14px; margin: 0 0 8px; }
+    .period-card-right, .period-card .period-actions { flex-wrap: wrap; min-width: 0; }
+    .period-card .period-dates { overflow-wrap: anywhere; }
+}
 
 @media (max-width: 480px) {
     .period-card { flex-direction: column; align-items: stretch; }
     .period-card-right { justify-content: space-between; }
-    .period-form-grid { grid-template-columns: 1fr; }
+    .period-form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
 {% endblock %}
@@ -216,24 +266,24 @@
                 {% endfor %}
                 </div>
                 <div class="form-actions">
-                    <button type="submit" class="btn-blue btn-save">Создать черновик</button>
+                    <button type="submit" class="btn-blue btn-save">Создать поток</button>
                 </div>
             </form>
         </details>
 
         <div class="flow-table-wrap" role="region" tabindex="0" aria-label="Потоки каникулярного набора">
-        <table class="flow-table" aria-label="Потоки каникулярного набора">
-            <thead><tr>
+        <table class="flow-table" role="table" aria-label="Потоки каникулярного набора">
+            <thead role="rowgroup"><tr role="row">
                 <th scope="col">Поток</th>
                 <th scope="col">Цена</th>
                 <th scope="col">Продажи, МСК</th>
                 <th scope="col">Доступ, МСК</th>
                 <th scope="col">Действия</th>
             </tr></thead>
-            <tbody>
+            <tbody role="rowgroup">
         {% for link in group_links if link.show_in_table %}
-            <tr id="flow-{{ link.id }}">
-                <th scope="row">
+            <tr id="flow-{{ link.id }}" role="row">
+                <th scope="row" role="rowheader">
                     {{ link.title }}
                     <span class="period-status {% if link.sales_open %}status-active{% else %}status-inactive{% endif %}">
                         {% if not link.is_active %}Выключен
@@ -244,17 +294,19 @@
                     </span>
                     {% if link.reminders_enabled %}<span class="flow-table-meta">Напоминания</span>{% endif %}
                 </th>
-                <td class="flow-table-price">{{ link.price_text or "Бесплатно" }}</td>
-                <td class="flow-table-date">
+                <td class="flow-table-price" role="cell"><span class="flow-mobile-label" aria-hidden="true">Цена</span>{{ link.price_text or "Бесплатно" }}</td>
+                <td class="flow-table-date" role="cell">
+                    <span class="flow-mobile-label" aria-hidden="true">Продажи, МСК</span>
                     {% if link.sales_from_text %}с {{ link.sales_from_text }}{% endif %}
                     {% if link.sales_until_text %}<span class="flow-table-meta">до {{ link.sales_until_text }}</span>{% endif %}
                     {% if not link.sales_from_text and not link.sales_until_text %}&ndash;{% endif %}
                 </td>
-                <td class="flow-table-date">
+                <td class="flow-table-date" role="cell">
+                    <span class="flow-mobile-label" aria-hidden="true">Доступ, МСК</span>
                     {% if link.access_from_text %}с {{ link.access_from_text }}{% endif %}
                     <span class="flow-table-meta">{% if link.deadline_text %}до {{ link.deadline_text }}{% else %}Срок не задан{% endif %}</span>
                 </td>
-                <td>
+                <td role="cell">
                     <div class="period-actions">
                         <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Копировать ссылку</button>
                         {% if not flows_only or link.can_manage_sales %}
@@ -267,7 +319,7 @@
                     </div>
                 </td>
             </tr>
-            <tr class="flow-edit-row"><td colspan="5">
+            <tr class="flow-edit-row" role="row"><td colspan="5" role="cell">
         {% if not flows_only or link.can_manage_sales %}
         <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
             {% if link.can_edit_schedule %}
