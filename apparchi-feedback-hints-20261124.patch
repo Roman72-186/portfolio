@@ -1,0 +1,45 @@
+diff --git a/app/templates/task_block_feedback_detail.html b/app/templates/task_block_feedback_detail.html
+--- a/app/templates/task_block_feedback_detail.html
++++ b/app/templates/task_block_feedback_detail.html
+@@ -409,7 +409,7 @@
+         {% endif %}
+     </section>
+ 
+-    {% with feedback_staff_label="Главный преподаватель" %}
++    {% with feedback_staff_label="Главный преподаватель", feedback_close_hint_popover=true %}
+     {% include "partials/feedback_rating.html" %}
+     {% endwith %}
+ 
+@@ -436,8 +436,10 @@
+        `services/feedback_edit.py::task_block_delete_refusal`. Ученик блока не видит. #}
+     {% if revision and revision.can_delete %}
+     <section class="card">
+-        <h2 class="section-label">Удалить обратную связь</h2>
+-        <p class="card-desc">Если обратная связь ушла не тому ученику или не на ту работу, удали её. Ученик перестанет её видеть, а работа вернётся в очередь непроверенной. Балл останется. Сообщение, которое бот уже прислал в Telegram, отозвать нельзя.</p>
++        <div class="review-help-label">
++            <h2 class="section-label">Удалить обратную связь</h2>
++            {{ hint("Если обратная связь ушла не тому ученику или не на ту работу, удали её. Ученик перестанет её видеть, а работа вернётся в очередь непроверенной. Балл останется. Сообщение, которое бот уже прислал в Telegram, отозвать нельзя.", "Что произойдёт при удалении обратной связи") }}
++        </div>
+         <div class="prg-actions hw-hint"><button type="button" class="btn-outline" data-delete-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/delete-feedback">Удалить обратную связь</button></div>
+         <p class="prg-message" data-delete-status aria-live="polite"></p>
+     </section>
+diff --git a/app/templates/partials/feedback_rating.html b/app/templates/partials/feedback_rating.html
+--- a/app/templates/partials/feedback_rating.html
++++ b/app/templates/partials/feedback_rating.html
+@@ -16,8 +16,16 @@
+ {# Сдача в задании (22.10.2026): завершают, когда ученику больше нечего
+    спросить, — `task_block_feedback.close_refusal`. #}
+ <section class="card">
++    {% if feedback_close_hint_popover|default(false) %}
++    {% from "components/hint.html" import hint %}
++    <div class="review-help-label">
++        <h2 class="section-label">Завершить обратную связь</h2>
++        {{ hint(p.close_hint, "Когда можно завершить обратную связь") }}
++    </div>
++    {% else %}
+     <h2 class="section-label">Завершить обратную связь</h2>
+     <p class="card-desc">{{ p.close_hint }}</p>
++    {% endif %}
+ </section>
+ {% elif p.closed %}
+ <section class="card">
