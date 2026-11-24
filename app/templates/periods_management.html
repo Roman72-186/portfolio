@@ -239,7 +239,6 @@
                         {% else %}Вход закрыт{% endif %}
                     </span>
                     {% if link.reminders_enabled %}<span class="flow-table-meta">Напоминания</span>{% endif %}
-                    {% if link.dialog_enabled %}<span class="flow-table-meta">Переписка</span>{% endif %}
                 </th>
                 <td>{{ link.price_text or "Бесплатно" }}</td>
                 <td class="flow-table-date">
@@ -297,7 +296,6 @@
                 <textarea id="track-desc-{{ link.id }}" class="form-input" name="description" rows="3"
                           maxlength="1000">{{ link.description }}</textarea>
                 <label class="form-label"><input type="checkbox" name="reminders" value="1" {% if link.reminders_enabled %}checked{% endif %}> Напоминания в Telegram – о новом задании и сроке сдачи</label>
-                <label class="form-label"><input type="checkbox" name="dialog" value="1" {% if link.dialog_enabled %}checked{% endif %}> Переписка с преподавателем – в блоках, где в «Настройке диалога» отмечен «Каникулярный набор»</label>
                 <div class="form-actions">
                     <button type="submit" class="btn-blue btn-save">Сохранить трек</button>
                 </div>

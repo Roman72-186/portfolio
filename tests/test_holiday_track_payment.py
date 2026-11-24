@@ -363,17 +363,20 @@ def test_reminders_only_for_track_with_reminders(db, user_factory):
 def test_track_settings_saved_from_periods_screen(admin_client, db):
     client, _admin = admin_client
     track = _track(db, price_kop=None)
+    track.dialog_enabled = True
+    db.commit()
 
     resp = client.post(f"/cabinet/intake/{track.slug}/track", data={
         "csrf_token": "x", "price": "1 500", "description": "Неделя с куратором",
-        "reminders": "1", "dialog": "1",
+        "reminders": "1",
     }, follow_redirects=False)
     assert resp.status_code == 303
     db.refresh(track)
     assert (track.price_kop, track.description, track.reminders_enabled, track.dialog_enabled) == (
         150000, "Неделя с куратором", True, True,
     )
-    assert client.get("/cabinet/periods").status_code == 200
+    page = client.get("/cabinet/periods")
+    assert page.status_code == 200 and 'name="dialog"' not in page.text
 
 
 def test_entry_link_created_once(admin_client, db):

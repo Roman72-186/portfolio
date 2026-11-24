@@ -1159,7 +1159,6 @@ def _render_periods(request, user, db, *, flows_only=False):
                 "price_input": payments.kop_to_rub_str(link.price_kop) if link.price_kop else "",
                 "description": link.description or "",
                 "reminders_enabled": link.reminders_enabled,
-                "dialog_enabled": link.dialog_enabled,
             }
             for link in group_links
         ],
@@ -1384,7 +1383,6 @@ def intake_track_settings(
     price: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
     reminders: Annotated[str, Form()] = "",
-    dialog: Annotated[str, Form()] = "",
 ):
     """Настройки трека (17.10.2026): цена (пусто — бесплатная ссылка группы),
     что входит, напоминания в Telegram и переписка с преподавателем — два
@@ -1405,7 +1403,6 @@ def intake_track_settings(
     link.price_kop = price_kop
     link.description = text or None
     link.reminders_enabled = reminders == "1"
-    link.dialog_enabled = dialog == "1"
     db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
 
@@ -1485,10 +1482,9 @@ def flow_settings(
     price: Annotated[str, Form()],
     description: Annotated[str, Form()] = "",
     reminders: Annotated[str, Form()] = "",
-    dialog: Annotated[str, Form()] = "",
 ):
     link = _scheduled_flow(db, slug)
-    intake_track_settings(slug, user, db, _csrf, price, description, reminders, dialog)
+    intake_track_settings(slug, user, db, _csrf, price, description, reminders)
     return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 
 
