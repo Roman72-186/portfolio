@@ -6,10 +6,10 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-5">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-6">
 {% endblock %}
 {% block content %}
-<div class="ios-homework prg-page">
+<div class="ios-homework prg-page task-feedback">
     {% if review_demo %}
     <a class="back-link" data-review-navigation href="{{ queue_navigation.queue_url if queue_navigation else '/cabinet/staff/students-review/queue' }}">← Очередь проверки</a>
     {{ hint("«Очередь проверки» открывает список работ. Стрелки под заголовком ведут к соседним ученикам в этой очереди.", "Как перемещаться по очереди") }}

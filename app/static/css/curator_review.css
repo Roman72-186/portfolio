@@ -1,4 +1,11 @@
 .curator-review { max-width: 960px; margin-inline: auto; }
+.ios-homework.task-feedback > .card {
+    border: 1px solid var(--line);
+}
+.task-feedback > .card + .card {
+    margin-block-start: var(--s-3);
+}
+
 .review-composer-tools { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
 .review-composer-menu { position: relative; }
 .review-composer-menu > summary {
