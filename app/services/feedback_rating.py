@@ -69,8 +69,10 @@ class RatingError(Exception):
 
 
 def has_staff_message(dialog) -> bool:
+    """Пробник отправляет сообщения сразу, а в задании черновики скрыты от ученика."""
     return dialog is not None and any(
-        message.sender_role != ROLE_STUDENT for message in dialog.messages
+        message.sender_role != ROLE_STUDENT and not getattr(message, "is_draft", False)
+        for message in dialog.messages
     )
 
 
@@ -126,17 +128,16 @@ def rating_panel(
     (`partials/feedback_rating.html`) — одни на оба экрана диалога.
 
     `close_refusal` — почему завершать рано (сдача в задании, 22.10.2026:
-    `task_block_feedback.close_refusal`); сотрудник видит причину вместо
-    кнопки. У пробника его нет — там правило прежнее."""
+    `task_block_feedback.close_refusal`); после отправки ОС сотрудник
+    видит причину вместо кнопки. У пробника его нет — там правило прежнее."""
     closed = is_closed(dialog)
     is_staff = viewer_role != "student"
+    show_close = is_staff and not closed and has_staff_message(dialog)
     return {
         "is_staff": is_staff,
         "closed": closed,
-        "can_close": (
-            is_staff and not closed and has_staff_message(dialog) and close_refusal is None
-        ),
-        "close_hint": close_refusal if is_staff and not closed else None,
+        "can_close": show_close and close_refusal is None,
+        "close_hint": close_refusal if show_close else None,
         "close_url": close_url,
         "rating": serialize_rating(get_rating(db, dialog_kind, dialog.id if dialog else None)),
         "rating_url": rating_url,

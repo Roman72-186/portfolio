@@ -20,7 +20,7 @@ from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.task_block import TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
-from tests.test_feedback_rating import _close, _login, _setup_block, _staff_says
+from tests.test_feedback_rating import _close, _login, _send, _setup_block, _staff_says
 
 
 @pytest.fixture(autouse=True)
@@ -133,3 +133,38 @@ def test_nothing_to_delete_without_feedback(db, user_factory, session_factory, c
     head = user_factory(vk_id=994_043, name="ГП Пусто", role_name="админ")
 
     assert _delete(client, session_factory, head, submission).status_code == 404
+
+
+def test_demo_shows_close_and_delete_only_after_feedback_is_sent(
+    db, user_factory, session_factory, client,
+):
+    _curator, _student, _task, submission = _setup_block(db, user_factory, base=994_101)
+    head = user_factory(vk_id=994_103, role_name="админ")
+    _login(client, session_factory, head)
+    feedback_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback?review_demo=1"
+
+    def demo_page():
+        response = client.get(feedback_url)
+        assert response.status_code == 200
+        return response.text
+
+    page = demo_page()
+    assert "Завершить обратную связь</h2>" not in page
+    assert DELETE_BUTTON not in page
+
+    assert _staff_says(client, session_factory, head, submission, send=False).status_code == 200
+    page = demo_page()
+    assert "Завершить обратную связь</h2>" not in page
+    assert DELETE_BUTTON not in page
+    assert _delete(client, session_factory, head, submission).status_code == 409
+    assert _feedback(db, submission).messages[0].is_draft
+
+    assert _send(client, submission).status_code == 200
+    page = demo_page()
+    assert 'data-feedback-close data-url=' in page
+    assert DELETE_BUTTON in page
+
+    assert _close(client, session_factory, head, submission).json()["closed_now"] is True
+    page = demo_page()
+    assert 'data-feedback-close data-url=' not in page
+    assert DELETE_BUTTON not in page
