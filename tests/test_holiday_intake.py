@@ -312,7 +312,23 @@ def test_create_and_duplicate_scheduled_flow(admin_client, db):
     assert intake_link.is_open(copy, copy.sales_from)
     assert not intake_link.is_open(copy, copy.sales_until)
     assert intake_link.program_opens_at([copy]) == datetime(2099, 11, 29, 9, tzinfo=timezone.utc)
-    assert client.get("/cabinet/periods").status_code == 200
+    for page_path in ("/cabinet/periods", "/cabinet/flows"):
+        page = client.get(page_path)
+        assert page.status_code == 200
+        assert f'aria-controls="form-track-{copy.id}"' in page.text
+        assert f'action="/cabinet/flows/{copy.slug}/schedule"' in page.text
+        assert f'href="/cabinet/staff/program/cycles/{duplicate_week.id}">Открыть АОП' in page.text
+    updated = client.post(
+        f"/cabinet/flows/{copy.slug}/schedule",
+        data={**data, "access_from": "2099-11-29T14:00"},
+        follow_redirects=False,
+    )
+    assert updated.status_code == 303, updated.text
+    db.refresh(copy)
+    db.refresh(duplicate_week)
+    assert copy.access_from == duplicate_week.opens_at == datetime(2099, 11, 29, 11, tzinfo=timezone.utc)
+    db.refresh(origin_week)
+    assert origin_week.opens_at == datetime(2099, 11, 29, 9, tzinfo=timezone.utc)
     assert db.get(IntakeLink, origin.id).is_active is False
 
 

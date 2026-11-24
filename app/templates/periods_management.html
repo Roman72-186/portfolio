@@ -72,7 +72,9 @@
 .flow-table tbody th { min-width: 170px; }
 .flow-table-date { min-width: 150px; }
 .flow-table-meta { display: block; margin-top: 4px; color: var(--dim); font-weight: 400; }
-.flow-table .period-actions { flex-wrap: wrap; min-width: 160px; }
+.flow-table .period-actions { flex-wrap: nowrap; white-space: nowrap; }
+.flow-table-price { white-space: nowrap; }
+.flow-table .period-actions a.btn-sm { text-decoration: none; }
 .flow-table .period-status { display: inline-block; margin: 5px 0; font-size: 13px; }
 .flow-edit-row:not(:has(.create-form.open)) { display: none; }
 
@@ -235,16 +237,16 @@
                         {% if not link.is_active %}Выключен
                         {% elif link.sales_open %}{% if link.price_text %}Продажи открыты{% else %}Вход открыт{% endif %}
                         {% elif link.sales_finished %}Продажи завершены
-                        {% elif link.scheduled %}Продажи запланированы
+                        {% elif link.sales_from_text %}Продажи запланированы
                         {% else %}Вход закрыт{% endif %}
                     </span>
                     {% if link.reminders_enabled %}<span class="flow-table-meta">Напоминания</span>{% endif %}
                 </th>
-                <td>{{ link.price_text or "Бесплатно" }}</td>
+                <td class="flow-table-price">{{ link.price_text or "Бесплатно" }}</td>
                 <td class="flow-table-date">
                     {% if link.sales_from_text %}с {{ link.sales_from_text }}{% endif %}
                     {% if link.sales_until_text %}<span class="flow-table-meta">до {{ link.sales_until_text }}</span>{% endif %}
-                    {% if not link.sales_from_text and not link.sales_until_text %}По состоянию ссылки{% endif %}
+                    {% if not link.sales_from_text and not link.sales_until_text %}&ndash;{% endif %}
                 </td>
                 <td class="flow-table-date">
                     {% if link.access_from_text %}с {{ link.access_from_text }}{% endif %}
@@ -253,40 +255,49 @@
                 <td>
                     <div class="period-actions">
                         <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Копировать ссылку</button>
-                        {% if not flows_only and not link.scheduled %}<button type="button" class="btn-sm" onclick="toggleForm('group-{{ link.id }}')">Дата</button>{% endif %}
                         {% if not flows_only or link.scheduled %}
-                        <button type="button" class="btn-sm" onclick="toggleForm('track-{{ link.id }}')">Настройки</button>
-                        <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/toggle">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                            {% if link.is_active %}
-                            <button type="submit" class="btn-danger">Выключить</button>
-                            {% else %}
-                            <button type="submit" class="btn-sm">Включить</button>
-                            {% endif %}
-                        </form>
+                        <button type="button" class="btn-sm" aria-controls="form-track-{{ link.id }}" aria-expanded="false"
+                                onclick="toggleTrackSettings(this, {{ link.id }})">Настройки</button>
+                        {% endif %}
+                        {% if link.week_ids %}
+                        <a class="btn-sm" href="/cabinet/staff/program/cycles/{{ link.week_ids[0] }}">Открыть АОП</a>
                         {% endif %}
                     </div>
-                    {% for week_id in link.week_ids %}
-                    <a class="flow-table-meta" href="/cabinet/staff/program/cycles/{{ week_id }}">Открыть АОП{% if link.week_ids|length > 1 %} № {{ week_id }}{% endif %}</a>
-                    {% endfor %}
                 </td>
             </tr>
             <tr class="flow-edit-row"><td colspan="5">
-        {% if not flows_only %}
-        <div class="create-form" id="form-group-{{ link.id }}">
+        {% if not flows_only or link.scheduled %}
+        <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
+            {% if link.can_edit_schedule %}
+            <form method="post" action="/cabinet/flows/{{ link.slug }}/schedule">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="period-form-grid">
+                    {% for field, label, value in [
+                        ('sales_from', 'Начало продаж', link.sales_from_input),
+                        ('sales_until', 'Окончание продаж', link.sales_until_input),
+                        ('access_from', 'Открытие заданий', link.access_from_input),
+                        ('access_until', 'Закрытие доступа', link.deadline_input)
+                    ] %}
+                    <div>
+                        <label class="form-label" for="{{ field }}-{{ link.id }}">{{ label }} (МСК)</label>
+                        <input id="{{ field }}-{{ link.id }}" class="form-input" type="datetime-local"
+                               name="{{ field }}" value="{{ value }}" required>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="form-actions"><button type="submit" class="btn-blue btn-save">Сохранить даты</button></div>
+            </form>
+            {% elif not link.scheduled %}
             <form method="post" action="/cabinet/intake/{{ link.slug }}/deadline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <label class="form-label" for="group-deadline-{{ link.id }}">Доступ до (МСК)</label>
                 <input id="group-deadline-{{ link.id }}" class="form-input" type="datetime-local" name="deadline"
                        value="{{ link.deadline_input }}">
-                <div class="form-actions">
-                    <button type="submit" class="btn-blue btn-save">Сохранить дату</button>
-                </div>
+                <div class="form-actions"><button type="submit" class="btn-blue btn-save">Сохранить дату</button></div>
             </form>
-        </div>
-        {% endif %}
-        {% if not flows_only or link.scheduled %}
-        <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
+            {% else %}
+            <p>Расписание можно изменить до начала продаж.</p>
+            {% endif %}
             <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/track">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <label class="form-label" for="track-price-{{ link.id }}">Цена, ₽ – пусто: трек бесплатный, вход по своей ссылке</label>
@@ -299,6 +310,14 @@
                 <div class="form-actions">
                     <button type="submit" class="btn-blue btn-save">Сохранить трек</button>
                 </div>
+            </form>
+            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/toggle">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                {% if link.is_active %}
+                <button type="submit" class="btn-danger">Выключить ссылку</button>
+                {% else %}
+                <button type="submit" class="btn-outline">Включить ссылку</button>
+                {% endif %}
             </form>
         </div>
         {% endif %}
@@ -318,6 +337,11 @@
 function toggleForm(feature) {
     var el = document.getElementById('form-' + feature);
     el.classList.toggle('open');
+}
+
+function toggleTrackSettings(button, id) {
+    var isOpen = document.getElementById('form-track-' + id).classList.toggle('open');
+    button.setAttribute('aria-expanded', String(isOpen));
 }
 
 function copyIntakeUrl(btn) {

@@ -1143,9 +1143,13 @@ def _render_periods(request, user, db, *, flows_only=False):
                 "show_in_table": intake_link_service.show_in_flow_table(link, now),
                 "sales_open": intake_link_service.is_open(link, now),
                 "sales_finished": bool(link.sales_until and now_msk() >= intake_link_service._as_utc(link.sales_until)),
-                "sales_from_text": msk_text(link.sales_from),
+                "sales_from_text": msk_text(intake_link_service.sales_start(link)),
+                "sales_from_input": msk_input_value(link.sales_from),
+                "sales_until_input": msk_input_value(link.sales_until),
+                "access_from_input": msk_input_value(link.access_from),
+                "can_edit_schedule": bool(link.sales_from and now < intake_link_service._as_utc(link.sales_from)),
                 "sales_until_text": msk_text(link.sales_until),
-                "access_from_text": msk_text(link.access_from),
+                "access_from_text": msk_text(link.access_from or intake_link_service.TRIAL_STARTS.get(link.slug)),
                 "week_ids": weeks_by_tag.get(link.tag_id, []),
                 "title": link.title,
                 "tag_name": tag_names.get(link.tag_id),
@@ -1459,6 +1463,51 @@ def _scheduled_flow(db: DBSession, slug: str) -> IntakeLink:
     if not intake_link_service.is_track(link) or link.access_from is None:
         raise HTTPException(404, "Поток не найден.")
     return link
+
+
+@router.post("/flows/{slug}/schedule")
+def flow_schedule(
+    slug: str,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    sales_from: Annotated[str, Form()],
+    sales_until: Annotated[str, Form()],
+    access_from: Annotated[str, Form()],
+    access_until: Annotated[str, Form()],
+):
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+    from app.services.tz import _as_utc
+
+    link = _scheduled_flow(db, slug)
+    db.refresh(link, with_for_update=True)
+    now = now_msk()
+    if link.sales_from is None or now >= _as_utc(link.sales_from):
+        raise HTTPException(409, "Расписание можно изменить до начала продаж.")
+    sale_start, sale_end, start, end = map(
+        parse_msk_local, (sales_from, sales_until, access_from, access_until),
+    )
+    if not all((sale_start, sale_end, start, end)) or not (
+        sale_start < sale_end <= end and start < end and end > now
+    ):
+        raise HTTPException(400, "Проверьте даты продаж и доступа.")
+    topics = (
+        db.query(LearningTopic).join(LearningTopicTag)
+        .filter(LearningTopicTag.tag_id == link.tag_id, LearningTopic.deleted_at.is_(None))
+        .all()
+    )
+    if not topics or any(
+        topic.ends_at is None or _as_utc(topic.opens_at) != _as_utc(link.access_from)
+        or _as_utc(topic.ends_at) != _as_utc(link.access_until)
+        for topic in topics
+    ):
+        raise HTTPException(409, "Расписание программы в АОП отличается от расписания потока.")
+    link.sales_from, link.sales_until = sale_start, sale_end
+    link.access_from, link.access_until = start, end
+    for topic in topics:
+        topic.opens_at, topic.ends_at = start, end
+    db.commit()
+    return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 
 
 @router.post("/flows/{slug}/toggle")

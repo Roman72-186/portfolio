@@ -35,6 +35,10 @@ def get_link(db: DBSession, slug: str) -> IntakeLink | None:
     return db.query(IntakeLink).filter(IntakeLink.slug == slug).first()
 
 
+def sales_start(link: IntakeLink) -> datetime | None:
+    return link.sales_from or (NEXT_TRIAL_SALES if link.slug == NEXT_TRIAL else None)
+
+
 def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
     """Ссылка работает как вход прямо сейчас: включена и дата задана.
 
@@ -44,7 +48,7 @@ def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
     if not (link and link.is_active and link.access_until is not None):
         return False
     current = _as_utc(now or datetime.now(timezone.utc))
-    sales_from = link.sales_from or (NEXT_TRIAL_SALES if link.slug == NEXT_TRIAL else None)
+    sales_from = sales_start(link)
     if sales_from is not None and current < _as_utc(sales_from):
         return False
     if link.sales_until is not None and current >= _as_utc(link.sales_until):
@@ -60,7 +64,7 @@ def show_in_flow_table(link: IntakeLink, now: datetime) -> bool:
     current = _as_utc(now)
     if link.sales_until is not None and _as_utc(link.sales_until) <= current:
         return False
-    starts = link.sales_from or (NEXT_TRIAL_SALES if link.slug == NEXT_TRIAL else None)
+    starts = sales_start(link)
     # Include future drafts so staff can activate them before sales begin.
     return any(value is not None and _as_utc(value) > current for value in (starts, link.access_from))
 
