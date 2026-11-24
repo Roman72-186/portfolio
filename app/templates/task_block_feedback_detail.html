@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-6">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-7">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page task-feedback">
@@ -23,7 +23,7 @@
     </div>
 
     {% if review_demo %}
-    <p class="card-desc">Демо новой проверки. Сохранение и отправка относятся к настоящему диалогу ученика.</p>
+    <p class="card-desc review-demo-note">Демо новой проверки. Сохранение и отправка относятся к настоящему диалогу ученика.</p>
     {% if demo_can_switch_to_head %}
     <a class="btn-outline" data-review-navigation href="?review_demo=1">Открыть как ГП</a>
     {% endif %}
@@ -278,6 +278,7 @@
               action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}{% if review_demo %}?review_demo=true{% if demo_curator is not none %}&amp;review_curator={{ demo_curator|urlencode }}{% endif %}{% endif %}"
               enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            {% if review_demo %}<div class="review-composer-editor">{% endif %}
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
             {% if autosave is defined and autosave is not none %}
             <div class="review-editor-row review-editor-drafts" data-review-draft-controls hidden>
@@ -289,46 +290,15 @@
                 </div>
                 <button type="button" class="btn-outline" data-review-new>Новое замечание</button>
             </div>
-            <details class="review-composer-details">
-                <summary>Привязать замечание</summary>
-            <div class="review-editor-row review-editor-fields">
-                <div class="prg-field">
-                    <span class="review-help-label"><label for="review-section">Раздел замечания</label> {{ hint("Ученик увидит раздел рядом с замечанием. Выбирай по теме. Задание – условия, композиция – расположение на листе, конструкция – форма и пропорции, графика – линии и тон, рекомендации – что потренировать. Общий комментарий можно оставить без раздела.", "Как выбрать раздел замечания") }}</span>
-                    <select id="review-section" class="field-input" data-review-section>
-                        <option value="">Без раздела</option>
-                        {% for key, label in review_sections.items() %}
-                        <option value="{{ key }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="prg-field">
-                    <span class="review-help-label"><label for="review-work">Работа</label> {{ hint("В общем диалоге можно указать, к какой сдаче относится замечание. Для комментария обо всех сдачах выбери «Весь диалог».", "Как выбрать работу") }}</span>
-                    <select id="review-work" class="field-input" data-review-work>
-                        <option value="">{{ 'Весь диалог' if group else 'Вся работа' }}</option>
-                        {% for id, label in review_works.items() %}
-                        <option value="{{ id }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="prg-field">
-                    <span class="review-help-label"><label for="review-image">Фото работы</label> {{ hint("Выбери снимок из сдачи, если замечание относится именно к нему. Чтобы добавить свой снимок, выбери «Прикрепить фото» в меню вложений.", "Как привязать замечание к фото") }}</span>
-                    <select id="review-image" class="field-input" data-review-image>
-                        <option value="">Без фото</option>
-                        {% for id, image in review_images.items() %}
-                        <option value="{{ id }}" data-work="{{ image[2] }}">{{ image[0] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-            </details>
             {% endif %}
             <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"{% if autosave is defined and autosave is not none %} maxlength="20000"{% endif %}></textarea>
             {% if autosave is defined and autosave is not none and viewer_role != 'student' %}
-            <script type="application/json" data-review-draft-state>{{ autosave|tojson }}</script>
+            <script type="application/json" data-review-draft-state>{{ dict(autosave, sections=review_sections)|tojson }}</script>
             <p class="card-desc" data-review-save-status role="status">Текст сохраняется как черновик.</p>
             <button type="button" class="btn-outline" data-review-save-retry hidden>Повторить сохранение</button>
             {% endif %}
             {% if review_demo %}
+            </div>
             <div class="review-composer-tools">
                 <details class="review-composer-menu">
                     <summary class="btn-outline" aria-label="Вложения" title="Вложения">
@@ -463,7 +433,7 @@
 {% include "partials/lightbox.html" %}
 {% if viewer_role != 'student' %}
 <script src="/static/js/hint.js?v=1" defer></script>
-<script src="/static/js/curator_review.js?v=6" defer></script>
+<script src="/static/js/curator_review.js?v=7" defer></script>
 {% endif %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
 <script src="/static/js/media-recorder-field.js?v=10"></script>

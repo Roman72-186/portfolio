@@ -2,9 +2,6 @@
     const form = document.querySelector('[data-review-draft-url]');
     if (!form) return;
     const input = form.elements.text;
-    const image = form.querySelector('[data-review-image]');
-    const section = form.querySelector('[data-review-section]');
-    const work = form.querySelector('[data-review-work]');
     const picker = form.querySelector('[data-review-draft-picker]');
     const newDraft = form.querySelector('[data-review-new]');
     const draftControls = form.querySelector('[data-review-draft-controls]');
@@ -21,7 +18,6 @@
     try { activeId = Number(sessionStorage.getItem(storageKey)); } catch (_) { /* Storage can be disabled. */ }
     const drafts = new Map(initial.drafts.map((draft) => [draft.id, draft]));
     let otherDrafts = Number(send?.dataset.reviewDraftCount || 0) > drafts.size;
-    const imageOptions = Array.from(image.options);
     let id = null;
     let revision = null;
     let cursor = initial.cursor;
@@ -47,18 +43,19 @@
 
     function draftPayload() {
         const text = input.value.trim();
+        const draft = text ? drafts.get(id) : null;
         return {
             text,
-            image_id: text && image.value ? Number(image.value) : null,
-            section: text && section.value ? section.value : null,
-            target_submission_id: text && work.value ? Number(work.value) : null,
+            image_id: draft?.image_id ?? null,
+            section: draft?.section ?? null,
+            target_submission_id: draft?.target_submission_id ?? null,
         };
     }
 
     function refreshPicker() {
         const options = [new Option('Новое замечание', '')];
         for (const draft of drafts.values()) {
-            const label = Array.from(section.options).find((option) => option.value === draft.section)?.text;
+            const label = initial.sections?.[draft.section];
             const excerpt = draft.text.replace(/\s+/g, ' ').slice(0, 45);
             options.push(new Option([label, excerpt].filter(Boolean).join(' · '), draft.id));
             const bubble = document.querySelector(`[data-own-review-draft="${draft.id}"]`);
@@ -74,28 +71,10 @@
         return Object.keys(saved).some((key) => current[key] !== saved[key]);
     }
 
-    function filterImages(selected = image.value) {
-        const options = imageOptions.filter((option) => !option.value || !work.value || option.dataset.work === work.value);
-        image.replaceChildren(...options);
-        image.value = options.some((option) => option.value === selected) ? selected : '';
-    }
-
     function openDraft(draft) {
         id = draft?.id ?? null;
         revision = draft?.revision ?? null;
         input.value = draft?.text ?? '';
-        section.value = draft?.section ?? '';
-        const target = String(draft?.target_submission_id ?? '');
-        if (target && !Array.from(work.options).some((option) => option.value === target)) {
-            work.add(new Option('Работа больше недоступна', target));
-        }
-        work.value = target;
-        const photo = String(draft?.image_id ?? '');
-        filterImages(photo);
-        if (photo && !image.value) {
-            image.add(new Option('Фото больше недоступно', photo));
-            image.value = photo;
-        }
         saved = draftPayload();
         window.RichTextField?.refresh(input);
         status.textContent = draft ? 'Черновик сохранён.' : 'Текст сохраняется как черновик.';
@@ -177,7 +156,7 @@
     function setBusy(value) {
         busy = value;
         input.readOnly = value;
-        [image, work, section, picker, newDraft].forEach((control) => { control.disabled = value; });
+        [picker, newDraft].forEach((control) => { control.disabled = value; });
         tools.querySelectorAll('details').forEach((menu) => { menu.open = false; });
         tools.querySelectorAll('button:not([data-send-feedback])').forEach((button) => { button.disabled = value; });
         files.inert = value;
@@ -309,12 +288,6 @@
     picker.addEventListener('change', () => switchDraft(Number(picker.value)));
     newDraft.addEventListener('click', () => switchDraft(null));
     input.addEventListener('input', schedule);
-    image.addEventListener('change', schedule);
-    section.addEventListener('change', schedule);
-    work.addEventListener('change', () => {
-        filterImages();
-        schedule();
-    });
     retry.addEventListener('click', () => flush().catch(() => {}));
     form.addEventListener('focusout', (event) => {
         if (event.target === input || event.target === input._rtEditable) {

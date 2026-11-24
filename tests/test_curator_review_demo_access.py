@@ -49,7 +49,8 @@ def test_head_can_test_queue_and_editor(db, user_factory, session_factory, clien
     base = f"/cabinet/staff/task-block-submissions/{submission.id}"
     page = client.get(base + "/feedback?review_demo=1")
     assert page.status_code == 200
-    assert 'id="review-section"' in page.text
+    assert "Привязать замечание" not in page.text
+    assert all(f'id="review-{field}"' not in page.text for field in ("section", "work", "image"))
     assert "data-review-draft-url=" in page.text
     assert 'data-demo-record="note"' in page.text
     assert 'data-demo-record="voice"' in page.text
