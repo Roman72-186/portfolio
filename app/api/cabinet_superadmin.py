@@ -1111,13 +1111,14 @@ def _render_periods(request, user, db, *, flows_only=False):
     group_links = intake_link_service.holiday_tracks(db)
     from app.constants import PROGRAM_HOLIDAY
     from app.models.learning_topic import LearningTopic, LearningTopicTag
+    from app.services.video_topics import program_topic_filter
 
     weeks_by_tag = {}
     for week_id, tag_id in (
         db.query(LearningTopic.id, LearningTopicTag.tag_id)
         .join(LearningTopicTag, LearningTopicTag.topic_id == LearningTopic.id)
-        .filter(LearningTopic.kind == "week", LearningTopic.program == PROGRAM_HOLIDAY,
-                LearningTopicTag.tag_id.in_([link.tag_id for link in group_links]))
+        .filter(LearningTopic.kind == "week", LearningTopic.deleted_at.is_(None),
+                program_topic_filter(PROGRAM_HOLIDAY), LearningTopicTag.tag_id.in_([link.tag_id for link in group_links]))
         .order_by(LearningTopic.id)
     ):
         weeks_by_tag.setdefault(tag_id, []).append(week_id)
@@ -1140,6 +1141,7 @@ def _render_periods(request, user, db, *, flows_only=False):
                 "slug": link.slug,
                 "id": link.id,
                 "scheduled": link.access_from is not None,
+                "can_manage_sales": bool(link.price_kop or link.access_from is not None),
                 "show_in_table": intake_link_service.show_in_flow_table(link, now),
                 "sales_open": intake_link_service.is_open(link, now),
                 "sales_finished": bool(link.sales_until and now_msk() >= intake_link_service._as_utc(link.sales_until)),
@@ -1186,7 +1188,7 @@ def _intake_link_for_edit(db: DBSession, slug: str, user_id: int) -> IntakeLink:
     if slug == INTAKE_TRIAL_SLUG:
         return _get_or_create_intake_link(db, user_id)
     link = intake_link_service.get_link(db, slug)
-    if link is None:
+    if link is None or link.deleted_at is not None:
         raise HTTPException(status_code=404)
     return link
 
@@ -1225,6 +1227,27 @@ def intake_group_link_create(
     return RedirectResponse("/cabinet/periods", status_code=303)
 
 
+def _parse_flow_schedule(sales_from, sales_until, access_from, access_until):
+    fields = (
+        (sales_from, "Начало продаж"), (sales_until, "Окончание продаж"),
+        (access_from, "Открытие заданий"), (access_until, "Закрытие доступа"),
+    )
+    dates = []
+    for raw, field in fields:
+        value = parse_msk_local(raw)
+        if value is None:
+            raise HTTPException(400, f"Укажите дату и время в поле «{field}».")
+        dates.append(value)
+    sale_start, sale_end, start, end = dates
+    if sale_start >= sale_end:
+        raise HTTPException(400, "Окончание продаж должно быть позже начала продаж.")
+    if start >= end:
+        raise HTTPException(400, "Закрытие доступа должно быть позже открытия заданий.")
+    if sale_end > end:
+        raise HTTPException(400, "Продажи заканчиваются позже, чем закрывается доступ. Перенесите окончание продаж на время закрытия доступа или раньше.")
+    return sale_start, sale_end, start, end
+
+
 @router.post("/intake/flows")
 @router.post("/flows")
 def intake_flow_create(
@@ -1251,13 +1274,9 @@ def intake_flow_create(
         raise HTTPException(400, "Укажите название потока до 50 знаков.")
     if not price_kop or not 0 < price_kop <= 2_147_483_647:
         raise HTTPException(400, "Укажите положительную цену в рублях.")
-    sale_start, sale_end, start, end = map(
-        parse_msk_local, (sales_from, sales_until, access_from, access_until),
+    sale_start, sale_end, start, end = _parse_flow_schedule(
+        sales_from, sales_until, access_from, access_until,
     )
-    if not all((sale_start, sale_end, start, end)) or not (
-        sale_start < sale_end <= end and start < end
-    ):
-        raise HTTPException(400, "Проверьте даты продаж и доступа. Продажи должны закончиться до закрытия доступа или одновременно с ним.")
     if db.query(Tag.id).filter(func.lower(Tag.name) == title.lower()).first():
         raise HTTPException(409, "Это название уже занято. Укажите другое название потока.")
 
@@ -1267,11 +1286,16 @@ def intake_flow_create(
             db.query(LearningTopic).join(LearningTopicTag, LearningTopicTag.topic_id == LearningTopic.id)
             .join(IntakeLink, IntakeLink.tag_id == LearningTopicTag.tag_id)
             .filter(LearningTopic.id == source_week, LearningTopic.kind == "week",
-                    LearningTopic.program == PROGRAM_HOLIDAY, IntakeLink.program == PROGRAM_HOLIDAY)
+                    LearningTopic.deleted_at.is_(None), video_topics.program_topic_filter(PROGRAM_HOLIDAY),
+                    IntakeLink.program == PROGRAM_HOLIDAY)
             .first()
         )
         if source is None:
             raise HTTPException(400, "Выберите неделю каникулярного потока.")
+
+    period = intake_link_service.products_period(db)
+    if period is None or not period.is_published or _as_utc(period.opens_at) > start:
+        raise HTTPException(409, "Откройте период «Информационные продукты» к началу потока в АОП.")
 
     tag = Tag(name=title, is_hidden=False)
     db.add(tag)
@@ -1285,8 +1309,8 @@ def intake_flow_create(
     link.sales_until = sale_end
     link.access_from = start
 
-    parent_id = None
-    for kind, name in (("period", title), ("stage", "Программа потока"), ("week", title)):
+    parent_id = period.id
+    for kind, name in (("stage", title), ("week", title)):
         if kind == "week" and source is not None:
             topic = tracker.copy_week(db, source, user_id=actor, shift=start - _as_utc(source.opens_at))
             topic.title = name
@@ -1301,7 +1325,8 @@ def intake_flow_create(
                 parent_id=parent_id, user_id=actor,
             )
         topic.program = PROGRAM_HOLIDAY
-        topic.is_published = True
+        # The hidden stage holds the whole flow until staff publish it once.
+        topic.is_published = kind == "week"
         video_topics.set_topic_tags(db, topic, [tag.id])
         parent_id = topic.id
 
@@ -1326,7 +1351,7 @@ def intake_offer_from_week(
 
     week = db.query(LearningTopic).filter(LearningTopic.id == week_id).with_for_update().first()
     if not intake_link_service.can_attach_offer(db, week):
-        raise HTTPException(409, "Выберите будущую каникулярную неделю без назначенных учеников и тегов.")
+        raise HTTPException(409, "Выберите будущую неделю в «Информационных продуктах» без назначенных учеников и тегов.")
     price_kop = payments.rub_str_to_kop(price)
     if not price_kop or not 0 < price_kop <= 2_147_483_647:
         raise HTTPException(400, "Укажите положительную цену в рублях.")
@@ -1392,7 +1417,7 @@ def intake_track_settings(
     что входит, напоминания в Telegram и переписка с преподавателем — два
     переключателя школы («потенциал»)."""
     link = intake_link_service.get_link(db, slug)
-    if link is None or not intake_link_service.is_track(link):
+    if link is None or link.deleted_at is not None or not intake_link_service.is_track(link):
         raise HTTPException(status_code=404)
     price_kop = None
     if price.strip():
@@ -1458,11 +1483,52 @@ def intake_toggle(
     return RedirectResponse("/cabinet/periods", status_code=303)
 
 
+def _sales_flow(db: DBSession, slug: str) -> IntakeLink:
+    link = intake_link_service.get_link(db, slug)
+    if not intake_link_service.is_track(link) or link.deleted_at is not None or not (
+        link.price_kop or link.access_from is not None
+    ):
+        raise HTTPException(404, "Платный поток не найден.")
+    return link
+
+
 def _scheduled_flow(db: DBSession, slug: str) -> IntakeLink:
     link = intake_link_service.get_link(db, slug)
-    if not intake_link_service.is_track(link) or link.access_from is None:
+    if not intake_link_service.is_track(link) or link.deleted_at is not None or link.access_from is None:
         raise HTTPException(404, "Поток не найден.")
     return link
+
+
+def _delete_flow_link(db: DBSession, link: IntakeLink) -> None:
+    db.refresh(link, with_for_update=True)
+    link.deleted_at = link.deleted_at or now_msk()
+    link.is_active = False
+    db.commit()
+
+
+@router.post("/intake/{slug}/delete")
+def intake_track_delete(
+    slug: str,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    link = _intake_link_for_edit(db, slug, user["user_id"])
+    if not intake_link_service.is_track(link):
+        raise HTTPException(404, "Поток не найден.")
+    _delete_flow_link(db, link)
+    return RedirectResponse("/cabinet/periods#intake-flows", status_code=303)
+
+
+@router.post("/flows/{slug}/delete")
+def flow_delete(
+    slug: str,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    _delete_flow_link(db, _scheduled_flow(db, slug))
+    return RedirectResponse("/cabinet/flows#intake-flows", status_code=303)
 
 
 @router.post("/flows/{slug}/schedule")
@@ -1484,13 +1550,11 @@ def flow_schedule(
     now = now_msk()
     if link.sales_from is None or now >= _as_utc(link.sales_from):
         raise HTTPException(409, "Расписание можно изменить до начала продаж.")
-    sale_start, sale_end, start, end = map(
-        parse_msk_local, (sales_from, sales_until, access_from, access_until),
+    sale_start, sale_end, start, end = _parse_flow_schedule(
+        sales_from, sales_until, access_from, access_until,
     )
-    if not all((sale_start, sale_end, start, end)) or not (
-        sale_start < sale_end <= end and start < end and end > now
-    ):
-        raise HTTPException(400, "Проверьте даты продаж и доступа.")
+    if end <= now:
+        raise HTTPException(400, "Укажите будущую дату закрытия доступа.")
     topics = (
         db.query(LearningTopic).join(LearningTopicTag)
         .filter(LearningTopicTag.tag_id == link.tag_id, LearningTopic.deleted_at.is_(None))
@@ -1517,7 +1581,7 @@ def flow_toggle(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    link = _scheduled_flow(db, slug)
+    link = _sales_flow(db, slug)
     intake_toggle(user, db, _csrf, slug)
     return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 
@@ -1532,7 +1596,9 @@ def flow_settings(
     description: Annotated[str, Form()] = "",
     reminders: Annotated[str, Form()] = "",
 ):
-    link = _scheduled_flow(db, slug)
+    link = _sales_flow(db, slug)
+    if not payments.rub_str_to_kop(price):
+        raise HTTPException(400, "Укажите цену платного потока.")
     intake_track_settings(slug, user, db, _csrf, price, description, reminders)
     return RedirectResponse(f"/cabinet/flows#flow-{link.id}", status_code=303)
 

@@ -48,7 +48,9 @@
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
     {% include "partials/program_path.html" %}
-    {% if prg_edit and payments_staff(user) and flow_offer %}
+    {% if prg_edit and payments_staff(user) and flow_offer and flow_offer.deleted_at %}
+        <p>Ссылка на оплату удалена.</p>
+    {% elif prg_edit and payments_staff(user) and flow_offer %}
         <a class="btn-outline" href="/cabinet/flows#flow-{{ flow_offer.id }}">Ссылка на оплату и настройки потока</a>
     {% elif prg_edit and payments_staff(user) and can_create_flow_offer %}
         <details class="card">

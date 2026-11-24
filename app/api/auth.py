@@ -478,7 +478,7 @@ async def november_trial_entry(
 
 def _trial_offer(request: Request, db: DBSession, slug: str):
     link = intake_link_service.get_link(db, slug)
-    if not intake_link_service.is_track(link) or not link.price_kop:
+    if not intake_link_service.is_track(link) or link.deleted_at is not None or not link.price_kop:
         return _intake_closed_response(request, _HOLIDAY_CLOSED_NOTE)
     from app.services.tz import _as_utc, msk_text
 

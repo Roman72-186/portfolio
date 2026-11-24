@@ -63,6 +63,8 @@
 .period-card-right { display: flex; align-items: center; gap: 12px; }
 
 .flow-builder { margin-bottom: 16px; }
+.flow-notice { margin: auto; max-width: min(440px, calc(100% - 32px)); color: var(--text); }
+.flow-notice::backdrop { background: rgb(0 0 0 / 45%); }
 .flow-builder[open] > summary { margin-bottom: 16px; }
 .flow-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
 .flow-table { width: 100%; border-collapse: collapse; background: var(--surface); text-align: left; font-size: 14px; }
@@ -183,7 +185,7 @@
         {% endif %}
         <details class="card flow-builder">
             <summary>Создать или дублировать поток</summary>
-            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake/flows' }}">
+            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake/flows' }}" data-flow-date-form>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <label class="form-label" for="flow-source">Программа в АОП</label>
                 <select class="form-select" name="source_week" id="flow-source">
@@ -255,7 +257,7 @@
                 <td>
                     <div class="period-actions">
                         <button type="button" class="btn-sm" data-url="{{ link.url }}" onclick="copyIntakeUrl(this)">Копировать ссылку</button>
-                        {% if not flows_only or link.scheduled %}
+                        {% if not flows_only or link.can_manage_sales %}
                         <button type="button" class="btn-sm" aria-controls="form-track-{{ link.id }}" aria-expanded="false"
                                 onclick="toggleTrackSettings(this, {{ link.id }})">Настройки</button>
                         {% endif %}
@@ -266,10 +268,10 @@
                 </td>
             </tr>
             <tr class="flow-edit-row"><td colspan="5">
-        {% if not flows_only or link.scheduled %}
+        {% if not flows_only or link.can_manage_sales %}
         <div class="create-form" id="form-track-{{ link.id }}" data-track-form>
             {% if link.can_edit_schedule %}
-            <form method="post" action="/cabinet/flows/{{ link.slug }}/schedule">
+            <form method="post" action="/cabinet/flows/{{ link.slug }}/schedule" data-flow-date-form>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <div class="period-form-grid">
                     {% for field, label, value in [
@@ -287,7 +289,7 @@
                 </div>
                 <div class="form-actions"><button type="submit" class="btn-blue btn-save">Сохранить даты</button></div>
             </form>
-            {% elif not link.scheduled %}
+            {% elif not flows_only and not link.scheduled %}
             <form method="post" action="/cabinet/intake/{{ link.slug }}/deadline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <label class="form-label" for="group-deadline-{{ link.id }}">Доступ до (МСК)</label>
@@ -295,7 +297,7 @@
                        value="{{ link.deadline_input }}">
                 <div class="form-actions"><button type="submit" class="btn-blue btn-save">Сохранить дату</button></div>
             </form>
-            {% else %}
+            {% elif link.scheduled %}
             <p>Расписание можно изменить до начала продаж.</p>
             {% endif %}
             <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/track">
@@ -319,6 +321,13 @@
                 <button type="submit" class="btn-outline">Включить ссылку</button>
                 {% endif %}
             </form>
+            {% if not flows_only or link.scheduled %}
+            <form method="post" action="{{ '/cabinet/flows' if flows_only else '/cabinet/intake' }}/{{ link.slug }}/delete"
+                  onsubmit="return confirm('Удалить ссылку? Новые заказы по ней будут недоступны. Ученики сохранят оплаченный доступ.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn-danger">Удалить ссылку</button>
+            </form>
+            {% endif %}
         </div>
         {% endif %}
             </td></tr>
@@ -333,7 +342,44 @@
     <div style="height:80px"></div>
 </div>
 
+<dialog id="flow-notice" class="card flow-notice" aria-labelledby="flow-notice-title" aria-describedby="flow-notice-text">
+    <h2 id="flow-notice-title">Не удалось сохранить поток</h2>
+    <p id="flow-notice-text"></p>
+    <form method="dialog" class="form-actions">
+        <button class="btn-blue" type="submit" autofocus>Вернуться к форме</button>
+    </form>
+</dialog>
+
 <script>
+document.querySelectorAll('[data-flow-date-form]').forEach(function(form) {
+    form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        if (form.getAttribute('aria-busy') === 'true') return;
+        const button = event.submitter;
+        const notice = document.getElementById('flow-notice');
+        const fallback = 'Сохранение не подтвердилось. Проверьте список потоков перед повторной попыткой.';
+        let message = fallback;
+        form.setAttribute('aria-busy', 'true');
+        if (button) button.disabled = true;
+        try {
+            const response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+            if (response.ok && response.redirected) {
+                window.location.assign(response.url);
+                return;
+            }
+            const result = await response.json();
+            if (typeof result.detail === 'string') message = result.detail;
+        } catch (error) {
+            // Keep the entered values when a request fails or returns a non-JSON error.
+        } finally {
+            form.removeAttribute('aria-busy');
+            if (button) button.disabled = false;
+        }
+        document.getElementById('flow-notice-text').textContent = message;
+        notice.showModal();
+    });
+});
+
 function toggleForm(feature) {
     var el = document.getElementById('form-' + feature);
     el.classList.toggle('open');

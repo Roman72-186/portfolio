@@ -45,7 +45,7 @@ def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
     Каникулярная — ещё и пока дата не прошла (23.10.2026): после неё вошедший
     получил бы срок в прошлом и закрытый кабинет, а школа может забыть выключить
     ссылку. Правило `/proba` не менялось."""
-    if not (link and link.is_active and link.access_until is not None):
+    if not (link and link.deleted_at is None and link.is_active and link.access_until is not None):
         return False
     current = _as_utc(now or datetime.now(timezone.utc))
     sales_from = sales_start(link)
@@ -57,6 +57,8 @@ def is_open(link: IntakeLink | None, now: datetime | None = None) -> bool:
 
 
 def show_in_flow_table(link: IntakeLink, now: datetime) -> bool:
+    if link.deleted_at is not None:
+        return False
     if is_open(link, now):
         return True
     if link.access_until is None or date_passed(link, now):
@@ -311,11 +313,32 @@ def offer_for_week(db: DBSession, week_id: int) -> IntakeLink | None:
     )
 
 
+PRODUCTS_PERIOD_TITLE = "Информационные продукты"
+
+
+def products_period(db: DBSession):
+    from app.models.learning_topic import LearningTopic
+
+    return (
+        db.query(LearningTopic)
+        .filter_by(title=PRODUCTS_PERIOD_TITLE, kind="period", program=PROGRAM_HOLIDAY,
+                   parent_id=None, deleted_at=None)
+        .one_or_none()
+    )
+
+
 def can_attach_offer(db: DBSession, week) -> bool:
     from app.services import video_topics
 
+    if not week or not week.parent_id:
+        return False
+    from app.models.learning_topic import LearningTopic
+
+    stage = db.get(LearningTopic, week.parent_id)
+    period = products_period(db)
     return bool(
-        week and week.kind == "week" and video_topics.topic_program(db, week) == PROGRAM_HOLIDAY
+        period and stage and stage.kind == "stage" and stage.deleted_at is None and stage.parent_id == period.id
+        and week.kind == "week"
         and week.deleted_at is None and week.ends_at is not None
         and _as_utc(week.ends_at) > _as_utc(week.opens_at) > datetime.now(timezone.utc)
         and not week.tariff_restricted

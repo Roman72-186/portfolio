@@ -272,11 +272,26 @@ def test_create_group_link_makes_tag_and_closed_link(admin_client, db):
     assert client.get("/cabinet/periods").status_code == 200
 
 
+def _information_products(db, user_id):
+    from app.services import video_topics
+
+    root = video_topics.create_topic(
+        db, title="Информационные продукты", kind="period",
+        opens_at=datetime(2026, 10, 24, 21, tzinfo=timezone.utc),
+        user_id=user_id,
+    )
+    root.program = PROGRAM_HOLIDAY
+    root.is_published = True
+    db.commit()
+    return root
+
+
 def test_create_and_duplicate_scheduled_flow(admin_client, db):
     from app.models.learning_topic import LearningTopic, LearningTopicTag
     from app.services import intake_link, tracker
 
     client, admin = admin_client
+    root = _information_products(db, admin.id)
     data = {
         "csrf_token": "x", "title": "Flow A", "price": "3455",
         "sales_from": "2099-11-26T00:00", "sales_until": "2099-11-30T00:00",
@@ -300,9 +315,12 @@ def test_create_and_duplicate_scheduled_flow(admin_client, db):
     assert copy.slug != origin.slug and copy.tag_id != origin.tag_id
     assert copy.price_kop == 345500 and not copy.is_active
     topics = db.query(LearningTopic).join(LearningTopicTag).filter_by(tag_id=copy.tag_id).all()
-    assert {topic.kind for topic in topics} == {"period", "stage", "week"}
+    assert {topic.kind for topic in topics} == {"stage", "week"}
+    stage = next(topic for topic in topics if topic.kind == "stage")
+    assert stage.parent_id == root.id and not stage.is_published
     assert all(not topic.assign_to_all for topic in topics)
     duplicate_week = next(topic for topic in topics if topic.kind == "week")
+    assert duplicate_week.is_published and duplicate_week.parent_id == stage.id
     duplicate_task, = tracker.list_week_items(db, duplicate_week.id)
     assert duplicate_task.id != task.id and duplicate_task.title == task.title
     assert client.post(f"/cabinet/intake/{copy.slug}/toggle", data={"csrf_token": "x"},
@@ -338,9 +356,7 @@ def test_create_offer_directly_from_future_week(admin_client, db):
     client, admin = admin_client
     start = datetime(2099, 11, 29, 9, tzinfo=timezone.utc)
     end = datetime(2099, 12, 6, 18, tzinfo=timezone.utc)
-    period = video_topics.create_topic(db, title="Holiday", kind="period", opens_at=start,
-                                       assign_to_all=True, user_id=admin.id)
-    period.program = PROGRAM_HOLIDAY
+    period = _information_products(db, admin.id)
     stage = video_topics.create_topic(db, title="Stage", kind="stage", opens_at=start,
                                       parent_id=period.id, assign_to_all=True, user_id=admin.id)
     week = video_topics.create_topic(db, title="Prepared week", opens_at=start, ends_at=end,
@@ -375,7 +391,11 @@ def test_flow_access_for_gp_and_named_moderator(client, db, monkeypatch, user_fa
     designated = user_factory(vk_id=-992, role_name="модератор")
     other = user_factory(vk_id=-993, role_name="модератор")
     monkeypatch.setattr(payments, "PAYMENTS_EXTRA_USER_IDS", frozenset({designated.id}))
+    _information_products(db, gp.id)
     legacy = _group_link(db)
+    paid_legacy = _group_link(db, slug="legacy3455", tag_name="Paid legacy")
+    paid_legacy.price_kop = 345500
+    db.commit()
     data = {
         "csrf_token": "x", "price": "3455",
         "sales_from": "2099-11-26T00:00", "sales_until": "2099-11-30T00:00",
@@ -388,6 +408,10 @@ def test_flow_access_for_gp_and_named_moderator(client, db, monkeypatch, user_fa
         assert page.status_code == 200
         assert 'action="/cabinet/flows"' in page.text
         assert 'action="/cabinet/intake/links"' not in page.text
+        assert f'aria-controls="form-track-{paid_legacy.id}"' in page.text
+        assert client.post(f"/cabinet/flows/{paid_legacy.slug}/track",
+                           data={"csrf_token": "x", "price": "3455"},
+                           follow_redirects=False).status_code == 303
         if person.id == gp.id:
             periods = client.get("/cabinet/periods")
             assert periods.status_code == 200
@@ -426,6 +450,34 @@ def test_flow_table_hides_past_links_and_keeps_current_and_future(admin_client, 
             assert f'id="flow-{track.id}"' in page.text
         for track in (past, inactive):
             assert f'id="flow-{track.id}"' not in page.text
+
+
+def test_delete_link_preserves_the_paid_track(admin_client, db, user_factory):
+    from app.services import intake_link
+
+    client, _ = admin_client
+    link = _group_link(db)
+    now = datetime.now(timezone.utc)
+    link.price_kop = 345500
+    link.sales_from = now + timedelta(days=1)
+    link.access_from = now + timedelta(days=2)
+    link.sales_until = now + timedelta(days=3)
+    student = user_factory(vk_id=-1140)
+    student.program = PROGRAM_HOLIDAY
+    db.add(UserTag(user_id=student.id, tag_id=link.tag_id))
+    db.commit()
+
+    page = client.get("/cabinet/flows")
+    assert f'id="flow-{link.id}"' in page.text
+    url = f"/cabinet/flows/{link.slug}"
+    assert client.post(url + "/delete", data={"csrf_token": "x"}, follow_redirects=False).status_code == 303
+    db.refresh(link)
+    assert link.deleted_at is not None and not link.is_active
+    assert intake_link.tracks_of(db, student.id) == [link]
+    assert intake_link.program_opens_at([link]) == link.access_from
+    assert link not in intake_link.tracks_on_sale(db, now + timedelta(days=2))
+    assert f'id="flow-{link.id}"' not in client.get("/cabinet/flows").text
+    assert client.post(url + "/toggle", data={"csrf_token": "x"}).status_code == 404
 
 
 def test_group_link_reuses_existing_tag(admin_client, db):
