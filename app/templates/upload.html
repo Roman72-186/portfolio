@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Загрузка фото{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/upload_ios.css?v=8">
+<link rel="stylesheet" href="/static/css/upload_ios.css?v=9">
 {% endblock %}
 {% block content %}
 <div class="upload-wrap ios-upload">
@@ -36,8 +36,22 @@
     {% if not window_open or (not feature_available and mode == "after") %}
     <div class="ios-closed-banner">
         <div class="ios-closed-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        {% if window_prerequisite %}
+        <div class="ios-closed-title">Сначала выполни предыдущий шаг</div>
+        <div class="ios-closed-text">
+            {% if window_prerequisite.title and window_prerequisite.manual_confirmation %}
+            Рядом с шагом «{{ window_prerequisite.title }}» нажми кружок «Отметить выполнение».
+            {% elif window_prerequisite.title %}
+            Чтобы открыть загрузку, выполни шаг «{{ window_prerequisite.title }}».
+            {% else %}
+            Чтобы открыть загрузку, выполни предыдущий обязательный шаг в задании.
+            {% endif %}
+        </div>
+        <a class="btn-blue ios-prerequisite-link" href="{{ window_prerequisite.task_url }}">Перейти к заданию</a>
+        {% else %}
         <div class="ios-closed-title">Загрузка закрыта</div>
         <div class="ios-closed-text">{% if not window_open %}{{ window_closed_message }}{% else %}{{ feature_message }}{% endif %}</div>
+        {% endif %}
     </div>
     {% else %}
 
@@ -214,6 +228,11 @@ const uploadForm  = document.getElementById('upload-form');
 
 if (input && dropZone && previewArea && grid && counter && submitBtn && reselectBtn && addMoreBtn && uploadForm) {
 let selectedFiles = [];
+const useXHR = !!(window.FormData && window.XMLHttpRequest);
+
+// В XHR файлы берём из selectedFiles. Встроенный браузер может не дать
+// переписать input.files, поэтому его нативную проверку оставляем только для POST формы.
+if (useXHR) input.required = false;
 
 function syncInputFiles() {
     const dt = new DataTransfer();
@@ -223,7 +242,7 @@ function syncInputFiles() {
 
 function removeFile(idx) {
     selectedFiles.splice(idx, 1);
-    syncInputFiles();
+    if (!useXHR) syncInputFiles();
     renderPreviews();
     if (!selectedFiles.length) {
         previewArea.style.display = 'none';
@@ -284,7 +303,7 @@ let preparing = 0;
 let selectionEpoch = 0;
 
 async function addFiles(newFiles) {
-    // Копию снимаем сразу: FileList живой, а syncInputFiles его подменит.
+    // FileList может измениться при следующем открытии галереи.
     var files = Array.from(newFiles || []);
     var epoch = selectionEpoch;
     var problems = [];
@@ -314,7 +333,7 @@ async function addFiles(newFiles) {
     // После «Сбросить» счётчик уже обнулён — вычитать из него нельзя.
     if (epoch !== selectionEpoch) return;
     preparing--;
-    syncInputFiles();
+    if (!useXHR) syncInputFiles();
     renderPreviews();
     if (problems.length) {
         showAlert('error', problems.map(escapeText).join('<br>'));
@@ -384,12 +403,13 @@ function resetForm() {
 }
 
 uploadForm.addEventListener('submit', function(ev) {
-    if (preparing > 0 || uploadForm.inert) { ev.preventDefault(); return; }
-    syncInputFiles();
-    if (!selectedFiles.length) return;
+    if (preparing > 0 || uploadForm.inert || !selectedFiles.length) {
+        ev.preventDefault();
+        return;
+    }
 
     // Progressive enhancement: XHR with progress. Fallback — native form POST.
-    if (!window.FormData || !window.XMLHttpRequest) return;
+    if (!useXHR) return;
     ev.preventDefault();
 
     var form = ev.target;
