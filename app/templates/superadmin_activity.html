@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
 <script src="/static/js/statistics-pagination.js?v=1" defer></script>
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=21">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=22">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -431,6 +431,7 @@
                 <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
                 <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
                 <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option></select></label>
+                <label for="tm-grade">Балл<select id="tm-grade" data-tm-filter="grade"><option value="">Все работы</option><option value="graded">С баллом</option><option value="ungraded">Сданы без балла</option></select></label>
                 <label for="tm-search">Поиск ученика<input type="search" id="tm-search" data-tm-search placeholder="Имя, ник или номер" autocomplete="off"></label>
             </div>
             <div class="ss-stats-strip" data-tm-big></div>
@@ -444,7 +445,7 @@
                 </div>
             </div>
             <div class="ss-filters">
-                <label for="tm-sort">Сортировка<select id="tm-sort"><option value="name">По алфавиту</option><option value="ungraded">Сначала сданные без балла</option></select></label>
+                <label for="tm-sort">Сортировка<select id="tm-sort"><option value="name">По алфавиту</option><option value="ungraded">Сначала сданные без балла</option><option value="score-desc">По баллу ↓</option><option value="score-asc">По баллу ↑</option></select></label>
             </div>
             <div class="ss-sub">
                 <h3 class="ss-sub-head">Ученики <span class="ss-sub-count" data-tm-count aria-live="polite"></span></h3>
@@ -468,7 +469,7 @@
                     in_time: 'Вовремя', overrun: 'Превысил', unknown_timer: 'Нет данных',
                     late: 'Опоздал', running_over: 'Нет работы', running: 'Пишет', uploading: 'Ждём фото',
                 };
-                const DANGER = { overrun: true, late: true, running_over: true };
+                const STATUS_COLORS = { in_time: 'ab-ok', overrun: 'ss-timed-warning', late: 'ab-danger' };
                 const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
                 const search = root.querySelector('[data-tm-search]');
                 const big = root.querySelector('[data-tm-big]');
@@ -508,6 +509,8 @@
                         if (!value) continue;
                         if (key === 'level') {
                             if (value === 'none' ? a.level : String(a.level) !== value) return false;
+                        } else if (key === 'grade') {
+                            if (!a.submitted || (a.score !== null) !== (value === 'graded')) return false;
                         } else if (String(a[key]) !== value) {
                             return false;
                         }
@@ -580,12 +583,22 @@
                         if (!groups.has(work.student_id)) groups.set(work.student_id, []);
                         groups.get(work.student_id).push(work);
                     });
-                    const students = Array.from(groups.values());
-                    const awaiting = function (works) {
-                        return works.some(function (work) { return work.submitted && work.score === null; });
-                    };
+                    let students = Array.from(groups.values());
                     if (sort.value === 'ungraded') {
+                        const awaiting = function (works) {
+                            return works.some(function (work) { return work.submitted && work.score === null; });
+                        };
                         students.sort(function (a, b) { return Number(awaiting(b)) - Number(awaiting(a)); });
+                    } else if (sort.value === 'score-desc' || sort.value === 'score-asc') {
+                        const descending = sort.value === 'score-desc';
+                        const ranked = students.map(function (works) {
+                            const scores = works.filter(function (work) { return work.submitted && work.score !== null; })
+                                .map(function (work) { return work.score; });
+                            const score = scores.length ? (descending ? -Math.max(...scores) : Math.min(...scores)) : Infinity;
+                            return { works, score };
+                        });
+                        ranked.sort(function (a, b) { return a.score - b.score; });
+                        students = ranked.map(function (item) { return item.works; });
                     }
                     Array.from(table.tBodies).forEach(function (group) { group.remove(); });
                     const offset = (page - 1) * pageSize;
@@ -633,12 +646,21 @@
                             const status = document.createElement('td');
                             status.dataset.label = 'Статус';
                             const badge = document.createElement('span');
-                            badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
+                            badge.className = 'act-badge ' + (STATUS_COLORS[a.status] || 'ss-timed-neutral');
                             badge.textContent = LABELS[a.status];
                             if (a.upload_overrun) badge.title = 'Загрузка дольше 5 минут';
                             status.appendChild(badge);
+                            const title = a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month;
+                            const control = cell('Контрольная', title);
+                            if (Number.isSafeInteger(a.submission_id) && a.submission_id > 0) {
+                                const link = document.createElement('a');
+                                link.href = '/cabinet/staff/task-block-submissions/' + a.submission_id + '/feedback';
+                                link.className = 'ss-timed-link';
+                                link.textContent = title;
+                                control.replaceChildren(link);
+                            }
                             tr.append(
-                                cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
+                                control,
                                 cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—') + (a.upload_minutes !== null ? ' · фото и загрузка: ' + a.upload_minutes + ' мин' : ''), 'ss-ta-r'),
                                 status,
                                 cell('Балл', a.score === null ? (a.submitted ? 'Ждём баллы' : '—') :

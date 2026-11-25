@@ -462,3 +462,7 @@
     .ios-ss .ss-timed-toggle[aria-expanded="true"]::after { content: "−"; }
     .ios-ss .ss-timed-work .act-badge { white-space: normal; }
 }
+
+.ios-ss .ss-timed-warning { background: var(--warning-soft); color: var(--warning-ink); }
+.ios-ss .ss-timed-neutral { background: var(--ios-grouped-bg); color: var(--ios-label-2); }
+.ios-ss .ss-timed-link { color: var(--blue-text); text-decoration: underline; }

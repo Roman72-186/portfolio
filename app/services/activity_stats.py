@@ -1779,7 +1779,8 @@ def get_timed_stats(
     rows = (
         db.query(
             TaskBlockState, TaskBlock, TrackerTask, User.name, User.tariff,
-            User.first_name, User.last_name, User.tg_username, TaskBlockSubmission.score,
+            User.first_name, User.last_name, User.tg_username,
+            TaskBlockSubmission.id, TaskBlockSubmission.score,
         )
         .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
@@ -1817,7 +1818,7 @@ def get_timed_stats(
     by_block: dict[int, dict] = {}
     students: list[dict] = []
     attempts: list[dict] = []
-    for state, block, task, name, tariff, first_name, last_name, tg_username, score in rows:
+    for state, block, task, name, tariff, first_name, last_name, tg_username, submission_id, score in rows:
         title = f"{task.title} — {block.title}" if block.title else task.title
         item = by_block.setdefault(block.id, {
             "title": title, "limit": block.time_limit_minutes,
@@ -1891,6 +1892,7 @@ def get_timed_stats(
             "limit": block.time_limit_minutes,
             "status": status,
             "submitted": finished is not None,
+            "submission_id": submission_id if finished is not None else None,
             "score": float(score) if score is not None else None,
             "timer_result": ("overrun" if overrun else "in_time") if timer_measured else None,
         })
