@@ -95,14 +95,14 @@
                 <!-- Drop zone -->
                 <div>
                     <label class="form-label" style="margin-bottom:10px">Фото</label>
-                    <label class="upload-drop" id="dropZone">
-                        <input type="file" name="photos"
-                               accept="image/*"
-                               required multiple id="photoInput">
+                    <input type="file" name="photos" class="file-pick-input" accept="image/*"
+                           required multiple id="photoInput">
+                    <label class="upload-drop" id="dropZone" for="photoInput">
                         <div class="upload-circle">+</div>
                         <div class="upload-drop-title">Нажми или перенеси фото</div>
                         <div class="upload-drop-hint">Любые фото · до {{ max_files }} штук</div>
                     </label>
+                    <p class="file-pick-names" id="fileSelectionNote" role="status" hidden></p>
                     <div class="preview-area" id="previewArea">
                         <div class="preview-header">
                             <span class="preview-count" id="fileCount"></span>
@@ -221,6 +221,7 @@ const dropZone   = document.getElementById('dropZone');
 const previewArea= document.getElementById('previewArea');
 const grid       = document.getElementById('previewGrid');
 const counter    = document.getElementById('fileCount');
+const selectionNote = document.getElementById('fileSelectionNote');
 const submitBtn  = document.getElementById('submitBtn');
 const reselectBtn= document.getElementById('reselectBtn');
 const addMoreBtn = document.getElementById('addMoreBtn');
@@ -229,6 +230,7 @@ const uploadForm  = document.getElementById('upload-form');
 if (input && dropZone && previewArea && grid && counter && submitBtn && reselectBtn && addMoreBtn && uploadForm) {
 let selectedFiles = [];
 const useXHR = !!(window.FormData && window.XMLHttpRequest);
+const photoPrep = window.PhotoPrep;
 
 // В XHR файлы берём из selectedFiles. Встроенный браузер может не дать
 // переписать input.files, поэтому его нативную проверку оставляем только для POST формы.
@@ -245,6 +247,7 @@ function removeFile(idx) {
     if (!useXHR) syncInputFiles();
     renderPreviews();
     if (!selectedFiles.length) {
+        input.value = '';
         previewArea.style.display = 'none';
         dropZone.style.display = 'flex';
         submitBtn.disabled = true;
@@ -264,15 +267,25 @@ function renderPreviews() {
         btn.textContent = '\u2715';
         btn.onclick = function() { removeFile(i); };
         wrap.appendChild(btn);
-        PhotoPrep.attachRotate(wrap, f);
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var img = document.createElement('img');
-            img.src = e.target.result;
-            wrap.appendChild(img);
+        // Например, HEIC может приниматься сервером, хотя браузер не рисует превью.
+        var filename = document.createElement('div');
+        filename.className = 'preview-filename card file-pick-names';
+        filename.textContent = f.name || 'Фото ' + (i + 1);
+        wrap.appendChild(filename);
+        if (photoPrep) photoPrep.attachRotate(wrap, f);
+        var img = document.createElement('img');
+        img.alt = '';
+        img.hidden = true;
+        var url = URL.createObjectURL(f);
+        img.onload = function() {
+            URL.revokeObjectURL(url);
+            filename.hidden = true;
+            img.hidden = false;
         };
-        reader.readAsDataURL(f);
+        img.onerror = function() { URL.revokeObjectURL(url); img.remove(); };
+        wrap.appendChild(img);
         grid.appendChild(wrap);
+        img.src = url;
     });
 }
 
@@ -294,7 +307,14 @@ function escapeText(s) {
 // Фото до лимита уходит как есть — пережимать его незачем. Сам код ужатия —
 // в `static/js/photo-prep.js`, там же поворот перед отправкой.
 function shrinkPhoto(file) {
-    return PhotoPrep.shrink(file, MAX_SIZE, SHRINK_STEPS);
+    if (file.size <= MAX_SIZE) return file;
+    if (!photoPrep) throw new Error('photo-prep-unavailable');
+    return photoPrep.shrink(file, MAX_SIZE, SHRINK_STEPS);
+}
+
+function noteNoFiles() {
+    selectionNote.textContent = 'Фото не добавлены. Если оригиналы в облаке, скачай их на телефон или выбери фото через «Файлы».';
+    selectionNote.hidden = false;
 }
 
 // Сколько выборов ещё ужимается: пока не ноль, отправлять нечего.
@@ -308,9 +328,10 @@ async function addFiles(newFiles) {
     var epoch = selectionEpoch;
     var problems = [];
     if (!files.length) {
-        showAlert('error', 'Фото не выбрались. Если они лежат только в облаке, сначала скачай их на телефон.');
+        noteNoFiles();
         return;
     }
+    selectionNote.hidden = true;
     preparing++;
     submitBtn.disabled = true;
     counter.textContent = 'Готовим фото…';
@@ -341,23 +362,18 @@ async function addFiles(newFiles) {
     if (selectedFiles.length) {
         submitBtn.disabled = preparing > 0;
     } else if (!preparing) {
+        input.value = '';
         previewArea.style.display = 'none';
         dropZone.style.display = 'flex';
     }
 }
 
 input.addEventListener('change', function() { addFiles(input.files); });
-
-reselectBtn.addEventListener('click', function() {
-    selectionEpoch++;
-    preparing = 0;
-    selectedFiles = [];
-    input.value = '';
-    grid.innerHTML = '';
-    previewArea.style.display = 'none';
-    dropZone.style.display = 'flex';
-    submitBtn.disabled = true;
+input.addEventListener('cancel', function() {
+    if (!selectedFiles.length && !preparing) noteNoFiles();
 });
+
+reselectBtn.addEventListener('click', resetForm);
 
 addMoreBtn.addEventListener('click', function() {
     var tmp = document.createElement('input');
@@ -395,6 +411,7 @@ function resetForm() {
     selectionEpoch++;
     preparing = 0;
     selectedFiles = [];
+    selectionNote.hidden = true;
     input.value = '';
     grid.innerHTML = '';
     previewArea.style.display = 'none';
@@ -484,8 +501,9 @@ uploadForm.addEventListener('submit', function(ev) {
     }
 
     // Повёрнутые в превью фото крутим по-настоящему перед отправкой
-    // (`PhotoPrep.prepareAll` не падает: не вышло — уходит оригинал).
-    PhotoPrep.prepareAll(selectedFiles).then(function (ready) {
+    // Без скрипта подготовки отправляем оригиналы, которые укладываются в лимит.
+    var prepared = photoPrep ? photoPrep.prepareAll(selectedFiles) : Promise.resolve(selectedFiles);
+    prepared.then(function (ready) {
         fd = new FormData(form);
         fd.delete('photos');
         ready.forEach(function (f) { fd.append('photos', f); });
