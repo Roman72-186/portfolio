@@ -12,7 +12,7 @@ import openpyxl
 import pytest
 
 from app.models.audit_log import AuditLog
-from app.models.payment import COHORT_BEFORE, COHORT_FROM, PaymentPrice
+from app.models.payment import COHORT_BEFORE, COHORT_FROM, STATUS_PAID, Payment, PaymentPrice
 from app.services import payment_import as pi
 from app.services import payments as ps
 
@@ -379,6 +379,69 @@ def test_routes_refuse_bad_file_and_empty_choice(db, client, session_factory, st
 
     assert bad.status_code == 400 and "Не получилось открыть файл" in bad.json()["detail"]
     assert empty.status_code == 400
+
+
+@pytest.mark.parametrize("paid_in_history", [False, True])
+def test_username_list_previews_and_applies_only_exact_matches(
+    db, client, session_factory, make_student, staff, paid_in_history,
+):
+    anna = make_student("Анна", "Иванова", tg_username="anna_test", pay_price_kop=1225500,
+                        pay_window_start=10, pay_window_end=15)
+    nastya = make_student("Настя", "Смирнова", tg_username="nastya_test")
+    paid = make_student("Нина", "Петрова", tg_username="nina_test", pay_price_kop=1425500,
+                        pay_window_start=25, pay_window_end=30)
+    paid_month = date(2026, 11 if paid_in_history else 12, 1)
+    paid.paid_until = ps.paid_until_after(paid, paid_month)
+    if paid_in_history:
+        db.add(Payment(user_id=paid.id, period=date(2026, 12, 1), amount_kop=1425500, status=STATUS_PAID))
+    db.commit()
+    client.cookies.set("session_id", session_factory(staff["chief"]).id)
+    url = "/cabinet/superadmin/payment-import"
+    data = {"usernames": "@ANNA_TEST\nnastya_test 14255\nanna_test\nmissing_test\nnina_test",
+            "window_start": "25", "window_end": "30", "paid_month": "2026-11"}
+    preview = client.post(f"{url}/preview", data=data)
+    assert preview.status_code == 200, preview.text
+    rows = preview.json()["rows"]
+    assert [row["status"] for row in rows] == [
+        pi.ROW_READY, pi.ROW_READY, pi.ROW_DUPLICATE, pi.ROW_NOT_FOUND, pi.ROW_ERROR,
+    ]
+    assert rows[0]["schedule"] == {
+        "amount": "12 255 ₽", "old_window": "10–15", "window": "25–30",
+        "paid_month": "ноябрь 2026", "next_month": "декабрь 2026",
+        "dates": "25.11–30.11.2026", "next_tariff": "",
+    }
+    assert anna.pay_window_start == 10
+    forged = client.post(f"{url}/apply", data=dict(data, choices=json.dumps([
+        {"line": 1, "user_id": nastya.id}, {"line": 5, "user_id": paid.id},
+    ])))
+    assert forged.json()["written"] == 0
+    applied = client.post(f"{url}/apply", data=dict(data, choices=json.dumps([
+        {"line": 1, "user_id": anna.id}, {"line": 2, "user_id": nastya.id},
+    ])))
+    assert applied.json()["written"] == 2
+    assert (anna.pay_window_start, anna.pay_window_end, anna.pay_price_kop) == (25, 30, 1225500)
+    assert nastya.pay_price_kop == 1425500
+    assert ps.paid_month(anna) == ps.paid_month(nastya) == date(2026, 11, 1)
+    assert ps.paid_month(paid) == paid_month
+
+
+def test_username_list_tariff_uses_latest_price_for_new_student(db, prices, make_student, staff):
+    new = make_student("Анна", "Иванова", tariff="", tg_username="new_student")
+    existing = make_student("Настя", "Смирнова", tg_username="existing_student", pay_price_kop=1225500)
+    other = make_student("Нина", "Петрова", tariff="Я САМ", tg_username="other_student")
+    defaults = pi.parse_defaults("25", "30", "2026-11", "Я С ВАМИ")
+    rows = pi.parse_usernames("@new_student\n@existing_student\n@other_student", defaults)
+    preview = pi.build_preview(db, rows, defaults)
+    assert preview[0].schedule["amount"] == "13 255 ₽"
+    assert preview[1].schedule["amount"] == "12 255 ₽"
+    assert preview[2].status == pi.ROW_ERROR
+
+    summary = pi.apply_import(db, staff["chief"].id, rows, {1: new.id, 2: existing.id, 3: other.id}, defaults)
+    assert summary.written == 2 and len(summary.skipped) == 1
+    assert new.tariff == "" and new.pay_next_tariff == "Я С ВАМИ"
+    assert ps.price_kop(db, new) == 1325500
+    assert existing.pay_price_kop == 1225500
+    assert other.pay_window_start is None
 
 
 def test_curator_cannot_use_import(db, client, session_factory, prices, make_student, staff):

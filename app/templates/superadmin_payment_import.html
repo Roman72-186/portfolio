@@ -3,7 +3,7 @@
 {% block extra_styles %}
 {# Своих стилей нет: карточка и таблица — скоуп «Назначить теги»
    (`superadmin_forms_ios.css`), метки, выбор файла и сообщения — `base.css`. #}
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
 {% endblock %}
 {% block content %}
 {% set people_edit = can(user, "people:students") %}
@@ -61,6 +61,20 @@
     </div>
 
     <div class="bulk-wrap">
+        <label for="payImportTariff">Тариф для списка ников</label>
+        <select id="payImportTariff" class="form-select" aria-describedby="payImportUsernameHelp">
+            <option value="">По карточке ученика</option>
+            {% for code, label, price in tariff_options %}
+            <option value="{{ code }}">{{ label }}{% if price %} · {{ price }}{% endif %}</option>
+            {% endfor %}
+        </select>
+        <label for="payImportUsernames">Список Telegram-ников</label>
+        <textarea id="payImportUsernames" class="form-input" rows="5"
+                  aria-describedby="payImportUsernameHelp" placeholder="@primer_1&#10;@primer_2 14255"></textarea>
+        <p id="payImportUsernameHelp" class="bulk-not-found">
+            Вставьте по одному нику на строку и заполните окно и последний оплаченный месяц.
+            Если в карточке нет цены, выберите тариф или допишите сумму в рублях после ника.
+        </p>
         <div class="bulk-input-row">
             <div class="file-pick">
                 <input id="payImportFile" class="file-pick-input" type="file"
@@ -97,6 +111,7 @@
     const NO_WRITE = ['same', 'skipped', 'error'];
 
     const fileInput = document.getElementById('payImportFile');
+    const usernames = document.getElementById('payImportUsernames');
     const fileName = document.getElementById('payImportName');
     const checkBtn = document.getElementById('payImportCheck');
     const result = document.getElementById('payImportResult');
@@ -104,18 +119,26 @@
         window_start: document.getElementById('payImportStart'),
         window_end: document.getElementById('payImportEnd'),
         paid_month: document.getElementById('payImportMonth'),
+        tariff: document.getElementById('payImportTariff'),
     };
     let applyBtn = null;
+    let revision = 0;
+
+    function resetPreview() {
+        revision += 1;
+        checkBtn.disabled = !fileInput.files[0] && !usernames.value.trim();
+        result.innerHTML = '';
+    }
 
     fileInput.addEventListener('change', function () {
         const file = fileInput.files[0];
         fileName.textContent = file ? file.name : 'Файл .xlsx, до 2 МБ';
-        checkBtn.disabled = !file;
-        result.innerHTML = '';
+        resetPreview();
     });
+    usernames.addEventListener('input', resetPreview);
     // Предпросмотр посчитан под старые окно и месяц — после правки его не показываем.
     Object.keys(defaultInputs).forEach(function (k) {
-        defaultInputs[k].addEventListener('input', function () { result.innerHTML = ''; });
+        defaultInputs[k].addEventListener('input', resetPreview);
     });
 
     function el(tag, cls, text) {
@@ -132,7 +155,8 @@
 
     function post(url, extra) {
         const fd = new FormData();
-        fd.append('file', fileInput.files[0]);
+        if (fileInput.files[0]) fd.append('file', fileInput.files[0]);
+        fd.append('usernames', usernames.value.trim());
         Object.keys(defaultInputs).forEach(function (k) { fd.append(k, defaultInputs[k].value.trim()); });
         Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
         return window.csrfFetch(url, { method: 'POST', body: fd })
@@ -167,10 +191,18 @@
         applyBtn.disabled = n === 0;
     }
 
-    function render(data) {
+    function render(data, usernameMode) {
         result.innerHTML = '';
-        const table = el('table', 'bulk-table');
-        table.innerHTML = '<thead><tr><th>Строка в файле</th><th>Ученик</th><th>Что будет</th><th>Записать</th></tr></thead>';
+        const table = el('table', 'bulk-table pay-grid');
+        const labels = usernameMode
+            ? ['Telegram', 'Ученик и тариф', 'Окно оплаты', 'Сумма', 'Оплачен месяц', 'Следующая оплата', 'Статус', 'Записать']
+            : ['Строка списка', 'Ученик', 'Что будет', 'Записать'];
+        const headerRow = table.createTHead().insertRow();
+        labels.forEach(function (label) {
+            const cell = el('th', '', label);
+            cell.scope = 'col';
+            headerRow.appendChild(cell);
+        });
         const tbody = el('tbody');
 
         data.rows.forEach(function (row) {
@@ -178,32 +210,51 @@
             const status = STATUS[row.status] || ['?', 'tag-pill-muted'];
 
             const fromFile = el('td');
-            fromFile.appendChild(el('div', 'u-name', row.line + '. ' + (row.name || '–')));
-            fromFile.appendChild(el('div', 'u-meta', [row.tariff, row.amount, row.window && ('окно ' + row.window),
-                row.first_month && ('первый месяц: ' + row.first_month)].filter(Boolean).join(' · ')));
+            fromFile.appendChild(el('div', 'u-name', (usernameMode ? '' : row.line + '. ') + (row.name || '–')));
+            if (!usernameMode) {
+                fromFile.appendChild(el('div', 'u-meta', [row.tariff, row.amount, row.window && ('окно ' + row.window),
+                    row.first_month && ('первый месяц: ' + row.first_month)].filter(Boolean).join(' · ')));
+            }
             tr.appendChild(fromFile);
 
             const who = el('td');
             let select = null;
-            if (NEEDS_PICK.indexOf(row.status) >= 0) {
+            const needsPick = NEEDS_PICK.indexOf(row.status) >= 0;
+            if (!usernameMode && needsPick) {
                 select = pickSelect(row);
                 who.appendChild(select);
             } else if (row.student) {
                 who.appendChild(el('div', 'u-name', row.student.name));
-                who.appendChild(el('div', 'u-meta', row.student.tariff + ' · id ' + row.student.id));
+                const nextTariff = row.schedule && row.schedule.next_tariff;
+                who.appendChild(el('div', 'u-meta', nextTariff ? nextTariff + ' после оплаты' : row.student.tariff));
             } else {
                 who.textContent = '–';
             }
             tr.appendChild(who);
 
+            if (usernameMode) {
+                const schedule = row.schedule || {};
+                const windowCell = el('td', 'pay-grid-value', schedule.window || '–');
+                if (schedule.old_window && schedule.old_window !== schedule.window) {
+                    windowCell.appendChild(el('div', 'u-meta', 'Было ' + schedule.old_window));
+                }
+                tr.appendChild(windowCell);
+                tr.appendChild(el('td', 'pay-grid-value', schedule.amount || row.amount || '–'));
+                tr.appendChild(el('td', 'pay-grid-value', schedule.paid_month || '–'));
+                const next = el('td', 'pay-grid-value', schedule.next_month || '–');
+                if (schedule.dates) next.appendChild(el('div', 'u-meta', schedule.dates));
+                tr.appendChild(next);
+            }
             const what = el('td');
             what.appendChild(el('span', 'tag-pill ' + status[1], status[0]));
-            (row.changes || []).forEach(function (c) { what.appendChild(el('div', 'u-meta', c)); });
+            if (!usernameMode) {
+                (row.changes || []).forEach(function (c) { what.appendChild(el('div', 'u-meta', c)); });
+            }
             if (row.note) what.appendChild(el('div', 'u-meta', row.note));
             tr.appendChild(what);
 
             const take = el('td');
-            if (NO_WRITE.indexOf(row.status) < 0) {
+            if (NO_WRITE.indexOf(row.status) < 0 && !(usernameMode && needsPick)) {
                 const cb = el('input');
                 cb.type = 'checkbox';
                 cb.dataset.line = row.line;
@@ -227,13 +278,13 @@
             tbody.appendChild(tr);
         });
         table.appendChild(tbody);
-        const scroll = el('div', 'table-scroll');
+        const scroll = el('div', 'table-scroll pay-grid-scroll');
         scroll.appendChild(table);
         result.appendChild(scroll);
 
         const c = data.counts || {};
         const asks = (c.tariff || 0) + (c.not_found || 0) + (c.ambiguous || 0) + (c.duplicate || 0);
-        if (asks) {
+        if (asks && !usernameMode) {
             result.appendChild(el('p', 'bulk-not-found',
                 'Строки с другим тарифом не отмечены: если всё верно, поставьте галочку. ' +
                 'Ненайденным и однофамильцам выберите ученика из списка.'));
@@ -268,14 +319,22 @@
     }
 
     checkBtn.addEventListener('click', function () {
-        if (!fileInput.files[0]) return;
+        const checkedRevision = revision;
+        const usernameMode = !!usernames.value.trim();
+        if (!fileInput.files[0] && !usernameMode) return;
         checkBtn.disabled = true;
         result.innerHTML = '';
         result.appendChild(el('div', 'spinner'));
         post('/cabinet/superadmin/payment-import/preview')
-            .then(render)
-            .catch(function (err) { message('alert-error', err.message); })
-            .then(function () { checkBtn.disabled = false; });
+            .then(function (data) {
+                if (checkedRevision === revision) render(data, usernameMode);
+            })
+            .catch(function (err) {
+                if (checkedRevision === revision) message('alert-error', err.message);
+            })
+            .then(function () {
+                if (checkedRevision === revision) checkBtn.disabled = false;
+            });
     });
 })();
 </script>

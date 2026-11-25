@@ -63,11 +63,15 @@ NO_PAYMENT_TEXT = "Отмечено без платежа"
 LEFT_TEXT = "Ушёл с курса"
 
 # Фильтр таблицы (владелец 14.10.2026: «фильтр оплатили / не оплатили»).
-# «Оплатили» — месяц закрыт, в том числе сроком без платежа; «не оплатили» —
-# все остальные: окно впереди, идёт или закрылось без оплаты.
+# «Оплатили» — есть платёж. Месяц, закрытый сроком, показываем отдельно.
 FILTER_PAID = "paid"
 FILTER_UNPAID = "unpaid"
-FILTER_LABELS = {"": "Все", FILTER_PAID: "Оплатили", FILTER_UNPAID: "Не оплатили"}
+FILTER_LABELS = {
+    "": "Все", FILTER_PAID: "Оплатили", FILTER_UNPAID: "Не оплатили",
+    "no_payment": "Отмечено без платежа", STATE_OVERDUE: "Должники",
+    STATE_OPEN: "Окно идёт", STATE_UPCOMING: "Окно впереди",
+    "no_window": "Без окна", "left": "Ушли с курса",
+}
 
 
 @dataclass
@@ -291,9 +295,13 @@ def filter_rows(rows: list[BoardRow], *, status: str = "", q: str = "") -> list[
     (`services/student_search.py`): имя, фамилия, ник, номер."""
     result = []
     for row in rows:
-        if status == FILTER_PAID and row.state != STATE_PAID:
+        if status == FILTER_PAID and (row.state != STATE_PAID or row.no_payment):
             continue
         if status == FILTER_UNPAID and row.state == STATE_PAID:
+            continue
+        if status == "no_payment" and not row.no_payment:
+            continue
+        if status in (STATE_OVERDUE, STATE_OPEN, STATE_UPCOMING) and row.state != status:
             continue
         if not student_matches(row.student, q):
             continue

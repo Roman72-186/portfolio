@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
 <script src="/static/js/statistics-pagination.js?v=1" defer></script>
 <link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=22">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -357,7 +358,7 @@
        в том же режиме (`payment_board.holiday_board`). #}
     {% if holiday_payment_stats %}
     {% set hp = holiday_payment_stats %}
-    <details class="ss-acc" data-holiday-payment-card>
+    <details class="ss-acc" id="activity-payments" data-holiday-payment-card>
         <summary><h2 class="ss-acc-title">Оплаты треков</h2><span class="ss-acc-badge">оплатили {{ hp.paid_count }}{% if hp.paid_total %} на {{ hp.paid_total }}{% endif %}</span></summary>
         <div class="ss-acc-body">
             <div class="ss-filters">
@@ -379,7 +380,7 @@
        «Оплаты»; поимённый список с фильтром и кнопками — на экране, ссылки
        ведут туда. Карточку видят только те, кому открыта оплата. #}
     {% if payment_stats %}
-    <details class="ss-acc" data-payment-card>
+    <details class="ss-acc" id="activity-payments" data-payment-card>
         <summary><h2 class="ss-acc-title">Оплаты</h2><span class="ss-acc-badge">{{ payment_stats.month_title }}: оплатили {{ payment_stats.paid_count }}, не оплатили {{ payment_stats.unpaid_count }}</span></summary>
         <div class="ss-acc-body">
             <div class="ss-filters">
@@ -397,7 +398,7 @@
             </div>
             <div class="ss-sub">
                 <h3 class="ss-sub-head">По месяцам</h3>
-                <table class="ss-table">
+                <table class="ss-table pay-grid">
                     <thead><tr><th>Месяц</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr></thead>
                     <tbody>
                     {% for m in payment_stats.months %}
@@ -1452,7 +1453,15 @@
             if (history.replaceState) history.replaceState(null, '', '#' + key);
         });
     });
-    show(location.hash.slice(1) || 'students');
+    const section = location.hash.slice(1);
+    show(section === 'activity-payments' ? 'students' : section || 'students');
+    if (section === 'activity-payments') {
+        const paymentsCard = document.getElementById(section);
+        if (paymentsCard) {
+            paymentsCard.open = true;
+            paymentsCard.scrollIntoView();
+        }
+    }
 })();
 </script>
 <script src="/static/js/copy.js?v=1"></script>

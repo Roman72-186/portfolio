@@ -608,8 +608,8 @@ def test_filter_rows_paid_unpaid_and_search(db, prices, make_payer, people):
     def ids(**kw):
         return {r.student.id for r in pb.filter_rows(rows, **kw)}
 
-    # «Оплатили» — и деньгами, и сроком без платежа; «не оплатили» — остальные.
-    assert ids(status=pb.FILTER_PAID) == {paid.id, marked.id}
+    assert ids(status=pb.FILTER_PAID) == {paid.id}
+    assert ids(status="no_payment") == {marked.id}
     assert ids(status=pb.FILTER_UNPAID) == {late.id, waiting.id}
     assert ids() == {paid.id, marked.id, late.id, waiting.id}
     assert ids(q="борисова") == {late.id}
@@ -630,6 +630,10 @@ def test_page_filters_and_finds_by_id(db, client, session_factory, prices, make_
 
     unpaid = client.get("/cabinet/superadmin/payments?month=2026-10&status=unpaid").text
     assert "Петрова Мария" in unpaid and "Иванова Анна" not in unpaid
+    assert 'name="status" value="unpaid"' in unpaid
+    assert 'aria-current="page">Не оплатили · 1' in unpaid
+    assert "/cabinet/superadmin/activity#activity-payments" in unpaid
+    assert 'href="/cabinet/superadmin/payment-import">Оплата списком' in unpaid
 
     by_id = client.get(f"/cabinet/superadmin/payments?month=2026-10&q=%23{anna.id}").text
     assert "Иванова Анна" in by_id and "Петрова Мария" not in by_id
@@ -638,3 +642,15 @@ def test_page_filters_and_finds_by_id(db, client, session_factory, prices, make_
 
     junk = client.get("/cabinet/superadmin/payments?month=2026-10&status=junk")
     assert junk.status_code == 200 and "Петрова Мария" in junk.text
+
+
+def test_unpaid_tab_stays_empty_when_everyone_paid(db, client, session_factory, prices, make_payer, people):
+    anna = make_payer("Иванова Анна")
+    _prodamus_paid(db, anna)
+    client.cookies.set("session_id", session_factory(people["chief"]).id)
+
+    page = client.get("/cabinet/superadmin/payments?month=2026-10&status=unpaid")
+    assert page.status_code == 200
+    assert 'aria-current="page">Не оплатили · 0' in page.text
+    assert "За этот месяц нет учеников, от которых ждём оплату." in page.text
+    assert "Иванова Анна" not in page.text

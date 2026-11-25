@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Оплаты{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
 {% endblock %}
 {% block content %}
 {#
@@ -23,24 +24,16 @@
 <div class="prg-page">
     <div class="prg-head">
         <div>
+            <a class="back-link" href="/cabinet/superadmin/activity{% if holiday %}?program=holiday{% endif %}#activity-payments">← К статистике</a>
             <h1>Оплаты</h1>
-            {% if holiday %}
-            <p>Каникулярный набор: кто купил какие треки. Платят через Продамус на платформе,
-               оплата сама открывает ученику трек, возврат его снимает.</p>
-            {% else %}
-            <p>Кто оплатил обучение за месяц. Суммы считаются по оплатам через Продамус
-               и отмеченным переводам. Месяц, закрытый сроком в карточке или загрузкой
-               списка, идёт отдельно – как «{{ no_payment_text|lower }}».</p>
-            {% endif %}
         </div>
         {# «Оплата списком» и отсюда: вкладка живёт в «Людях», а Александрии
            (поимённый доступ к оплатам, 14.10.2026) раздел «Люди» закрыт —
            без этой ссылки до загрузки ей не дойти (26.10.2026). #}
         <div class="prg-actions">
             {% if can_mark and can(user, "people:students") %}
-            <a class="btn-outline" href="/cabinet/superadmin/payment-import">Оплата списком</a>
+            <a class="btn-blue" href="/cabinet/superadmin/payment-import">Оплата списком</a>
             {% endif %}
-            <a class="btn-outline" href="/cabinet/superadmin/activity{% if holiday %}?program=holiday{% endif %}">К статистике</a>
         </div>
     </div>
     {# Годовой курс / Каникулярный курс (владелец 19.10.2026) —
@@ -48,18 +41,39 @@
     {% include "partials/program_switch.html" %}
 
     {% if holiday %}
-    <section class="prg-items" data-holiday-payments>
+    <section class="prg-workspace-header" data-holiday-payments aria-label="Фильтры оплат">
         <div class="prg-meta">
             <span>Оплатили: {{ holiday.paid_count }}{% if holiday.paid_total %} на {{ holiday.paid_total }}{% endif %}</span>
             <span>Вошли в набор: {{ holiday.students_total }}</span>
             <span>Без трека: {{ holiday.without_track|length }}</span>
         </div>
+        <nav class="seg" aria-label="Оплаты треков">
+            {% for value, label in holiday_labels.items() %}
+            <a class="seg-btn{% if holiday_status == value %} active{% endif %}"
+               href="/cabinet/superadmin/payments?program=holiday{% if value %}&amp;status={{ value }}{% endif %}{% if holiday_q and value != 'tracks' %}&amp;q={{ holiday_q|urlencode }}{% endif %}"
+               {% if holiday_status == value %}aria-current="page"{% endif %}>{{ label }} · {{ holiday_counts[value] }}</a>
+            {% endfor %}
+        </nav>
+        {% if holiday_status != 'tracks' %}
+        <form class="prg-workspace-row" method="get" action="/cabinet/superadmin/payments" role="search" aria-label="Поиск ученика в оплатах">
+            <input type="hidden" name="program" value="holiday">
+            <input type="hidden" name="status" value="{{ holiday_status }}">
+            <label class="prg-field prg-workspace-heading">Поиск
+                <input type="search" name="q" value="{{ holiday_q }}" placeholder="Имя, ник в Telegram или номер" autocomplete="off">
+            </label>
+            <div class="prg-actions">
+                <button type="submit" class="btn-outline">Найти</button>
+                {% if holiday_q %}<a class="btn-outline" href="/cabinet/superadmin/payments?program=holiday{% if holiday_status %}&amp;status={{ holiday_status }}{% endif %}">Очистить поиск</a>{% endif %}
+            </div>
+        </form>
+        {% endif %}
     </section>
 
+    {% if holiday_status == 'tracks' %}
     <section class="prg-items">
         <h2>По трекам</h2>
-        <div class="table-scroll">
-            <table class="prg-table">
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
                 <thead><tr><th>Трек</th><th>Цена</th><th>Оплатили</th><th>Сумма</th><th>Продажа</th></tr></thead>
                 <tbody>
                     {% for t in holiday.tracks %}
@@ -78,11 +92,12 @@
         </div>
     </section>
 
+    {% elif not holiday_status %}
     <section class="prg-items">
         <h2>Платежи</h2>
         {% if holiday.rows %}
-        <div class="table-scroll">
-            <table class="prg-table">
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
                 <thead>
                     <tr><th>Ученик</th><th>Трек</th><th>Сумма</th><th>Когда</th><th>Статус</th>{% if can_mark %}<th>Действия</th>{% endif %}</tr>
                 </thead>
@@ -115,30 +130,35 @@
             </table>
         </div>
         {% else %}
-        <p class="prg-hint">Оплат треков пока нет.</p>
+        <p class="prg-hint">{% if holiday_q %}По этому запросу платежей нет.{% else %}Оплат треков пока нет.{% endif %}</p>
         {% endif %}
     </section>
 
-    {% if holiday.manual_tracks %}
+    {% else %}
     <section class="prg-items">
-        <h2>Трек без платежа на платформе</h2>
-        <p class="prg-hint">Тег трека поставили руками – например, оплатил мимо платформы.</p>
-        <p class="prg-hint">
-            {% for student in holiday.manual_tracks %}<a href="/cabinet/students?program=holiday&amp;student={{ student.id }}">{{ display_name(student) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
-        </p>
-    </section>
-    {% endif %}
-
-    {% if holiday.without_track %}
-    <section class="prg-items">
-        <h2>Вошли, но не оплатили</h2>
-        <p class="prg-hint">
-            {% for student in holiday.without_track %}<a href="/cabinet/students?program=holiday&amp;student={{ student.id }}">{{ display_name(student) }}</a>{% set contacts = contacts_text(student) %}{% if contacts %} ({{ contacts }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
-        </p>
+        <h2>{{ holiday_labels[holiday_status] }}</h2>
+        {% if holiday_students %}
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
+                <thead><tr><th>Ученик</th><th>Контакты</th></tr></thead>
+                <tbody>
+                    {% for student in holiday_students %}
+                    <tr>
+                        <td><a href="/cabinet/students?program=holiday&amp;student={{ student.id }}">{{ display_name(student) }}</a></td>
+                        <td>{{ contacts_text(student) or '–' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">В этой выборке никого нет.</p>
+        {% endif %}
     </section>
     {% endif %}
     {% else %}
 
+    <section class="prg-workspace-header" aria-label="Фильтры оплат">
     <div class="prg-monthbar">
         <a class="btn-outline prg-nav" href="/cabinet/superadmin/payments?month={{ prev_month }}{{ filter_qs }}" aria-label="Предыдущий месяц">←</a>
         <h2>{{ month_title }}</h2>
@@ -146,51 +166,55 @@
     </div>
     <div class="prg-actions">
         {% if not is_current %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ current_month }}{{ filter_qs }}">Текущий месяц</a>{% endif %}
-        <a class="btn-outline" href="/cabinet/superadmin/payments/export?month={{ month_value }}">Скачать Excel</a>
+        <a class="btn-outline" href="/cabinet/superadmin/payments/export?month={{ month_value }}">Скачать Excel за месяц</a>
     </div>
 
-    <section class="prg-items">
-        <div class="prg-meta">
-            <span>Оплатили: {{ board.paid_count }}{% if board.paid_total_kop %} на {{ rub(board.paid_total_kop) }}{% endif %}</span>
-            <span>Не оплатили: {{ board.unpaid_count }}</span>
-            {% if board.no_payment_count %}<span>{{ no_payment_text }}: {{ board.no_payment_count }}</span>{% endif %}
-            <span>Должники: {{ board.counts.overdue }}{% if board.debt_total_kop %} на {{ rub(board.debt_total_kop) }}{% endif %}</span>
-            <span>Окно идёт: {{ board.counts.open }}</span>
-            <span>Окно впереди: {{ board.counts.upcoming }}</span>
-            <span>Без окна оплаты: {{ board.no_window|length }}</span>
-            {% if board.left %}<span>Ушли с курса: {{ board.left|length }}</span>{% endif %}
-        </div>
-    </section>
+    <nav class="seg" aria-label="Статус оплаты">
+        {% for value, label in filter_labels.items() %}
+        <a class="seg-btn{% if filters.status == value %} active{% endif %}"
+           href="/cabinet/superadmin/payments?month={{ month_value }}{% if value %}&amp;status={{ value }}{% endif %}{% if filters.q %}&amp;q={{ filters.q|urlencode }}{% endif %}"
+           {% if filters.status == value %}aria-current="page"{% endif %}>{{ label }} · {{ filter_counts[value] }}</a>
+        {% endfor %}
+    </nav>
 
     {# Фильтр и поиск (владелец 14.10.2026) — GET-форма как на «Проверке по
        ученику». Номер ищет ученика точно: «256», «#256». #}
-    <form class="prg-form" method="get" action="/cabinet/superadmin/payments" role="search" aria-label="Поиск ученика в оплатах">
+    <form class="prg-workspace-row" method="get" action="/cabinet/superadmin/payments" role="search" aria-label="Поиск ученика в оплатах">
         <input type="hidden" name="month" value="{{ month_value }}">
-        <div class="prg-grid2">
-            <label class="prg-field">Поиск
+        {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+            <label class="prg-field prg-workspace-heading">Поиск
                 <input type="search" name="q" value="{{ filters.q }}"
-                       placeholder="Имя, @username или номер" autocomplete="off">
+                       placeholder="Имя, ник в Telegram или номер" autocomplete="off">
             </label>
-            <label class="prg-field">Оплата
-                <select name="status">
-                    {% for value, text in filter_labels.items() %}
-                    <option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ text }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-        </div>
         <div class="prg-actions">
-            <button type="submit" class="btn-blue">Показать</button>
-            {% if is_filtered %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ month_value }}">Сбросить</a>{% endif %}
+            <button type="submit" class="btn-outline">Найти</button>
+            {% if filters.q %}<a class="btn-outline" href="/cabinet/superadmin/payments?month={{ month_value }}{% if filters.status %}&amp;status={{ filters.status }}{% endif %}">Очистить поиск</a>{% endif %}
         </div>
     </form>
+    </section>
 
     <section class="prg-items">
-        <h2>Ученики</h2>
-        {% if is_filtered and board.rows %}<p class="prg-hint">Показано {{ rows|length }} из {{ board.rows|length }}</p>{% endif %}
-        {% if rows %}
-        <div class="table-scroll">
-            <table class="prg-table">
+        <h2>{{ filter_labels[filters.status] if filters.status else 'Все ученики с оплатами или окном' }}</h2>
+        {% set shown = student_rows if student_rows is not none else rows %}
+        {% if filters.q %}<p class="prg-hint">По поиску найдено {{ shown|length }} из {{ filter_counts[filters.status] }}</p>{% endif %}
+        {% if student_rows %}
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
+                <thead><tr><th>Ученик</th><th>Тариф</th><th>Статус</th></tr></thead>
+                <tbody>
+                    {% for student in student_rows %}
+                    <tr>
+                        <td><a href="/cabinet/students?student={{ student.id }}">{{ display_name(student) }}</a></td>
+                        <td>{{ tariff_text(student.tariff) }}</td>
+                        <td>{{ filter_labels[filters.status] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif rows %}
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
                 <thead>
                     <tr>
                         <th>Ученик</th>
@@ -254,19 +278,19 @@
                 </tbody>
             </table>
         </div>
-        {% elif board.rows %}
-        <p class="prg-hint">По этому фильтру никого нет.</p>
+        {% elif is_filtered %}
+        <p class="prg-hint">{% if filters.status == 'unpaid' and not filters.q %}За этот месяц нет учеников, от которых ждём оплату.{% else %}В этой выборке никого нет.{% endif %}</p>
         {% else %}
-        <p class="prg-hint">Ни у одного ученика пока нет окна оплаты. Окно ставится в карточке ученика или загрузкой «Оплата списком».</p>
+        <p class="prg-hint">Окон оплаты пока нет. Задайте окно в карточке ученика или через «Оплата списком».</p>
         {% endif %}
     </section>
 
     {% if board.by_tariff %}
-    <section class="prg-items">
-        <h2>По тарифам</h2>
+    <details class="prg-items">
+        <summary>Сводка по тарифам</summary>
         <p class="prg-hint">У оплативших – тариф, за который заплатили, даже если оплата его сменила. У остальных – нынешний.</p>
-        <div class="table-scroll">
-            <table class="prg-table">
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
                 <thead>
                     <tr><th>Тариф</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr>
                 </thead>
@@ -284,15 +308,15 @@
                 </tbody>
             </table>
         </div>
-    </section>
+    </details>
     {% endif %}
 
     {% if summary %}
-    <section class="prg-items">
-        <h2>По месяцам</h2>
+    <details class="prg-items">
+        <summary>Сводка по месяцам</summary>
         <p class="prg-hint">Долг за прошлые месяцы посчитан по сегодняшним ценам и нынешнему списку учеников.</p>
-        <div class="table-scroll">
-            <table class="prg-table">
+        <div class="table-scroll pay-grid-scroll">
+            <table class="prg-table pay-grid">
                 <thead>
                     <tr><th>Месяц</th><th>Оплатили</th><th>Не оплатили</th><th>Должники</th><th>Ждём оплату</th><th>Без платежа</th></tr>
                 </thead>
@@ -310,7 +334,7 @@
                 </tbody>
             </table>
         </div>
-    </section>
+    </details>
     {% endif %}
 
     {% endif %}

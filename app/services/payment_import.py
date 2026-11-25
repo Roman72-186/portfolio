@@ -39,13 +39,15 @@ import io
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from types import SimpleNamespace
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import (
     PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS, TARIFF_DISPLAY, TARIFFS, TARIFFS_CURRENT,
 )
-from app.models.payment import COHORT_LABELS, COHORTS
+from app.models.payment import COHORT_FROM, COHORT_LABELS, COHORTS, KIND_MONTH, STATUS_PAID, Payment
 from app.models.role import Role
 from app.models.user import User
 from app.services import payments
@@ -88,6 +90,7 @@ class SheetRow:
     window_start: int | None = None
     window_end: int | None = None
     first_month: date | None = None   # первый месяц оплаты на платформе
+    username_list: bool = False
 
     @property
     def paid_through(self) -> date | None:
@@ -101,6 +104,7 @@ class Defaults:
     window_start: int | None = None
     window_end: int | None = None
     paid_through: date | None = None
+    tariff: str = ""
 
 
 @dataclass
@@ -125,9 +129,10 @@ class RowResult:
     note: str = ""
     target: Target | None = None
     changes: list[str] = field(default_factory=list)
+    schedule: dict[str, str] | None = None
 
 
-def parse_defaults(start: str, end: str, month: str) -> Defaults:
+def parse_defaults(start: str, end: str, month: str, tariff: str = "") -> Defaults:
     """Общие значения с формы. Плохие — `payments.PaymentSettingsError`."""
     days = []
     for raw in (start, end):
@@ -138,7 +143,35 @@ def parse_defaults(start: str, end: str, month: str) -> Defaults:
     error = payments.validate_window(*days)
     if error:
         raise payments.PaymentSettingsError(error)
-    return Defaults(days[0], days[1], payments.parse_paid_month(month))
+    if tariff and tariff not in TARIFFS_CURRENT:
+        raise payments.PaymentSettingsError("Выберите действующий тариф")
+    return Defaults(days[0], days[1], payments.parse_paid_month(month), tariff)
+
+
+def parse_usernames(text: str, defaults: Defaults) -> list[SheetRow]:
+    if not defaults.window_start or not defaults.paid_through:
+        raise ImportFileError("Укажите окно оплаты и последний оплаченный месяц")
+    lines = text.splitlines()
+    if len(lines) > MAX_ROWS or len(text) > MAX_FILE_BYTES:
+        raise ImportFileError(f"Вставьте не больше {MAX_ROWS} строк")
+    rows = []
+    for line, raw in enumerate(lines, 1):
+        parts = raw.strip().split(maxsplit=1)
+        if not parts:
+            continue
+        nick = parts[0].removeprefix("@").lower()
+        row = SheetRow(line, parts[0], frozenset(), nick=nick, username_list=True)
+        if not re.fullmatch(r"[a-z0-9_]{5,32}", nick):
+            row.error = "Укажите Telegram-ник"
+        elif len(parts) == 2:
+            if re.fullmatch(r"[0-9 ]{1,12}(?:[.,][0-9]{1,2})?", parts[1]):
+                row.amount_kop = parse_amount(parts[1])
+            if row.amount_kop and row.amount_kop > 2_147_483_647:
+                row.amount_kop = None
+            if not row.amount_kop:
+                row.error = "Укажите сумму в рублях"
+        rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +549,9 @@ def _fill(db: DBSession, result: RowResult, student: User, defaults: Defaults) -
     """Статус и изменения для строки с известным учеником."""
     row = result.row
     result.student = student
+    if row.username_list:
+        _fill_username(db, result, student, defaults)
+        return
     result.target = plan_target(db, student, row, defaults)
     result.changes = _change_texts(student, result.target)
     result.note = ". ".join(filter(None, [result.note, result.target.note]))
@@ -537,6 +573,60 @@ def _fill(db: DBSession, result: RowResult, student: User, defaults: Defaults) -
         result.status = ROW_READY
     else:
         result.status = ROW_SAME
+
+
+def _fill_username(db: DBSession, result: RowResult, student: User, defaults: Defaults) -> None:
+    if not student.is_active or is_holiday(student) or student.pay_next_tariff:
+        result.note = "Проверьте настройки оплаты в карточке ученика"
+        return
+    if defaults.tariff and student.tariff and student.tariff != defaults.tariff:
+        result.note = "В карточке указан другой тариф. Проверьте, к какому списку относится ученик."
+        return
+    latest = db.query(func.max(Payment.period)).filter_by(
+        user_id=student.id, kind=KIND_MONTH, status=STATUS_PAID,
+    ).scalar()
+    paid = defaults.paid_through
+    if any(month and month > paid for month in (latest, payments.paid_month(student))):
+        result.note = "В карточке или истории платежей уже оплачен более поздний месяц"
+        return
+    amount = payments.price_kop(db, student)
+    catalog_amount = (
+        payments.reference_price_kop(db, defaults.tariff, COHORT_FROM)
+        if not amount and defaults.tariff else None
+    )
+    if not (amount or result.row.amount_kop or catalog_amount):
+        result.note = "Выберите тариф с ценой или добавьте сумму после ника"
+        return
+    if amount and result.row.amount_kop and result.row.amount_kop != amount:
+        result.note = "Указанная сумма отличается от суммы в карточке"
+        return
+    next_tariff = defaults.tariff if not student.tariff and defaults.tariff else None
+    cohort = student.pay_cohort or ""
+    own_price = student.pay_price_kop
+    if not amount:
+        if result.row.amount_kop:
+            own_price = result.row.amount_kop
+        else:
+            cohort = COHORT_FROM
+            own_price = catalog_amount if next_tariff else None
+    target = Target(defaults.window_start, defaults.window_end, cohort, own_price, paid,
+                    next_tariff=next_tariff)
+    result.target = target
+    result.changes = _change_texts(student, target)
+    result.status = ROW_READY if result.changes else ROW_SAME
+    next_month = payments.add_months(paid, 1)
+    window = SimpleNamespace(pay_window_start=target.window_start, pay_window_end=target.window_end)
+    opens = payments.window_opens_at(window, next_month).astimezone(MSK_TZ)
+    last_day = payments.window_last_day(window, next_month)
+    result.schedule = {
+        "amount": payments.rub_text(amount or target.price_kop or catalog_amount),
+        "next_tariff": _tariff_text(next_tariff) if next_tariff else "",
+        "old_window": _window_text(student.pay_window_start, student.pay_window_end),
+        "window": _window_text(target.window_start, target.window_end),
+        "paid_month": payments.period_label(paid),
+        "next_month": payments.period_label(next_month),
+        "dates": f"{opens:%d.%m}–{last_day:%d.%m.%Y}",
+    }
 
 
 def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defaults()) -> list[RowResult]:
@@ -576,7 +666,10 @@ def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defa
         elif len(writable) > 1:
             result.status = ROW_AMBIGUOUS
             result.candidates = writable
-            result.note = f"Учеников с таким именем: {len(writable)} – выберите нужного"
+            result.note = (
+                "Этот ник указан в нескольких карточках"
+                if row.username_list else f"Учеников с таким именем: {len(writable)} – выберите нужного"
+            )
         elif not writable:
             result.status = ROW_SKIPPED
             result.student = matches[0]
@@ -584,7 +677,7 @@ def build_preview(db: DBSession, rows: list[SheetRow], defaults: Defaults = Defa
         elif writable[0].id in taken:
             result.status = ROW_DUPLICATE
             result.student = writable[0]
-            result.note = "Этот ученик уже есть выше в файле"
+            result.note = "Этот ученик уже есть выше в списке"
         else:
             taken.add(writable[0].id)
             _fill(db, result, writable[0], defaults)
@@ -618,6 +711,11 @@ def apply_import(
     ненайденного выбрал из списка. Поэтому здесь проверяется только, что это
     живой ученик вне архива и служебных, и что одного ученика не пишут дважды.
     """
+    username_mode = any(row.username_list for row in rows)
+    checked = {}
+    if username_mode:
+        db.query(User.id).filter(User.id.in_(choices.values())).order_by(User.id).with_for_update().all()
+        checked = {r.row.line: r for r in build_preview(db, rows, defaults)}
     by_line = {row.line: row for row in rows}
     students = {s.id: s for s in load_students(db)}
     summary = ApplySummary()
@@ -638,7 +736,15 @@ def apply_import(
             summary.skipped.append(f"Строка {line}: {display_name(student)} уже записан выше")
             continue
         used.add(student.id)
-        target = plan_target(db, student, row, defaults)
+        if username_mode:
+            checked_row = checked[line]
+            if (checked_row.status not in (ROW_READY, ROW_SAME)
+                    or checked_row.student.id != student_id):
+                summary.skipped.append(f"Строка {line}: {checked_row.note or 'Проверьте ник ещё раз'}")
+                continue
+            target = checked_row.target
+        else:
+            target = plan_target(db, student, row, defaults)
         try:
             changed = payments.apply_payment_settings(
                 db, performed_by_id, student,
@@ -678,6 +784,8 @@ def preview_json(results: list[RowResult]) -> list[dict]:
             "student": None,
             "candidates": [{"id": s.id, "name": display_name(s)} for s in r.candidates],
         }
+        if r.schedule:
+            item["schedule"] = r.schedule
         if r.student is not None:
             item["student"] = {
                 "id": r.student.id,

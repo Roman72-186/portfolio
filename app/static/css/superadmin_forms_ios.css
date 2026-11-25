@@ -110,6 +110,42 @@
    вбок даёт обёртка `.table-scroll` из base.css. */
 .ios-sa-tags .table-scroll > .bulk-table { min-width: 640px; }
 
+.table-scroll.pay-grid-scroll {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+}
+.pay-grid.prg-table th, .pay-grid.prg-table td, .pay-grid.ss-table th, .pay-grid.ss-table td,
+.ios-sa-tags .bulk-table.pay-grid th, .ios-sa-tags .bulk-table.pay-grid td {
+    padding: 12px;
+    text-align: start;
+    vertical-align: top;
+    border-block-end: 1px solid var(--line);
+    border-inline-end: 1px solid var(--line);
+}
+.pay-grid.prg-table thead, .pay-grid.ss-table thead, .ios-sa-tags .bulk-table.pay-grid thead {
+    background: var(--surface-2);
+}
+.pay-grid.prg-table tr > :last-child, .pay-grid.ss-table tr > :last-child, .ios-sa-tags .bulk-table.pay-grid tr > :last-child {
+    border-inline-end: 0;
+}
+.pay-grid.prg-table tbody tr:last-child td, .pay-grid.ss-table tbody tr:last-child td, .ios-sa-tags .bulk-table.pay-grid tbody tr:last-child td {
+    border-block-end: 0;
+}
+.ios-sa-tags .bulk-table.pay-grid .pay-grid-value {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.ios-sa-tags .bulk-table.pay-grid tr > :last-child { text-align: center; }
+.pay-grid.prg-table .prg-hint, .ios-sa-tags .bulk-table.pay-grid .u-meta {
+    margin-block-start: 4px;
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
 .ios-sa-tags .tags-table-wrap {
     background: var(--ios-card-bg); border: none; border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;

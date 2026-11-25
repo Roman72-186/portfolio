@@ -25,6 +25,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services import payment_board, payments
 from app.services.notify import notify_many
+from app.services.student_search import student_matches
 from app.services.user_management import _invalidate_user_sessions
 from app.services.tz import MSK_TZ, msk_date_text
 from app.tmpl import templates
@@ -63,11 +64,29 @@ def payments_board_page(
     program = parse_report_program(program)
     switch = report_program_switch(request.url.path, program)
     if program == PROGRAM_HOLIDAY:
+        holiday = payment_board.holiday_board(db)
+        holiday_labels = {
+            "": "Платежи", "tracks": "По трекам",
+            "unpaid": "Без трека", "manual": "Трек без платежа",
+        }
+        status = status if status in holiday_labels else ""
+        q = q.strip()
+        holiday_counts = {
+            "": len(holiday["rows"]), "tracks": len(holiday["tracks"]),
+            "unpaid": len(holiday["without_track"]), "manual": len(holiday["manual_tracks"]),
+        }
+        holiday["rows"] = [row for row in holiday["rows"] if student_matches(row["student"], q)]
+        holiday_students = holiday["without_track"] if status == "unpaid" else holiday["manual_tracks"]
         return templates.TemplateResponse(request, "superadmin_payments.html", {
             "request": request,
             "user": user,
             "program_switch": switch,
-            "holiday": payment_board.holiday_board(db),
+            "holiday": holiday,
+            "holiday_labels": holiday_labels,
+            "holiday_counts": holiday_counts,
+            "holiday_status": status,
+            "holiday_students": [student for student in holiday_students if student_matches(student, q)],
+            "holiday_q": q,
             "display_name": payment_board.display_name,
             "contacts_text": payment_board.contacts_text,
         })
@@ -76,7 +95,11 @@ def payments_board_page(
     board = payment_board.month_board(db, period, now)
     status = status if status in payment_board.FILTER_LABELS else ""
     q = q.strip()
-    rows = payment_board.filter_rows(board.rows, status=status, q=q)
+    separate_students = {"no_window": board.no_window, "left": board.left}
+    student_rows = None
+    if status in separate_students:
+        student_rows = [student for student in separate_students[status] if student_matches(student, q)]
+    rows = payment_board.filter_rows(board.rows, status=status, q=q) if student_rows is None else []
     summary = payment_board.months_summary(db, now)
     current = payment_board.parse_month("", now)
     return templates.TemplateResponse(request, "superadmin_payments.html", {
@@ -86,6 +109,12 @@ def payments_board_page(
         "holiday": None,
         "board": board,
         "rows": rows,
+        "student_rows": student_rows,
+        "filter_counts": {
+            **board.counts, "": len(board.rows), "paid": board.paid_count,
+            "unpaid": board.unpaid_count, "no_payment": board.no_payment_count,
+            "no_window": len(board.no_window), "left": len(board.left),
+        },
         "filters": {"status": status, "q": q},
         "filter_labels": payment_board.FILTER_LABELS,
         "summary": summary,
