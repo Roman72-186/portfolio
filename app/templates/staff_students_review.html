@@ -11,7 +11,7 @@ tests/test_reuse_ratchet.py.
 #}
 {% block title %}Проверка по ученику{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=review-demo-61">
 {% endblock %}
 {% block content %}
 <div class="prg-page">
@@ -20,12 +20,13 @@ tests/test_reuse_ratchet.py.
             <h1>Проверка по ученику</h1>
             <p>Откройте ученика — все его сдачи на проверку в одном месте.</p>
             {% if is_filtered %}<p>Найдено {{ rows|length }} из {{ total }}</p>{% endif %}
+            {% if can_demo_review %}
+            <div class="prg-review-demo-action">
+                <a class="btn-blue" href="/cabinet/staff/students-review/queue?review_demo=1">Новая проверка · демо</a>
+            </div>
+            {% endif %}
         </div>
     </div>
-
-    {% if can_demo_review %}
-    <a class="btn-outline" href="/cabinet/staff/students-review/queue?review_demo=1">Новая проверка · демо</a>
-    {% endif %}
 
     {#
     Поиск и фильтры (владелец 28.09.2026) — GET-форма на prg-form/prg-field.
