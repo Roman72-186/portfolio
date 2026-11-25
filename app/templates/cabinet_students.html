@@ -2,10 +2,11 @@
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=15">
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=23">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=26">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
+{% set compact_curator_filters = user.role_rank == 2 and not is_holiday_view and not is_archive_view %}
 <script src="/static/js/rich-text-field.js?v=4"></script>
 <script>const CSRF_TOKEN = "{{ csrf_token(request) }}";
 // Тарифы для выбора в карточке ученика: только действующая линейка
@@ -50,9 +51,9 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         </div>
         {% endif %}
         {% if mock_status_available and not is_archive_view %}
-        <details class="mock-status-panel">
+        <details class="mock-status-panel{% if compact_curator_filters %} mock-status-panel--compact{% endif %}">
             <summary>
-                <span>Пробники: статус сдачи</span>
+                <span>{{ "Пробники" if compact_curator_filters else "Пробники: статус сдачи" }}</span>
                 <span class="mock-status-counts">
                     <span class="mock-status-count mock-status-count--ok">Сдали {{ submitted_students|length }}</span>
                     <span class="mock-status-count mock-status-count--bad">Не сдали {{ not_submitted_students|length }}</span>
@@ -114,7 +115,17 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             </details>
         </div>
         {% endif %}
-        {% if show_tariff_pills %}
+        {% if compact_curator_filters and show_tariff_pills %}
+        <div class="sidebar-filters">
+            <select class="sidebar-select" id="filter-tariff" aria-label="Фильтр по тарифу" onchange="filterSidebar()">
+                <option value="">Все тарифы</option>
+                {% for tariff_name in tariffs %}
+                <option value="{{ tariff_name }}">{{ tariff_name|tariff_label }}</option>
+                {% endfor %}
+                <option value="__newcomer__">Новенький</option>
+            </select>
+        </div>
+        {% elif show_tariff_pills %}
         <div class="tariff-pills">
             <button class="tariff-pill active" data-tariff="" onclick="selectTariff(this)">Все</button>
             {% for tariff_name in tariffs %}
@@ -123,6 +134,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             <button class="tariff-pill" data-tariff="__newcomer__" onclick="selectTariff(this)">Новенький</button>
         </div>
         {% endif %}
+        {% if not compact_curator_filters %}
         <div class="sidebar-filters">
             {% if not is_archive_view %}
             <select class="sidebar-select" id="filter-unreviewed" aria-label="Фильтр по проверке" onchange="filterSidebar()">
@@ -148,6 +160,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             </select>
             {% endif %}
         </div>
+        {% endif %}
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
             {% include "partials/student_row.html" %}
@@ -282,5 +295,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=45"></script>
+<script src="/static/js/cabinet_students.js?v=54"></script>
 {% endblock %}

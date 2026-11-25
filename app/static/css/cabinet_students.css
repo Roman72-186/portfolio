@@ -522,6 +522,9 @@
 .mock-status-count { font-size: 11px; font-weight: 700; border-radius: var(--r-md); padding: 2px 8px; }
 .mock-status-count--ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: color-mix(in srgb, var(--success) 82%, var(--text)); }
 .mock-status-count--bad { background: color-mix(in srgb, var(--error) 12%, transparent); color: color-mix(in srgb, var(--error) 82%, var(--text)); }
+.mock-status-panel--compact summary { min-height: 44px; box-sizing: border-box; gap: 4px; }
+.mock-status-panel--compact summary .mock-status-counts { flex-wrap: nowrap; gap: 4px; }
+.mock-status-panel--compact .mock-status-count { white-space: nowrap; padding-inline: 5px; }
 .mock-status-body { padding: 0 10px 10px; border-top: 1px solid var(--line); }
 .mock-status-cols { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
 .mock-status-col-title {

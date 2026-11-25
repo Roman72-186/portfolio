@@ -1056,6 +1056,8 @@ function selectTariff(btn) {
 
 function filterSidebar() {
     var q = normalizeStudentSearch(document.getElementById('student-search').value);
+    var tariffSelect = document.getElementById('filter-tariff');
+    var tariff = tariffSelect ? tariffSelect.value : _activeTariff;
     var curator = (document.getElementById('filter-curator') || {}).value || '';
     var year = (document.getElementById('filter-year') || {}).value || '';
     var onlyUnreviewed = !!(document.getElementById('filter-unreviewed') || {}).value;
@@ -1075,7 +1077,7 @@ function filterSidebar() {
             : queryTokens.every(function(token) {
                 return searchable.includes(token);
             });
-        var matchT = !_activeTariff || row.dataset.tariff === _activeTariff;
+        var matchT = !tariff || row.dataset.tariff === tariff;
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;
         var matchR = !onlyUnreviewed || +(row.dataset.unreviewed || 0) > 0;

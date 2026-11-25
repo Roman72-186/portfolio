@@ -5,7 +5,6 @@
 .task-feedback > .card + .card {
     margin-block-start: var(--s-4);
 }
-.task-feedback .review-demo-note,
 .task-feedback > .card > .review-help-label {
     margin-block-end: var(--s-3);
 }
