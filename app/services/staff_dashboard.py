@@ -26,7 +26,7 @@ from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.meeting_joins import (
     ABSENT_STAFF, ATTENDED_PRESSED, ATTENDED_STAFF, EVENT_MEETING_JOIN, attendance_by_block,
 )
-from app.services.point_a import student_point_a_level
+from app.services.point_a import student_point_a_levels
 from app.services.presence import last_visit_seconds
 from app.services.report_scope import current_report_program, reportable_student_ids, reportable_students_q
 from app.services.submission_edit import upload_deadline
@@ -898,7 +898,7 @@ def get_student_activity_overview(
         groups = sorted({row["tariff"] for row in overview}, key=lambda t: (t == "Без трека", t))
     else:
         # Уровень точки А — фильтр «Уровень» (1 / 2 / ещё не определён).
-        levels = {student.id: student_point_a_level(db, student) for student in students}
+        levels = student_point_a_levels(db, students)
         for row in overview:
             row["level"] = levels.get(row["id"])
         # Фильтр «Тариф» — в порядке службы заботы (`_TARIFF_ORDER`).

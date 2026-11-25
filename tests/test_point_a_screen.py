@@ -21,7 +21,7 @@ from app.models.intake_link import IntakeLink
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work
-from app.services.point_a import student_point_a
+from app.services.point_a import student_point_a, student_point_a_level, student_point_a_levels
 
 LIST_URL = "/cabinet/staff/point-a"
 DETAIL_URL = "/cabinet/staff/point-a/{}"
@@ -63,6 +63,27 @@ def _after_work(db, user_id):
     db.add(work)
     db.commit()
     return work
+
+
+def test_batch_point_a_levels_match_single_student_calculation(db, admin, user_factory):
+    students = [user_factory(vk_id=881_001 + i) for i in range(8)]
+    unscored, assigned, before_only, before, after, exam, intermediate, incomplete = students
+    assigned.point_a_assigned_level = 1
+    before_only.point_a_before_only = True
+    before_only.portfolio_after_score = 90
+    before.portfolio_before_score = 66
+    after.portfolio_after_score = 0
+    db.commit()
+    _before_work(db, before.id)
+    _after_work(db, after.id)
+    _before_work(db, incomplete.id)
+    for student in (exam, intermediate, incomplete):
+        _exam_work(db, user_id=student.id, admin_id=admin.id, score=80,
+                   is_final=student is not intermediate)
+
+    expected = dict(zip((student.id for student in students), (None, 1, None, 2, 1, 2, None, None)))
+    assert {student.id: student_point_a_level(db, student) for student in students} == expected
+    assert student_point_a_levels(db, students) == expected
 
 
 def _exam_work(

@@ -336,6 +336,41 @@ def student_point_a_level(db: DBSession, student: User) -> int | None:
     return student_point_a(db, student, with_images=False).level
 
 
+def student_point_a_levels(db: DBSession, students: list[User]) -> dict[int, int | None]:
+    """Определить уровни для списка учеников, отсеяв тех, у кого ещё нет оценок."""
+    levels = {student.id: student.point_a_assigned_level for student in students}
+    without_portfolio_scores = [
+        student.id for student in students
+        if levels[student.id] is None and not student.point_a_before_only
+        and student.portfolio_before_score is None and student.portfolio_after_score is None
+    ]
+    scored_final_ids = set()
+    if without_portfolio_scores:
+        scored_final_ids = {
+            user_id for (user_id,) in db.query(Work.user_id).filter(
+                Work.user_id.in_(without_portfolio_scores),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.is_final.is_(True),
+                Work.score.isnot(None),
+            ).distinct()
+        }
+
+    for student in students:
+        if levels[student.id] is not None:
+            continue
+        # Сданная работа с баллом может относиться к старому циклу.
+        # Выбор финала и проверку полноты плашек делает обычный расчёт.
+        has_possible_score = student.portfolio_before_score is not None or (
+            not student.point_a_before_only and (
+                student.portfolio_after_score is not None or student.id in scored_final_ids
+            )
+        )
+        if has_possible_score:
+            levels[student.id] = student_point_a_level(db, student)
+    return levels
+
+
 def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | None:
     """Уведомление об уровне точки А — один раз, в момент, когда разобрана
     последняя плашка.
