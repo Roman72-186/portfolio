@@ -1,6 +1,8 @@
 """Новая проверка только для ГП, старая форма доступна кураторам."""
 import pytest
 
+from app.models.learning_topic import LearningTopic
+from app.models.task_block import TaskBlockSubmissionImage
 from app.models.task_block_feedback import TaskBlockFeedbackMessage
 from tests.test_feedback_rating import _setup_block, _login, _png, _send, _quiet_side_effects
 
@@ -40,15 +42,26 @@ def test_curator_keeps_old_form_and_send(db, user_factory, session_factory, clie
 
 
 def test_head_can_test_queue_and_editor(db, user_factory, session_factory, client):
-    curator, _, _, submission = _setup_block(db, user_factory, base=998_301)
+    curator, _, task, submission = _setup_block(db, user_factory, base=998_301)
+    task.subject = "Рисунок"
+    db.get(LearningTopic, task.topic_id).is_published = True
     chief = user_factory(vk_id=998_311, role_name="админ")
+    photo_url = "https://s3.test/student-drawing.jpg"
+    db.add(TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url=photo_url))
+    db.commit()
     _login(client, session_factory, chief)
-    queue = client.get("/cabinet/staff/students-review/queue", params={"review_curator": curator.id})
+    queue = client.get("/cabinet/staff/students-review/queue", params={
+        "review_curator": curator.id, "cycle_id": task.topic_id, "status": "all",
+    })
     assert queue.status_code == 200
     assert "Проверка работ · демо" in queue.text
+    assert '<ul class="review-student-list">' in queue.text
+    assert photo_url not in queue.text
     base = f"/cabinet/staff/task-block-submissions/{submission.id}"
+    assert base + "/feedback?" in queue.text
     page = client.get(base + "/feedback?review_demo=1")
     assert page.status_code == 200
+    assert photo_url in page.text
     assert "Привязать замечание" not in page.text
     assert all(f'id="review-{field}"' not in page.text for field in ("section", "work", "image"))
     assert "data-review-draft-url=" in page.text
@@ -141,3 +154,59 @@ def test_superadmin_viewing_head_can_open_only_liza_demo(
     assert client.get(url + "/feedback?review_demo=1").status_code == expected
     assert client.put(url + "/draft", json={"text": "Тест", "cursor": 0}).status_code == expected
     assert client.post(url + "/send-feedback?preview=true").status_code == expected
+
+
+@pytest.mark.parametrize("view_as_alena", [False, True])
+def test_alena_demo_is_limited_to_romans_assigned_submission(
+    db, user_factory, session_factory, client, monkeypatch, view_as_alena,
+):
+    alena, roman, _, submission = _setup_block(db, user_factory, base=998_631)
+    other_curator, other_student, _, other_submission = _setup_block(db, user_factory, base=998_641)
+    other_student.curator_id = alena.id
+    db.commit()
+    prefix = "app.services.curator_review_demo."
+    monkeypatch.setattr(prefix + "ALENA_CURATOR_USER_ID", alena.id)
+    monkeypatch.setattr(prefix + "ROMAN_DEMO_STUDENT_ID", roman.id)
+    monkeypatch.setattr(prefix + "ROMAN_DRAWING_CONTROL_SUBMISSION_ID", submission.id)
+
+    if view_as_alena:
+        admin = user_factory(vk_id=998_651, role_name="суперадмин")
+        monkeypatch.setattr("app.config.settings.view_origin", str(client.base_url))
+        session = session_factory(alena)
+        session.impersonated_by_id = admin.id
+        db.commit()
+        client.cookies.set("session_id", session.id)
+    else:
+        _login(client, session_factory, alena)
+
+    base = f"/cabinet/staff/task-block-submissions/{submission.id}"
+    for suffix in ("", "?review_demo=1"):
+        page = client.get(base + "/feedback" + suffix)
+        assert page.status_code == 200
+        assert "data-review-draft-url=" in page.text
+        assert "← Очередь проверки" not in page.text
+    assert "Новая проверка · демо" not in client.get("/cabinet/staff/students-review").text
+    queue = client.get("/cabinet/staff/students-review/queue?review_demo=1", follow_redirects=False)
+    assert queue.status_code in (302, 403)
+
+    draft = {"text": "Замечание по пристройке", "cursor": 0}
+    assert client.put(base + "/draft", json=draft).status_code == 200
+    preview = client.post(base + "/send-feedback?preview=true")
+    assert preview.status_code == 200
+    assert draft["text"] in preview.text
+    assert db.query(TaskBlockFeedbackMessage).one().is_draft
+    # Без вложения форма отвечает 422 только после проверки демо-доступа.
+    assert client.post(base + "/messages?review_demo=true", data={"demo_cursor": 0}).status_code == 422
+
+    other_base = f"/cabinet/staff/task-block-submissions/{other_submission.id}"
+    other_page = client.get(other_base + "/feedback")
+    assert other_page.status_code == 200
+    assert "data-review-draft-url=" not in other_page.text
+    assert client.get(other_base + "/feedback?review_demo=1").status_code == 403
+    assert client.put(other_base + "/draft", json=draft).status_code == 403
+    assert client.post(other_base + "/send-feedback?preview=true").status_code == 403
+
+    roman.curator_id = other_curator.id
+    db.commit()
+    assert client.get(base + "/feedback?review_demo=1").status_code == 403
+    assert client.put(base + "/draft", json=draft).status_code == 403

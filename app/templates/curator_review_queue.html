@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Проверка работ{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/curator_review.css?v=2">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=student-list-1">
 {% endblock %}
 {% block content %}
 {% include "_curator_nav.html" %}
@@ -37,12 +37,12 @@
         <button class="btn-blue" type="submit">Показать</button>
     </form>
     <h2 class="section-label">Выберите ученика для проверки</h2>
-    <div class="review-student-grid">
+    {% if cards %}
+    <ul class="review-student-list">
     {% for card in cards %}
         {% set work = card.works[0] %}
-        <article class="card review-student-card">
-            <a href="{{ work.url }}">
-                {% if work.images %}<img src="{{ work.images[0] }}" loading="lazy" alt="Работа ученика">{% else %}<span class="review-no-photo">Без фото</span>{% endif %}
+        <li class="card review-student-card">
+            <a class="review-student-link" href="{{ work.url }}">
                 <strong>{{ card.student.last_name or '' }} {{ card.student.first_name or card.student.name }}</strong>
             </a>
             {% if card.works|length > 1 %}
@@ -50,8 +50,11 @@
                 <ul>{% for item in card.works %}<li><a href="{{ item.url }}">{{ item.block_title }}</a></li>{% endfor %}</ul>
             </details>
             {% endif %}
-        </article>
-    {% else %}<p class="empty-state">За выбранную неделю работ в этом списке пока нет.</p>{% endfor %}
-    </div>
+        </li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-state">За выбранную неделю работ в этом списке пока нет.</p>
+    {% endif %}
 </main>
 {% endblock %}

@@ -1,13 +1,18 @@
-"""Доступ руководителя к новой проверке в режиме демо."""
+"""Доступ к новой проверке в режиме демо."""
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
+from app.models.task_block import TaskBlockSubmission
 from app.models.user import User
 
 
 # Учётная запись Лизы с ролью ГП, а не её ученический аккаунт.
 LIZA_HEAD_USER_ID = 10
+# Персональная проверка сданной контрольной по рисунку для Алёны и Романа.
+ALENA_CURATOR_USER_ID = 169
+ROMAN_DEMO_STUDENT_ID = 347
+ROMAN_DRAWING_CONTROL_SUBMISSION_ID = 4306
 
 
 def can_preview_review(db: Session, user: dict) -> bool:
@@ -27,6 +32,35 @@ def can_preview_review(db: Session, user: dict) -> bool:
         original.role.rank == 5 and original.role.name == "суперадмин"
         and is_head and user.get("user_id") == LIZA_HEAD_USER_ID
     )
+
+
+def has_personal_demo_review(db: Session, user: dict, submission_id: int) -> bool:
+    if (
+        submission_id != ROMAN_DRAWING_CONTROL_SUBMISSION_ID
+        or user.get("user_id") != ALENA_CURATOR_USER_ID
+        or user.get("role_name") != "куратор"
+    ):
+        return False
+    original_id = user.get("impersonated_by_id")
+    if original_id:
+        original = db.get(User, original_id)
+        if not (
+            original and original.is_active and not original.deleted_at
+            and original.role and original.role.rank == 5 and original.role.name == "суперадмин"
+        ):
+            return False
+    submission = db.get(TaskBlockSubmission, submission_id)
+    if submission is None or submission.user_id != ROMAN_DEMO_STUDENT_ID:
+        return False
+    student = db.get(User, submission.user_id)
+    return bool(
+        student and student.is_active and not student.deleted_at and not student.archived_at
+        and student.curator_id == user["user_id"]
+    )
+
+
+def can_preview_submission_review(db: Session, user: dict, submission_id: int) -> bool:
+    return can_preview_review(db, user) or has_personal_demo_review(db, user, submission_id)
 
 
 def demo_review_url(url: str, curator_id: int) -> str:

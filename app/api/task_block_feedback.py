@@ -232,11 +232,17 @@ def _render(
         can_preview_review,
         can_use_demo_recording,
         demo_review_url,
+        has_personal_demo_review,
     )
 
-    review_demo = viewer_role != "student" and request.query_params.get("review_demo") == "1"
-    if review_demo and not can_preview_review(db, user):
+    personal_demo = viewer_role != "student" and has_personal_demo_review(db, user, submission.id)
+    review_demo = personal_demo or (
+        viewer_role != "student" and request.query_params.get("review_demo") == "1"
+    )
+    queue_access = review_demo and can_preview_review(db, user)
+    if review_demo and not (personal_demo or queue_access):
         raise HTTPException(403, "Демо новой проверки доступно руководителю.")
+    demo_has_queue = queue_access and can(user, "students_review", "view")
     selected_curator = request.query_params.get("review_curator") if review_demo else None
     demo_recording = review_demo and can_use_demo_recording(user, selected_curator)
     block, task = _context(db, submission)
@@ -267,7 +273,7 @@ def _render(
             row for row in submission_review_queue(db, student_id=submission.user_id, limit=12)
             if row["submission_id"] != submission.id and row["submitted_at"] < submission.submitted_at
         ][:4] if submission.submitted_at else []
-        if review_demo and can(user, "students_review", "view"):
+        if demo_has_queue:
             from app.services.curator_review_queue import review_neighbors
 
             student_curator = db.get(User, submission.user_id).curator_id
@@ -285,6 +291,7 @@ def _render(
         "user": user,
         "viewer_role": viewer_role,
         "review_demo": review_demo,
+        "demo_has_queue": demo_has_queue,
         "demo_recording": demo_recording,
         "demo_curator": selected_curator,
         "demo_can_switch_to_head": review_demo and not demo_recording and can_use_demo_recording(user, None),
@@ -552,9 +559,9 @@ async def staff_message(
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
     if review_demo:
-        from app.services.curator_review_demo import can_preview_review, can_use_demo_recording
+        from app.services.curator_review_demo import can_preview_submission_review, can_use_demo_recording
 
-        if not can_preview_review(db, user) or not can(user, "students_review"):
+        if not can_preview_submission_review(db, user, submission.id) or not can(user, "students_review"):
             return _error(403, "Нет доступа к демо проверки.")
         if ((audio and audio.filename) or video_note) and not can_use_demo_recording(user, review_curator):
             return _error(403, "Голосовые и кружки доступны главному преподавателю.")
@@ -678,9 +685,9 @@ def save_feedback_draft(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     """Сохранить текстовое замечание. Ученику оно откроется по «Отправить ОС»."""
-    from app.services.curator_review_demo import can_preview_review
+    from app.services.curator_review_demo import can_preview_submission_review
 
-    if not can_preview_review(db, user):
+    if not can_preview_submission_review(db, user, submission_id):
         return _error(403, "Демо новой проверки доступно руководителю.")
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
@@ -798,9 +805,9 @@ def send_feedback(
     snapshot: str | None = None,
 ):
     """Предпросмотр и отправка всех черновиков выбранного диалога."""
-    from app.services.curator_review_demo import can_preview_review
+    from app.services.curator_review_demo import can_preview_submission_review
 
-    if (preview or snapshot is not None) and not can_preview_review(db, user):
+    if (preview or snapshot is not None) and not can_preview_submission_review(db, user, submission_id):
         return _error(403, "Демо новой проверки доступно руководителю.")
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
