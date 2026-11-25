@@ -34,7 +34,9 @@ from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.user import User
 from app.services.notify import notify
-from app.services.point_a import maybe_notify_point_a_level, point_a_rows, student_point_a
+from app.services.point_a import (
+    maybe_notify_point_a_level, point_a_rows, student_point_a, uses_before_only_point_a,
+)
 from app.services.review_aggregate import _accessible_students
 from app.tmpl import templates
 
@@ -140,6 +142,10 @@ def score_portfolio_after(
     """
     student = _student_or_404(db, student_id)
 
+    if uses_before_only_point_a(db, student):
+        raise HTTPException(
+            status_code=409, detail="Для точки А оценивается только портфолио «До».",
+        )
     student.portfolio_after_score = payload.score
     student.portfolio_after_scored_at = datetime.now(timezone.utc)
     student.portfolio_after_scored_by_id = user["user_id"]
@@ -163,10 +169,8 @@ def point_a_renotify(
 ):
     """Сбросить `point_a_notified_at` и отправить уведомление заново.
 
-    Для случая «поставили не тот балл, средний счёт сменился, ученик уже
-    получил старое голосовое» (владелец 17.09.2026). Переиспользует
-    `maybe_notify_point_a_level` — сброс флага делает функцию тем же
-    путём, что и самое первое уведомление, второй копии логики нет.
+    Повторно отправляет ранее назначенный уровень. Сброс даты уведомления
+    не пересчитывает уровень по новым оценкам.
     """
     student = _student_or_404(db, student_id)
     student.point_a_notified_at = None

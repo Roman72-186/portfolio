@@ -19,9 +19,12 @@ from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.intake_link import IntakeLink
 from app.models.tag import Tag, UserTag
+from app.models.task_block import BLOCK_PHOTO_UPLOAD, TaskBlock, TaskBlockSubmission, TaskBlockSubmissionImage
 from app.models.user import User
 from app.models.work import Work
 from app.services.point_a import student_point_a, student_point_a_level, student_point_a_levels
+from app.services.portfolio import after_gallery_groups
+from app.services.tracker import create_task
 
 LIST_URL = "/cabinet/staff/point-a"
 DETAIL_URL = "/cabinet/staff/point-a/{}"
@@ -417,6 +420,47 @@ def test_done_students_sink_to_the_bottom(db, user_factory):
 
 
 # ── балл за портфолио «После» ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("track_slug", ["testpodgotovki", "testpodgotovki-29"])
+def test_trial_point_a_stays_at_before_score_after_a_new_submission(
+    client, db, session_factory, admin, student, rendered, track_slug,
+):
+    student.program = PROGRAM_HOLIDAY
+    student.portfolio_before_score = 55
+    tag = Tag(name="Попробуй подготовку")
+    db.add(tag)
+    db.flush()
+    db.add_all([
+        IntakeLink(slug=track_slug, title=tag.name, program=PROGRAM_HOLIDAY, tag_id=tag.id),
+        UserTag(user_id=student.id, tag_id=tag.id),
+    ])
+    _before_work(db, student.id)
+    task = create_task(db, title="Текущая работа", user_id=admin.id, kind="material", assign_to_all=True)
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_PHOTO_UPLOAD, sort_order=0)
+    db.add(block)
+    db.flush()
+    submission = TaskBlockSubmission(
+        block_id=block.id, user_id=student.id, submitted_at=datetime.now(timezone.utc), score=90,
+    )
+    db.add(submission)
+    db.flush()
+    photo_url = "https://s3.example.com/submitted.jpg"
+    db.add(TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url=photo_url))
+    db.commit()
+
+    _as(client, session_factory, admin)
+    assert client.get(DETAIL_URL.format(student.id)).status_code == 200
+    point_a = rendered("staff_point_a_detail.html")["point_a"]
+    assert point_a.is_done and point_a.average == 55
+    assert [plate.key for plate in point_a.plates] == ["portfolio_before"]
+    assert student_point_a_levels(db, [student]) == {student.id: 1}
+    assert client.post(AFTER_SCORE_URL.format(student.id), json={"score": 88}).status_code == 409
+    db.refresh(student)
+    assert student.portfolio_after_score is None
+    assert photo_url in {
+        work.s3_url for group in after_gallery_groups(db, student.id) for work in group["works"]
+    }
 
 
 def test_head_teacher_scores_the_after_set(client, db, session_factory, admin, student):

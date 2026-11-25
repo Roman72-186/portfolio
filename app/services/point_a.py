@@ -27,11 +27,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.constants import PROGRAM_HOLIDAY
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.notification import Notification
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, Work
+from app.services.intake_link import TRIAL_STARTS, tracks_by_user
 from app.services.point_a_level_audio import get_level_audio
 from app.services.portfolio import after_gallery_groups
 
@@ -249,7 +251,26 @@ def _average(plates: list[PointAPlate]) -> int | None:
     return round(sum(scored) / len(scored))
 
 
-def student_point_a(db: DBSession, student: User, *, with_images: bool = True) -> PointA:
+def _before_only_student_ids(db: DBSession, students: list[User]) -> set[int]:
+    """Для «Попробуй подготовку» точку А определяет входное портфолио."""
+    explicit = {student.id for student in students if student.point_a_before_only}
+    tracks = tracks_by_user(db, [
+        student.id for student in students
+        if student.id not in explicit and student.program == PROGRAM_HOLIDAY
+    ])
+    return explicit | {
+        user_id for user_id, links in tracks.items()
+        if any(link.slug in TRIAL_STARTS for link in links)
+    }
+
+
+def uses_before_only_point_a(db: DBSession, student: User) -> bool:
+    return student.id in _before_only_student_ids(db, [student])
+
+
+def student_point_a(
+    db: DBSession, student: User, *, with_images: bool = True, before_only: bool | None = None,
+) -> PointA:
     """Все плашки одного ученика, средний балл и признак «разобран».
 
     Плашка появляется, только когда у ученика есть соответствующие работы:
@@ -267,7 +288,9 @@ def student_point_a(db: DBSession, student: User, *, with_images: bool = True) -
 
     # New admissions are assessed from the initial portfolio only. Subsequent
     # homework/exams must not change the level or reopen the initial review.
-    if student.point_a_before_only:
+    if before_only is None:
+        before_only = uses_before_only_point_a(db, student)
+    if before_only:
         images = _before_images(db, student.id, limit=_IMAGE_LIMIT if with_images else 1)
         if images:
             plates.append(PointAPlate(
@@ -339,9 +362,10 @@ def student_point_a_level(db: DBSession, student: User) -> int | None:
 def student_point_a_levels(db: DBSession, students: list[User]) -> dict[int, int | None]:
     """Определить уровни для списка учеников, отсеяв тех, у кого ещё нет оценок."""
     levels = {student.id: student.point_a_assigned_level for student in students}
+    before_only_ids = _before_only_student_ids(db, students)
     without_portfolio_scores = [
         student.id for student in students
-        if levels[student.id] is None and not student.point_a_before_only
+        if levels[student.id] is None and student.id not in before_only_ids
         and student.portfolio_before_score is None and student.portfolio_after_score is None
     ]
     scored_final_ids = set()
@@ -362,12 +386,14 @@ def student_point_a_levels(db: DBSession, students: list[User]) -> dict[int, int
         # Сданная работа с баллом может относиться к старому циклу.
         # Выбор финала и проверку полноты плашек делает обычный расчёт.
         has_possible_score = student.portfolio_before_score is not None or (
-            not student.point_a_before_only and (
+            student.id not in before_only_ids and (
                 student.portfolio_after_score is not None or student.id in scored_final_ids
             )
         )
         if has_possible_score:
-            levels[student.id] = student_point_a_level(db, student)
+            levels[student.id] = student_point_a(
+                db, student, with_images=False, before_only=student.id in before_only_ids,
+            ).level
     return levels
 
 
@@ -444,8 +470,11 @@ def point_a_rows(
     не грузятся вовсе (`with_images=False`): на списке их никто не показывает,
     а собирать их дороже всего остального.
     """
+    before_only_ids = _before_only_student_ids(db, students)
     rows = [
-        {"point_a": student_point_a(db, student, with_images=False)}
+        {"point_a": student_point_a(
+            db, student, with_images=False, before_only=student.id in before_only_ids,
+        )}
         for student in students
     ]
     rows.sort(key=lambda row: (
