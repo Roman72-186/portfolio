@@ -567,9 +567,11 @@ def test_named_moderator_has_everything_about_payments(db, client, session_facto
     assert 'id="payImportUsernames"' in import_page.text
     assert "Список от школы в Excel" not in import_page.text
     desktop_nav = import_page.text.split('class="desk-nav"', 1)[1].split("</nav>", 1)[0]
-    assert desktop_nav.index('href="/cabinet/flows"') < desktop_nav.index('href="/cabinet/superadmin/payment-import"')
+    assert 'href="/cabinet/superadmin/payments"' in desktop_nav
+    assert 'href="/cabinet/superadmin/payment-import"' not in desktop_nav
     mobile_nav = import_page.text.split('id="staffBurgerList"', 1)[1].split("</nav>", 1)[0]
-    assert mobile_nav.index('data-nav-key="flows"') < mobile_nav.index('data-nav-key="payment_import"')
+    assert 'data-nav-key="payments"' in mobile_nav
+    assert 'data-nav-key="payment_import"' not in mobile_nav
     manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
     assert manage["payment"] is not None and manage["payment_can_edit"] is True
     saved = client.post(f"/cabinet/superadmin/users/{student.id}/payment", headers=json_headers, data={

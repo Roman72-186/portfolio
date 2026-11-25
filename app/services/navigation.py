@@ -479,16 +479,6 @@ FLOWS_NAV_ITEM = StaffNavItem(
     icon="program",
 )
 
-PAYMENT_IMPORT_NAV_ITEM = StaffNavItem(
-    key="payment_import",
-    href="/cabinet/superadmin/payment-import",
-    sidebar_label="Оплата списком",
-    pill_label="Оплата списком",
-    aria_label="Оплата списком",
-    tooltip="Настройки оплаты для нескольких учеников",
-    icon="tracker",
-)
-
 
 def staff_nav_items(
     role_rank: int,
@@ -509,7 +499,7 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         items = tuple(by_key[key] for key in keys)
-        return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM, PAYMENT_IMPORT_NAV_ITEM) if payments else items
+        return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные
     # разделы ГП положены по роли, так что это касается только сверх-ролевых.
