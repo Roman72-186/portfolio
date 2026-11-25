@@ -14,7 +14,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.activity_event import StudentActivityEvent
@@ -1769,7 +1769,7 @@ def get_timed_stats(
     задания. `levels` — уровень точки А по ученикам, если вызывающий его
     уже посчитал (страница статистики берёт из «Учеников поимённо»).
     """
-    from app.models.task_block import BLOCK_TIMED, TaskBlock
+    from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockSubmission
     from app.services.task_blocks import (
         completed_after_deadline, get_submit_deadlines, get_task_submit_deadlines,
         timed_overrun, timed_upload_overrun,
@@ -1779,11 +1779,15 @@ def get_timed_stats(
     rows = (
         db.query(
             TaskBlockState, TaskBlock, TrackerTask, User.name, User.tariff,
-            User.first_name, User.last_name, User.tg_username,
+            User.first_name, User.last_name, User.tg_username, TaskBlockSubmission.score,
         )
         .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .join(User, User.id == TaskBlockState.user_id)
+        .outerjoin(TaskBlockSubmission, and_(
+            TaskBlockSubmission.block_id == TaskBlockState.block_id,
+            TaskBlockSubmission.user_id == TaskBlockState.user_id,
+        ))
         .filter(
             TaskBlock.block_type == BLOCK_TIMED,
             TaskBlockState.user_id.in_(_scope_ids(db, student_id)),
@@ -1813,7 +1817,7 @@ def get_timed_stats(
     by_block: dict[int, dict] = {}
     students: list[dict] = []
     attempts: list[dict] = []
-    for state, block, task, name, tariff, first_name, last_name, tg_username in rows:
+    for state, block, task, name, tariff, first_name, last_name, tg_username, score in rows:
         title = f"{task.title} — {block.title}" if block.title else task.title
         item = by_block.setdefault(block.id, {
             "title": title, "limit": block.time_limit_minutes,
@@ -1830,6 +1834,10 @@ def get_timed_stats(
         if started is not None:
             item["started"] += 1
         overrun = timed_overrun(block, state)
+        timer_measured = (
+            finished is not None and started is not None and work_finished >= started
+            and bool(block.time_limit_minutes)
+        )
         late = completed_after_deadline(
             block, task, state, user_tariff=tariff,
             block_overrides=block_deadlines.get(block.id),
@@ -1846,7 +1854,12 @@ def get_timed_stats(
             # Начал, время вышло, а работы нет — ещё рисует или бросил.
             item["running_over"] += 1
         if finished is not None:
-            status = "late" if late else ("overrun" if overrun else "in_time")
+            if late:
+                status = "late"
+            elif timer_measured:
+                status = "overrun" if overrun else "in_time"
+            else:
+                status = "unknown_timer"
         elif work_finished is not None:
             status = "uploading"
         elif (
@@ -1877,6 +1890,9 @@ def get_timed_stats(
             "upload_overrun": timed_upload_overrun(state),
             "limit": block.time_limit_minutes,
             "status": status,
+            "submitted": finished is not None,
+            "score": float(score) if score is not None else None,
+            "timer_result": ("overrun" if overrun else "in_time") if timer_measured else None,
         })
         if overrun or late or student_id is not None:
             students.append({

@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
 <script src="/static/js/statistics-pagination.js?v=1" defer></script>
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=19">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=21">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -144,6 +144,9 @@
     <div class="ss-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="ss-title">Статистика активности</h1>
+        {% if user.role_name == "модератор" and not can(user, "statistics:bot_links") %}
+        <a href="/cabinet/superadmin/stats/telegram" class="ss-export-btn">Telegram-бот</a>
+        {% endif %}
         <span class="ss-since">Данные о входах, реакциях и правках собираются с 11.07.2026</span>
     </div>
 
@@ -416,7 +419,7 @@
 
     <!-- Контрольные на время: таймер и срок (владелец 30.09.2026) -->
     <details class="ss-acc" data-timed>
-        <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">{{ timed.submitted }} сдано · {{ timed.overrun }} превысили время · {{ timed.late }} после срока</span></summary>
+        <summary><h2 class="ss-acc-title">Контрольные на время</h2><span class="ss-acc-badge">Сдали {{ timed.submitted }} · Сверх лимита времени {{ timed.overrun }} · После срока {{ timed.late }}</span></summary>
         <div class="ss-acc-body">
             {# Фильтры, крупные проценты и список по алфавиту (Александрия
                22.10.2026, этап 4): каждая попытка — `get_timed_stats().attempts`,
@@ -427,31 +430,57 @@
                 <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
                 <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
                 <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
-                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option><option value="in_time">Уложились</option><option value="overrun">Превысили время</option><option value="late">После срока</option><option value="running_over">Время вышло, работы нет</option><option value="uploading">Выполнение завершено, ждём фото</option></select></label>
-                <label for="tm-search">Имя или ник<input type="search" id="tm-search" data-tm-search placeholder="Фамилия или @ник" autocomplete="off"></label>
+                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option></select></label>
+                <label for="tm-search">Поиск ученика<input type="search" id="tm-search" data-tm-search placeholder="Имя, ник или номер" autocomplete="off"></label>
             </div>
             <div class="ss-stats-strip" data-tm-big></div>
             <div class="ss-sub">
-                <h3 class="ss-sub-head">Ученики по алфавиту <span class="ss-sub-count" data-tm-count></span></h3>
+                <h3 class="ss-sub-head">Сравнение таймера по месяцам</h3>
                 <div class="ss-table-wrap">
-                    <table class="ss-table">
-                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th></tr></thead>
-                        <tbody data-tm-rows></tbody>
+                    <table class="ss-table ss-timed-months">
+                        <thead><tr><th>Месяц</th><th>Сдали</th><th>Уложились</th><th>Превысили время</th><th>Нет данных таймера</th></tr></thead>
+                        <tbody data-tm-months></tbody>
                     </table>
                 </div>
+            </div>
+            <div class="ss-filters">
+                <label for="tm-sort">Сортировка<select id="tm-sort"><option value="name">По алфавиту</option><option value="ungraded">Сначала сданные без балла</option></select></label>
+            </div>
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Ученики <span class="ss-sub-count" data-tm-count aria-live="polite"></span></h3>
+                <div class="ss-table-wrap">
+                    <table class="ss-table" data-tm-students>
+                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th><th class="ss-ta-r">Балл</th></tr></thead>
+                    </table>
+                </div>
+                <nav class="ss-timed-pages" aria-label="Страницы учеников" data-tm-pages hidden>
+                    <button type="button" class="btn-outline" data-tm-prev>Назад</button>
+                    <span data-tm-page aria-live="polite"></span>
+                    <button type="button" class="btn-outline" data-tm-next>Далее</button>
+                </nav>
             </div>
             <script>
             (function () {
                 const root = document.querySelector('[data-timed]');
                 if (!root) return;
                 const attempts = {{ timed.attempts | tojson }};
-                const LABELS = { in_time: 'Уложились', overrun: 'Превысили время', late: 'После срока',
-                                 running_over: 'Время вышло, работы нет', running: 'Пишет сейчас', uploading: 'Выполнение завершено, ждём фото' };
+                const LABELS = {
+                    in_time: 'Вовремя', overrun: 'Превысил', unknown_timer: 'Нет данных',
+                    late: 'Опоздал', running_over: 'Нет работы', running: 'Пишет', uploading: 'Ждём фото',
+                };
                 const DANGER = { overrun: true, late: true, running_over: true };
                 const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
                 const search = root.querySelector('[data-tm-search]');
                 const big = root.querySelector('[data-tm-big]');
-                const body = root.querySelector('[data-tm-rows]');
+                const table = root.querySelector('[data-tm-students]');
+                const monthRows = root.querySelector('[data-tm-months]');
+                const sort = root.querySelector('#tm-sort');
+                const pages = root.querySelector('[data-tm-pages]');
+                const previous = root.querySelector('[data-tm-prev]');
+                const next = root.querySelector('[data-tm-next]');
+                const pageLabel = root.querySelector('[data-tm-page]');
+                const pageSize = 10;
+                let page = 1;
                 const count = root.querySelector('[data-tm-count]');
 
                 function addOptions(select, pairs) {
@@ -467,6 +496,7 @@
                     attempts.forEach(function (a) { if (a[key] !== '' && !seen.has(String(a[key]))) seen.set(String(a[key]), a[label || key]); });
                     return Array.from(seen.entries());
                 }
+                addOptions(root.querySelector('#tm-status'), Object.entries(LABELS));
                 addOptions(root.querySelector('#tm-month'), unique('month_id', 'month'));
                 addOptions(root.querySelector('#tm-tariff'), unique('tariff').sort());
                 addOptions(root.querySelector('#tm-subject'), unique('subject').sort());
@@ -503,49 +533,142 @@
                     td.textContent = text;
                     return td;
                 }
+                function renderMonths(shown) {
+                    const months = new Map();
+                    shown.forEach(function (attempt) {
+                        if (!attempt.submitted) return;
+                        if (!months.has(attempt.month_id)) {
+                            months.set(attempt.month_id, { title: attempt.month, total: 0, in_time: 0, overrun: 0 });
+                        }
+                        const month = months.get(attempt.month_id);
+                        month.total += 1;
+                        if (attempt.timer_result) month[attempt.timer_result] += 1;
+                    });
+                    const rows = Array.from(months.entries()).sort(function (a, b) { return (a[0] || Infinity) - (b[0] || Infinity); });
+                    monthRows.replaceChildren(...rows.map(function (entry) {
+                        const month = entry[1];
+                        const measured = month.in_time + month.overrun;
+                        const share = function (value) {
+                            return measured ? value + ' из ' + measured + ' · ' + Math.round(value * 100 / measured) + '%' : '—';
+                        };
+                        const row = document.createElement('tr');
+                        row.append(cell('Месяц', month.title), cell('Сдали', month.total),
+                            cell('Уложились', share(month.in_time)), cell('Превысили время', share(month.overrun)),
+                            cell('Нет данных таймера', month.total - measured));
+                        return row;
+                    }));
+                }
+
                 function render() {
                     const shown = attempts.filter(passes);
                     // Проценты — по сдавшим и тем, у кого время вышло без работы:
                     // «пишет сейчас» ещё не результат.
                     const counted = shown.filter(function (a) { return a.status !== 'running' && a.status !== 'uploading'; });
-                    const by = { in_time: 0, overrun: 0, late: 0, running_over: 0 };
+                    const by = { in_time: 0, overrun: 0, late: 0, running_over: 0, unknown_timer: 0 };
                     counted.forEach(function (a) { by[a.status] += 1; });
                     const pct = function (n) { return counted.length ? Math.round(n * 100 / counted.length) + '%' : '—'; };
                     big.replaceChildren(
                         tile(pct(by.in_time), 'уложились · ' + by.in_time),
                         tile(pct(by.overrun), 'превысили время · ' + by.overrun),
                         tile(pct(by.late), 'после срока · ' + by.late),
-                        tile(pct(by.running_over), 'время вышло, работы нет · ' + by.running_over)
+                        tile(pct(by.running_over), 'время вышло, работы нет · ' + by.running_over),
+                        ...(by.unknown_timer ? [tile(pct(by.unknown_timer), 'нет данных таймера · ' + by.unknown_timer)] : [])
                     );
-                    body.replaceChildren.apply(body, shown.map(function (a) {
-                        const tr = document.createElement('tr');
-                        const who = document.createElement('td');
-                        who.dataset.label = 'Ученик';
-                        const name = document.createElement('span');
-                        name.className = 'ss-bold';
-                        name.textContent = a.name;
-                        const meta = document.createElement('span');
-                        meta.className = 'ss-dim-sm';
-                        meta.textContent = (a.nick || '(нет username)') + ' · ' + a.tariff + (a.level ? ' · уровень ' + a.level : '');
-                        who.append(name, document.createElement('br'), meta);
-                        const status = document.createElement('td');
-                        status.dataset.label = 'Статус';
-                        const badge = document.createElement('span');
-                        badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
-                        badge.textContent = LABELS[a.status] + (a.upload_overrun ? ' · загрузка дольше 5 минут' : '');
-                        status.appendChild(badge);
-                        tr.append(
-                            who,
-                            cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
-                            cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—') + (a.upload_minutes !== null ? ' · фото и загрузка: ' + a.upload_minutes + ' мин' : ''), 'ss-ta-r'),
-                            status
-                        );
-                        return tr;
-                    }));
-                    count.textContent = shown.length;
+                    renderMonths(shown);
+                    const groups = new Map();
+                    shown.forEach(function (work) {
+                        if (!groups.has(work.student_id)) groups.set(work.student_id, []);
+                        groups.get(work.student_id).push(work);
+                    });
+                    const students = Array.from(groups.values());
+                    const awaiting = function (works) {
+                        return works.some(function (work) { return work.submitted && work.score === null; });
+                    };
+                    if (sort.value === 'ungraded') {
+                        students.sort(function (a, b) { return Number(awaiting(b)) - Number(awaiting(a)); });
+                    }
+                    Array.from(table.tBodies).forEach(function (group) { group.remove(); });
+                    const offset = (page - 1) * pageSize;
+                    students.slice(offset, offset + pageSize).forEach(function (works) {
+                        const group = table.createTBody();
+                        const heading = group.insertRow();
+                        heading.className = 'ss-timed-mobile-heading';
+                        const headingCell = heading.insertCell();
+                        headingCell.colSpan = 4;
+                        const toggle = document.createElement('button');
+                        toggle.type = 'button';
+                        toggle.className = 'ss-timed-toggle';
+                        toggle.textContent = works[0].name;
+                        toggle.setAttribute('aria-expanded', 'false');
+                        toggle.addEventListener('click', function () {
+                            const expanded = group.toggleAttribute('data-tm-expanded');
+                            toggle.setAttribute('aria-expanded', String(expanded));
+                        });
+                        headingCell.appendChild(toggle);
+                        const labels = group.insertRow();
+                        labels.className = 'ss-timed-mobile-labels';
+                        ['Контрольная', 'Мин', 'Статус', 'Балл'].forEach(function (label) {
+                            const th = document.createElement('th');
+                            th.textContent = label;
+                            th.scope = 'col';
+                            labels.appendChild(th);
+                        });
+                        works.forEach(function (a, index) {
+                            const tr = group.insertRow();
+                            tr.className = "ss-timed-work";
+                            if (index === 0) {
+                                const who = document.createElement('th');
+                                who.scope = 'rowgroup';
+                                who.rowSpan = works.length;
+                                who.className = 'ss-timed-student';
+                                const name = document.createElement('span');
+                                name.className = 'ss-bold';
+                                name.textContent = a.name;
+                                const meta = document.createElement('span');
+                                meta.className = 'ss-dim-sm';
+                                meta.textContent = [a.nick, a.tariff, a.level ? 'уровень ' + a.level : ''].filter(Boolean).join(' · ');
+                                who.append(name, document.createElement('br'), meta);
+                                tr.appendChild(who);
+                            }
+                            const status = document.createElement('td');
+                            status.dataset.label = 'Статус';
+                            const badge = document.createElement('span');
+                            badge.className = 'act-badge ' + (DANGER[a.status] ? 'ab-danger' : (a.status === 'in_time' ? 'ab-ok' : 'ab-tariff'));
+                            badge.textContent = LABELS[a.status];
+                            if (a.upload_overrun) badge.title = 'Загрузка дольше 5 минут';
+                            status.appendChild(badge);
+                            tr.append(
+                                cell('Контрольная', a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month),
+                                cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—') + (a.upload_minutes !== null ? ' · фото и загрузка: ' + a.upload_minutes + ' мин' : ''), 'ss-ta-r'),
+                                status,
+                                cell('Балл', a.score === null ? (a.submitted ? 'Ждём баллы' : '—') :
+                                    a.score.toLocaleString('ru-RU'), 'ss-ta-r')
+                            );
+                        });
+                    });
+                    const pageCount = Math.ceil(students.length / pageSize);
+                    count.textContent = students.length
+                        ? (offset + 1) + '–' + Math.min(offset + pageSize, students.length) + ' из ' + students.length
+                        : '0';
+                    pages.hidden = pageCount <= 1;
+                    previous.disabled = page === 1;
+                    next.disabled = page >= pageCount;
+                    pageLabel.textContent = page + ' из ' + pageCount;
                 }
-                filters.forEach(function (select) { select.addEventListener('change', render); });
-                search.addEventListener('input', render);
+                function reset() {
+                    page = 1;
+                    render();
+                }
+                filters.concat(sort).forEach(function (select) { select.addEventListener('change', reset); });
+                search.addEventListener('input', reset);
+                previous.addEventListener('click', function () {
+                    page -= 1;
+                    render();
+                });
+                next.addEventListener('click', function () {
+                    page += 1;
+                    render();
+                });
                 render();
             })();
             </script>
@@ -626,7 +749,7 @@
                 <button type="button" class="btn-blue btn-save" data-score-copy-list disabled>Скопировать список</button>
                 <span class="ss-dim-sm" data-score-copy-status role="status" aria-live="polite"></span>
             </div>
-            <p class="ss-dim-sm" data-score-stats role="status" aria-live="polite">Выберите задание.</p>
+            <p class="ss-dim-sm" data-score-stats role="status" aria-live="polite"></p>
             {# Распределение — плитками, а не таблицей: на телефоне таблица страницы
                становится стопкой карточек, и восемь баллов занимали несколько экранов. #}
             <div class="ss-stats-strip" data-score-dist hidden></div>
@@ -1373,7 +1496,7 @@
             stats.textContent = 'Сдали: ' + item.submitted + ' · оценено: ' + total
                 + ' · без балла: ' + item.unscored.length + ' · медиана: ' + num(item.median);
         } else {
-            stats.textContent = 'Выберите задание.';
+            stats.textContent = '';
         }
         applyValue();
     }

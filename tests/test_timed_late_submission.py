@@ -18,6 +18,7 @@ from app.models.task_block import (
     BLOCK_UPLOAD,
     TaskBlock,
     TaskBlockState,
+    TaskBlockSubmission,
     TaskBlockSubmissionImage,
 )
 from app.services import s3 as s3_service
@@ -439,6 +440,30 @@ def test_stats_attempts_have_one_status_each_for_filters(db, user_factory):
     assert by_name["Превысил"]["minutes"] == 90 and by_name["Превысил"]["limit"] == 75
     assert by_name["Уложилась"]["subject"] == "Рисунок"
     assert by_name["Уложилась"]["month"] == "Без месяца"
+
+
+def test_stats_distinguish_timer_results_and_zero_score(db, user_factory):
+    student = user_factory(vk_id=600_150, name="Ученик")
+    task = _task(db, user_factory(vk_id=500_150, name="Преподаватель"))
+    started = datetime(2026, 10, 3, 18, 0)
+    stopped = started + timedelta(minutes=60)
+    uploaded = stopped + timedelta(minutes=3)
+    drawing = _block(db, task, order=1, minutes=60, submit_until=stopped)
+    composition = _block(db, task, order=2, minutes=60)
+    db.add_all([
+        TaskBlockState(block_id=drawing.id, user_id=student.id, started_at=started,
+                       work_finished_at=stopped, completed_at=uploaded),
+        TaskBlockState(block_id=composition.id, user_id=student.id, completed_at=uploaded),
+        TaskBlockSubmission(block_id=drawing.id, user_id=student.id, submitted_at=uploaded, score=0),
+        TaskBlockSubmission(block_id=composition.id, user_id=student.id, submitted_at=uploaded),
+    ])
+    db.commit()
+
+    scored, awaiting = sorted(get_timed_stats(db)["attempts"], key=lambda row: row["score"] is None)
+    assert scored["submitted"] and scored["score"] == 0
+    assert scored["timer_result"] == "in_time" and scored["status"] == "late"
+    assert awaiting["submitted"] and awaiting["score"] is None
+    assert awaiting["timer_result"] is None and awaiting["status"] == "unknown_timer"
 
 
 def test_condition_is_hidden_until_the_start(auth_client, db):
