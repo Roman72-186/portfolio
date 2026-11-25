@@ -457,10 +457,7 @@ GRANTED_ONLY_STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 )
 
 
-# «Оплаты» в меню модератора, которому оплата открыта поимённо
-# (`payments.is_payments_staff`, Александрия 14.10.2026). У ГП и суперадмина
-# экран открывается из карточки «Оплаты» в «Статистике активности» (до
-# 14.10.2026 — вкладкой на «Пользователях»).
+# Общий вход в раздел для сотрудников с доступом к оплатам.
 PAYMENTS_NAV_ITEM = StaffNavItem(
     key="payments",
     href="/cabinet/superadmin/payments",
@@ -480,6 +477,16 @@ FLOWS_NAV_ITEM = StaffNavItem(
     aria_label="Потоки",
     tooltip="Платные ссылки и расписание потоков",
     icon="program",
+)
+
+PAYMENT_IMPORT_NAV_ITEM = StaffNavItem(
+    key="payment_import",
+    href="/cabinet/superadmin/payment-import",
+    sidebar_label="Оплата списком",
+    pill_label="Оплата списком",
+    aria_label="Оплата списком",
+    tooltip="Настройки оплаты для нескольких учеников",
+    icon="tracker",
 )
 
 
@@ -502,7 +509,7 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         items = tuple(by_key[key] for key in keys)
-        return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM) if payments else items
+        return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM, PAYMENT_IMPORT_NAV_ITEM) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные
     # разделы ГП положены по роли, так что это касается только сверх-ролевых.
@@ -511,4 +518,4 @@ def staff_nav_items(
         item for item in STAFF_NAV_ITEMS
         if (item.is_visible_for(role_rank) or item.key in granted) and item.key not in hidden
     )
-    return items + (FLOWS_NAV_ITEM,) if payments else items
+    return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM) if payments else items

@@ -1,9 +1,8 @@
 """Экран «Оплаты»: кто оплатил за месяц, ручная отметка, отмена, возврат.
 
 Расчёт — `services/payment_board.py`, деньги — `services/payments.py`
-(`mark_paid_manually` → `record_paid`, `revert_paid`). Вход на экран — из
-карточки «Оплаты» в «Статистике активности» (владелец 14.10.2026, до этого —
-вкладка «Пользователей»); в `section_access` адреса по-прежнему числятся за
+(`mark_paid_manually` → `record_paid`, `revert_paid`). Вход — из меню
+«Оплаты»; в `section_access` адреса по-прежнему числятся за
 «Людьми», но пускает на них своё правило оплаты (`dependencies.get_current_user`,
 `payments_ok`). Экран и его Excel (статистика оплат,
 `plans/2026-10-13-payment-stats.md`), отметка, отмена и возврат — ГП и
@@ -55,9 +54,15 @@ def payments_board_page(
     status: str = Query(""),
     q: str = Query(""),
     program: str = Query(""),
+    view: str = Query(""),
 ):
     from app.constants import PROGRAM_HOLIDAY
     from app.services.report_scope import parse_report_program, report_program_switch
+
+    if view != "students" and not (month or status or q or program):
+        return templates.TemplateResponse(request, "superadmin_payments.html", {
+            "request": request, "user": user, "payments_home": True,
+        })
 
     # «Годовой курс / Каникулярный курс» (владелец 19.10.2026): каникулярный
     # набор платит за трек — свой список с возвратом (`holiday_board`).

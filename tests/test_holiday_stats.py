@@ -129,6 +129,6 @@ def test_payments_holiday_mode_lists_tracks_and_refund(client, db, user_factory,
 def test_monthly_board_skips_holiday_students(client, db, user_factory, session_factory, admin_user):
     _holiday(db, user_factory, vk_id=320_031, name="Каникулярный Без Окна")
     client = _login(client, session_factory, admin_user)
-    page = client.get("/cabinet/superadmin/payments")
+    page = client.get("/cabinet/superadmin/payments?view=students")
     assert page.status_code == 200
     assert "Каникулярный Без Окна" not in page.text

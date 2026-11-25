@@ -2,20 +2,20 @@
 {% block title %}Оплаты{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=76">
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=14">
 {% endblock %}
 {% block content %}
-{#
-Экран «Оплаты» (план оплаты, шаг 3): кто оплатил за месяц, кто нет.
-Считает `services/payment_board.py`. Своего <style> нет: полоса месяца,
-таблица, метки и форма — классы `program.css`, как у статистики цикла.
-Смотреть и скачивать Excel — `payments_viewer` (суперадмин и ГП). Кнопки —
-у `payments_staff` с действием `people:students`; сервер проверяет то же.
-Статистика оплат — `plans/2026-10-13-payment-stats.md`.
-С 14.10.2026 экран открывается из «Статистики активности» (карточка «Оплаты»),
-а не вкладкой «Пользователей»; фильтр «Оплатили / Не оплатили» и поиск по
-имени, нику и номеру сужают только таблицу — итоги месяца считаются по всем.
-#}
+{% if payments_home %}
+<div class="prg-page">
+    <div class="prg-head"><h1>Оплаты</h1></div>
+    <nav class="prg-actions" aria-label="Разделы оплат">
+        <a class="btn-blue" href="/cabinet/superadmin/payments?view=students">Все ученики</a>
+        {% if payment_import_allowed(user) %}
+        <a class="btn-outline" href="/cabinet/superadmin/payment-import">Оплата списком</a>
+        {% endif %}
+    </nav>
+</div>
+{% else %}
 {% set can_mark = payments_staff(user) %}
 {% if not holiday %}
 {% set filter_qs = ('&status=' ~ (filters.status|urlencode) if filters.status else '') ~ ('&q=' ~ (filters.q|urlencode) if filters.q else '') %}
@@ -24,16 +24,8 @@
 <div class="prg-page">
     <div class="prg-head">
         <div>
-            <a class="back-link" href="/cabinet/superadmin/activity{% if holiday %}?program=holiday{% endif %}#activity-payments">← К статистике</a>
-            <h1>Оплаты</h1>
-        </div>
-        {# «Оплата списком» и отсюда: вкладка живёт в «Людях», а Александрии
-           (поимённый доступ к оплатам, 14.10.2026) раздел «Люди» закрыт —
-           без этой ссылки до загрузки ей не дойти (26.10.2026). #}
-        <div class="prg-actions">
-            {% if can_mark and can(user, "people:students") %}
-            <a class="btn-blue" href="/cabinet/superadmin/payment-import">Оплата списком</a>
-            {% endif %}
+            <a class="back-link" href="/cabinet/superadmin/payments">← Оплаты</a>
+            <h1>Оплаты учеников</h1>
         </div>
     </div>
     {# Годовой курс / Каникулярный курс (владелец 19.10.2026) —
@@ -114,7 +106,6 @@
                         <td>{{ row.when }}{% if row.payment.prodamus_order_id %}<div class="prg-hint">Заказ {{ row.payment.prodamus_order_id }}</div>{% endif %}</td>
                         <td>
                             <span class="prg-badge{% if row.is_paid %} prg-badge--done{% endif %}">{{ row.status }}</span>
-                            {% if row.payment.note %}<div class="prg-hint">{{ row.payment.note }}</div>{% endif %}
                         </td>
                         {% if can_mark %}
                         <td>
@@ -194,7 +185,7 @@
     </section>
 
     <section class="prg-items">
-        <h2>{{ filter_labels[filters.status] if filters.status else 'Все ученики с оплатами или окном' }}</h2>
+        <h2>{{ filter_labels[filters.status] if filters.status else 'Все ученики' }}</h2>
         {% set shown = student_rows if student_rows is not none else rows %}
         {% if filters.q %}<p class="prg-hint">По поиску найдено {{ shown|length }} из {{ filter_counts[filters.status] }}</p>{% endif %}
         {% if student_rows %}
@@ -221,7 +212,7 @@
                         <th>Тариф</th>
                         <th>Окно</th>
                         <th>Сумма</th>
-                        <th>Оплата</th>
+                        <th>Последняя оплата</th>
                         <th>Статус</th>
                         {% if can_mark %}<th>Действия</th>{% endif %}
                     </tr>
@@ -249,13 +240,9 @@
                             {% if row.no_payment %}
                             {# Срок без строки платежа — денег в системе нет, зелёная метка «Оплачено» здесь врала бы (сентябрь 2026). #}
                             <span class="prg-badge">Без платежа</span>
-                            <div class="prg-hint">Месяц закрыт сроком из карточки или списка</div>
                             {% else %}
                             <span class="prg-badge {{ label[1] }}">{{ label[0] }}</span>
-                            {% if not row.payment %}<div class="prg-hint">{{ row.detail }}</div>{% endif %}
                             {% endif %}
-                            {% if row.payment and row.payment.note %}<div class="prg-hint">{{ row.payment.note }}</div>{% endif %}
-                            {% for problem in row.problems %}<div class="prg-hint">{{ problem }}</div>{% endfor %}
                         </td>
                         {% if can_mark %}
                         <td>
@@ -478,5 +465,6 @@
     });
 })();
 </script>
+{% endif %}
 {% endif %}
 {% endblock %}

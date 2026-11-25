@@ -49,7 +49,7 @@ from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-from app.services import payment_board, payments
+from app.services import payments
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.student_search import student_id_query
@@ -1829,7 +1829,7 @@ def _activity_page(request, user, db, *, holiday, program_switch, annual, cohort
         "cohort_switch": cohort_switch,
         "newcomers": cohort_switch is not None,
         "holiday": holiday,
-        # Каникулярный набор поимённо и оплата треков — только в своём режиме.
+        # Каникулярный набор поимённо — только в своём режиме.
         "holiday_overview": get_holiday_overview(db) if holiday else None,
         "logins": get_login_stats(db),
         # Отчёт месяца по тарифам — только годовой курс: у каникулярного треки,
@@ -1867,23 +1867,12 @@ def _activity_page(request, user, db, *, holiday, program_switch, annual, cohort
         # Регистрации и поимённая сводка переехали сюда с «Пользователей»
         # 25.09.2026. Считает их staff_dashboard.py, а не activity_stats.py:
         # те же функции кормят CSV-выгрузку и дашборд сотрудника.
-        # Регистрации по тарифам и месячная оплата — про годовой курс.
+        # Регистрации по тарифам — про годовой курс.
         "tariff_registration_stats": None if not annual else get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "registration_filtered": bool(registration_from or registration_to or registration_tariff),
         "student_activity": student_activity,
         "lab_top_cards": top_cards(db),
         "lab_model_results": model_result_stats(db),
-        # Оплаты переехали сюда с «Пользователей» 14.10.2026 (владелец).
-        # Считает payment_board.py — тот же расчёт, что у экрана «Оплаты»;
-        # карточку видят только те, кому открыта оплата.
-        "payment_stats": (
-            payment_board.stats_card(db, datetime.now(timezone.utc))
-            if payments.is_payments_viewer(user) and annual else None
-        ),
-        "holiday_payment_stats": (
-            payment_board.holiday_board(db)
-            if payments.is_payments_viewer(user) and holiday else None
-        ),
     })
 
 

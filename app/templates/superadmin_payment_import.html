@@ -1,57 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Оплата списком{% endblock %}
 {% block extra_styles %}
-{# Своих стилей нет: карточка и таблица — скоуп «Назначить теги»
-   (`superadmin_forms_ios.css`), метки, выбор файла и сообщения — `base.css`. #}
-<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=13">
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=14">
 {% endblock %}
 {% block content %}
-{% set people_edit = can(user, "people:students") %}
+{% set people_edit = payment_import_allowed(user) %}
 <div class="su-wrap ios-sa-tags">
 
     <div class="su-header">
-        {# Без раздела «Люди» (Александрия) сюда приходят с экрана «Оплаты». #}
-        {% if can(user, "people", "view") %}
-        <a href="/cabinet/superadmin/users" class="back-link">← Управление пользователями</a>
-        {% else %}
         <a href="/cabinet/superadmin/payments" class="back-link">← Оплаты</a>
-        {% endif %}
         <h1 class="su-title">Оплата списком</h1>
     </div>
 
     {% if people_edit %}
-    <div class="bulk-wrap">
-        <h2 class="bulk-title">Список от школы в Excel</h2>
-        <p class="bulk-not-found">
-            Нужны колонки «Имя» и «Фамилия» (или одна «ФИО»), «Тариф» и «Сумма».
-            Ученика ищем по имени и фамилии. Если сумма равна цене тарифа, ученику
-            ставится набор «до 01.09» или «с 01.09». Если не равна – она становится
-            его личной ценой.
-        </p>
-        <p class="bulk-not-found">
-            Для новых учеников добавьте колонки «Ник», «Окно» и «Первый месяц оплаты».
-            По нику Telegram ученик находится точнее, чем по имени. Окно пишите как
-            «10–15» или «25–30», месяц обучения – «ноябрь» или «11.2026».
-            За ноябрь окно 25–30 открывается в октябре, а окно 10–15 – в ноябре.
-            Напоминание приходит в назначенное окно. Каникулярный набор грузите
-            тем же списком – после оплаты ученик сам перейдёт в годовой курс с тарифом
-            из файла. Кого ещё нет на платформе, загрузка покажет «Не найден»: файл
-            можно загрузить ещё раз позже, уже настроенных он не тронет.
-        </p>
-    </div>
-
     <div class="su-filters" id="payImportDefaults">
-        <p class="bulk-not-found">
-            Если в файле нет колонок «Окно» и «Первый месяц оплаты», заполните окно
-            и оплаченный месяц здесь – они достанутся ученикам, у которых этих данных
-            ещё нет. Кому окно уже поставили в карточке, у тех оно не изменится.
-        </p>
         <label>
             Окно с
             <input type="number" id="payImportStart" min="1" max="31" inputmode="numeric" placeholder="10">
         </label>
         <label>
-            по
+            Окно по
             <input type="number" id="payImportEnd" min="1" max="31" inputmode="numeric" placeholder="15">
         </label>
         <label>
@@ -60,21 +28,24 @@
         </label>
     </div>
 
-    <div class="bulk-wrap">
-        <label for="payImportTariff">Тариф для списка ников</label>
-        <select id="payImportTariff" class="form-select" aria-describedby="payImportUsernameHelp">
-            <option value="">По карточке ученика</option>
-            {% for code, label, price in tariff_options %}
-            <option value="{{ code }}">{{ label }}{% if price %} · {{ price }}{% endif %}</option>
-            {% endfor %}
-        </select>
-        <label for="payImportUsernames">Список Telegram-ников</label>
-        <textarea id="payImportUsernames" class="form-input" rows="5"
-                  aria-describedby="payImportUsernameHelp" placeholder="@primer_1&#10;@primer_2 14255"></textarea>
-        <p id="payImportUsernameHelp" class="bulk-not-found">
-            Вставьте по одному нику на строку и заполните окно и последний оплаченный месяц.
-            Если в карточке нет цены, выберите тариф или допишите сумму в рублях после ника.
-        </p>
+    <div class="bulk-wrap pay-import-editor">
+        <div class="pay-import-field">
+            <label for="payImportTariff">Тариф для списка ников</label>
+            <select id="payImportTariff" class="form-select" aria-describedby="payImportUsernameHelp">
+                <option value="">По карточке ученика</option>
+                {% for code, label, price in tariff_options %}
+                <option value="{{ code }}">{{ label }}{% if price %} · {{ price }}{% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="pay-import-field">
+            <label for="payImportUsernames">Список Telegram-ников</label>
+            <textarea id="payImportUsernames" class="form-input" rows="5"
+                      aria-describedby="payImportUsernameHelp" placeholder="@primer_1&#10;@primer_2 14255"></textarea>
+            <p id="payImportUsernameHelp" class="bulk-not-found">
+                По одному нику на строку. Если цены в карточке нет, выберите тариф или укажите сумму после ника.
+            </p>
+        </div>
         <div class="bulk-input-row">
             <div class="file-pick">
                 <input id="payImportFile" class="file-pick-input" type="file"

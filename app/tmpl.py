@@ -248,6 +248,16 @@ def _payments_staff(user: dict | None) -> bool:
 templates.env.globals["payments_staff"] = _payments_staff
 
 
+def _payment_import_allowed(user: dict | None) -> bool:
+    # Поимённый допуск модератора к оплатам уже проверяется на сервере.
+    return bool(user and _payments_staff(user) and (
+        _can(user, "people:students") or user.get("role_name") == "модератор"
+    ))
+
+
+templates.env.globals["payment_import_allowed"] = _payment_import_allowed
+
+
 def _payments_viewer(user: dict | None) -> bool:
     from app.services.payments import is_payments_viewer
     return is_payments_viewer(user)

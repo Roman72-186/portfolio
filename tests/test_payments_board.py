@@ -494,9 +494,20 @@ def test_head_teacher_has_everything_about_payments(db, client, session_factory,
 
     users_page = client.get("/cabinet/superadmin/users")
     assert users_page.status_code == 200
-    # Вход на экран оплат — из «Статистики активности» (владелец 14.10.2026).
     stats_page = client.get("/cabinet/superadmin/activity")
     assert stats_page.status_code == 200
+    assert "data-payment-card" not in stats_page.text
+    assert 'data-nav-key="payments"' in stats_page.text
+
+    home = client.get("/cabinet/superadmin/payments")
+    assert home.status_code == 200
+    assert 'href="/cabinet/superadmin/payments?view=students">Все ученики' in home.text
+    assert 'href="/cabinet/superadmin/payment-import">Оплата списком' in home.text
+    assert 'aria-label="Фильтры оплат"' not in home.text
+    assert "Скачать Excel за месяц" not in home.text
+    students_page = client.get("/cabinet/superadmin/payments?view=students")
+    assert 'aria-label="Фильтры оплат"' in students_page.text
+    assert "Скачать Excel за месяц" in students_page.text
 
     page = client.get("/cabinet/superadmin/payments?month=2026-10")
     assert page.status_code == 200 and "Иванова Анна" in page.text
@@ -551,7 +562,14 @@ def test_named_moderator_has_everything_about_payments(db, client, session_facto
     client.cookies.set("session_id", session_factory(named).id)
     assert client.get("/cabinet/superadmin/payments?month=2026-10").status_code == 200
     assert client.get("/cabinet/superadmin/payments/export?month=2026-10").status_code == 200
-    assert client.get("/cabinet/superadmin/payment-import").status_code == 200
+    import_page = client.get("/cabinet/superadmin/payment-import")
+    assert import_page.status_code == 200
+    assert 'id="payImportUsernames"' in import_page.text
+    assert "Список от школы в Excel" not in import_page.text
+    desktop_nav = import_page.text.split('class="desk-nav"', 1)[1].split("</nav>", 1)[0]
+    assert desktop_nav.index('href="/cabinet/flows"') < desktop_nav.index('href="/cabinet/superadmin/payment-import"')
+    mobile_nav = import_page.text.split('id="staffBurgerList"', 1)[1].split("</nav>", 1)[0]
+    assert mobile_nav.index('data-nav-key="flows"') < mobile_nav.index('data-nav-key="payment_import"')
     manage = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["manage"]
     assert manage["payment"] is not None and manage["payment_can_edit"] is True
     saved = client.post(f"/cabinet/superadmin/users/{student.id}/payment", headers=json_headers, data={
@@ -568,7 +586,7 @@ def test_named_moderator_has_everything_about_payments(db, client, session_facto
     assert client.get("/cabinet/superadmin/payment-import", headers=json_headers).status_code == 403
 
 
-def test_statistics_hides_payment_card_from_moderator(db, client, session_factory, user_factory, rendered):
+def test_statistics_hides_payments_from_unapproved_moderator(db, client, session_factory, user_factory):
     """Статистику модератор видит, оплату — нет (кроме поимённого доступа)."""
     moderator = user_factory(vk_id=990_080, name="Маркетолог", role_name="модератор")
     client.cookies.set("session_id", session_factory(moderator).id)
@@ -576,7 +594,8 @@ def test_statistics_hides_payment_card_from_moderator(db, client, session_factor
     page = client.get("/cabinet/superadmin/activity")
 
     assert page.status_code == 200
-    assert not rendered("superadmin_activity.html")["payment_stats"]
+    assert "data-payment-card" not in page.text
+    assert 'data-nav-key="payments"' not in page.text
 
 
 def test_stats_card_counts_current_month(db, prices, make_payer, people):
@@ -621,19 +640,20 @@ def test_filter_rows_paid_unpaid_and_search(db, prices, make_payer, people):
 
 def test_page_filters_and_finds_by_id(db, client, session_factory, prices, make_payer, people):
     anna = make_payer("Иванова Анна")
-    _prodamus_paid(db, anna)
+    _prodamus_paid(db, anna, note="Внутренняя заметка о календаре")
     make_payer("Петрова Мария")
     client.cookies.set("session_id", session_factory(people["chief"]).id)
 
     paid_only = client.get("/cabinet/superadmin/payments?month=2026-10&status=paid").text
     assert "Иванова Анна" in paid_only and "Петрова Мария" not in paid_only
+    assert "Последняя оплата" in paid_only and "Заказ 777" in paid_only and "Оплачено" in paid_only
+    assert "Внутренняя заметка о календаре" not in paid_only
 
     unpaid = client.get("/cabinet/superadmin/payments?month=2026-10&status=unpaid").text
     assert "Петрова Мария" in unpaid and "Иванова Анна" not in unpaid
     assert 'name="status" value="unpaid"' in unpaid
     assert 'aria-current="page">Не оплатили · 1' in unpaid
-    assert "/cabinet/superadmin/activity#activity-payments" in unpaid
-    assert 'href="/cabinet/superadmin/payment-import">Оплата списком' in unpaid
+    assert 'href="/cabinet/superadmin/payments">← Оплаты' in unpaid
 
     by_id = client.get(f"/cabinet/superadmin/payments?month=2026-10&q=%23{anna.id}").text
     assert "Иванова Анна" in by_id and "Петрова Мария" not in by_id
@@ -642,6 +662,7 @@ def test_page_filters_and_finds_by_id(db, client, session_factory, prices, make_
 
     junk = client.get("/cabinet/superadmin/payments?month=2026-10&status=junk")
     assert junk.status_code == 200 and "Петрова Мария" in junk.text
+    assert "<h2>Все ученики</h2>" in junk.text
 
 
 def test_unpaid_tab_stays_empty_when_everyone_paid(db, client, session_factory, prices, make_payer, people):
