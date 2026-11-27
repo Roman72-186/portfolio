@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
-from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
+from app.models.task_block import BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_VIDEO, TaskBlock
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.cycle_feed import task_is_archived_for_user, task_is_locked_for_user
@@ -47,6 +47,13 @@ SECTION_AFTER = WORK_TYPE_AFTER
 
 
 @dataclass(frozen=True)
+class PortfolioPrerequisite:
+    title: str | None
+    task_url: str
+    manual_confirmation: bool
+
+
+@dataclass(frozen=True)
 class PortfolioWindow:
     """Одно окно загрузки — один блок «Загрузить портфолио» у ученика."""
 
@@ -56,6 +63,7 @@ class PortfolioWindow:
     opens_at: datetime | None
     closes_at: datetime | None
     is_open: bool
+    prerequisite: PortfolioPrerequisite | None = None
 
 
 def block_section(block: TaskBlock) -> str:
@@ -168,6 +176,19 @@ def portfolio_windows(
             state = entry["state"]
             personal_deadline = portfolio_window_deadline(block, state)
             uses_personal_window = bool(block.portfolio_window_hours)
+            prerequisite = None
+            blocker = entry["sequence_blocker"]
+            task_start = _as_utc(task.starts_at) if task is not None else None
+            if (
+                blocker is not None and not archived
+                and task is not None and task.topic_id is not None
+                and (task_start is None or task_start <= now)
+            ):
+                prerequisite = PortfolioPrerequisite(
+                    title=blocker.title,
+                    task_url=f"/cabinet/learning?cycle={task.topic_id}&task={task.id}#learning-task-{task.id}",
+                    manual_confirmation=blocker.block_type in (BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_VIDEO),
+                )
             windows.append(
                 PortfolioWindow(
                     block_id=block.id,
@@ -191,6 +212,7 @@ def portfolio_windows(
                             or (personal_deadline is not None and personal_deadline > now)
                         )
                     ),
+                    prerequisite=prerequisite,
                 )
             )
     return windows
@@ -208,6 +230,7 @@ class WindowSnapshot:
     open: PortfolioWindow | None
     last_closed: PortfolioWindow | None
     any_exists: bool
+    prerequisite: PortfolioPrerequisite | None = None
 
 
 def snapshot(
@@ -245,10 +268,16 @@ def snapshot(
         w for w in windows
         if not w.is_open and w.closes_at is not None and w.closes_at <= now
     ]
+    blocked = [window for window in windows if window.prerequisite is not None]
+    actionable = next(
+        (window for window in blocked if window.block_id == preferred_block_id),
+        blocked[0] if blocked else None,
+    )
     return WindowSnapshot(
         open=_pick_open(open_windows, preferred_block_id),
         last_closed=max(closed, key=lambda w: w.closes_at) if closed else None,
         any_exists=bool(windows),
+        prerequisite=actionable.prerequisite if actionable else None,
     )
 
 

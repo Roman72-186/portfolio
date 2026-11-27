@@ -49,11 +49,12 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.n8n import send_photo_to_n8n
 from app.services.portfolio_window import (
+    PortfolioPrerequisite,
     PortfolioWindow,
     format_deadline_msk,
     snapshot,
 )
-from app.services.works import delete_works_with_dependents, upload_work_thumb
+from app.services.works import commit_work_deletions, delete_works_with_dependents, upload_work_thumb
 from app.services import s3 as s3_service
 from app.services.upload_validation import (
     MAX_UPLOAD_FILE_SIZE,
@@ -89,7 +90,8 @@ def _resolve_upload_mode(user: dict, requested_section: str | None) -> str:
 def _render_upload(request, user, *, mode: str = "after", error=None, success=False,
                    success_count=0, fail_count=0, feature_available=True, feature_message=None,
                    window_open: bool = True, window_deadline: str = "",
-                   window_closed_message: str = "", existing_works=None, source_block_id=None):
+                   window_closed_message: str = "", window_prerequisite: PortfolioPrerequisite | None = None,
+                   existing_works=None, source_block_id=None):
     return templates.TemplateResponse(request, "upload.html", {
         "request": request,
         "user": user,
@@ -107,6 +109,7 @@ def _render_upload(request, user, *, mode: str = "after", error=None, success=Fa
         "window_open": window_open,
         "window_deadline": window_deadline,
         "window_closed_message": window_closed_message,
+        "window_prerequisite": window_prerequisite,
         "existing_works": existing_works or [],
         "source_block_id": source_block_id,
     })
@@ -168,6 +171,7 @@ def _resolve_window(
     return None, False, {
         "window_open": False,
         "window_closed_message": _window_closed_message(state.last_closed),
+        "window_prerequisite": state.prerequisite,
     }
 
 
@@ -1122,7 +1126,7 @@ def delete_own_work(
         )
 
     delete_works_with_dependents(db, [work])
-    db.commit()
+    commit_work_deletions(db)
     return JSONResponse({"ok": True, "deleted": work_id})
 
 

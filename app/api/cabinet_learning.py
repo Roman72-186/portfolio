@@ -108,10 +108,8 @@ def cabinet_learning(
         today=today_msk(),
         cycle_id=cycle,
     )
-    # Ссылка `?task=` из трекера фокусирует только задание текущей ленты.
-    # Долг другого цикла трекер ведёт сюда через `?cycle=<id>#learning-task-<id>`
-    # (владелец 06.10.2026: «чтобы могли досдать», отменяет прежнее «старые
-    # долги без кнопки перехода»); цикл по task_id здесь не подбираем.
+    # `?task=` фокусирует задание только в уже выбранной ленте.
+    # Для задания другого цикла ссылка указывает и `?cycle=`.
     focus_task_id = None
     focus_subject = None
     if cycle is None and task is not None and any(
@@ -126,7 +124,7 @@ def cabinet_learning(
             today=today_msk(),
             cycle_id=feed["stage"]["id"],
         )
-    if cycle is None and task is not None:
+    if task is not None:
         target = next(
             (step for step in feed["steps"] if step["task"].id == task), None
         )
