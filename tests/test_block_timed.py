@@ -227,11 +227,20 @@ def test_start_endpoint_marks_the_time(auth_client, db):
     task = _task(db, user)
     block = _timed(db, task)
 
-    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/start")
+    from app.models.activity_event import StudentActivityEvent
+    url = f"/cabinet/tracker/blocks/{block.id}/start"
+    for args in ({}, {"json": {"confirmed": False}}, {"json": {"confirmed": "true"}}):
+        assert client.post(url, **args).status_code == 422
+    assert get_state(db, block_id=block.id, user_id=user.id) is None
+
+    resp = client.post(url, json={"confirmed": True})
 
     assert resp.status_code == 200
     assert resp.json()["time_limit_minutes"] == TIMED_DEFAULT_MINUTES
     assert get_state(db, block_id=block.id, user_id=user.id).started_at is not None
+    assert client.post(url, json={"confirmed": True}).json()["started_at"]
+    event = db.query(StudentActivityEvent).filter_by(user_id=user.id, event_type="timed_start_confirmed").one()
+    assert event.details == f"block_id={block.id}; task_id={task.id}"
 
 
 def test_start_endpoint_404_for_other_block_types(auth_client, db):
@@ -267,7 +276,7 @@ def test_condition_and_photos_are_returned_only_after_start(auth_client, db):
     assert before["started_at"] is None
     assert before["refresh_endpoint"] == blocks_url
 
-    start = client.post(before["start_endpoint"])
+    start = client.post(before["start_endpoint"], json={"confirmed": True})
     assert start.status_code == 200
     after = client.get(before["refresh_endpoint"]).json()["blocks"][0]
     assert start.json()["started_at"]

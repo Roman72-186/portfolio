@@ -43,6 +43,7 @@ from app.models.task_block import TaskBlockUploadReceipt
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
+from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
@@ -1452,12 +1453,17 @@ def go_link_block(
     )
 
 
+class TimedStartPayload(BaseModel):
+    confirmed: bool = Field(strict=True)
+
+
 @router.post("/tracker/blocks/{block_id}/start", response_class=JSONResponse)
 def start_timed_block_route(
     block_id: int,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
+    payload: TimedStartPayload | None = None,
 ):
     """Старт работы на время: отсчёт начинается по кнопке ученика.
 
@@ -1468,8 +1474,24 @@ def start_timed_block_route(
     if block is None or block.block_type != BLOCK_TIMED:
         raise HTTPException(status_code=404, detail="Блок не найден")
     task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    if payload is not None and payload.confirmed:
+        _lock_block_submission(db, block.id, user["user_id"])
     _refuse_closed_block(db, user, block, task)
+    if payload is None or not payload.confirmed:
+        raise HTTPException(status_code=422, detail="Подтверди запуск таймера.")
+    previous = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+    was_started = bool(previous and previous.started_at)
     state = start_task_timed_block(db, block=block, user_id=user["user_id"])
+    if not was_started:
+        actor = user.get("impersonated_by_id")
+        details = f"block_id={block.id}; task_id={task.id}"
+        if actor is not None:
+            details += f"; impersonated_by_id={actor}"
+        db.add(StudentActivityEvent(
+            user_id=user["user_id"],
+            event_type="timed_start_confirmed",
+            details=details,
+        ))
     db.commit()
     return JSONResponse({
         "ok": True,

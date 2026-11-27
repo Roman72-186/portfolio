@@ -1335,18 +1335,35 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (!block.started_at) {
                     // Условие сервер до старта не присылает (02.10.2026).
                     if (block.body_hidden) {
-                        wrap.appendChild(el('p', 'video-help', 'Задание откроется после нажатия «Начать работу». Таймер пойдёт сразу.'));
+                        wrap.appendChild(el('p', 'video-help', 'Условие откроется после подтверждения запуска таймера.'));
                     }
                     var startBtn = el('button', 'btn-blue', 'Начать работу');
                     startBtn.type = 'button';
+                    var startAction = el('div');
+                    startAction.appendChild(startBtn);
+                    var confirmPanel = el('div');
+                    confirmPanel.hidden = true;
+                    confirmPanel.appendChild(el('p', 'video-help', 'После подтверждения откроется условие и сразу запустится таймер.'));
+                    var confirmActions = el('div', 'trk-row-actions');
+                    var cancelStart = el('button', 'btn-outline', 'Отмена');
+                    var confirmStart = el('button', 'btn-blue', 'Начать и запустить таймер');
+                    cancelStart.type = confirmStart.type = 'button';
+                    confirmActions.appendChild(cancelStart);
+                    confirmActions.appendChild(confirmStart);
+                    confirmPanel.appendChild(confirmActions);
                     var note = el('p', 'video-progress-status');
                     note.setAttribute('aria-live', 'polite');
                     var startConfirmed = false;
-                    startBtn.addEventListener('click', function () {
+                    function startWork() {
+                        if (startBtn.disabled) return;
                         startBtn.disabled = true;
                         note.classList.remove('is-error');
                         note.textContent = 'Открываем задание…';
-                        var start = startConfirmed ? Promise.resolve() : post(block.start_endpoint, { method: 'POST' })
+                        var start = startConfirmed ? Promise.resolve() : post(block.start_endpoint, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({confirmed: true})
+                        })
                             .then(function (resp) {
                                 if (!resp.ok) throw new Error();
                                 startConfirmed = true;
@@ -1375,8 +1392,28 @@ scope)` и свойством `answered` (одна попытка: после о
                             }
                             note.classList.add('is-error');
                         });
+                    }
+                    startBtn.addEventListener('click', function () {
+                        if (startConfirmed) {
+                            startWork();
+                            return;
+                        }
+                        startAction.hidden = true;
+                        confirmPanel.hidden = false;
+                        cancelStart.focus({preventScroll: true});
                     });
-                    wrap.appendChild(startBtn);
+                    cancelStart.addEventListener('click', function () {
+                        confirmPanel.hidden = true;
+                        startAction.hidden = false;
+                        startBtn.focus({preventScroll: true});
+                    });
+                    confirmStart.addEventListener('click', function () {
+                        confirmPanel.hidden = true;
+                        startAction.hidden = false;
+                        startWork();
+                    });
+                    wrap.appendChild(startAction);
+                    wrap.appendChild(confirmPanel);
                     wrap.appendChild(note);
                     return wrap;
                 }

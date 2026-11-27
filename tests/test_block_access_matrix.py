@@ -161,7 +161,7 @@ def _writes(client, task, blocks):
     return {
         "watched": client.post(f"/cabinet/tracker/blocks/{video.id}/watched"),
         "done": client.post(f"/cabinet/tracker/blocks/{photo.id}/done"),
-        "start": client.post(f"/cabinet/tracker/blocks/{timed.id}/start"),
+        "start": client.post(f"/cabinet/tracker/blocks/{timed.id}/start", json={"confirmed": True}),
         "answer": client.post(
             f"/cabinet/tracker/tasks/{task.id}/blocks",
             json={"answers": [{"block_id": question.id, "text": "Ответ"}]},
