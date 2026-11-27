@@ -486,18 +486,22 @@ def test_closed_task_counts_its_text_and_link_as_done(auth_client, db, rendered)
 
 def test_learning_shows_completion_and_next_published_cycle(auth_client, db):
     client, user = auth_client
-    _topic(db, user, opens_in_days=-1, ends_in_days=1)
+    cycle = _topic(db, user, opens_in_days=-1, ends_in_days=1)
+    cycle.description = "Описание **цикла**"
     task = _task(db, user, title="Последнее задание", kind="material", day=today_msk())
     _block(db, task, title="Последний шаг", is_required=False)
 
     before = client.get("/cabinet/learning")
     assert "К заданиям</a>" in before.text
+    assert '<blockquote class="lrn-cycle-description">' in before.text
+    assert "Описание <strong>цикла</strong>" in before.text
     assert "Все задания выполнены</strong>" not in before.text
 
     assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
     done = client.get("/cabinet/learning")
     assert "К заданиям</a>" not in done.text
     assert "Все задания выполнены</strong>" in done.text
+    assert 'class="lrn-cycle-complete"' in done.text
     assert "Следующий цикл откроется" not in done.text
 
     _topic(db, user, title="Черновик", opens_in_days=2, is_published=False)

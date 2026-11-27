@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=96">
+<link rel="stylesheet" href="/static/css/tracker.css?v=97">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% if student_workspace and not archive_view %}
 <script src="/static/js/student_learning.js?v=1" defer></script>
@@ -42,14 +42,14 @@
             {% if not archive_view %}{{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}{% endif %}
         </h1>
         {% if feed.topic and feed.topic.description %}
-        <p>{{ feed.topic.description | rich_text | safe }}</p>
+        <blockquote class="lrn-cycle-description">{{ feed.topic.description | rich_text | safe }}</blockquote>
         {% else %}
         <p>Следующее задание откроется после выполнения предыдущего.</p>
         {% endif %}
         {% if feed.steps and not archive_view %}
         <div data-learning-cta aria-live="polite">
             {% if feed.total_count and feed.done_count == feed.total_count %}
-            <p><strong>Все задания выполнены</strong></p>
+            <p><strong class="lrn-cycle-complete">Все задания выполнены</strong></p>
             {% if feed.next_cycle_opens_on %}
             <p>Следующий цикл откроется {{ feed.next_cycle_opens_on.strftime('%d.%m.%Y') }}</p>
             {% endif %}
