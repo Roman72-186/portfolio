@@ -399,7 +399,10 @@ function lrnFocusAfterStep(blockId) {
     var target = rest.filter(function (step) {
         return step.classList.contains('lrn-step--current');
     })[0] || rest[0];
-    if (!target) return;
+    if (target) lrnFocusStep(target);
+}
+
+function lrnFocusStep(target) {
     if (target.hasAttribute('data-subject-off')) {
         document.querySelectorAll('.lrn-subject-btn').forEach(function (btn) {
             if (btn.getAttribute('data-subject') === target.getAttribute('data-subject')) lrnSwitchSubject(btn);
@@ -411,6 +414,15 @@ function lrnFocusAfterStep(blockId) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    var jump = document.querySelector('.student-learning-jump');
+    if (jump) jump.addEventListener('click', function (event) {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        // После сохранения шага лента обновляет эти статусы без перезагрузки.
+        var next = document.querySelector('.lrn-feed .lrn-step--current:not([hidden])');
+        if (!next) return;
+        event.preventDefault();
+        lrnFocusStep(next);
+    });
     var focusTaskId = {{ focus_task_id | tojson }};
     lrnRestoreSubject(focusTaskId !== null);
     lrnApplySubjectFilter();
