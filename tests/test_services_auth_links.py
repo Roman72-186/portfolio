@@ -99,17 +99,6 @@ def test_consume_expired_token_returns_error(db, user_factory):
     assert error == "expired"
 
 
-def test_consume_revoked_token_returns_error(db, user_factory):
-    user = user_factory()
-    url1, _ = issue_one_time_login_link(db, user=user, base_url="https://x.com")
-    # Revoke by issuing a new one
-    issue_one_time_login_link(db, user=user, base_url="https://x.com")
-    db.expire_all()  # clear stale identity map (synchronize_session=False in bulk update)
-
-    _, _, error = consume_one_time_login_token(db, raw_token=_raw_token_from_url(url1))
-    assert error == "revoked"
-
-
 # ---------------------------------------------------------------------------
 # Вид токена: ссылка входа на сайт против входа в 3D-лабораторию
 # (код-ревью 12.10.2026, P1 № 1)

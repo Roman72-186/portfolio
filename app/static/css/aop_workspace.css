@@ -1,0 +1,157 @@
+.prg-tabs.aop-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-2);
+    overflow: visible;
+    margin-block-end: var(--s-5);
+    padding: var(--s-1);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+}
+.aop-route, .aop-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1);
+    min-width: 0;
+}
+.aop-route {
+    padding-inline: var(--s-1);
+    background: var(--blue-soft);
+    border-radius: var(--r-sm);
+}
+.aop-navigation .prg-tab {
+    margin: 0;
+    padding: var(--s-2) var(--s-3);
+    border: 0;
+    border-radius: var(--r-sm);
+}
+.aop-navigation .prg-tab.is-active {
+    color: var(--on-color);
+    background: var(--blue-fill);
+}
+.aop-route .prg-tab:not(:last-child)::after {
+    content: '';
+    width: .36em;
+    height: .36em;
+    margin-inline-start: .65em;
+    border-top: 1px solid currentColor;
+    border-right: 1px solid currentColor;
+    transform: rotate(45deg);
+}
+
+.aop-navigation ~ .prg-workspace-header .prg-workspace-heading h1 {
+    font: 800 2.5rem/1.08 var(--font-display);
+    letter-spacing: -.04em;
+    text-wrap: balance;
+}
+.aop-navigation ~ .prg-workspace-header .prg-workspace-description {
+    max-inline-size: 60ch;
+}
+.aop-navigation ~ .prg-workspace-header .prg-workspace-path {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: var(--s-1) var(--s-2);
+}
+
+.prg-page:has(> .aop-navigation) .prg-items > .prg-item {
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: var(--s-4) var(--s-5);
+    gap: var(--s-3);
+    transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.prg-page:has(> .aop-navigation) .prg-items > .prg-item:focus-within {
+    border-color: var(--blue);
+}
+.prg-page:has(> .aop-navigation) .prg-items > .prg-item:hover {
+    background-color: color-mix(in srgb, var(--blue-soft) 40%, var(--surface));
+}
+.prg-page:has(> .aop-navigation) .prg-item h3 {
+    font: 800 1.25rem/1.3 var(--font-display);
+    overflow-wrap: anywhere;
+}
+.aop-item-link {
+    display: inline-block;
+    color: var(--ink);
+    padding-block: var(--s-1);
+    text-decoration: underline;
+    text-decoration-color: var(--blue);
+    text-underline-offset: .18em;
+}
+.aop-item-link:hover { text-decoration-thickness: 2px; }
+.aop-item-link::after { content: ' ↗' / ''; color: var(--blue-text); white-space: nowrap; }
+.aop-navigation ~ .prg-items [data-aop-published] .prg-badge:first-child::before {
+    content: '';
+    display: inline-block;
+    width: .45em;
+    height: .45em;
+    margin-inline-end: .55em;
+    border-radius: 50%;
+    background: var(--dim);
+    vertical-align: .12em;
+}
+.aop-navigation ~ .prg-items [data-aop-published="true"] .prg-badge:first-child::before { background: var(--success); }
+
+.aop-navigation ~ .prg-form:not([hidden]) { animation: aop-reveal var(--duration-base) var(--ease-out); }
+.aop-navigation ~ .prg-form .prg-universal-section-toggle { text-align: start; }
+.aop-navigation ~ .prg-form .prg-universal-section-toggle[aria-expanded="true"] {
+    color: var(--blue-text);
+    background: var(--blue-soft);
+}
+.aop-navigation ~ .prg-form .prg-universal-section-panel:not([hidden]) {
+    animation: aop-reveal var(--duration-base) var(--ease-out);
+}
+.aop-navigation ~ :is(.trk-head, .vam-head, .dg-head) {
+    padding: var(--s-5);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: radial-gradient(ellipse at right, var(--blue-soft), var(--surface) 75%);
+}
+.aop-navigation ~ :is(.trk-head, .vam-head, .dg-head) h1 {
+    color: var(--ink);
+    letter-spacing: -.03em;
+}
+
+.aop-secret {
+    inline-size: min(29rem, calc(100% - 2rem));
+    max-height: calc(100% - 2rem);
+    margin: auto;
+    padding: var(--s-6);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    color: var(--text);
+}
+.aop-secret[open] { animation: aop-reveal var(--duration-base) var(--ease-out); }
+.aop-secret::backdrop { background: color-mix(in srgb, var(--blue-fill-strong) 40%, transparent); }
+.aop-secret h2 { margin-block-start: 0; font-family: var(--font-display); }
+.aop-secret-sketch {
+    block-size: 112px;
+    margin-block: var(--s-4);
+    border: 1px solid var(--line);
+    background:
+        linear-gradient(132deg, transparent 48%, var(--blue) 49% 50%, transparent 51%) center / 104px 100% no-repeat,
+        linear-gradient(48deg, transparent 48%, var(--blue) 49% 50%, transparent 51%) center / 104px 100% no-repeat,
+        repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 12px),
+        repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 12px),
+        var(--blue-soft);
+}
+@keyframes aop-reveal {
+    from { opacity: .6; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 600px) {
+    .aop-navigation .prg-tab { padding-inline: var(--s-2); }
+    .aop-navigation ~ .prg-workspace-header .prg-workspace-heading h1 { font-size: 1.8rem; }
+    .prg-page:has(> .aop-navigation) .prg-items > .prg-item { padding: var(--s-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .prg-page:has(> .aop-navigation) .prg-items > .prg-item { transition: none; }
+    .aop-navigation ~ .prg-form:not([hidden]),
+    .aop-navigation ~ .prg-form .prg-universal-section-panel:not([hidden]),
+    .aop-secret[open] { animation: none; }
+}

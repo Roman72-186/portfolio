@@ -9,20 +9,12 @@
 // на уровне HTTP-заголовков (см. app/main.py::cache_control).
 
 self.addEventListener('push', function (event) {
-    let payload = { title: 'Apparchi', body: '' };
-    if (event.data) {
-        try {
-            payload = event.data.json();
-        } catch (e) {
-            payload.body = event.data.text();
-        }
-    }
-    const title = payload.title || 'Apparchi';
+    const title = 'Apparchi';
     const options = {
-        body: payload.body || '',
-        icon: payload.icon || '/static/img/logo-192.png',
-        badge: payload.badge || '/static/img/logo-192.png',
-        data: { url: payload.url || '/cabinet/notifications' },
+        body: 'Новое уведомление в кабинете',
+        icon: '/static/img/logo-192.png',
+        badge: '/static/img/logo-192.png',
+        data: { url: self.location.origin + '/cabinet/notifications' },
     };
     event.waitUntil(self.registration.showNotification(title, options));
 });

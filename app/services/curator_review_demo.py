@@ -1,4 +1,5 @@
 """Доступ к новой проверке в режиме демо."""
+from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
@@ -63,11 +64,20 @@ def can_preview_submission_review(db: Session, user: dict, submission_id: int) -
     return can_preview_review(db, user) or has_personal_demo_review(db, user, submission_id)
 
 
-def demo_review_url(url: str, curator_id: int) -> str:
+def can_handle_late_controls(user: dict) -> bool:
+    return user["user_id"] == LIZA_HEAD_USER_ID and not user.get("impersonated_by_id")
+
+
+def demo_review_url(url: str, curator_id: int | str) -> str:
     parts = urlsplit(url)
     query = dict(parse_qsl(parts.query))
     query.update(review_demo="1", review_curator=str(curator_id))
     return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def demo_review_query(query: Mapping[str, str]) -> dict[str, str]:
+    keys = ("review_subject", "review_tariff", "review_cycle_id", "review_status", "review_curator")
+    return {"review_demo": "1", **{key: query[key] for key in keys if key in query}}
 
 
 def can_use_demo_recording(user: dict, selected_curator: str | None) -> bool:
@@ -75,5 +85,5 @@ def can_use_demo_recording(user: dict, selected_curator: str | None) -> bool:
     return (
         user.get("role_name") == "админ"
         and (user.get("nav_rank") or user["role_rank"]) == 4
-        and selected_curator in (None, str(user["user_id"]))
+        and selected_curator in (None, "all", str(user["user_id"]))
     )

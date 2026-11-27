@@ -108,6 +108,7 @@
 .ios-upload-mock .ios-closed-banner .ios-closed-icon,
 .ios-upload-retake .ios-closed-banner .ios-closed-icon { color: var(--error); margin-bottom: 8px; font-size: 26px; }
 .ios-upload .ios-closed-banner .ios-closed-icon svg { display: inline-block; }
+.ios-upload .ios-prerequisite-link { margin-top: 12px; }
 
 /* ── Карточка (общий базовый компонент) ── */
 .ios-upload .card,

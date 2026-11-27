@@ -7,47 +7,47 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import httpx
+import pytest
 
 from app.models.notification import Notification
 from app.services import notify as notify_module
 
 
-def test_telegram_skipped_when_disabled(db, user_factory, monkeypatch):
-    user = user_factory()
-    user.telegram_chat_id = 777_777
-    user.telegram_notifications_enabled = False
-    db.commit()
+def _telegram_transport(monkeypatch, *, reject_voice=False):
+    telegram = notify_module.telegram_service
+    requests = []
 
-    n = Notification(user_id=user.id, title="Тест", text="")
-    db.add(n)
-    db.commit()
+    def handle(request):
+        requests.append(request)
+        if reject_voice and request.url.path.endswith("/sendVoice"):
+            return httpx.Response(400, json={"ok": False})
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
 
-    send_mock = AsyncMock()
-    monkeypatch.setattr(notify_module.telegram_service, "send_message", send_mock)
+    monkeypatch.setattr(telegram.settings, "telegram_bot_token", "123:test")
+    monkeypatch.setattr(telegram, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handle)))
     monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
-
-    asyncio.run(notify_module.notify(n.id))
-
-    send_mock.assert_not_called()
+    return requests
 
 
-def test_telegram_sent_when_enabled(db, user_factory, monkeypatch):
+@pytest.mark.parametrize("enabled", [False, True])
+def test_telegram_delivery_follows_user_settings(db, user_factory, monkeypatch, enabled):
+    import json
+
     user = user_factory()
-    user.telegram_chat_id = 777_778
+    user.telegram_chat_id = 777778
+    user.telegram_notifications_enabled = enabled
+    notice = Notification(user_id=user.id, title="Результат", text="85 баллов")
+    db.add(notice)
     db.commit()
-    assert user.telegram_notifications_enabled is True
-
-    n = Notification(user_id=user.id, title="Тест", text="Текст")
-    db.add(n)
-    db.commit()
-
-    send_mock = AsyncMock()
-    monkeypatch.setattr(notify_module.telegram_service, "send_message", send_mock)
-    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
-
-    asyncio.run(notify_module.notify(n.id))
-
-    send_mock.assert_called_once_with(777_778, "Тест\n\nТекст")
+    requests = _telegram_transport(monkeypatch)
+    asyncio.run(notify_module.notify(notice.id))
+    assert len(requests) == int(enabled)
+    if enabled:
+        request, = requests
+        assert request.url.path.endswith("/sendMessage")
+        body = json.loads(request.content)
+        assert str(body["chat_id"]) == str(user.telegram_chat_id)
+        assert notice.text in body["text"]
 
 
 VOICE_PATH = "point-a-audio/1/x.m4a"
@@ -67,59 +67,32 @@ def _voice_notification(db, user_factory, chat_id: int) -> Notification:
     return n
 
 
-def _telegram_mocks(monkeypatch, *, voice_ok=True, downloaded=b"aac-bytes"):
-    voice_mock = AsyncMock(return_value=voice_ok)
-    message_mock = AsyncMock(return_value=True)
-    download = Mock(return_value=downloaded)
-    transcode = Mock(return_value=("x.ogg", b"opus-bytes", "audio/ogg"))
-    monkeypatch.setattr(notify_module.telegram_service, "send_voice", voice_mock)
-    monkeypatch.setattr(notify_module.telegram_service, "send_message", message_mock)
-    monkeypatch.setattr(notify_module.s3_service, "download_from_s3", download)
-    monkeypatch.setattr(notify_module.media_transcode, "telegram_voice", transcode)
-    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
-    return voice_mock, message_mock, download, transcode
-
-
-CAPTION = "Точка А разобрана — уровень 1\n\nСредний балл: 85 / 100."
-
-
 def test_audio_url_sends_voice_file_instead_of_text(db, user_factory, monkeypatch):
-    """Точка А: уведомление с `audio_url` уходит `sendVoice` загрузкой файла
-    OGG/Opus, а не ссылкой — по ссылке Telegram показывает голосовым только
-    ogg до 1 МБ, остальное приходит документом. Caption несёт тот же текст."""
-    n = _voice_notification(db, user_factory, 777_779)
-    voice_mock, message_mock, download, transcode = _telegram_mocks(monkeypatch)
-
-    asyncio.run(notify_module.notify(n.id))
-
-    download.assert_called_once_with(VOICE_PATH)
-    transcode.assert_called_once_with("x.m4a", b"aac-bytes", "audio/mp4")
-    voice_mock.assert_called_once_with(
-        777_779, b"opus-bytes", filename="x.ogg", content_type="audio/ogg", caption=CAPTION,
-    )
-    message_mock.assert_not_called()
+    notice = _voice_notification(db, user_factory, 777779)
+    requests = _telegram_transport(monkeypatch)
+    monkeypatch.setattr(notify_module.s3_service, "download_from_s3", lambda path: b"source")
+    monkeypatch.setattr(notify_module.media_transcode, "telegram_voice", lambda *args: ("x.ogg", b"opus-bytes", "audio/ogg"))
+    asyncio.run(notify_module.notify(notice.id))
+    request, = requests
+    assert request.url.path.endswith("/sendVoice")
+    assert b"opus-bytes" in request.content
+    assert b"777779" in request.content
 
 
-def test_voice_rejected_falls_back_to_text(db, user_factory, monkeypatch):
-    """Telegram не принял голосовое — уровень ученик всё равно узнаёт текстом."""
-    n = _voice_notification(db, user_factory, 777_780)
-    voice_mock, message_mock, _, _ = _telegram_mocks(monkeypatch, voice_ok=False)
+@pytest.mark.parametrize("downloaded", [True, False], ids=["telegram-refused", "storage-missing"])
+def test_voice_failure_delivers_text(db, user_factory, monkeypatch, downloaded):
+    import json
 
-    asyncio.run(notify_module.notify(n.id))
-
-    voice_mock.assert_called_once()
-    message_mock.assert_called_once_with(777_780, CAPTION)
-
-
-def test_voice_not_downloaded_falls_back_to_text(db, user_factory, monkeypatch):
-    n = _voice_notification(db, user_factory, 777_781)
-    voice_mock, message_mock, _, transcode = _telegram_mocks(monkeypatch, downloaded=None)
-
-    asyncio.run(notify_module.notify(n.id))
-
-    transcode.assert_not_called()
-    voice_mock.assert_not_called()
-    message_mock.assert_called_once_with(777_781, CAPTION)
+    notice = _voice_notification(db, user_factory, 777780)
+    requests = _telegram_transport(monkeypatch, reject_voice=True)
+    monkeypatch.setattr(notify_module.s3_service, "download_from_s3", lambda path: b"source" if downloaded else None)
+    monkeypatch.setattr(notify_module.media_transcode, "telegram_voice", lambda *args: ("x.ogg", b"opus", "audio/ogg"))
+    asyncio.run(notify_module.notify(notice.id))
+    methods = [request.url.path.split("/")[-1] for request in requests]
+    assert methods == (["sendVoice", "sendMessage"] if downloaded else ["sendMessage"])
+    message = json.loads(requests[-1].content)
+    assert str(message["chat_id"]) == "777780"
+    assert notice.text in message["text"]
 
 
 def test_send_voice_uploads_file_multipart(monkeypatch):
@@ -265,15 +238,18 @@ def test_db_session_is_closed_while_waiting_for_network(db, user_factory, monkey
 
 
 def test_batch_is_sent_with_limited_concurrency(db, user_factory, monkeypatch):
-    ids = _telegram_notifications(db, user_factory, notify_module.NOTIFY_CONCURRENCY * 3)
-    state = {"now": 0, "peak": 0, "sent": 0}
+    base_chat = 880000
+    count = notify_module.NOTIFY_CONCURRENCY * 3
+    ids = _telegram_notifications(db, user_factory, count, base_chat=base_chat)
+    delivered = []
+    state = {"now": 0, "peak": 0}
 
     async def send_message(chat_id, text):
         state["now"] += 1
         state["peak"] = max(state["peak"], state["now"])
         await asyncio.sleep(0.01)
         state["now"] -= 1
-        state["sent"] += 1
+        delivered.append(chat_id)
         return True
 
     monkeypatch.setattr(notify_module.telegram_service, "send_message", send_message)
@@ -281,8 +257,8 @@ def test_batch_is_sent_with_limited_concurrency(db, user_factory, monkeypatch):
 
     asyncio.run(notify_module.notify_many(ids))
 
-    assert state["sent"] == len(ids)
-    assert state["peak"] == notify_module.NOTIFY_CONCURRENCY
+    assert sorted(delivered) == list(range(base_chat, base_chat + count))
+    assert 1 < state["peak"] <= notify_module.NOTIFY_CONCURRENCY
 
 
 def _push_subscription(db, user_factory):
@@ -290,7 +266,7 @@ def _push_subscription(db, user_factory):
 
     user = user_factory(vk_id=881_000)
     sub = PushSubscription(
-        user_id=user.id, endpoint="https://push.example/abc", p256dh="k", auth_key="a",
+        user_id=user.id, endpoint="https://fcm.googleapis.com/abc", p256dh="k", auth_key="a",
     )
     db.add(sub)
     n = Notification(user_id=user.id, title="Тест", text="")

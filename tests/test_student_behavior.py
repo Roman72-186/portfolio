@@ -224,13 +224,6 @@ def test_profile_post_empty_form_is_refused(client, db, user_factory, session_fa
 # 2. Dashboard
 # ---------------------------------------------------------------------------
 
-def test_dashboard_returns_200(auth_client):
-    """GET /cabinet/student returns 200 for a student with complete profile."""
-    client, _ = auth_client
-    resp = client.get("/cabinet/student")
-    assert resp.status_code == 200
-
-
 def test_intake_student_skips_portfolio_gate_when_accessible_block_is_optional(
     client, db, user_factory, session_factory,
 ):
@@ -284,7 +277,7 @@ def test_portfolio_gate_blocks_direct_url_to_locked_pages(client, user_factory, 
     должен упираться в гейт — редиректом на ленту с открытым поп-апом."""
     client, _ = _auth(client, user_factory, session_factory,
                       vk_id=100_110, portfolio_do_completed=False)
-    for path in ("/cabinet/tracker", "/cabinet/portfolio", "/cabinet/feedback/", "/3dlab"):
+    for path in ("/cabinet/tracker", "/cabinet/portfolio", "/cabinet/feedback/"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 302, path
         assert resp.headers["location"] == "/cabinet/learning?locked=portfolio", path

@@ -1781,11 +1781,11 @@ async def upload_task_block_work(
         mark_task_block_submitted(db, submission=submission, comment=comment)
         # Работу возвращали на доработку, и ученик её заменил — проверяющий
         # должен узнать о новой версии (владелец 14.10.2026).
-        if was_on_revision:
+        if was_on_revision and submission.control_review_mode != "score":
             notice = resubmission_notification(db, submission=submission)
         # Первая сдача — куратору ученика (владелец 23.10.2026). Замена уже
         # сданной работы не уведомляет: она и так в очереди «на проверку».
-        elif not was_submitted:
+        elif not was_submitted and submission.control_review_mode != "score":
             notice = submission_notification(db, submission=submission)
         # Закрываем блок фактом сдачи: работа приехала, лента едет дальше.
         # Проверка куратора на это не влияет — иначе ученик стоял бы в ленте,

@@ -9,7 +9,7 @@ Source of truth по тому, какие темы открыты ученику
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, or_, select, true
+from sqlalchemy import and_, false, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
 from app.constants import ANNUAL_NEWCOMER_TAG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY, REPORT_EXCLUDED_USER_IDS
@@ -75,19 +75,25 @@ def get_topic(
     return topic
 
 
-def _published_topic_clause():
+def _published_topic_clause(*, now: datetime | None = None):
     """Опубликована сама тема и вся её родительская цепочка.
 
     Закрытие периода/этапа не переписывает флаги потомков: повторная
     публикация возвращает только ранее опубликованное содержимое. Один
     рекурсивный SQL-запрос закрывает потомков без N+1; UNION (не ALL)
     также не зациклится на ошибочной циклической связи. У тем без родителя
-    сохраняется прежний доступ. Даты и адресацию родителей не наследуем.
+    сохраняется прежний доступ. При проверке текущей доступности дата
+    открытия периода закрывает также его этапы и циклы.
     """
+    unopened_period = (
+        and_(LearningTopic.kind == TOPIC_KIND_PERIOD, LearningTopic.opens_at > now)
+        if now is not None else false()
+    )
     blocked = select(LearningTopic.id).where(or_(
         LearningTopic.is_published.is_(False),
         LearningTopic.deleted_at.is_not(None),
-    )).cte("unpublished_topics", recursive=True)
+        unopened_period,
+    )).cte("blocked_topics", recursive=True)
     child = aliased(LearningTopic)
     blocked = blocked.union(
         select(child.id).where(child.parent_id == blocked.c.id)
@@ -165,12 +171,18 @@ def accessible_topic_ids(
         ))
     tariff_ok_topic_ids = tariff_rows.scalar_subquery()
     time_filters = () if include_upcoming else (LearningTopic.opens_at <= now,)
+    if program == PROGRAM_HOLIDAY:
+        from app.services.holiday_review import topic_open_for_participant
+
+        time_filters += (topic_open_for_participant(
+            LearningTopic.id, user_id, now, include_upcoming=include_upcoming,
+        ),)
     rows = (
         db.query(LearningTopic.id, LearningTopic.kind, LearningTopic.opens_at)
         .filter(
             LearningTopic.deleted_at.is_(None),
             LearningTopic.is_published.is_(True),
-            _published_topic_clause(),
+            _published_topic_clause(now=None if include_upcoming else now),
             *time_filters,
             or_(
                 LearningTopic.assign_to_all.is_(True),
@@ -322,8 +334,9 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
     привязана (`_accessible_task_or_404` в `cabinet_tracker.py` проверяет
     именно `task.topic_id in accessible_topic_ids(...)`).
     """
+    now = now_msk()
     topic = db.query(LearningTopic).filter(
-        LearningTopic.id == topic_id, _published_topic_clause(),
+        LearningTopic.id == topic_id, _published_topic_clause(now=now),
     ).first()
     if topic is None:
         return set()
@@ -332,7 +345,7 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
     # тот же приём нормализации, что в `tracker.py::task_status`.
     if opens_at.tzinfo is None:
         opens_at = opens_at.replace(tzinfo=timezone.utc)
-    if opens_at > now_msk():
+    if opens_at > now:
         return set()
     students = (
         db.query(User.id)
@@ -355,7 +368,6 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
         ))
     if topic.tariff_restricted:
         # Только тарифы, чьё окно уже открылось, — зеркало `accessible_topic_ids`.
-        now = now_msk()
         tariffs = [
             tariff for tariff, (window_opens, _) in get_topic_tariff_windows(db, topic_id).items()
             if window_opens is None or _aware(window_opens) <= now

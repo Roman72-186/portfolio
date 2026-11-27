@@ -1,29 +1,13 @@
-"""Каждый маршрут на запись проверяет CSRF-ключ — сторож по всему приложению.
-
-Код-ревью 28.09.2026 (P3): из 192 маршрутов на запись без ключа жили шесть
-служебных — два срока в конструкторе программы, два переноса и два удаления
-работ ученика. Их прикрывала только `SameSite=lax` у сессионной cookie: защита
-про запас, но держалась она на настройке браузера, а не на коде. Нашлись они
-грепом по одному, и следующий забытый маршрут нашёлся бы так же — случайно.
-
-Тест обходит `app.routes` и требует у каждого POST/PUT/PATCH/DELETE одну из
-зависимостей проверки ключа. Исключения — закрытый список ниже, у каждого
-причина. Новый маршрут без ключа краснеет здесь, а не на ревью через месяц.
-
-Фикстура `client` в `conftest.py` проверку ключа выключает, поэтому сам отказ
-403 проверяется отдельно — с настоящей зависимостью.
-"""
+"""Защита сессионных маршрутов записи и сохранение настройки с действительным CSRF-ключом."""
 
 
 import pytest
 from fastapi.routing import APIRoute
 
-from app.api.guest_exam import require_guest_csrf
 from app.dependencies import require_csrf, require_csrf_header
 from app.main import app
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-CSRF_DEPENDENCIES = (require_csrf, require_csrf_header, require_guest_csrf)
 
 # Путь → почему ключа нет. Добавлять сюда только маршрут, у которого на момент
 # запроса нет сессии, к которой ключ привязан, или который зовёт не браузер.
@@ -37,6 +21,8 @@ NO_CSRF_BY_DESIGN = {
     "/auth/telegram/webhook": "зовёт Telegram, сверка секрета в заголовке",
     "/payments/prodamus/webhook": "зовёт сервер Продамуса, сверка подписи в заголовке Sign",
     "/auth/internal/issue-link": "межсервисный вызов по внутреннему ключу",
+    "/internal/telegram-analytics": "межсервисный вызов с Bearer",
+    "/lab/event": "проверяет CSRF-токен текущей сессии в JSON",
     "/auth/internal/sso/verify": "межсервисный вызов по внутреннему ключу",
     "/cabinet/superadmin/impersonate/stop": (
         "аварийный выход по подписанной cookie имперсонации — работает, даже "
@@ -50,30 +36,69 @@ NO_CSRF_BY_DESIGN = {
 }
 
 
-def _checks_csrf(dependant) -> bool:
-    return any(
-        dep.call in CSRF_DEPENDENCIES or _checks_csrf(dep)
-        for dep in dependant.dependencies
-    )
-
-
 def _write_routes():
     for route in app.routes:
         if isinstance(route, APIRoute) and route.methods & WRITE_METHODS:
             yield route
 
 
-def test_every_write_route_checks_csrf():
-    missing = sorted(
-        f"{'/'.join(sorted(route.methods & WRITE_METHODS))} {route.path}"
-        for route in _write_routes()
-        if route.path not in NO_CSRF_BY_DESIGN and not _checks_csrf(route.dependant)
-    )
-    assert not missing, (
-        "маршруты записи без CSRF-ключа (добавь Depends(require_csrf_header) "
-        "или, если ключа быть не может, строку с причиной в NO_CSRF_BY_DESIGN):\n"
-        + "\n".join(missing)
-    )
+def test_every_write_route_rejects_missing_csrf(admin_client):
+    """Проверяем зависимости зарегистрированных маршрутов и middleware без выполнения записей."""
+    import re
+    from fastapi import Depends, FastAPI, Response
+    from fastapi.testclient import TestClient
+    from app.csrf import generate_csrf_token
+    from app.db.database import get_db
+    from app.services.guest_exam import GUEST_COOKIE_NAME
+
+    client, _ = admin_client
+    session_id = client.cookies.get("session_id")
+    token = generate_csrf_token(session_id)
+    probe = FastAPI(middleware=app.user_middleware)
+    probe.dependency_overrides[get_db] = app.dependency_overrides[get_db]
+
+    async def accepted():
+        return Response(status_code=204)
+
+    cases = []
+    for route in _write_routes():
+        if route.path in NO_CSRF_BY_DESIGN:
+            continue
+        methods = sorted(route.methods & WRITE_METHODS)
+        # Сохраняем весь набор зависимостей. Заглушка заменяет только бизнес-операцию.
+        probe.add_api_route(route.path, accepted, methods=methods,
+                            dependencies=[Depends(dep.call) for dep in route.dependant.dependencies])
+        path = re.sub(r"\{[^}]+\}", "1", route.path)
+        cases.extend((method, path) for method in methods)
+
+    with TestClient(probe) as local:
+        local.cookies.set("session_id", session_id)
+        local.cookies.set(GUEST_COOKIE_NAME, session_id)
+        for method, path in cases:
+            assert local.request(method, path, follow_redirects=False).status_code == 403, (method, path)
+            valid = local.request(method, path, data={"csrf_token": token},
+                                  headers={"X-CSRF-Token": token}, follow_redirects=False)
+            assert valid.status_code == 204, (method, path, valid.status_code)
+
+
+def test_csrf_protects_saved_notification_preference(auth_client, db, monkeypatch):
+    from app.csrf import generate_csrf_token
+
+    client, user = auth_client
+    for guard in (require_csrf, require_csrf_header):
+        monkeypatch.delitem(app.dependency_overrides, guard, raising=False)
+    user.telegram_chat_id = 555555
+    user.telegram_notifications_enabled = True
+    db.commit()
+    url = "/cabinet/notifications/telegram-toggle"
+    data = {"enabled": False}
+    assert client.post(url, json=data).status_code == 403
+    db.refresh(user)
+    assert user.telegram_notifications_enabled is True
+    token = generate_csrf_token(client.cookies.get("session_id"))
+    assert client.post(url, json=data, headers={"X-CSRF-Token": token}).status_code == 200
+    db.refresh(user)
+    assert user.telegram_notifications_enabled is False
 
 
 def test_exemptions_are_still_real_routes():

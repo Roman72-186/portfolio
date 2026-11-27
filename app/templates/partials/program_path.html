@@ -7,11 +7,21 @@
 периода и этапа) пути нет — там и проваливаться неоткуда.
 #}
 {% if prg_path and prg_path.crumbs|length > 1 %}
+{% set title_in_path = prg_path.crumbs[-1].label == title %}
 <nav aria-label="Где вы в программе">
-    <p class="prg-hint" data-program-path>
+    <ol class="prg-hint prg-workspace-path" data-program-path role="list">
         {% for crumb in prg_path.crumbs %}
-        {% if loop.last %}<span aria-current="page">{{ crumb.label }}</span>{% else %}<a href="{{ crumb.href }}">{{ crumb.label }}</a> › {% endif %}
+        <li{% if loop.last and title_in_path %} class="prg-workspace-path-current-hidden"{% endif %}>
+            {% if loop.last %}
+            <span aria-current="page">{{ crumb.label }}</span>
+            {% else %}
+            <a href="{{ crumb.href }}">{{ crumb.label }}</a>
+            {% if not (loop.revindex == 2 and title_in_path) %}
+            <span aria-hidden="true">›</span>
+            {% endif %}
+            {% endif %}
+        </li>
         {% endfor %}
-    </p>
+    </ol>
 </nav>
 {% endif %}

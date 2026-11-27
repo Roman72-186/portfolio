@@ -210,19 +210,13 @@ function insertTakenBlocks(form, incoming, status) {
         );
     }
     var firstNew = null;
-    var card = null;
-    var sourceKey = null;
+    var cards = new Map();
     incoming.forEach(function (block) {
-        if (!block.universal_key) card = null;
-        else if (!card || sourceKey !== block.universal_key) {
-            card = createUniversalCard(holder, null, block.portfolio_month);
-            sourceKey = block.universal_key;
-        }
-        var target = card ? card.querySelector('[data-universal-sections]') : holder;
+        var target = editorContainerHost(holder, block, cards, true);
         target.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
         var row = target.lastElementChild;
         fillBlockRow(row, block);
-        if (card) prepareUniversalSection(row, false);
+        if (target !== holder) prepareUniversalSection(row, false);
         window.RichTextField.enhanceAll(row);
         row.classList.add('prg-blk--new');
         if (!firstNew) firstNew = row;

@@ -10,13 +10,12 @@
 <div class="reports-page ios-reports">
 
     <div class="reports-head">
-        <h1 class="reports-title">🎬 Видеоотчёты{% if is_staff %} кураторов{% endif %}</h1>
+        <h1 class="reports-title">Видеоотчёты{% if is_staff %} кураторов{% endif %}</h1>
         <div class="reports-sub">
             {% if is_staff %}
             Все видео-отчёты, присланные кураторами. Новые также приходят вам в уведомлениях.
             {% else %}
-            Выберите готовое видео или снимите его на телефон.
-            После загрузки главные преподаватели и руководитель получат уведомление.
+            После отправки главные преподаватели и руководитель получат уведомление.
             {% endif %}
         </div>
     </div>
@@ -53,7 +52,7 @@
     </div>
     {% endif %}
 
-    <div class="history-title">{% if is_staff %}Присланные отчёты{% else %}История отправленных отчётов{% endif %}</div>
+    <div class="history-title">{% if is_staff %}Присланные отчёты{% else %}Отправленные отчёты{% endif %}</div>
     {% if history %}
         {% for r in history %}
         <div class="history-item">

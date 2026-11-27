@@ -1,0 +1,133 @@
+.periods-wrap { max-width: 1140px; margin: 0 auto; }
+.feature-section { margin-bottom: 32px; }
+.feature-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+}
+.feature-label {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.6px;
+    text-transform: uppercase; color: var(--dim);
+}
+.period-card {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 8px;
+}
+.period-card.active { border-color: rgba(5,150,105,0.4); }
+.period-card.inactive { opacity: 0.6; }
+.period-dates { font-size: 14px; font-weight: 700; color: var(--text); }
+.period-title { font-size: 12px; color: var(--dim); margin-top: 2px; }
+.period-status {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: var(--r-xl);
+    flex-shrink: 0;
+}
+.status-active { background: rgba(5,150,105,0.1); color: var(--ok); }
+.status-inactive { background: var(--surface); color: var(--dim); }
+.status-upcoming { background: rgba(168,85,247,0.08); color: var(--blue-text); }
+.status-expired { background: rgba(220,38,38,0.07); color: var(--error); }
+.period-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-sm {
+    font-size: 12px; font-weight: 700; padding: 5px 12px;
+    border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface);
+    cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    color: var(--text);
+}
+.btn-sm:hover { border-color: var(--blue); color: var(--blue-text); }
+/* Канонический .btn-danger (base.css) в компактном размере строчных действий */
+.period-actions .btn-danger { padding: 5px 12px; font-size: 12px; font-weight: 700; border-radius: 8px; }
+.create-form {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); padding: 20px; margin-top: 8px;
+    display: none;
+}
+.create-form.open { display: block; }
+.btn-add {
+    font-size: 13px; font-weight: 700; padding: 7px 16px;
+    border-radius: var(--r-sm); border: 1.5px dashed var(--line);
+    background: none; cursor: pointer; color: var(--dim);
+    font-family: inherit; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.btn-add:hover { border-color: var(--blue); color: var(--blue-text); }
+.empty-periods {
+    padding: 16px; text-align: center;
+    color: var(--dim); font-size: 13px;
+    border: 1px dashed var(--line); border-radius: var(--r-sm);
+    margin-bottom: 8px;
+}
+.period-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.period-card-right { display: flex; align-items: center; gap: 12px; }
+
+.flow-builder { margin-bottom: 16px; }
+.flow-notice { margin: auto; max-width: min(440px, calc(100% - 32px)); color: var(--text); }
+.flow-notice::backdrop { background: rgb(0 0 0 / 45%); }
+.flow-builder[open] > summary { margin-bottom: 16px; }
+.flow-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.flow-table { width: 100%; border-collapse: collapse; background: var(--surface); text-align: left; font-size: 14px; }
+.flow-table th, .flow-table td { padding: 12px 14px; vertical-align: top; }
+.flow-table thead th { color: var(--dim); font-weight: 600; }
+.flow-table tbody th, .flow-table tbody td { border-top: 1px solid var(--line); }
+.flow-table tbody th { min-width: 170px; }
+.flow-table-date { min-width: 150px; }
+.flow-table-meta { display: block; margin-top: 4px; color: var(--dim); font-weight: 400; }
+.flow-table .period-actions { flex-wrap: nowrap; white-space: nowrap; }
+.flow-table-price { white-space: nowrap; }
+.flow-table .period-actions a.btn-sm { text-decoration: none; }
+.flow-table .period-status { display: inline-block; margin: 5px 0; font-size: 13px; }
+.flow-edit-row:not(:has(.create-form.open)) { display: none; }
+.period-form-grid > div { min-width: 0; }
+.periods-wrap input[type="datetime-local"] {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+.periods-wrap input[type="datetime-local"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+}
+.flow-mobile-label { display: none; }
+
+@media (max-width: 850px) {
+    .periods-wrap { min-width: 0; }
+    .flow-table-wrap { overflow: visible; border: 0; }
+    .flow-table, .flow-table tbody { display: block; }
+    .flow-table { background: transparent; }
+    .flow-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+    .flow-table tbody tr { display: block; }
+    .flow-table tbody tr:not(.flow-edit-row) {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        padding: 12px;
+        margin-bottom: 8px;
+    }
+    .flow-table tbody th, .flow-table tbody td {
+        display: block;
+        border: 0;
+        min-width: 0;
+        padding: 5px 0;
+    }
+    .flow-table tbody th { overflow-wrap: anywhere; }
+    .flow-table .period-status { display: table; }
+    .flow-table .period-actions { flex-wrap: wrap; }
+    .flow-table .period-actions > * { min-height: 44px; }
+    .flow-table .period-actions a { display: inline-flex; align-items: center; }
+    .flow-mobile-label { display: inline; color: var(--dim); margin-right: 6px; }
+    .flow-edit-row .create-form { padding: 14px; margin: 0 0 8px; }
+    .period-card-right, .period-card .period-actions { flex-wrap: wrap; min-width: 0; }
+    .period-card .period-dates { overflow-wrap: anywhere; }
+}
+
+@media (max-width: 480px) {
+    .period-card { flex-direction: column; align-items: stretch; }
+    .period-card-right { justify-content: space-between; }
+    .period-form-grid { grid-template-columns: minmax(0, 1fr); }
+}

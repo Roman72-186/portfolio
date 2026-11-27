@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import asyncio
+
+from starlette.concurrency import run_in_threadpool
 import logging
 from datetime import datetime, timezone
 from typing import Annotated, Callable
@@ -48,6 +50,7 @@ from app.services.exam_cycle import (
     get_active_tickets,
     get_unsubmitted_active_tickets,
     get_or_create_cycle_for_probnik,
+    lock_probnik_upload,
     has_closed_cycle_for_ticket,
     has_submitted_for_ticket,
     intermediate_upload_state,
@@ -115,6 +118,7 @@ async def _upload_and_save(
     s3_path_builder,
     month: str,
     year: int,
+    commit: bool = True,
 ) -> tuple[int, int, str, list[int]]:
     """Сжать → S3 → Work. Возвращает (success, fail, last_error, created_ids)."""
     success = 0
@@ -180,7 +184,7 @@ async def _upload_and_save(
         created_ids.append(work.id)
         success += 1
 
-    if success > 0:
+    if success > 0 and commit:
         db.commit()
     return success, fail, last_error, created_ids
 
@@ -214,6 +218,7 @@ async def _overwrite_final(
     s3_path_builder,
     month: str,
     year: int,
+    commit: bool = True,
 ) -> tuple[int, int, str, list[int]]:
     """Перезаписать существующий финал новым фото (in-place).
 
@@ -256,7 +261,10 @@ async def _overwrite_final(
         photo_count=1,
         status="success",
     ))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return 1, 0, "", [final.id]
 
 
@@ -323,6 +331,7 @@ async def upload_probnik_final(
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
 
+    await run_in_threadpool(lock_probnik_upload, db, user["user_id"])
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
         return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
@@ -405,7 +414,7 @@ async def upload_probnik_final(
         success, fail, last_error, created_ids = await _overwrite_final(
             db=db, user=user, final=existing_final, file=files[0],
             subject=subject, student_score=None,
-            s3_path_builder=_path, month=month, year=now.year,
+            s3_path_builder=_path, month=month, year=now.year, commit=False,
         )
     else:
         success, fail, last_error, created_ids = await _upload_and_save(
@@ -413,7 +422,7 @@ async def upload_probnik_final(
             work_type=WORK_TYPE_MOCK_EXAM,
             cycle_id=cycle.id, attempt_number=attempt, is_final=True,
             parent_work_id=None, subject=subject, student_score=None,
-            s3_path_builder=_path, month=month, year=now.year,
+            s3_path_builder=_path, month=month, year=now.year, commit=False,
         )
 
     if success > 0:
@@ -433,12 +442,13 @@ async def upload_probnik_final(
             work_type=WORK_TYPE_MOCK_EXAM,
         )
         if not submission_state["verified"]:
-            db.commit()
+            failed_cycle_id = cycle.id
+            db.rollback()
             return JSONResponse({
                 "success": False,
                 "created": success,
                 "failed": fail,
-                "cycle_id": cycle.id,
+                "cycle_id": failed_cycle_id,
                 "cycle_created": created,
                 "attempt_number": attempt,
                 "work_ids": created_ids,
@@ -524,6 +534,7 @@ async def upload_probnik_intermediate(
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
 
+    await run_in_threadpool(lock_probnik_upload, db, user["user_id"])
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
         return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)

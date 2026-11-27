@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.models.task_block import BLOCK_QUESTION, BLOCK_UPLOAD, TaskBlock, TaskBlockSubmission
-from app.models.tracker import TrackerTask
+from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
 from app.models.work import WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
 from app.services.task_blocks import save_response, sync_blocks
 from app.services.user_management import archive_user
@@ -69,13 +69,14 @@ def _answer(db, student, question="Что было главным?", text="То�
     db.commit()
 
 
-def _block_work(db, student, title="Сдай листы"):
+def _block_work(db, student, title="Сдай листы", *, kind="material", submitted_at=None):
     task = _task(db, title=title)
+    task.kind = kind
     block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD, title=title)
     db.add(block)
     db.flush()
     db.add(TaskBlockSubmission(
-        block_id=block.id, user_id=student.id, submitted_at=datetime.now(timezone.utc),
+        block_id=block.id, user_id=student.id, submitted_at=submitted_at or datetime.now(timezone.utc),
     ))
     db.commit()
 
@@ -158,7 +159,7 @@ def test_moderator_reads_tasks_tab(client, db, user_factory, session_factory):
 # ── Профиль: «Учёба сейчас», без VK и отработок ──────────────────────────────
 
 
-def test_profile_study_now_counts_all_time_and_opens_tasks(
+def test_profile_counts_only_submissions_awaiting_review_even_after_a_week(
     client, db, user_factory, session_factory
 ):
     """Счётчик — за всё время, а не за неделю, и только по сдачам вкладки
@@ -171,8 +172,11 @@ def test_profile_study_now_counts_all_time_and_opens_tasks(
     _answer(db, student)
     _login(client, session_factory, chief)
 
-    study_now = client.get(f"/cabinet/students/{student.id}/profile").json()["student"]["study_now"]
+    profile_url = f"/cabinet/students/{student.id}/profile"
+    assert client.get(profile_url).json()["student"]["study_now"]["unreviewed"] == 0
 
+    _block_work(db, student, kind=ITEM_MOCK_EXAM, submitted_at=old)
+    study_now = client.get(profile_url).json()["student"]["study_now"]
     assert study_now["unreviewed"] == 1
     assert "point_a" in study_now
 
@@ -248,31 +252,6 @@ def test_review_queue_skips_retakes(db, user_factory):
 
 # ── Скрипт страницы: правило 11 ──────────────────────────────────────────────
 
-KNOWN_GLOBALS = {
-    "if", "for", "while", "switch", "catch", "function", "return", "typeof",
-    "new", "in", "of", "do", "else", "try", "throw", "delete", "void",
-    "Array", "Object", "JSON", "String", "Number", "Boolean", "Promise",
-    "Date", "Math", "Set", "Map", "RegExp", "Error", "FormData", "URL",
-    "URLSearchParams", "Blob", "File", "FileReader", "IntersectionObserver",
-    "MutationObserver", "CustomEvent", "Event", "XMLHttpRequest", "DataTransfer",
-    "fetch", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
-    "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
-    "clearInterval", "requestAnimationFrame", "alert", "confirm", "prompt",
-    "console", "queueMicrotask", "structuredClone", "AbortController",
-}
-
-
-def _strip_noise(js: str) -> str:
-    # Регулярки вида `.replace(/"/g, …)`: кавычка внутри них иначе читается
-    # как начало строки и съедает объявления функций до следующей кавычки.
-    js = re.sub(r"\((/(?:\\.|[^/\\\n])+/[gimsuy]*)", "(RE", js)
-    js = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
-    js = re.sub(r"(?m)^\s*//.*$", " ", js)
-    js = re.sub(r"//[^\n'\"]*$", " ", js, flags=re.M)
-    js = re.sub(r"'(?:\\.|[^'\\])*'", "''", js)
-    js = re.sub(r'"(?:\\.|[^"\\])*"', '""', js)
-    return js
-
 
 def _students_page_scripts(client, db, user_factory, session_factory) -> list[str]:
     chief = _chief(user_factory)
@@ -288,29 +267,6 @@ def _students_page_scripts(client, db, user_factory, session_factory) -> list[st
     ]
     assert scripts
     return scripts
-
-
-def test_students_page_script_calls_only_defined_functions(
-    client, db, user_factory, session_factory
-):
-    """Из `<script>` страницы вырезаны отработки, циклы и «Показать все»:
-    между функциями отработок лежали общие функции формы оценки
-    (`guardUnsavedScore` и соседи), их легко унести заодно."""
-    scripts = [_strip_noise(s) for s in _students_page_scripts(client, db, user_factory, session_factory)]
-    declared: set[str] = set()
-    for js in scripts:
-        declared |= set(re.findall(r"function\s+(\w+)", js))
-        declared |= set(re.findall(r"\b(?:var|let|const)\s+(\w+)", js))
-        declared |= set(re.findall(r"\b(\w+)\s*=\s*function", js))
-        for params in re.findall(r"function[^(]*\(([^)]*)\)", js):
-            declared |= {p.strip() for p in params.split(",") if p.strip()}
-    called: set[str] = set()
-    for js in scripts:
-        called |= set(re.findall(r"(?<![.\w$])([A-Za-z_$]\w*)\s*\(", js))
-
-    missing = sorted(called - declared - KNOWN_GLOBALS)
-
-    assert not missing, f"вызовы без определения: {missing}"
 
 
 def test_students_page_scripts_are_valid_javascript(

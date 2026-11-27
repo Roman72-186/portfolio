@@ -54,6 +54,32 @@ function settingsHiddenInside(panel, node) {
     return false;
 }
 
+function inheritedTaskDeadlineText(field) {
+    if (!field.hasAttribute('data-sum-inherit-task')) return '';
+    var form = field.closest('[data-item-form]');
+    var taskDeadline = form && form.querySelector('[data-x-submit-until]');
+    var block = field.closest('[data-block]');
+    if (!taskDeadline || !block) return '';
+    var tariffRows = Array.from(block.querySelectorAll('[data-b-deadline]'));
+    var hasOverride = function (row) {
+        return row.querySelector('[data-b-deadline-at]').value || row.querySelector('[data-b-deadline-none]').checked;
+    };
+    if (tariffRows.length && tariffRows.every(hasOverride)) return '';
+    var suffix = tariffRows.some(hasOverride) ? ' для остальных тарифов' : '';
+    for (var card = block.closest('[data-universal-key]'); card; card = card.parentElement.closest('[data-universal-key]')) {
+        var containerDeadline = card.querySelector('[data-container-deadline]');
+        if (containerDeadline && containerDeadline.value) {
+            return 'срок из контейнера' + suffix + ' ' + settingsDateText(containerDeadline.value);
+        }
+    }
+    var label = 'срок из задания' + suffix;
+    if (taskDeadline.value) return label + ' ' + settingsDateText(taskDeadline.value);
+    if (Array.from(form.querySelectorAll('[data-x-deadline-at]')).some(function (input) { return input.value; })) {
+        return label + ' по тарифу';
+    }
+    return '';
+}
+
 function settingsSummaryParts(panel) {
     var parts = [];
     var marked = panel.querySelectorAll(
@@ -62,7 +88,11 @@ function settingsSummaryParts(panel) {
     marked.forEach(function (el) {
         if (settingsHiddenInside(panel, el)) return;
         if (el.hasAttribute('data-sum')) {
-            if (!el.value) return;
+            if (!el.value) {
+                var inherited = inheritedTaskDeadlineText(el);
+                if (inherited) parts.push(inherited);
+                return;
+            }
             var value = el.type === 'number'
                 ? el.value + (el.getAttribute('data-sum-unit') || '')
                 : settingsDateText(el.value);
@@ -149,8 +179,16 @@ function openCustomSettingsPanels(root) {
 ['input', 'change'].forEach(function (type) {
     document.addEventListener(type, function (event) {
         var panel = event.target.closest && event.target.closest('[data-settings-panel]');
-        if (!panel) return;
+        var cycleForm = event.target.closest && event.target.closest('[data-item-form]');
+        var sharedDeadline = cycleForm && event.target.matches(
+            '[data-x-submit-until], [data-x-deadline-at], [data-x-deadline-none], [data-container-deadline]'
+        );
+        if (!panel && !sharedDeadline) return;
         setTimeout(function () {
+            if (sharedDeadline) {
+                refreshSettingsPanels(cycleForm);
+                return;
+            }
             for (var el = panel; el; el = el.parentElement && el.parentElement.closest('[data-settings-panel]')) {
                 refreshSettingsPanel(el);
             }

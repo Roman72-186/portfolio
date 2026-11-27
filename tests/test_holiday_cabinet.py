@@ -5,7 +5,7 @@
 Вход по ссылке группы — `tests/test_holiday_intake.py`, разделение программ —
 `tests/test_holiday_program.py`.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -16,7 +16,8 @@ from app.services.login_ips import device_label, distinct_ips_by_user
 from app.services.navigation import student_nav_items
 from app.services.report_scope import reportable_student_id_set
 from app.services.review_aggregate import _accessible_students
-from app.models.intake_link import IntakeLink
+from app.models.intake_link import HolidayIntake, IntakeLink
+from app.models.payment import KIND_HOLIDAY, STATUS_PAID, STATUS_PENDING, STATUS_REFUNDED, Payment
 from app.services import intake_link as intake_link_service
 from app.services.tags import add_tag_to_user, ensure_grade_tag, get_or_create_tag
 
@@ -376,10 +377,13 @@ def test_nightly_nick_check_skips_holiday(db, user_factory, monkeypatch):
 # Урезанный кабинет
 # ---------------------------------------------------------------------------
 
-def test_limited_menu_keeps_learning_portfolio_personal():
-    assert [item.key for item in student_nav_items(limited=True)] == ["learning", "portfolio", "personal"]
-    # Истёкший срок строже урезанного кабинета.
-    assert [item.key for item in student_nav_items(True, True)] == ["personal"]
+def test_limited_menu_includes_own_feedback_even_after_access_expires():
+    assert [item.key for item in student_nav_items(limited=True)] == [
+        "learning", "portfolio", "personal", "holiday_feedback",
+    ]
+    assert [item.key for item in student_nav_items(limited=True, access_expired=True)] == [
+        "personal", "holiday_feedback",
+    ]
 
 
 def test_holiday_student_sees_only_three_sections(client, db, user_factory, session_factory):
@@ -451,6 +455,89 @@ def test_students_screen_switches_programs_not_hides_them_in_filter(admin_client
 
     archive = client.get("/cabinet/archive").text
     assert 'class="sidebar-program-switch"' not in archive
+
+
+def test_students_screen_uses_confirmed_holiday_intakes(admin_client, db, user_factory):
+    client, _admin = admin_client
+    october = _holiday(db, user_factory, vk_id=301_001, with_track=False)
+    november = _holiday(db, user_factory, vk_id=301_002, with_track=False)
+    unknown = _holiday(db, user_factory, vk_id=301_003, with_track=False)
+    start = datetime(2026, 11, 28, 21, tzinfo=timezone.utc)
+    db.add_all([
+        IntakeLink(id=3, slug="october-track", title="Октябрьский трек", program=PROGRAM_HOLIDAY),
+        IntakeLink(id=8, slug="november-track", title="Ноябрьский трек", program=PROGRAM_HOLIDAY),
+        IntakeLink(id=16, slug="next-track", title="Следующий трек", program=PROGRAM_HOLIDAY,
+                   access_from=start),
+    ])
+    db.flush()
+    for student, link_id, status in (
+        (october, 3, STATUS_PAID),
+        (october, 16, STATUS_PENDING),
+        (november, 3, STATUS_PAID),
+        (november, 8, STATUS_PAID),
+        (unknown, 16, STATUS_PENDING),
+    ):
+        db.add(Payment(user_id=student.id, intake_link_id=link_id, kind=KIND_HOLIDAY,
+                       status=status, period=date(2026, 11, 1), amount_kop=100))
+    db.commit()
+
+    page = client.get("/cabinet/students?program=holiday")
+    assert page.status_code == 200
+    assert 'id="filter-holiday-intake"' in page.text
+    for student, key, label in (
+        (october, "2026-10", "Октябрь 2026"),
+        (november, "2026-11", "Ноябрь 2026"),
+        (unknown, "unknown", "Набор не указан"),
+    ):
+        assert f'<option value="{key}">{label}</option>' in page.text
+        row = client.get(f"/cabinet/students/{student.id}/row")
+        assert row.status_code == 200
+        assert f'data-holiday-intake="{key}"' in row.text
+    assert "Старт 29 ноября" not in page.text
+    assert 'id="filter-holiday-intake"' not in client.get("/cabinet/students").text
+
+    purchase = db.query(Payment).filter_by(user_id=unknown.id).one()
+    purchase.status = STATUS_PAID
+    db.commit()
+    page = client.get("/cabinet/students?program=holiday")
+    assert '<option value="2026-11-29">Старт 29 ноября</option>' in page.text
+
+
+def test_named_intakes_remain_separate_on_same_start_date(admin_client, db, user_factory):
+    client, _admin = admin_client
+    free_student = _holiday(db, user_factory, vk_id=301_004, with_track=False)
+    paid_student = _holiday(db, user_factory, vk_id=301_005, with_track=False)
+    morning = HolidayIntake(title="6 декабря · первая группа")
+    evening = HolidayIntake(title="6 декабря · вторая группа")
+    db.add_all([morning, evening])
+    db.flush()
+    free_student.holiday_intake_id = morning.id
+    start = datetime(2026, 12, 6, tzinfo=timezone.utc)
+    links = [
+        IntakeLink(slug=slug, title=cohort.title, program=PROGRAM_HOLIDAY, access_from=start,
+                   holiday_intake_id=cohort.id)
+        for slug, cohort in (("first-group", morning), ("second-group", evening))
+    ]
+    db.add_all(links)
+    db.flush()
+    paid_student.holiday_intake_id = morning.id
+    purchase = Payment(user_id=paid_student.id, intake_link_id=links[1].id, kind=KIND_HOLIDAY,
+                       status=STATUS_PENDING, period=start.date(), amount_kop=100)
+    db.add(purchase)
+    db.commit()
+
+    row_url = f"/cabinet/students/{paid_student.id}/row"
+    assert f'data-holiday-intake="intake-{morning.id}"' in client.get(row_url).text
+    purchase.status = STATUS_PAID
+    db.commit()
+    assert f'data-holiday-intake="intake-{evening.id}"' in client.get(row_url).text
+
+    page = client.get("/cabinet/students?program=holiday")
+    assert f'<option value="intake-{morning.id}">{morning.title}</option>' in page.text
+    assert f'<option value="intake-{evening.id}">{evening.title}</option>' in page.text
+    purchase.status = STATUS_REFUNDED
+    db.commit()
+    assert f'data-holiday-intake="intake-{morning.id}"' in client.get(row_url).text
 
 
 def test_holiday_student_is_out_of_statistics_point_a_and_review(db, user_factory, admin_user):

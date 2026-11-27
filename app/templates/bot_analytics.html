@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Статистика Telegram-бота{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
+<script src="/static/js/statistics-pagination.js?v=1" defer></script>
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
+<link rel="stylesheet" href="/static/css/bot_analytics.css?v=3">
+{% endblock %}
+{% block content %}
+<div class="ss-wrap ios-ss" data-stats-pagination>
+  <header class="bot-stats-heading">
+    {% if user.role_name == "модератор" %}
+    <a class="back-link" href="/cabinet/superadmin/activity">← Статистика активности</a>
+    {% else %}
+    <a class="back-link" href="/cabinet">← Кабинет</a>
+    {% endif %}
+    <h1 class="ss-title">Telegram-бот</h1>
+  </header>
+  <h2>Ссылки</h2>
+  {% if can_edit_links %}<details class="bot-link-builder">
+    <summary class="ss-export-btn">Создать ссылку</summary>
+    <form method="post" action="{{ page }}" class="ss-filters">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <label>Название ссылки <input name="title" maxlength="150" required></label>
+      <label>Источник (utm_source) <input name="utm_source" maxlength="150" required></label>
+      <label>Канал (utm_medium) <input name="utm_medium" maxlength="150" required></label>
+      <label>Кампания (utm_campaign) <input name="utm_campaign" maxlength="150" required></label>
+      <label>Ключевое слово (utm_term) <input name="utm_term" maxlength="150"></label>
+      <label>Объявление или публикация (utm_content) <input name="utm_content" maxlength="150"></label>
+      <button type="submit" class="ss-export-btn">Создать</button>
+    </form>
+  </details>{% endif %}
+  <div class="bot-stats-table">
+  <table>
+    <thead><tr><th>Название</th><th>Источник</th><th>Кампания</th><th>Ссылка</th><th>Действие</th></tr></thead>
+    <tbody>
+  {% for link in links %}
+    <tr>
+      <td><a href="{{ page }}?code={{ link.code }}">{{ link.title }}</a></td>
+      <td>{{ link.utm_source }}</td><td>{{ link.utm_campaign }}</td>
+      <td><input aria-label="Ссылка для публикации" readonly value="{{ request.base_url }}go/telegram/{{ link.code }}"></td>
+      <td><form method="post" action="{{ page }}/{{ link.code }}/archive">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      {% if link.archived %}<span>В архиве</span>{% elif can_edit_links %}<button type="submit">Архивировать</button>{% endif %}
+      </form></td>
+    </tr>
+  {% else %}<tr><td colspan="5">Пока нет ссылок.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <h2>Отчёт</h2>
+  <form method="get" action="{{ page }}" class="ss-filters">
+    <label>С <input type="date" name="since" value="{{ filters.since }}"></label>
+    <label>По <input type="date" name="until" value="{{ filters.until }}"></label>
+    <label>Ссылка <select name="code">
+      <option value="">Все</option>
+      <option value="unknown" {% if filters.code == 'unknown' %}selected{% endif %}>Источник неизвестен</option>
+      {% for link in links %}<option value="{{ link.code }}" {% if filters.code == link.code %}selected{% endif %}>{{ link.title }}</option>{% endfor %}
+    </select></label>
+    <label>Источник <input name="source" value="{{ filters.source or '' }}"></label>
+    <label>Кампания <input name="campaign" value="{{ filters.campaign or '' }}"></label>
+    <label>Telegram ID <input name="uid" type="number" min="1" value="{{ filters.uid or '' }}"></label>
+    <button type="submit">Показать</button>
+  </form>
+  <p><a href="{{ page }}?{{ query }}&amp;export=summary">Скачать сводку CSV</a> ·
+    <a href="{{ page }}?{{ query }}&amp;export=events">Скачать историю CSV</a></p>
+  {% set labels = {'click': 'Переходы по ссылке', 'tagged_start': 'Запустили бота по ссылке', 'start': 'Пользователи воронки', 'payment_click': 'Перешли к оплате', 'button': 'Нажали кнопку', 'step': 'Прошли шаг', 'situation': 'Выбрали ситуацию', 'material': 'Получили материал'} %}
+  <div class="bot-stats-table"><table>
+    <thead><tr><th>Ссылка</th><th>Показатель</th><th>Количество</th></tr></thead>
+    <tbody>{% for code, title, metric, count in summary %}
+      {% set kind, _, detail = metric.partition('/') %}
+      <tr><td>{{ title }}</td><td>{{ labels[kind] }}{% if detail %} · {{ detail }}{% endif %}</td><td>{{ count }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  <h2>Последние события</h2>
+  {% if profile %}
+    <dl>
+      <dt>Первый запуск</dt><dd>{{ profile.start.at if profile.start else '—' }}</dd>
+      <dt>Источник</dt><dd>{{ profile.start.code if profile.start and profile.start.code else 'Источник неизвестен' }}</dd>
+      <dt>Ситуация</dt><dd>{{ profile.situation.value if profile.situation else '—' }}</dd>
+      <dt>Последний выполненный шаг</dt><dd>{{ profile.step.value if profile.step else '—' }}</dd>
+    </dl>
+  {% endif %}
+  <div class="bot-stats-table">
+    <table>
+      <thead><tr><th>Telegram ID</th><th>Дата</th><th>Событие</th><th>Действие</th><th>Ссылка события</th><th>Первый запуск</th><th>Первая ссылка</th></tr></thead>
+      <tbody>{% for event in history %}
+        <tr><td>{{ event.uid or '' }}</td><td>{{ event.at }}</td><td>{{ labels[event.kind] }}</td><td>{{ event.value }}</td><td>{{ event.code or '' }}</td><td>{{ event.first_at or '' }}</td><td>{{ event.first_code or '' }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -16,7 +16,8 @@
     </nav>
     <form method="get" class="card review-filters">
         <input type="hidden" name="review_demo" value="1">
-        <label>Куратор<select class="field-select" name="review_curator">
+        <label>Показать<select class="field-select" name="review_curator">
+            <option value="all"{% if demo_curator_id == "all" %} selected{% endif %}>По всем ученикам</option>
             {% for curator in demo_curators %}
             <option value="{{ curator.id }}"{% if curator.id == demo_curator_id %} selected{% endif %}>{{ curator.name }}</option>
             {% endfor %}
@@ -29,30 +30,33 @@
         <label>Неделя<select class="field-select" name="cycle_id">
             {% for cycle in period.cycles %}<option value="{{ cycle.id }}" {% if period.cycle and cycle.id == period.cycle.id %}selected{% endif %}>{{ cycle.title }}</option>{% endfor %}
         </select></label>
-        <label>Работы<select class="field-select" name="status">
+        <label class="review-status-filter">Работы<select class="field-select" name="status">
             <option value="">На проверке</option><option value="all" {% if status == 'all' %}selected{% endif %}>Все сданные</option>
+            {% for value, label in control_filters.items() %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select></label>
-        <button class="btn-blue" type="submit">Показать</button>
+        <button class="btn-blue" type="submit">Применить фильтры</button>
     </form>
-    <h2 class="section-label">Выберите ученика для проверки</h2>
+    <h2 class="section-label">Ученики</h2>
     {% if cards %}
     <ul class="review-student-list">
     {% for card in cards %}
         {% set work = card.works[0] %}
         <li class="card review-student-card">
-            <a class="review-student-link" href="{{ work.url }}">
+            {% if work.url %}<a class="review-student-link" href="{{ work.url }}">{% endif %}
                 <strong>{{ card.student.last_name or '' }} {{ card.student.first_name or card.student.name }}</strong>
-            </a>
+            {% if work.url %}</a>{% endif %}
+            {% if status == "missing" %}<p>{{ work.block_title }} · Не сдано</p>{% endif %}
+            {% if work.waits_for_score %}<p>Ждём баллы</p>{% endif %}
             {% if card.works|length > 1 %}
             <details><summary>Работы · {{ card.works|length }}</summary>
-                <ul>{% for item in card.works %}<li><a href="{{ item.url }}">{{ item.block_title }}</a></li>{% endfor %}</ul>
+                <ul>{% for item in card.works %}<li>{% if item.url %}<a href="{{ item.url }}">{{ item.block_title }}</a>{% else %}{{ item.block_title }}{% endif %}</li>{% endfor %}</ul>
             </details>
             {% endif %}
         </li>
     {% endfor %}
     </ul>
     {% else %}
-    <p class="empty-state">За выбранную неделю работ в этом списке пока нет.</p>
+    <p class="empty-state">{{ 'По этим фильтрам нет сданных работ' if status == 'all' else 'По этим фильтрам нет работ на проверке' }}</p>
     {% endif %}
 </main>
 {% endblock %}

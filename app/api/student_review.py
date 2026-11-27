@@ -8,19 +8,18 @@
 уведомления и закладки.
 
 Экран-список «Проверка по ученику» — кого проверять, с поиском и фильтрами —
-возвращён 06.10.2026 в меню ГП и суперадмина (владелец). Строка ведёт во
-вкладку «Задания» карточки, своей проверки у экрана нет. Куратору пункта в
-меню нет, его адрес уводит в «Учеников» — там тот же счётчик и фильтр
-«Есть непроверенное».
+открывается из меню куратора, ГП и суперадмина. Строка ведёт во
+вкладку «Задания» карточки. Куратор видит только назначенных ему учеников.
 
 Сами действия остались на своих адресах: их зовут карточка, экран оценки
 работы в задании (`task_block_feedback_detail.html`) и экран точки А.
 """
 
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
@@ -30,7 +29,7 @@ from app.constants import tariffs_for_data
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
-from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockSubmission
+from app.models.task_block import TaskBlock, TaskBlockAnswer, TaskBlockResponse, TaskBlockSubmission
 from app.models.user import User
 from app.models.work import Work
 from app.services.notify import notify
@@ -45,7 +44,7 @@ from app.services.review_aggregate import (
     filter_review_rows,
     review_curator_options,
 )
-from app.services.task_blocks import set_reviewed, set_submission_reviewed
+from app.services.task_blocks import is_control_submission, set_reviewed, set_submission_reviewed
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
@@ -84,7 +83,7 @@ def students_review_list(
     subject: str = "",
     cycle_id: int | None = None,
 ):
-    from app.services.curator_review_demo import can_preview_review, demo_review_url
+    from app.services.curator_review_demo import can_handle_late_controls, can_preview_review, demo_review_url
 
     can_demo = can_preview_review(db, user)
     if request.url.path.endswith("/queue"):
@@ -100,13 +99,16 @@ def students_review_list(
         selected_curator = next((item for item in curators if str(item.id) == selected), None)
         if selected_curator is None and curators:
             selected_curator = curators[0]
-        curator_id = selected_curator.id if selected_curator else user["user_id"]
+        curator_id = "all" if selected == "all" else selected_curator.id if selected_curator else user["user_id"]
         queue = build_review_queue(
-            db, curator_id, subject=subject, tariff=tariff, cycle_id=cycle_id, status=status,
+            db, None if curator_id == "all" else curator_id,
+            subject=subject, tariff=tariff, cycle_id=cycle_id, status=status,
+            include_late=can_handle_late_controls(user),
         )
         for card in queue["cards"]:
             for work in card["works"]:
-                work["url"] = demo_review_url(work["url"], curator_id)
+                if work["url"]:
+                    work["url"] = demo_review_url(work["url"], curator_id)
         queue["subject_links"] = {
             key: demo_review_url(url, curator_id) for key, url in queue["subject_links"].items()
         }
@@ -115,9 +117,11 @@ def students_review_list(
             "request": request, "user": user, "nav_active": "students_review",
             "demo_curators": curators, "demo_curator_id": curator_id, "review_demo": True, **queue,
         })
-    if (user.get("nav_rank") or user["role_rank"]) < FULL_ACCESS_RANK:
-        return RedirectResponse("/cabinet/students", status_code=302)
-    all_rows = aggregate_student_review_counts(db, user)
+    native_rank = user.get("nav_rank") or user["role_rank"]
+    can_filter_curator = native_rank >= FULL_ACCESS_RANK
+    if not can_filter_curator:
+        curator = ""
+    all_rows = aggregate_student_review_counts(db, {**user, "role_rank": native_rank})
     rows = filter_review_rows(
         all_rows, q=q, status=status, tariff=tariff, curator=curator,
         search_contacts=True,
@@ -136,12 +140,82 @@ def students_review_list(
         # students.md): действующие всегда, старый — только если стоит у
         # кого-то из них.
         "tariffs": tariffs_for_data(row["student"].tariff for row in all_rows),
-        "curators": review_curator_options(db, all_rows),
+        "can_filter_curator": can_filter_curator,
+        "curators": review_curator_options(db, all_rows) if can_filter_curator else [],
         "status_unchecked": REVIEW_STATUS_UNCHECKED,
         "status_checked": REVIEW_STATUS_CHECKED,
         "newcomer_tariff": NEWCOMER_TARIFF,
         "no_curator": NO_CURATOR,
         "nav_active": "students_review",
+    })
+
+
+@router.get("/holiday", response_class=HTMLResponse)
+def holiday_review_list(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    flow: Annotated[str, Query(pattern=r"^\d{0,9}$")] = "",
+    status: Literal["pending", "reviewed", "all"] = "pending",
+    curator: Annotated[str, Query(pattern=r"^\d{0,9}$")] = "",
+    page: Annotated[int, Query(ge=1, le=10000)] = 1,
+):
+    from app.models.tracker import TrackerTask
+    from app.services.holiday_review import (
+        QUEUE_PATH, active_holiday_students, holiday_review_topic_ids, holiday_review_tracks,
+        task_in_student_flow, tracks_for_topics,
+    )
+    from app.services.linked_feedback import pending_linked_control_main_ids, standalone_review_clause
+    from app.api.cabinet_students_shared import _curator_options
+
+    can_filter_curator = (user.get("nav_rank") or user["role_rank"]) >= FULL_ACCESS_RANK
+    flow_id = int(flow) if flow else None
+    curator_id = int(curator) if curator and can_filter_curator else None
+    tracks = holiday_review_tracks(db).all()
+    track_ids = {track.id for track in tracks}
+    if flow_id is not None and flow_id not in track_ids:
+        raise HTTPException(status_code=404, detail="Поток не найден")
+
+    students = active_holiday_students(db, user)
+    if curator_id is not None:
+        students = students.filter(User.curator_id.is_(None) if curator_id == 0 else User.curator_id == curator_id)
+    query = (
+        db.query(TaskBlockSubmission, TrackerTask, User)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .join(User, User.id == TaskBlockSubmission.user_id)
+        .filter(
+            User.id.in_(students.with_entities(User.id).statement),
+            TaskBlockSubmission.submitted_at.is_not(None),
+            TrackerTask.deleted_at.is_(None),
+            TrackerTask.topic_id.in_(holiday_review_topic_ids()),
+        )
+    )
+    if flow_id is not None:
+        query = query.filter(task_in_student_flow(TrackerTask.topic_id, User.id, flow_id))
+    pending_group_ids = pending_linked_control_main_ids(db, query)
+    if status != "all":
+        pending = TaskBlockSubmission.reviewed_at.is_(None) | TaskBlockSubmission.id.in_(pending_group_ids)
+        query = query.filter(pending if status == "pending" else ~pending)
+    query = query.filter(standalone_review_clause(db, query))
+    page_size = 40
+    rows = query.order_by(TaskBlockSubmission.submitted_at.desc(), TaskBlockSubmission.id.desc()).offset(
+        (page - 1) * page_size
+    ).limit(page_size + 1).all()
+    filters = {"status": status, **({"flow": flow_id} if flow_id is not None else {})}
+    if curator_id is not None:
+        filters["curator"] = curator_id
+    tracks_by_topic = tracks_for_topics(
+        db, {task.topic_id for _, task, _ in rows[:page_size]}, track_ids=track_ids,
+    )
+    return templates.TemplateResponse(request, "holiday_review_queue.html", {
+        "tracks_by_topic": tracks_by_topic, "pending_group_ids": pending_group_ids,
+        "user": user, "nav_active": "students_review", "rows": rows[:page_size],
+        "tracks": tracks, "flow": flow_id, "curator": curator_id, "status": status,
+        "can_filter_curator": can_filter_curator, "curators": _curator_options(db) if can_filter_curator else [],
+        "work_query": urlencode(dict(filters, page=page, holiday_queue=1)),
+        "prev_url": QUEUE_PATH + "?" + urlencode(dict(filters, page=page - 1)) if page > 1 else None,
+        "next_url": QUEUE_PATH + "?" + urlencode(dict(filters, page=page + 1)) if len(rows) > page_size else None,
     })
 
 
@@ -269,6 +343,8 @@ def mark_block_work_reviewed(
         not_found_detail="Работа не найдена",
         forbidden_detail="Это не ваш студент",
     )
+    if is_control_submission(db, submission):
+        raise HTTPException(status_code=409, detail="Статус контрольной обновляется после отправки ОС и сохранения балла.")
     submission = set_submission_reviewed(
         db, submission_id=submission_id, user_id=user["user_id"],
         reviewed=payload.reviewed,

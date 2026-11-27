@@ -83,12 +83,20 @@ def test_fresh_csrf_extends_the_session(auth_client, db):
     session_id = next(
         cookie.value for cookie in client.cookies.jar if cookie.name == "session_id"
     )
-    before = db.query(DbSession).filter(DbSession.id == session_id).one().expires_at
-    db.expire_all()
-    resp = client.get("/csrf")
-    assert resp.status_code == 200
-    after = db.query(DbSession).filter(DbSession.id == session_id).one().expires_at
-    assert after >= before
+    from datetime import datetime, timedelta, timezone
+
+    session = db.get(DbSession, session_id)
+    session.expires_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+    db.commit()
+    db.refresh(session)
+    from app.config import settings
+
+    ttl = timedelta(hours=settings.session_ttl_hours)
+    start = datetime.now(timezone.utc)
+    assert client.get("/csrf").status_code == 200
+    finish = datetime.now(timezone.utc)
+    db.refresh(session)
+    assert start + ttl <= session.expires_at.replace(tzinfo=timezone.utc) <= finish + ttl
 
 
 def test_csrf_failure_names_the_reason_by_status():
@@ -121,12 +129,7 @@ def test_csrf_failure_names_the_reason_by_status():
     )
     run = subprocess.run([node, "-e", script], capture_output=True, text=True, encoding="utf-8")
     assert run.returncode == 0, run.stderr
-    assert json.loads(run.stdout) == [
-        "Сессия закончилась. Обновите страницу и войдите заново.",
-        "Раздел открыт только на просмотр",
-        "Неверный CSRF-токен. Обнови страницу и попробуй снова.",
-        "Этот тип скрыт — выберите другой",
-        "FALLBACK",
-        "FALLBACK",
-        "FALLBACK",
-    ]
+    expired, forbidden, csrf, invalid, *fallbacks = json.loads(run.stdout)
+    assert expired and expired not in {cases[0][1]["detail"], "FALLBACK"}
+    assert [forbidden, csrf, invalid] == [case[1]["detail"] for case in cases[1:4]]
+    assert fallbacks == ["FALLBACK"] * 3

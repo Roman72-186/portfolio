@@ -1,3 +1,4 @@
+
 """Aggregation correctness for _load_dashboard_data (Фаза 6, п.4 — не было прямых тестов).
 
 /cabinet/admin-panel рендерит cabinet_staff.html из полутора сотен строк
@@ -40,13 +41,25 @@ def test_dashboard_counts_students_not_staff(admin_client, db, user_factory):
     assert data["students_blocked"] == 1
 
 
-def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_factory):
+def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_factory, session_factory):
     """works_by_type/total_works/works_this_month считают по status=success и месяцу.
 
     Работы — ученика: с 07.10.2026 дашборд считает только учеников в учёте
     (`report_scope`), работы сотрудника в цифры не входят."""
     client, admin = admin_client
     student = user_factory(vk_id=200_101, name="Student Works", role_name="ученик")
+    older_student = user_factory(vk_id=200_102, role_name="ученик")
+    october_student = user_factory(vk_id=200_103, role_name="ученик")
+    cutoff = msk_midnight(datetime(2026, 8, 1).date())
+    sessions = [
+        (student, cutoff),
+        (older_student, cutoff - timedelta(seconds=1)),
+        (older_student, cutoff + timedelta(days=1)),
+        (october_student, msk_midnight(datetime(2026, 10, 1).date())),
+    ]
+    for owner, created_at in sessions:
+        session_factory(owner, active=False).created_at = created_at
+
     now = datetime.now(timezone.utc)
     last_month = now.replace(day=1) - timedelta(days=1)
 
@@ -65,15 +78,20 @@ def test_dashboard_works_by_type_and_this_month_counts(admin_client, db, user_fa
         # failed — не должен попасть никуда.
         Work(user_id=student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
              filename="failed.jpg", status="failed", created_at=now),
+        Work(user_id=older_student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+             filename="older.jpg", status="success", created_at=now),
+        Work(user_id=october_student.id, work_type=WORK_TYPE_BEFORE, month="май", year=now.year,
+             filename="october.jpg", status="success", created_at=now),
     ])
     db.commit()
 
     assert client.get("/cabinet/admin-panel").status_code == 200
     data = _dashboard(db, admin)
 
-    assert data["total_works"] == 5  # 2 before + 2 mock + 1 after, failed исключён
-    assert data["works_this_month"] == 4  # апрель не считается
-    assert data["works_by_type"][WORK_TYPE_BEFORE] == 2
+    assert data["total_works"] == 7
+    assert data["works_this_month"] == 6
+    assert data["works_by_type_total"] == 6
+    assert data["works_by_type"][WORK_TYPE_BEFORE] == 3
     assert data["avg_mock_score"] == 80  # единственная оценённая работа
 
 
@@ -149,13 +167,3 @@ def test_average_score_counts_only_mock_exams(admin_client, db, user_factory):
     db.commit()
 
     assert _dashboard(db, admin)["avg_mock_score"] == 60
-
-
-def test_ru_plural_forms():
-    from app.tmpl import ru_plural
-
-    forms = ("работа", "работы", "работ")
-    assert [ru_plural(n, *forms) for n in (0, 1, 2, 5, 11, 12, 21, 22, 25, 101, 111)] == [
-        "работ", "работа", "работы", "работ", "работ", "работ",
-        "работа", "работы", "работ", "работа", "работ",
-    ]

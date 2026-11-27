@@ -81,8 +81,8 @@
                 })
                 .catch(function(){
                     if (id !== loadId) return;
-                    body.innerHTML = '<div class="notif-pop-empty"><p role="status">Не удалось загрузить уведомления.</p>' +
-                        '<button type="button" class="btn-outline">Повторить</button></div>';
+                    body.innerHTML = '<div class="notif-pop-empty"><p role="status">Не удалось обновить список.</p>' +
+                        '<button type="button" class="btn-outline">Повторить загрузку</button></div>';
                     body.querySelector('button').addEventListener('click', function(e){
                         e.stopPropagation();
                         load();

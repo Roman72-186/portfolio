@@ -57,6 +57,26 @@ def test_embed_returns_player_data_for_group_member(auth_client, db, monkeypatch
     assert "quiz_submit_endpoint" not in body
 
 
+def test_alternate_route_survives_url_refresh(auth_client, db, monkeypatch):
+    from app.api.video import BRIDGE_RU_BASE
+
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    monkeypatch.setattr(settings, "bunny_player_proxy_base", BRIDGE_RU_BASE)
+    video = _video_open_to_all(db, user.id)
+    page = f"/cabinet/videos/{video.id}"
+    inline = client.get(page + "/embed").json()
+    assert inline["player_url"].startswith(BRIDGE_RU_BASE + "/")
+    assert inline["alternate_player_page"] == page + "?bridge=direct"
+    response = client.get(inline["alternate_player_page"])
+    assert response.status_code == 200
+    assert page + "/player-url?bridge=direct" in response.text
+    assert page + "?bridge=ru" in response.text
+    assert "https://assets.mediadelivery.net/playerjs/" in response.text
+    fresh = client.get(page + "/player-url?bridge=direct").json()
+    assert fresh["player_url"].startswith("https://iframe.mediadelivery.net/embed/")
+
+
 def test_embed_tells_player_when_resume_was_moved_back_to_finish(auth_client, db, monkeypatch):
     """Позиция у конца, просмотрено меньше порога — сервер ставит ученика на
     первый пропущенный кусок и говорит плееру, какой досмотреть (05.10.2026,

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TESTS = [
     'test_public_purchase.py', 'test_payments.py', 'test_routes_telegram_login.py',
     'test_routes_telegram_auth.py', 'test_student_behavior.py', 'test_annual_transfer.py',
-    'test_holiday_track_payment.py', 'test_reuse_ratchet.py',
+    'test_holiday_track_payment.py',
     'test_routes_auth.py', 'test_routes_cabinet_personal.py', 'test_access_until.py',
 ]
 
@@ -103,4 +103,5 @@ if __name__ == '__main__':
         sys.exit(baseline())
     if args.visual:
         sys.exit(run(['tests/test_public_purchase_visual.py']).returncode)
-    sys.exit(run([f'tests/{name}' for name in TESTS]).returncode)
+    reuse = subprocess.run([sys.executable, '-X', 'utf8', str(ROOT / 'scripts/reuse_check.py')], cwd=ROOT)
+    sys.exit(reuse.returncode or run([f'tests/{name}' for name in TESTS]).returncode)

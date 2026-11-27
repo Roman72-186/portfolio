@@ -34,7 +34,7 @@ from app.models.task_block import BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PORTFOLIO, BLO
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.cycle_feed import task_is_archived_for_user, task_is_locked_for_user
-from app.services.task_blocks import feed_state, portfolio_window_deadline
+from app.services.task_blocks import block_opens_at, container_close_at, feed_state, portfolio_window_deadline
 from app.services.tracker import MONTH_GENITIVE, accessible_task_ids
 from app.services.tz import MSK_TZ, now_msk, today_msk
 from app.services.video_topics import accessible_topic_ids
@@ -176,6 +176,10 @@ def portfolio_windows(
             state = entry["state"]
             personal_deadline = portfolio_window_deadline(block, state)
             uses_personal_window = bool(block.portfolio_window_hours)
+            started_at = _as_utc(state.started_at) if uses_personal_window and state is not None else None
+            opens_at = max((moment for moment in (block_opens_at(block), started_at) if moment), default=None)
+            leaf_close = personal_deadline if uses_personal_window else _as_utc(block.closes_at)
+            closes_at = min((moment for moment in (leaf_close, container_close_at(block)) if moment), default=None)
             prerequisite = None
             blocker = entry["sequence_blocker"]
             task_start = _as_utc(task.starts_at) if task is not None else None
@@ -194,15 +198,8 @@ def portfolio_windows(
                     block_id=block.id,
                     task_id=task_id,
                     section=block_sec,
-                    opens_at=(
-                        _as_utc(state.started_at)
-                        if uses_personal_window and state is not None
-                        else _as_utc(block.opens_at)
-                    ),
-                    closes_at=(
-                        _as_utc(personal_deadline)
-                        if uses_personal_window else _as_utc(block.closes_at)
-                    ),
+                    opens_at=opens_at,
+                    closes_at=closes_at,
                     is_open=(
                         not archived
                         and entry["status"] != "locked"

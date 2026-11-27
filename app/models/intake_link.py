@@ -22,8 +22,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.database import Base
 
 
+class HolidayIntake(Base):
+    __tablename__ = "holiday_intakes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+
+
 class IntakeLink(Base):
     __tablename__ = "intake_links"
+
+    holiday_intake_id: Mapped[int | None] = mapped_column(ForeignKey("holiday_intakes.id"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     slug: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)

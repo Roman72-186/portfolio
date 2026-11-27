@@ -11,6 +11,8 @@ from app.models.task_block import (
 )
 from app.services.curator_demo import build_curator_demo
 from app.services.tracker import create_task
+from app.services.tz import MSK_TZ
+from app.services.user_management import assign_curator
 
 
 @pytest.fixture
@@ -45,12 +47,88 @@ def _student(db, user_factory, curator, vk_id, name):
     return student
 
 
-def _submission(db, student, block, count, submitted_at=None):
-    submission = TaskBlockSubmission(block_id=block.id, user_id=student.id, submitted_at=submitted_at)
+def _submission(db, student, block, count, submitted_at=None, *, score=None):
+    submission = TaskBlockSubmission(block_id=block.id, user_id=student.id, submitted_at=submitted_at, score=score)
     db.add(submission)
     db.flush()
     for index in range(count):
         db.add(TaskBlockSubmissionImage(submission_id=submission.id, image_s3_url=f"https://example.com/{index}.jpg"))
+
+
+def test_curator_assignment_date_changes_only_when_curator_changes(db, user_factory, demo_group):
+    now, curator, *_ = demo_group
+    other = user_factory(vk_id=70102, role_name="куратор")
+    student = user_factory(vk_id=70103, tariff=TARIFF_CONFIDENT_MAX)
+
+    assign_curator(db, curator.id, student, curator)
+    assert student.curator_assigned_at is not None
+    student.curator_assigned_at = now - timedelta(days=2)
+    assign_curator(db, curator.id, student, curator)
+    assert student.curator_assigned_at == now - timedelta(days=2)
+    assign_curator(db, curator.id, student, other)
+    assert student.curator_id == other.id
+    assert student.curator_assigned_at > now - timedelta(days=2)
+    assign_curator(db, curator.id, student, None)
+    assert student.curator_id is None
+    assert student.curator_assigned_at is None
+
+
+def test_demo_recent_assignments_use_seven_day_window(db, user_factory, demo_group):
+    now, curator, _, cycle, *_ = demo_group
+    boundary = _student(db, user_factory, curator, 70102, "Граница")
+    boundary.curator_assigned_at = now - timedelta(days=7)
+    old = _student(db, user_factory, curator, 70103, "Старое")
+    old.curator_assigned_at = boundary.curator_assigned_at - timedelta(seconds=1)
+    _student(db, user_factory, curator, 70104, "Дата неизвестна")
+    future = _student(db, user_factory, curator, 70105, "Будущее")
+    future.curator_assigned_at = now + timedelta(seconds=1)
+    db.commit()
+
+    overview = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now)
+    assert [row["id"] for row in overview["recent_assignments"]] == [boundary.id]
+
+
+def test_demo_leaves_control_out_until_its_container_opens(db, user_factory, demo_group):
+    now, curator, _, cycle, first, *_ = demo_group
+    first.block_type = BLOCK_TIMED
+    opens_at = now + timedelta(days=1)
+    first.container_path = [{"key": "control", "opens_at": opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")}]
+    _student(db, user_factory, curator, 70102, "Ученик")
+    db.commit()
+
+    assert not build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now)["control_options"]
+    assert first.id in build_curator_demo(db, curator.id, cycle_id=cycle.id, now=opens_at)["control_options"]
+
+
+def test_demo_selects_control_and_distinguishes_ungraded_from_zero(
+    client, db, user_factory, session_factory, demo_group,
+):
+    now, curator, stage, cycle, first, second, _ = demo_group
+    first.block_type = second.block_type = BLOCK_TIMED
+    zero = _student(db, user_factory, curator, 70102, "Ноль")
+    ungraded = _student(db, user_factory, curator, 70103, "Без оценки")
+    missing = _student(db, user_factory, curator, 70104, "Не сдал")
+    _submission(db, zero, second, 1, now, score=0)
+    _submission(db, ungraded, second, 1, now)
+    db.commit()
+
+    overview = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now, control_id=second.id)
+    assert list(overview["control_options"]) == [first.id, second.id]
+    assert overview["control_id"] == second.id
+    assert {label: [row["id"] for row in rows] for label, rows in overview["control"]["groups"].items()} == {
+        "0 б.": [zero.id], "Сдали без оценки": [ungraded.id], "Не сдали": [missing.id],
+    }
+    fallback = build_curator_demo(db, curator.id, cycle_id=cycle.id, now=now, control_id=999999)
+    assert fallback["control_id"] == first.id
+    client.cookies.set("session_id", session_factory(curator).id)
+    response = client.get("/cabinet/curator/overview", params={
+        "stage_id": stage.id, "cycle_id": cycle.id, "subject": "Рисунок", "control_id": second.id,
+    })
+    assert response.status_code == 200
+    assert 'name="control_id"' in response.text
+    assert f'<option value="{second.id}" selected>' in response.text
+    for label in ("0 б.", "Сдали без оценки", "Не сдали"):
+        assert f"{label} · 1" in response.text
 
 
 def test_demo_counts_full_submissions_and_waiting_blocks(db, user_factory, demo_group):
@@ -164,19 +242,19 @@ def test_demo_route_scope_and_section_guard(client, db, user_factory, session_fa
     assert client.get("/cabinet/curator/demo").status_code == 403
 
 
-def test_review_queue_uses_assignment_week_and_own_students(client, db, user_factory, session_factory, demo_group):
+def test_review_queue_uses_assignment_week_and_selected_curator(client, db, user_factory, session_factory, demo_group, rendered):
     now, curator, _, cycle, first, _, _ = demo_group
     own = _student(db, user_factory, curator, 70102, "Работа своей группы")
     other = user_factory(vk_id=70103, role_name="куратор")
     foreign = _student(db, user_factory, other, 70104, "Работа чужой группы")
+    first.block_type = BLOCK_TIMED
     _submission(db, own, first, 2, now + timedelta(days=12))
     _submission(db, foreign, first, 2, now)
     db.commit()
-    client.cookies.set("session_id", session_factory(curator).id)
+    chief = user_factory(role_name="админ")
+    client.cookies.set("session_id", session_factory(chief).id)
 
     url = "/cabinet/staff/students-review/queue"
-    assert "Выберите предмет" in client.get(url).text
-    response = client.get(url, params={"subject": "Рисунок", "cycle_id": cycle.id})
+    response = client.get(url, params={"subject": "Рисунок", "cycle_id": cycle.id, "review_curator": curator.id})
     assert response.status_code == 200
-    assert "Работа своей группы" in response.text
-    assert "Работа чужой группы" not in response.text
+    assert [card["student"].id for card in rendered("curator_review_queue.html")["cards"]] == [own.id]

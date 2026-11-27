@@ -392,6 +392,10 @@ def cycle_submission_state(
     }
 
 
+def lock_probnik_upload(db: DBSession, user_id: int) -> None:
+    db.query(User.id).filter(User.id == user_id).with_for_update().one()
+
+
 def get_or_create_cycle_for_probnik(
     db: DBSession,
     *,

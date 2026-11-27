@@ -19,7 +19,7 @@
                 </div>
             </div>
             <label class="notif-gear-switch">
-                <input type="checkbox" data-tg-toggle
+                <input type="checkbox" data-tg-toggle aria-label="Уведомления в Telegram"
                     {% if user.telegram_chat_id and user.telegram_notifications_enabled %}checked{% endif %}
                     {% if not user.telegram_chat_id %}disabled{% endif %}>
                 <span class="notif-gear-track"></span>
@@ -31,7 +31,7 @@
                 <div class="notif-gear-row-note" data-push-note>Проверка поддержки браузера…</div>
             </div>
             <label class="notif-gear-switch">
-                <input type="checkbox" data-push-toggle disabled>
+                <input type="checkbox" data-push-toggle aria-label="Push в браузере" disabled>
                 <span class="notif-gear-track"></span>
             </label>
         </div>

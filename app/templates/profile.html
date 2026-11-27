@@ -7,11 +7,11 @@
 {% from "components/hint.html" import hint %}
 <div class="prf-page ios-profile">
     <div class="prf-top">
-        <h1>Расскажи о себе</h1>
+        <h1>Анкета ученика</h1>
         {% if user.public_purchase_pending %}
         <p>Заполни анкету годового курса, чтобы получить ссылку на канал «Путь к сотке».</p>
         {% else %}
-        <p>Заполни все необходимые поля – и двери на платформу откроются 🚪</p>
+        <p>Заполни обязательные поля, чтобы открыть доступ к платформе.</p>
         {% endif %}
     </div>
 
@@ -48,7 +48,6 @@
 
         <div class="prf-section-title">Шаг 1 из {{ steps_total }} · Основные данные</div>
         <div class="prf-passport" role="note">
-            <span class="prf-passport-icon" aria-hidden="true">‼️</span>
             <div>
                 <strong class="prf-passport-title">Имя и фамилию – как в&nbsp;паспорте</strong>
                 <span class="prf-passport-text">По ним тебя будет искать преподаватель</span>

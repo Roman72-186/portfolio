@@ -1,6 +1,6 @@
 """Статистика демо по назначенным сдачам, независимо от очереди проверки."""
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from app.services.program import msk_date
 from app.services.report_scope import reportable_students_q
 from app.services.staff_dashboard import CURATOR_STATS_TARIFFS, _score_value
 from app.services.task_blocks import (
-    BlockViewer, feed_visible_blocks, get_audiences, get_required_tariffs,
+    BlockViewer, block_opens_at, feed_visible_blocks, get_audiences, get_required_tariffs,
     is_submission_complete, required_by_block_for_task,
 )
 from app.services.tracker import cycle_bounds
@@ -119,6 +119,10 @@ def _assignments(db: Session, cycle: LearningTopic, students: list[User], now: d
         or_(TaskBlock.opens_at.is_(None), TaskBlock.opens_at <= now),
         TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),
     ).order_by(TrackerTask.sort_order, TrackerTask.id, TaskBlock.sort_order, TaskBlock.id).all()
+    pairs = [
+        (block, task) for block, task in pairs
+        if (opens_at := block_opens_at(block)) is None or opens_at <= now
+    ]
     if not pairs:
         return {}
     audience = topic_audience_user_ids(db, cycle.id)
@@ -170,7 +174,7 @@ def _progress(student: dict, blocks: list[dict]) -> dict:
 
 def build_curator_demo(
     db: Session, curator_id: int, *, stage_id: int | None = None, cycle_id: int | None = None,
-    subject: str = "", now: datetime | None = None,
+    subject: str = "", control_id: int | None = None, now: datetime | None = None,
 ) -> dict:
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(MSK_TZ).date()
@@ -179,6 +183,14 @@ def build_curator_demo(
         User.curator_id == curator_id, User.tariff.in_(CURATOR_STATS_TARIFFS),
     ).all()
     student_rows = sorted((_student_row(student) for student in students), key=lambda row: (row["name"].casefold(), row["id"]))
+    recent_ids = {
+        student_id for student_id, in reportable_students_q(db, now).with_entities(User.id).filter(
+            User.curator_id == curator_id,
+            User.tariff.in_(CURATOR_STATS_TARIFFS),
+            User.curator_assigned_at >= now - timedelta(days=7),
+            User.curator_assigned_at <= now,
+        )
+    }
     cycle = period["cycle"]
     future = bool(cycle is not None and cycle_bounds(cycle)[0] > today)
     assigned = _assignments(db, cycle, students, now) if cycle is not None and not future else {}
@@ -219,9 +231,13 @@ def build_curator_demo(
 
     # Три завершившихся календарных дня между последним визитом и сегодня.
     absent = [row for row in student_rows if row["last_seen"] and (today - row["last_seen"]).days > 3]
+    control_options = {block_id: controls[block_id]["label"] for block_id in sorted(controls)}
+    selected_control_id = control_id if control_id in controls else next(iter(control_options), None)
     return {
         **period, "future": future, "subjects": subjects, "subject": subject,
         "weekly": weekly, "practice": practice, "practice_total": sum(map(len, practice.values())),
-        "controls": list(controls.values()),
+        "control_options": control_options, "control_id": selected_control_id,
+        "control": controls.get(selected_control_id),
         "absent": absent, "unknown": [row for row in student_rows if row["last_seen"] is None],
+        "recent_assignments": [row for row in student_rows if row["id"] in recent_ids],
     }

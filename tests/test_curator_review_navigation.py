@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU
 from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_UPLOAD, TaskBlock, TaskBlockFeedbackLink, TaskBlockSubmission
+from app.models.tracker import ITEM_MOCK_EXAM
 from app.services.tracker import create_task
 
 
@@ -23,7 +24,7 @@ def test_navigation_keeps_queue_filters_after_review(client, db, user_factory, s
     )
     db.add(cycle)
     db.flush()
-    task = create_task(db, user_id=curator.id, title="Практика", topic_id=cycle.id, subject="Рисунок")
+    task = create_task(db, user_id=curator.id, title="Практика", topic_id=cycle.id, subject="Рисунок", kind=ITEM_MOCK_EXAM)
     task.is_published = True
     block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD, title="Работа", is_required=True)
     db.add(block)
@@ -51,14 +52,15 @@ def test_navigation_keeps_queue_filters_after_review(client, db, user_factory, s
     linked = TaskBlockSubmission(user_id=first.user_id, block_id=linked_block.id, submitted_at=now)
     db.add_all([linked, TaskBlockFeedbackLink(block_id=block.id, linked_block_id=linked_block.id)])
     db.commit()
-    client.cookies.set("session_id", session_factory(curator).id)
+    chief = user_factory(role_name="админ")
+    client.cookies.set("session_id", session_factory(chief).id)
 
     def url_of(body, item):
         match = re.search(fr'href="({SUBMISSIONS}/{item.id}/feedback\?[^\"]+)"', body)
         assert match
         return unescape(match[1])
 
-    params = {"subject": "Рисунок", "tariff": TARIFF_CONFIDENT_MAX, "cycle_id": cycle.id}
+    params = {"subject": "Рисунок", "tariff": TARIFF_CONFIDENT_MAX, "cycle_id": cycle.id, "review_curator": curator.id}
     queue = client.get(QUEUE, params=params)
     assert queue.status_code == 200
     start_url = url_of(queue.text, first)

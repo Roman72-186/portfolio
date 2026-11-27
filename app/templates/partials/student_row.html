@@ -5,7 +5,8 @@
    `s`, `can_score`, `is_archive_view`. #}
 <button type="button" class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})"
      data-tariff="{% if not s.tariff %}__newcomer__{% else %}{{ s.tariff }}{% endif %}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}" data-unreviewed="{{ s.unchecked }}"
-     data-tg-username="{{ s.tg_username }}" aria-label="{{ s.name }}">
+     data-tg-username="{{ s.tg_username }}"{% if s.holiday_intake %} data-holiday-intake="{{ s.holiday_intake }}"{% endif %}
+     aria-label="{{ s.name }}{% if s.holiday_intake_label %}, {{ s.holiday_intake_label }}{% endif %}">
     <span class="avatar-wrap">
         {% if s.photo_url %}
         <img src="{{ s.photo_url }}" class="student-avatar" alt="" width="38" height="38" loading="lazy">
@@ -19,6 +20,7 @@
     <div class="student-row-info">
         <div class="student-row-name">{{ s.name }}</div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">
+            {% if s.holiday_intake_label %}<span class="student-info-pill student-info-pill--purple">{{ s.holiday_intake_label }}</span>{% endif %}
             {% if s.needs_setup %}<span class="student-info-pill student-info-pill--warning">Нет анкеты</span>{% endif %}
             {% if s.tariff and s.tariff != '—' %}<span class="student-info-pill">{{ s.tariff|tariff_label }}</span>{% else %}<span class="student-info-pill student-info-pill--purple">Новенький</span>{% endif %}
             {% if s.course_periods %}{% for p in s.course_periods.split(',') %}{% set _pfx = p.split(' ')[0]|trim %}{% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _pcls }}">{{ _pfx }}</span>{% endfor %}{% endif %}

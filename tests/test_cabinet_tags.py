@@ -116,35 +116,18 @@ def test_hidden_student_shown_for_superadmin_with_show_hidden(superadmin_client,
 # Search (q) — by name and Telegram username
 # ---------------------------------------------------------------------------
 
-def test_search_by_name(admin_rank4_client, student_user):
+@pytest.mark.parametrize("query, found", [
+    ("Иванова", True), ("@search_fixture", True), ("search_fixture", True), ("несуществующий", False),
+])
+def test_tag_search_returns_matching_students(admin_rank4_client, student_user, user_factory, db, rendered, query, found):
     client, _ = admin_rank4_client
-    resp = client.get("/cabinet/superadmin/tags?q=Иванова")
-    assert resp.status_code == 200
-    assert "Иванова" in resp.text
+    user_factory(vk_id=910089, name="Другой ученик")
+    student_user.tg_username = "search_fixture"
+    db.commit()
 
-
-def test_search_by_telegram_username_with_at(admin_rank4_client, student_user):
-    client, _ = admin_rank4_client
-    student_user.tg_username = "bebebe5208"
-    resp = client.get("/cabinet/superadmin/tags?q=@bebebe5208")
-    assert resp.status_code == 200
-    assert "Иванова" in resp.text
-
-
-def test_search_by_telegram_username_without_at(admin_rank4_client, student_user):
-    client, _ = admin_rank4_client
-    student_user.tg_username = "bebebe5208"
-    resp = client.get("/cabinet/superadmin/tags?q=bebebe5208")
-    assert resp.status_code == 200
-    assert "Иванова" in resp.text
-
-
-def test_search_excludes_non_matching(admin_rank4_client, student_user):
-    client, _ = admin_rank4_client
-    student_user.tg_username = "bebebe5208"
-    resp = client.get("/cabinet/superadmin/tags?q=несуществующий")
-    assert resp.status_code == 200
-    assert "Иванова" not in resp.text
+    assert client.get("/cabinet/superadmin/tags", params={"q": query}).status_code == 200
+    ids = [student.id for student in rendered("superadmin_tags.html")["students"]]
+    assert ids == ([student_user.id] if found else [])
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +487,9 @@ def test_blocked_student_still_tagged(admin_rank4_client, db, student_user):
         data={"name": "Композиция", "csrf_token": "bypass"},
     )
     assert resp.status_code == 200, resp.text
+    db.expire_all()
+    tag = db.query(Tag).filter_by(name="Композиция").one()
+    assert db.get(UserTag, (student_user.id, tag.id)) is not None
 
 
 # ---------------------------------------------------------------------------

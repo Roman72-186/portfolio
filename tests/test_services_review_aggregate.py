@@ -7,7 +7,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from app.models.exam_cycle import ExamCycle
 from app.models.homework_submission import HomeworkSubmission
-from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
+from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockSubmission
+from app.models.tracker import ITEM_HOMEWORK, ITEM_MOCK_EXAM, SOURCE_HOMEWORK, TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.review_aggregate import (
     DOMAIN_EXAM_CYCLE,
@@ -369,6 +370,16 @@ def test_exam_cycle_items_on_revision_is_unreviewed_even_if_closed(db, user_fact
 # снят); круг учеников `_accessible_students` держит экран точки А.
 
 
+def _submission_for_review(db, student_id, *, kind="material", block_type=BLOCK_TIMED):
+    task = _task(db)
+    task.kind = kind
+    block = TaskBlock(task_id=task.id, block_type=block_type)
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=student_id, submitted_at=datetime.now(timezone.utc)))
+    db.commit()
+
+
 def test_counts_only_students_with_unreviewed(db, user_factory):
     curator = user_factory(vk_id=840_100, name="Куратор", role_name="куратор")
     quiet = user_factory(vk_id=840_101, name="Аня Тихая")
@@ -376,7 +387,8 @@ def test_counts_only_students_with_unreviewed(db, user_factory):
     busy = user_factory(vk_id=840_102, name="Боря Занятой")
     busy.curator_id = curator.id
     db.commit()
-    _homework_submission(db, busy.id)  # непроверенная сдача только у busy
+    _homework_submission(db, quiet.id)
+    _submission_for_review(db, busy.id)
 
     counts = unreviewed_counts_by_student(db, curator_id=curator.id, role_rank=2)
 
@@ -390,8 +402,8 @@ def test_counts_respect_curator_scope(db, user_factory):
     own_student.curator_id = own_curator.id
     foreign_student = user_factory(vk_id=840_105, name="Чужой ученик")
     db.commit()
-    _homework_submission(db, own_student.id)
-    _homework_submission(db, foreign_student.id)
+    _submission_for_review(db, own_student.id)
+    _submission_for_review(db, foreign_student.id)
 
     counts = unreviewed_counts_by_student(db, curator_id=own_curator.id, role_rank=2)
 
@@ -404,8 +416,8 @@ def test_counts_for_one_student(db, user_factory):
     first = user_factory(vk_id=840_108, name="Первый")
     second = user_factory(vk_id=840_109, name="Второй")
     db.commit()
-    _homework_submission(db, first.id)
-    _homework_submission(db, second.id)
+    _submission_for_review(db, first.id)
+    _submission_for_review(db, second.id, kind=ITEM_MOCK_EXAM, block_type="upload")
 
     counts = unreviewed_counts_by_student(db, curator_id=None, role_rank=5, student_id=second.id)
 

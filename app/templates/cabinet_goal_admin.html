@@ -20,11 +20,11 @@ FORM: Operate, расширение существующего кабинета 
     {% include "partials/program_tabs.html" %}
     <div class="trk-head">
         <div class="trk-head-copy">
-            <h1>Ближайшая цель</h1>
+            <h1>Цели программы</h1>
             <p>Ученик видит на «Личном трекере» одну ближайшую из адресованных ему опубликованных целей — по дате начала.</p>
         </div>
         {% if prg_edit %}
-        <button type="button" class="btn-blue" data-goal-toggle>Новая цель</button>
+        <button type="button" class="btn-blue" data-goal-toggle>Создать цель</button>
         {% endif %}
     </div>
 
@@ -77,7 +77,7 @@ FORM: Operate, расширение существующего кабинета 
     {% endif %}
 
     <div class="trk-list-head">
-        <h2>Все цели</h2>
+        <h2>Список целей</h2>
     </div>
 
     {% if goals %}

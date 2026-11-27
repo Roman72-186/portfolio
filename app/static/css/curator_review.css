@@ -58,10 +58,15 @@
 [data-demo-composer] [hidden],
 [data-demo-recorder] [data-mrf-idle] { display: none; }
 .review-subjects, .review-student-list { display: grid; gap: var(--s-3); }
-.review-subject { min-height: 130px; display: grid; align-items: end; background: var(--blue-soft); color: var(--blue-text); font-size: var(--fs-h2); font-weight: 800; }
-.review-subject:nth-child(2) { background: var(--surface-2); }
+.review-subjects {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-inline-size: 24rem;
+    margin-block-end: var(--s-3);
+}
+.review-subjects > a { justify-content: center; min-block-size: 44px; }
 .review-filters { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: end; }
 .review-filters label { display: grid; gap: var(--s-1); flex: 1 1 135px; }
+.review-filters .review-status-filter { flex-basis: 245px; }
 .review-filters + .section-label { margin-block-start: var(--s-4); }
 .review-student-list { margin: 0; padding: 0; list-style: none; }
 .review-student-card {
@@ -142,4 +147,35 @@
     align-items: center;
     gap: var(--s-2);
     line-height: 1.25;
+}
+
+.prg-actions.work-actions {
+    display: grid;
+    align-items: flex-start;
+    gap: var(--s-2);
+}
+
+.work-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+}
+
+.work-action > .btn-outline {
+    min-width: 0;
+    padding-inline: 12px;
+    white-space: normal;
+}
+
+.work-action > .hint-wrap { justify-self: center; }
+.work-actions .hint-trigger { min-height: 0; }
+.work-actions [data-feedback-close-status] { grid-column: 1 / -1; }
+.work-actions [data-feedback-close-status]:empty { position: absolute; }
+
+@media (min-width: 768px) {
+    .prg-actions.work-actions { display: flex; flex-wrap: nowrap; }
+    .work-action { grid-template-columns: minmax(0, auto); }
+    .work-action:has(> .hint-wrap) { grid-template-columns: minmax(0, auto) 44px; }
 }

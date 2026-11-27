@@ -466,3 +466,15 @@
 .ios-ss .ss-timed-warning { background: var(--warning-soft); color: var(--warning-ink); }
 .ios-ss .ss-timed-neutral { background: var(--ios-grouped-bg); color: var(--ios-label-2); }
 .ios-ss .ss-timed-link { color: var(--blue-text); text-decoration: underline; }
+
+.ios-ss .ss-timed-timer-badge { display: table; margin-top: var(--s-1); }
+.ios-ss .ss-timed-due-toggle { display: inline-block; cursor: pointer; white-space: normal; }
+.ios-ss .ss-timed-due-toggle::-webkit-details-marker { display: none; }
+.ios-ss .ss-timed-due-toggle::after { content: " +"; }
+.ios-ss details[open] > .ss-timed-due-toggle::after { content: " −"; }
+.ios-ss .ss-timed-dates { margin-top: var(--s-1); }
+
+.ios-ss .ss-timed-mobile-unit { display: none; }
+@media (max-width: 820px) {
+    .ios-ss .ss-timed-mobile-unit { display: inline; }
+}

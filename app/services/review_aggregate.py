@@ -73,6 +73,8 @@ class ReviewItem:
     # Куратор вернул сдачу на доработку (`homework`, `block_work`) — своя
     # пометка в списке, отдельная от is_reviewed: сдача на доработке не
     # считается проверенной, но и не должна выглядеть как обычное «на проверку».
+    requires_review: bool = False
+    control_review_mode: str | None = None
     needs_revision: bool = False
     can_return_revision: bool = True
     question: str | None = None
@@ -93,6 +95,10 @@ class ReviewItem:
     # Пробник: ученик сдал меньше этапных, чем задано в настройках
     # (`{"existing": 2, "required": 3}`, владелец 02.10.2026).
     stage_shortfall: dict | None = None
+
+    @property
+    def pending_review(self) -> bool:
+        return self.requires_review and not self.is_reviewed and not self.needs_revision
 
 
 def _task_block_items(
@@ -364,6 +370,8 @@ def _block_work_items(
             text=row["comment"],
             review_comment=row["review_comment"],
             images=row["images"],
+            requires_review=row["requires_review"],
+            control_review_mode=row["control_review_mode"],
             needs_revision=row["needs_revision"],
             score=row["score"],
         ))
@@ -519,18 +527,12 @@ _CARD_ADAPTERS = (_task_block_items, _homework_items, _block_work_items)
 
 def unreviewed_counts_by_student(
     db: DBSession, *, curator_id: int | None, role_rank: int = 0,
-    student_id: int | None = None,
+    student_id: int | None = None, include_late: bool = False,
 ) -> dict[int, int]:
-    """Счётчик непроверенного по каждому ученику — по тем же видам сдач, что
-    вкладка «Задания» (`_CARD_ADAPTERS`).
+    """Количество контрольных и пробников на проверке во вкладке «Задания».
 
     Это очередь «кого проверять»: счётчик в списке «Учеников» и на экране
     «Проверка по ученику» (`aggregate_student_review_counts`) — одно число.
-
-    Переиспользует адаптеры, а не отдельные COUNT-запросы: список учеников на
-    экран проверки небольшой (школа, не тысячи учеников), а адаптеры и так уже
-    написаны и протестированы — второй параллельный набор запросов ради
-    счётчика того не стоит.
 
     `student_id` — счётчик одной строки списка, которую карточка перечитывает
     после правки (`GET /cabinet/students/{id}/row`), без обхода всей школы.
@@ -538,10 +540,9 @@ def unreviewed_counts_by_student(
     from collections import Counter
 
     counts: Counter[int] = Counter()
-    for adapter in _CARD_ADAPTERS:
-        for item in adapter(db, curator_id=curator_id, student_id=student_id, role_rank=role_rank):
-            if not item.is_reviewed:
-                counts[item.student_id] += 1
+    for item in _block_work_items(db, curator_id=curator_id, student_id=student_id, role_rank=role_rank):
+        if item.pending_review and (include_late or item.control_review_mode != "score"):
+            counts[item.student_id] += 1
     return dict(counts)
 
 
@@ -559,8 +560,10 @@ def aggregate_student_review_counts(db: DBSession, user: dict) -> list[dict]:
     """
     curator_id = None if user.get("role_rank", 0) >= FULL_ACCESS_RANK else user["user_id"]
     students = _accessible_students(db, user)
+    from app.services.curator_review_demo import can_handle_late_controls
+
     counts = unreviewed_counts_by_student(
-        db, curator_id=curator_id, role_rank=user.get("role_rank", 0)
+        db, curator_id=curator_id, role_rank=user.get("role_rank", 0), include_late=can_handle_late_controls(user),
     )
 
     rows = [
@@ -685,5 +688,5 @@ def student_review_items(
         ))
     _epoch = datetime.min.replace(tzinfo=timezone.utc)
     items.sort(key=lambda i: i.submitted_at or _epoch, reverse=True)
-    items.sort(key=lambda i: i.is_reviewed)
+    items.sort(key=lambda item: not item.pending_review if card_only else item.is_reviewed)
     return items

@@ -15,7 +15,6 @@
 
     <div class="prs-hero">
         <h1>Личная информация</h1>
-        <p>Контакты, документы и правила обучения — в одном месте.</p>
     </div>
 
     {% if saved %}
@@ -128,7 +127,7 @@
         {% endif %}
         {% if user.tg_username and user.tg_username|string|trim %}
         <div class="prs-row">
-            <span class="prs-row-label">Telegram</span>
+            <span class="prs-row-label">Ник в Telegram</span>
             <span class="prs-row-value {{ '' if user.tg_username else 'empty' }}">{{ '@' + user.tg_username if user.tg_username else 'Не указано' }}</span>
         </div>
         {% endif %}
@@ -165,7 +164,7 @@
         {% endif %}
         {% if user.sdek_address and user.sdek_address|string|trim %}
         <div class="prs-row">
-            <span class="prs-row-label">Адрес СДЭК</span>
+            <span class="prs-row-label">Адрес пункта выдачи СДЭК</span>
             <span class="prs-row-value {{ '' if user.sdek_address else 'empty' }}">{{ user.sdek_address or 'Не указано' }}</span>
         </div>
         {% endif %}

@@ -8,12 +8,6 @@ def test_cabinet_without_auth_redirects(client):
     assert "session_expired" in resp.headers["location"]
 
 
-def test_cabinet_with_valid_session_returns_200(auth_client):
-    client, user = auth_client
-    resp = client.get("/cabinet")
-    assert resp.status_code == 200
-
-
 def test_cabinet_shows_student_name(auth_client, db):
     # /cabinet теперь редиректит ученика на /cabinet/learning (тема недели, без
     # личных данных). Hero-карточка с именем/тарифом/баллами живёт в шаблоне

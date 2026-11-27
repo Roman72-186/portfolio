@@ -152,6 +152,9 @@ class _FakeSftp:
     def listdir(self, path):
         return []
 
+    def posix_rename(self, old_path, new_path):
+        assert old_path != new_path
+
     def payload(self):
         return json.loads("".join(self.written))
 
@@ -203,6 +206,31 @@ def test_full_deploy_marker_records_head():
     assert payload["commit"] == "b" * 40
     assert payload["mode"] == "full"
     assert "patched_from_commit" not in payload
+
+
+def test_version_marker_is_untouched_when_staging_write_fails():
+    marker_path = f"{deploy.REMOTE_DIR}/{deploy.VERSION_FILE}"
+    files = {marker_path: '{"commit": "original"}'}
+
+    class BrokenWrite:
+        def __init__(self, path):
+            self.path = path
+
+        def append(self, text):
+            files[self.path] = text[:10]
+            raise OSError("connection interrupted")
+
+    class FailingSftp:
+        def open(self, path, mode):
+            return _FakeSftpFile(BrokenWrite(path))
+
+        def remove(self, path):
+            del files[path]
+
+    with pytest.raises(OSError, match="connection interrupted"):
+        deploy.write_version_marker(FailingSftp(), _state(), target_files=[], dirty_ok=False, previous=None)
+
+    assert files == {marker_path: '{"commit": "original"}'}
 
 
 def test_patch_history_accumulates_across_per_file_deploys():
@@ -425,19 +453,22 @@ def test_lock_acquired_at_once(monkeypatch):
     assert client.calls == 1
 
 
-def test_lock_waits_for_neighbour_then_takes_it(monkeypatch, capsys):
-    monkeypatch.setattr(deploy.time, "sleep", lambda _: None)
-    client = _FakeClient([
-        ("BUSY 90\nother-host pid=1 commit=abc", 0),
-        ("BUSY 100\nother-host pid=1 commit=abc", 0),
-        ("ACQUIRED", 0),
-    ])
+def test_lock_waits_for_neighbour_then_takes_it(monkeypatch):
+    class LockHost:
+        owner = "other"
 
-    deploy.acquire_deploy_lock(client, "me", wait_seconds=600, poll_seconds=0)
-    assert client.calls == 3
-    out = capsys.readouterr().out
-    assert out.count("Идёт другая выкатка") == 1
-    assert "other-host pid=1 commit=abc" in out
+        def exec_command(self, command, timeout=None):
+            if self.owner is None:
+                self.owner = "me"
+                reply = "ACQUIRED"
+            else:
+                reply = f"BUSY 1\n{self.owner}"
+            return None, _FakeStdout(reply), _FakeStdout("")
+
+    host = LockHost()
+    monkeypatch.setattr(deploy.time, "sleep", lambda _: setattr(host, "owner", None))
+    deploy.acquire_deploy_lock(host, "me", wait_seconds=60, poll_seconds=1)
+    assert host.owner == "me"
 
 
 def test_lock_gives_up_without_touching_prod(monkeypatch):
@@ -506,3 +537,41 @@ def test_lock_shell_commands_really_exclude_each_other(tmp_path, monkeypatch):
     assert _run(deploy.deploy_lock_release_command("first host pid=1")) == ["NOT_OWNER"]
     assert _run(deploy.deploy_lock_release_command("second")) == ["RELEASED"]
     assert not (tmp_path / "lock").exists()
+
+
+
+def test_scoped_release_snapshot_restores_changed_and_new_files(monkeypatch):
+    import io
+
+    monkeypatch.setattr(deploy, "REMOTE_DIR", "/app-release")
+    old = "/app-release/app/old.py"
+    new = "/app-release/app/new.py"
+    files = {old: b"before"}
+
+    class MemorySftp:
+        def open(self, path, mode):
+            if mode == "rb":
+                if path not in files:
+                    raise FileNotFoundError(path)
+                return io.BytesIO(files[path])
+            return _FakeSftpFile(Writeback(path))
+
+        def remove(self, path):
+            if path not in files:
+                raise FileNotFoundError(path)
+            del files[path]
+
+    class Writeback:
+        def __init__(self, path):
+            self.path = path
+
+        def append(self, content):
+            files[self.path] = content
+
+    sftp = MemorySftp()
+    snapshot = deploy.snapshot_release_files(
+        sftp, [deploy.LOCAL_DIR / "app/old.py", deploy.LOCAL_DIR / "app/new.py"],
+    )
+    files.update({old: b"changed", new: b"created"})
+    deploy.restore_release_files(sftp, snapshot)
+    assert files == {old: b"before"}

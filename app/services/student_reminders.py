@@ -112,6 +112,10 @@ from app.models.user import User
 from app.services.submission_edit import upload_deadline
 from app.services.task_blocks import (
     BlockViewer,
+    block_opens_at,
+    block_still_doable,
+    container_close_at,
+    container_submit_until,
     get_audiences,
     get_blocks_for_tasks,
     get_submit_deadlines,
@@ -252,7 +256,7 @@ def _collect_new_content(
         .filter(
             TaskBlock.block_type.in_(VIDEO_BLOCK_TYPES),
             TaskBlock.video_id.isnot(None),
-            or_(TaskBlock.created_at > since, TaskBlock.opens_at > since),
+            or_(TaskBlock.created_at > since, TaskBlock.opens_at > since, TaskBlock.container_path.is_not(None)),
         )
         .add_columns(TaskBlock)
         .all()
@@ -269,11 +273,11 @@ def _collect_new_content(
     for task, topic, block in video_block_rows:
         block_opened = max(
             m for m in (
-                _task_opened_at(task, topic), _utc(block.created_at), _utc(block.opens_at),
+                _task_opened_at(task, topic), _utc(block.created_at), block_opens_at(block),
             )
             if m is not None
         )
-        if since < block_opened <= now:
+        if since < block_opened <= now and block_still_doable(block, None, now=now):
             videos[task.id].append((block, block_opened))
             tasks_by_id.setdefault(task.id, task)
     if not tasks_by_id:
@@ -317,7 +321,8 @@ def _collect_new_content(
                 items[uid].append(_Item(
                     kind=KIND_NEW_TASK, ref=str(task_id), title=task.title,
                     has_video=task.kind == ITEM_VIDEO or any(
-                        _has_video(b) and not (_utc(b.opens_at) and _utc(b.opens_at) > now)
+                        _has_video(b) and ((opens := block_opens_at(b)) is None or opens <= now)
+                        and block_still_doable(b, None, now=now)
                         for b in visible
                     ),
                 ))
@@ -355,6 +360,18 @@ def _deadline_candidates(db: Session, now: datetime, horizon: datetime) -> list[
         .filter(window(TaskBlockTariffDeadline.submit_until))
         .all()
     ))
+    nested = db.query(TaskBlock).join(TrackerTask, TrackerTask.id == TaskBlock.task_id).filter(
+        TaskBlock.container_path.is_not(None),
+        TaskBlock.block_type.in_(LATE_SUBMISSION_BLOCK_TYPES),
+        TrackerTask.is_published.is_(True),
+        TrackerTask.deleted_at.is_(None),
+        TrackerTask.kind != ITEM_MOCK_EXAM,
+    )
+    for block in nested:
+        if any(now <= deadline <= horizon for deadline in (
+            container_close_at(block), container_submit_until(block),
+        ) if deadline is not None):
+            ids.add(block.task_id)
     return sorted(ids)
 
 
@@ -369,6 +386,8 @@ def _collect_missed_lessons(
     """
     from app.services.meeting_joins import attendance_by_block, ABSENT_STAFF
 
+    if not learners:
+        return
     rows = (
         db.query(TaskBlock, TrackerTask, LearningTopic)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
@@ -383,7 +402,7 @@ def _collect_missed_lessons(
             TrackerTask.kind != ITEM_MOCK_EXAM,
         ).all()
     )
-    if not rows or not learners:
+    if not rows:
         return
     block_ids = [block.id for block, _task, _topic in rows]
     by_task = get_blocks_for_tasks(db, list({task.id for _, task, _ in rows}))
@@ -401,7 +420,8 @@ def _collect_missed_lessons(
         if topic is not None and (not topic.is_published or topic.deleted_at is not None):
             continue
         ended = _utc(block.lesson_ends_at)
-        if _task_opened_at(task, topic) > ended or (_utc(block.opens_at) and _utc(block.opens_at) > ended):
+        opens_at = block_opens_at(block)
+        if _task_opened_at(task, topic) > ended or (opens_at is not None and opens_at > ended):
             continue
         # Закрытую ссылку нельзя открывать, но её запись может быть доступна:
         # проверяем адресацию каждого блока, а не подменяем её доступом к Zoom.
@@ -507,7 +527,8 @@ def _collect_deadlines(
             for block in feed_visible_blocks(blocks, audiences, viewer):
                 if (uid, block.id) in done_blocks:
                     continue
-                if _utc(block.opens_at) and _utc(block.opens_at) > now:
+                opens_at = block_opens_at(block)
+                if (opens_at is not None and opens_at > now) or not block_still_doable(block, None, now=now):
                     continue
                 pending.append(upload_deadline(
                     task, block, user_tariff=user.tariff,

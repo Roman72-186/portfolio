@@ -177,6 +177,7 @@ def assign_curator(
 
     log_curator_change(db, performed_by_id, student.id, old_curator_id, new_curator_id)
     student.curator_id = new_curator_id
+    student.curator_assigned_at = datetime.now(timezone.utc) if curator is not None else None
 
 
 def validate_staff_name(first_name: str, last_name: str) -> list[str]:
@@ -288,6 +289,7 @@ def tag_annual_newcomer(db: DBSession, user: User) -> None:
     """
     if user.program == PROGRAM_HOLIDAY:
         return
+    user.point_a_before_only = True
     if user.id is None:
         db.flush()
     tag = get_or_create_tag(db, ANNUAL_NEWCOMER_TAG)
@@ -671,7 +673,9 @@ def hard_delete_user(
 
     # Кто-то другой может считать её своим куратором/оценщиком — обнулить,
     # не трогая при этом чужие строки целиком.
-    db.execute(update(User).where(User.curator_id == target_user_id).values(curator_id=None))
+    db.execute(update(User).where(User.curator_id == target_user_id).values(
+        curator_id=None, curator_assigned_at=None,
+    ))
     db.execute(update(User).where(User.portfolio_before_scored_by_id == target_user_id)
                .values(portfolio_before_scored_by_id=None))
     db.execute(update(User).where(User.portfolio_after_scored_by_id == target_user_id)

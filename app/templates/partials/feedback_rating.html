@@ -5,7 +5,21 @@
    `services/feedback_rating.py::rating_panel`, поведение — `feedback-rating.js`.
    Только классы `base.css`: экраны грузят разные скины. #}
 {% set p = rating_panel %}
-{% if p.can_close %}
+{% if feedback_actions_inline|default(false) %}
+    {% from "components/hint.html" import hint %}
+    {% if p.can_close %}
+    <div class="work-action" data-feedback-close data-url="{{ p.close_url }}" data-csrf="{{ csrf_token(request) }}">
+        <button type="button" class="btn-outline">Завершить ОС</button>
+        {{ hint("Диалог закроется для вас обоих. Ученик получит просьбу оценить обратную связь.", "Что произойдёт при завершении обратной связи") }}
+        <p class="card-desc" data-feedback-close-status role="status" aria-live="polite"></p>
+    </div>
+    {% elif p.close_hint %}
+    <div class="work-action">
+        <span>Завершить ОС</span>
+        {{ hint(p.close_hint, "Когда можно завершить обратную связь") }}
+    </div>
+    {% endif %}
+{% elif p.can_close %}
 <section class="card" data-feedback-close data-url="{{ p.close_url }}" data-csrf="{{ csrf_token(request) }}">
     <h2 class="section-label">Завершить обратную связь</h2>
     <p class="card-desc">Когда всё сказано, нажми «Завершить ОС». Писать в диалог больше не сможете ни ты, ни ученик, а ученику придёт просьба оценить обратную связь.</p>

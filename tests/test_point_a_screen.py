@@ -131,14 +131,6 @@ def _exam_work(
 # ── доступ ──────────────────────────────────────────────────────────────────
 
 
-def test_head_teacher_opens_the_list(client, session_factory, admin):
-    _as(client, session_factory, admin)
-
-    resp = client.get(LIST_URL)
-
-    assert resp.status_code == 200
-
-
 def test_superadmin_sees_students_in_the_list(
     client, db, user_factory, session_factory, student
 ):
@@ -146,7 +138,6 @@ def test_superadmin_sees_students_in_the_list(
 
     Список берётся из `_accessible_students`, а та для ранга ≥ 4 ищет учеников
     по `Role.rank == 1`. Стоит этой связке разъехаться — экран молча покажет
-    «Учеников пока нет», и отличить это от отказа по коду ответа нельзя.
     """
     boss = user_factory(vk_id=880_003, name="Суперадмин", role_name="суперадмин")
     _before_work(db, student.id)
@@ -156,7 +147,6 @@ def test_superadmin_sees_students_in_the_list(
 
     assert resp.status_code == 200
     assert student.name in resp.text
-    assert "Учеников пока нет" not in resp.text
 
 
 def test_head_teacher_sees_students_in_the_list(

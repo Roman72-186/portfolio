@@ -19,8 +19,8 @@
 #}
 <div class="lrn-page ios-learning">
     <div class="lrn-hero">
-        <h1>Архив</h1>
-        <p>Пройденные циклы целиком: задания, твои работы, ответы преподавателя и видео.</p>
+        <h1>Архив обучения</h1>
+        <p>В архиве доступны задания, работы, ответы преподавателя и видео.</p>
     </div>
 
     {% if periods %}
@@ -47,7 +47,7 @@
                 {% for cycle in stage.cycles %}
                 <a class="video-row" href="/cabinet/learning/archive/{{ cycle.id }}" data-cycle-id="{{ cycle.id }}">
                     <h4 class="video-row-title">{{ cycle.title }}</h4>
-                    <span class="video-row-state video-row-state--new">Открыть</span>
+                    <span class="video-row-state video-row-state--new">Открыть цикл</span>
                 </a>
                 {% endfor %}
             </div>

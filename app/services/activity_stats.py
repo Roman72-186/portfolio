@@ -1771,7 +1771,7 @@ def get_timed_stats(
     """
     from app.models.task_block import BLOCK_TIMED, TaskBlock, TaskBlockSubmission
     from app.services.task_blocks import (
-        completed_after_deadline, get_submit_deadlines, get_task_submit_deadlines,
+        get_submit_deadlines, get_task_submit_deadlines, submit_deadline_for,
         timed_overrun, timed_upload_overrun,
     )
 
@@ -1839,11 +1839,12 @@ def get_timed_stats(
             finished is not None and started is not None and work_finished >= started
             and bool(block.time_limit_minutes)
         )
-        late = completed_after_deadline(
-            block, task, state, user_tariff=tariff,
+        deadline = _utc(submit_deadline_for(
+            block, task, user_tariff=tariff,
             block_overrides=block_deadlines.get(block.id),
             task_overrides=task_deadlines.get(task.id),
-        )
+        ))
+        late = finished is not None and deadline is not None and finished > deadline
         if finished is not None:
             item["submitted"] += 1
             item["overrun" if overrun else "in_time"] += 1
@@ -1892,6 +1893,12 @@ def get_timed_stats(
             "limit": block.time_limit_minutes,
             "status": status,
             "submitted": finished is not None,
+            "deadline_status": (
+                "not_submitted" if finished is None else "no_deadline" if deadline is None
+                else "late" if late else "in_deadline"
+            ),
+            "submitted_msk": _when_msk(finished),
+            "deadline_msk": _when_msk(deadline),
             "submission_id": submission_id if finished is not None else None,
             "score": float(score) if score is not None else None,
             "timer_result": ("overrun" if overrun else "in_time") if timer_measured else None,

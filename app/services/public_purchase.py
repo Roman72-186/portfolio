@@ -11,7 +11,7 @@ from app.services import payments
 from app.services.tz import MSK_TZ, _as_utc
 
 NOVEMBER_PRESALE = datetime(2026, 11, 18, tzinfo=MSK_TZ)
-NOVEMBER_START = datetime(2026, 11, 22, tzinfo=MSK_TZ)
+NOVEMBER_START = datetime(2026, 11, 22, 12, tzinfo=MSK_TZ)
 
 
 def waiting_for_start(now, payment=None):
@@ -81,8 +81,8 @@ def allows_path(db, enrollment, path: str) -> bool:
 
 def checkout(db, user: User, base_url: str, now: datetime) -> Payment:
     # Один покупатель – один незавершённый заказ, в том числе из двух вкладок.
-    enrollment = enrollment_for(db, user.id, lock=True)
     user = db.query(User).filter(User.id == user.id).populate_existing().with_for_update().one()
+    enrollment = enrollment_for(db, user.id, lock=True)
     if not enrollment or enrollment.activated_at or enrollment.first_payment_id:
         raise payments.PaymentUnavailable("Первая покупка уже оплачена. Обнови страницу.")
     if not sales_ready() or enrollment.selected_tariff not in {t["tariff"] for t in catalog(db)}:
@@ -97,20 +97,22 @@ def checkout(db, user: User, base_url: str, now: datetime) -> Payment:
     return payments.get_or_create_payment(db, user, now, base_url, public_purchase=True)
 
 
-def activate(db, user_id: int, now: datetime) -> bool:
-    enrollment = enrollment_for(db, user_id, lock=True)
+def activate(db, user_id: int, now: datetime, *, membership_confirmed: bool = False) -> bool:
     user = db.query(User).filter(User.id == user_id).populate_existing().with_for_update().one()
+    enrollment = enrollment_for(db, user_id, lock=True)
     if not enrollment:
         return False
     if enrollment.activated_at:
         return True
     payment = confirmed_payment(db, enrollment)
     if (not payment or waiting_for_start(now, payment) or not user.profile_completed
-            or not user.is_active or user.deleted_at is not None or not user.is_group_member
+            or not user.is_active or user.deleted_at is not None
+            or not (membership_confirmed or user.is_group_member)
             or user.paid_until is None or _as_utc(user.paid_until) <= _as_utc(now)):
         return False
     from app.models.audit_log import AuditLog
     from app.services.user_management import open_program_from_now, tag_annual_newcomer
+    user.is_group_member = True
     enrollment.activated_at = now
     open_program_from_now(user)
     tag_annual_newcomer(db, user)

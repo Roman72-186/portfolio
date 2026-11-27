@@ -62,7 +62,7 @@
 .ios-staff-dashboard .sfd-link-inline { color: var(--blue-text); }
 
 /* ── Stats grid — виджет-плитки ── */
-.ios-staff-dashboard .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ios-staff-dashboard .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .ios-staff-dashboard .stat-tile {
     background: var(--ios-card-bg); border-radius: 16px; padding: 14px 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
@@ -205,6 +205,7 @@
 
 @media (max-width: 768px) {
     .ios-staff-dashboard .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ios-staff-dashboard .stats-grid > .stat-tile:last-child { grid-column: 1 / -1; }
     .ios-staff-dashboard .two-col { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {

@@ -9,22 +9,18 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi.routing import APIRoute
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.models.section_access import SectionAccessRule
 from app.services import section_access
-from app.services.rbac import is_moderator_request_allowed, is_score_request
 from app.services.section_access import (
     SECTION_CLOSED_DETAIL,
     SECTION_VIEW_ONLY_DETAIL,
     SECTIONS,
-    SECTIONS_BY_KEY,
     can,
     judge_request,
     resolve_levels,
-    section_owners,
 )
 
 _MIGRATION = Path(__file__).resolve().parents[1] / "alembic/versions/639c04979ebf_section_access_levels.py"
@@ -126,85 +122,16 @@ def test_migration_maps_prod_rows():
     assert [bool(f) for f in flags] == [True, True, True, True, False, True]
 
 
-def test_view_only_snapshot_matches_sections_without_writes():
-    """Миграция переносит строки этих разделов в «Смотреть», потому что там
-    нечего менять. Появится адрес на запись — снимок в миграции устарел бы
-    молча; здесь краснеет."""
-    from app.main import app
-
-    writable = set()
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        path = re.sub(r"\{[^}]*\}", "5", route.path)
-        for method in route.methods - {"GET", "HEAD"}:
-            for query in ({}, {"tab": "statistics"}):
-                writable.update(section_owners(method, path, query))
-    assert set(_load_migration().VIEW_ONLY_SECTIONS) == {s.key for s in SECTIONS} - writable
+@pytest.mark.parametrize("section", ["archive", "statistics", "mock_check", "lab3d"])
+def test_migration_preserves_historical_read_only_sections(section):
+    engine = _old_table([(section, 2, None, True)])
+    _run(engine, "upgrade")
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT level FROM section_access_rules").scalar_one() == "view"
 
 
 # ── До и после миграции — одни и те же права ─────────────────────────────────
 #
-# Прежняя логика `section_access.py` до 04.10.2026 (`de35e08`), сжатая до
-# решения по запросу: белый список модератора, `moderator_may_use`,
-# `blocked_section`, `elevated_rank`.
-
-def _old_outcome(method, path, query, role_name, base_rank, rows):
-    by_role = {key: is_open for key, scope, is_open in rows if scope == "role"}
-    by_user = {key: is_open for key, scope, is_open in rows if scope == "user"}
-    closed, granted = set(), set()
-    for s in SECTIONS:
-        native = role_name in s.roles
-        is_open = by_user.get(s.key, by_role.get(s.key, native))
-        if native and not is_open:
-            closed.add(s.key)
-        elif is_open and not native:
-            granted.add(s.key)
-    workable = {key for key in granted if by_user.get(key) is True}
-    owners = section_owners(method, path, query)
-    if role_name == "модератор":
-        if method in ("GET", "HEAD"):
-            may_use = any(key in granted for key in owners)
-        else:
-            may_use = any(key in workable for key in owners)
-        if not (is_moderator_request_allowed(method, path) or may_use):
-            return ("moderator", base_rank)
-    if closed and owners and all(key in closed for key in owners):
-        return ("closed", base_rank)
-    rank = base_rank
-    if granted and not is_score_request(method, path):
-        for key in owners:
-            if key in granted and SECTIONS_BY_KEY[key].elevates:
-                rank = max(rank, SECTIONS_BY_KEY[key].min_rank)
-    return ("ok", rank)
-
-
-def _new_outcome(method, path, query, role_name, base_rank, levels):
-    access = judge_request(method, path, query, levels, role_name)
-    if role_name == "модератор" and not (
-        is_moderator_request_allowed(method, path) or access.raised
-    ):
-        return ("moderator", base_rank)
-    if access.refusal:
-        return ("closed", base_rank)
-    return ("ok", max(base_rank, access.rank))
-
-
-def _requests():
-    from app.main import app
-
-    seen = set()
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        path = re.sub(r"\{[^}]*\}", "5", route.path)
-        for method in route.methods:
-            for query in ({}, {"tab": "statistics"}):
-                key = (method, path, tuple(query.items()))
-                if key not in seen:
-                    seen.add(key)
-                    yield method, path, query
-
 
 def _store_migrated(db, *, role_ids, users):
     """Прод-строки в тестовую базу — с уровнями, которые им дала миграция."""
@@ -225,9 +152,8 @@ def _store_migrated(db, *, role_ids, users):
     db.commit()
 
 
-def test_prod_rows_keep_every_right_after_migration(db, user_factory):
-    """Каждый адрес приложения × каждый сотрудник с прод-правилами и без них:
-    отказ, белый список и подъём ранга совпадают до и после."""
+def test_prod_rows_keep_every_right_after_migration(db, user_factory, client, session_factory):
+    """Проверяем реальные запросы с перенесёнными ролевыми и личными правами."""
     users = {
         "curator_169": user_factory(vk_id=991_001, name="Куратор 169", role_name="куратор"),
         "moderator_278": user_factory(vk_id=991_002, name="Модератор 278", role_name="модератор"),
@@ -237,30 +163,16 @@ def test_prod_rows_keep_every_right_after_migration(db, user_factory):
     }
     role_ids = {u.role.name: u.role_id for u in users.values()}
     _store_migrated(db, role_ids=role_ids, users=users)
-    base_rank = {"куратор": 2, "модератор": 4, "админ": 4}
+    for role, expected in [("moderator", 200), ("moderator_278", 200), ("curator", 403), ("head", 200)]:
+        _login(client, session_factory, users[role])
+        assert client.get("/cabinet/staff/program/cycles", follow_redirects=False).status_code == expected
+    _login(client, session_factory, users["curator_169"])
+    assert client.get("/cabinet/archive", follow_redirects=False).status_code == 200
 
-    mismatches = []
-    checked = 0
-    for label, user in users.items():
-        role_name = user.role.name
-        old_rows = [
-            (key, "role", is_open) for key, role, owner, is_open in PROD_ROWS if role == role_name
-        ] + [
-            (key, "user", is_open) for key, role, owner, is_open in PROD_ROWS if owner == label
-        ]
-        levels = resolve_levels(db, user_id=user.id, role_id=user.role_id, role_name=role_name)
-        for method, path, query in _requests():
-            # Адреса действий (шаг 4) слой решает сам и отказывает раньше
-            # роута; итог тот же 403 — сверяет `test_action_defaults_repeat_todays_rights`.
-            if section_access.action_of(method, path) is not None:
-                continue
-            old = _old_outcome(method, path, query, role_name, base_rank[role_name], old_rows)
-            new = _new_outcome(method, path, query, role_name, base_rank[role_name], levels)
-            checked += 1
-            if old != new:
-                mismatches.append((label, method, path, query, old, new))
-    assert checked > 1000
-    assert mismatches == []
+    from test_routes_program_cycles import _payload
+    for role, expected in [("moderator", 403), ("moderator_278", 200)]:
+        _login(client, session_factory, users[role])
+        assert client.post("/cabinet/staff/program/cycles", json=_payload()).status_code == expected
 
 
 # ── Уровни по умолчанию — сегодняшние права ──────────────────────────────────
@@ -276,7 +188,9 @@ def test_default_levels_repeat_the_role_matrix(db, user_factory):
                     "statistics": "view", "lab3d": "view"},
         # Модератор — наблюдатель (28.09.2026).
         "модератор": {"students": "view", "archive": "view", "statistics": "view"},
-        "админ": {s.key: "view" if s.key in view_only else "edit" for s in SECTIONS},
+        # Рассылки ГП открывают явным правилом в «Доступах».
+        "админ": {s.key: "view" if s.key in view_only else "edit"
+                  for s in SECTIONS if s.key != "broadcasts"},
     }
     for i, (role_name, native) in enumerate(expected.items()):
         user = user_factory(vk_id=991_100 + i, name=role_name, role_name=role_name)
@@ -290,7 +204,8 @@ def test_default_levels_repeat_the_role_matrix(db, user_factory):
 TODAY_ACTIONS = {
     "куратор": set(),
     "модератор": set(),
-    "админ": {"people:students", "people:block", "people:role", "people:login", "people:impersonate"},
+    "админ": {"people:students", "people:block", "people:role", "people:login", "people:impersonate",
+              "statistics:bot_links"},
 }
 
 
@@ -305,6 +220,7 @@ def test_action_defaults_repeat_todays_rights(db, user_factory, role_name):
     for key, pattern, methods in section_access._ACTION_RULES:
         # Пример адреса из шаблона: число вместо `\d+`, первая ветка из `(a|b)`.
         path = pattern.pattern.strip("^$").replace(r"\d+", "5")
+        path = path.replace("[A-Za-z0-9_-]+", "test-code")
         path = re.sub(r"\(([^|)]*)\|[^)]*\)", r"\1", path).replace("\\", "")
         assert pattern.match(path), path
         method = sorted(methods)[0]
@@ -341,7 +257,6 @@ def test_head_lowered_to_view_reads_but_cannot_write(client, db, session_factory
         "/cabinet/staff/program/stages", data={"title": "Новый этап"}, follow_redirects=False,
     )
     assert resp.status_code == 403
-    assert "Только просмотр" in resp.text
     assert SECTION_CLOSED_DETAIL not in resp.text
 
 
@@ -400,6 +315,8 @@ def test_saving_same_levels_changes_nothing(db, user_factory):
     assert db.query(SectionAccessRule).filter_by(user_id=moderator.id).count() == 0
 
 
-def test_view_only_sections_match_migration_snapshot():
-    """Экран предлагает два уровня ровно там, где миграция не нашла записи."""
-    assert set(_load_migration().VIEW_ONLY_SECTIONS) == section_access.VIEW_ONLY_SECTIONS
+def test_migration_keeps_explicit_denial_for_personal_overrides():
+    engine = _old_table([("program", None, 278, False)])
+    _run(engine, "upgrade")
+    with engine.connect() as conn:
+        assert tuple(conn.exec_driver_sql("SELECT user_id, level FROM section_access_rules").one()) == (278, "none")

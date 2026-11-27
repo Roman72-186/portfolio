@@ -12,14 +12,30 @@
 Ждёт в контексте `tariffs` — действующую линейку тарифов. Пустой список
 (каникулярный цикл, созвон 13.10.2026) — сроков по тарифам нет вовсе.
 #}
+{% if cycle_deadline_hints %}
+{% from "components/hint.html" import hint %}
+<div class="prg-editor-heading">
+    <label for="cycle-item-submit-until">Срок сдачи задания</label>
+    {{ hint('Если оставить поле пустым, общего срока не будет. Срок отдельного этапа имеет приоритет.', 'Подсказка о сроке сдачи') }}
+</div>
+<input id="cycle-item-submit-until" type="datetime-local" data-x-submit-until data-sum="срок">
+{% else %}
 <label class="prg-field">Срок сдачи задания
     <input type="datetime-local" data-x-submit-until data-sum="срок"
            aria-label="Дата и время срока сдачи задания">
     <span class="prg-hint">Пусто – без срока. Действует на все блоки задания, кроме тех, где задан свой срок.</span>
 </label>
+{% endif %}
 {% if tariffs %}
 <div class="prg-blk-deadlines" data-x-deadlines data-sum-rows="свой срок у">
+    {% if cycle_deadline_hints %}
+    <div class="prg-editor-heading">
+        <span>Сроки по тарифам</span>
+        {{ hint('Если оставить поле тарифа пустым, действует общий срок задания.', 'Подсказка о сроках по тарифам') }}
+    </div>
+    {% else %}
     <p class="prg-hint">Свой срок по тарифу: пусто – работает общий срок задания.</p>
+    {% endif %}
     {% for tariff in tariffs %}
     <div class="prg-field prg-deadline-row" data-x-deadline-tariff="{{ tariff }}" data-sum-row>
         <span class="prg-deadline-name">{{ tariff }}</span>

@@ -391,12 +391,12 @@ def test_named_moderator_reaches_import_from_payments(db, client, session_factor
     db.commit()
     client.cookies.set("session_id", session_factory(named).id)
 
-    board = client.get("/cabinet/superadmin/payments?month=2026-10")
-    page = client.get("/cabinet/superadmin/payment-import")
+    board = client.get("/cabinet/superadmin/payments", follow_redirects=False)
+    page = client.get("/cabinet/superadmin/payment-import", follow_redirects=False)
 
     assert board.status_code == 200 and 'href="/cabinet/superadmin/payment-import"' in board.text
-    assert page.status_code == 200 and 'id="payImportFile"' in page.text
-    assert 'href="/cabinet/superadmin/payments" class="back-link"' in page.text
+    assert page.status_code == 200
+    assert 'href="/cabinet/superadmin/payments"' in page.text
 
 
 def test_month_without_year_in_november_keeps_october_this_year():
@@ -485,9 +485,13 @@ def test_closed_track_page_shows_first_payment_button(db, client, prices, chief,
     assert "Оплатить 13 255 ₽" in page.text
 
 
-def test_first_payment_text_when_cabinet_open(db, client, prices, chief, make_student, session_factory,
+def test_first_payment_from_open_cabinet_creates_expected_order(db, client, prices, chief, make_student, session_factory,
                                               monkeypatch):
-    monkeypatch.setattr(ps, "payments_configured", lambda: True)
+    from app.config import settings
+    from tests.test_payments import FORM_URL, KEY
+
+    monkeypatch.setattr(settings, "prodamus_form_url", FORM_URL)
+    monkeypatch.setattr(settings, "prodamus_secret_key", KEY)
     kid = _fresh_holiday(db, make_student, chief)
     kid.access_until = datetime.now(timezone.utc) + timedelta(days=3)
     db.commit()
@@ -496,5 +500,8 @@ def test_first_payment_text_when_cabinet_open(db, client, prices, chief, make_st
     page = client.get("/cabinet/personal")
 
     assert page.status_code == 200
-    assert "Первая оплата – 13 255 ₽, можно сейчас." in page.text
-    assert "Окно оплаты закончилось" not in page.text
+    result = client.post("/cabinet/personal/pay")
+    assert result.status_code == 200
+    payment = db.query(Payment).filter_by(user_id=kid.id).one()
+    assert result.json()["url"] == payment.link_url
+    assert payment.amount_kop == 1325500

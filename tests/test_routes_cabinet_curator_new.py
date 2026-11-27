@@ -73,18 +73,13 @@ def test_curator_dashboard_denied_for_student(client, db, user_factory, session_
 # GET /cabinet/curator/portfolio
 # ---------------------------------------------------------------------------
 
-def test_curator_portfolio_page_loads(curator_client):
+def test_curator_portfolio_lists_own_student_only(curator_client, student, user_factory):
     client, _ = curator_client
+    foreign = user_factory(vk_id=800099, name="Посторонний Кузнецов")
     resp = client.get("/cabinet/curator/portfolio")
     assert resp.status_code == 200
-
-
-def test_curator_portfolio_page_has_sidebar(curator_client, student):
-    client, _ = curator_client
-    resp = client.get("/cabinet/curator/portfolio")
-    assert resp.status_code == 200
-    # Sidebar должен содержать имя студента
-    assert "Иванова" in resp.text or "Анна" in resp.text
+    assert student.last_name in resp.text
+    assert foreign.name not in resp.text
 
 
 # ---------------------------------------------------------------------------

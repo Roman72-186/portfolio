@@ -410,3 +410,24 @@ def test_video_topic_never_appears_among_mock_exam_tickets(db, regular_user, adm
 
     for subject in ("Рисунок", "Композиция"):
         assert get_active_tickets(db, regular_user.id, subject) == []
+
+
+def test_period_opening_controls_stage_and_cycle_without_resetting_settings(db, regular_user, admin_user):
+    period = _topic(db, admin_user, assign_to_all=True, opens_in_days=10)
+    period.kind, period.program = "period", "annual"
+    stage = _topic(db, admin_user, assign_to_all=True)
+    stage.kind, stage.parent_id = "stage", period.id
+    cycle = _topic(db, admin_user, assign_to_all=True)
+    cycle.parent_id = stage.id
+    db.commit()
+
+    ids = {period.id, stage.id, cycle.id}
+    assert ids.isdisjoint(accessible_topic_ids(db, regular_user.id))
+    assert ids <= accessible_topic_ids(db, regular_user.id, include_upcoming=True)
+    assert topic_audience_user_ids(db, cycle.id) == set()
+
+    period.opens_at = now_msk()
+    db.commit()
+    assert ids <= accessible_topic_ids(db, regular_user.id)
+    assert regular_user.id in topic_audience_user_ids(db, cycle.id)
+    assert stage.is_published and cycle.is_published

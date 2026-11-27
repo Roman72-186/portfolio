@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 from app.config import settings
-from app.constants import DIALOG_HOLIDAY, PROGRAM_HOLIDAY
+from app.constants import DIALOG_HOLIDAY, PROGRAM_HOLIDAY, TARIFF_WITH_YOU
 from app.models.notification import Notification
 from app.models.payment import KIND_HOLIDAY, STATUS_PAID, STATUS_REFUNDED, STATUS_SUM_MISMATCH, Payment
 from app.models.tag import Tag, UserTag
@@ -232,21 +232,19 @@ def test_pay_button_builds_track_link(client, db, user_factory, session_factory,
     assert db.query(Payment).filter(Payment.user_id == student.id).count() == 1
 
 
-@pytest.mark.parametrize("title, name, thanks", [
-    ("АРХИпроба 1 трек", "Доступ к материалам АРХИпроба 1 трек",
-     "Благодарю за оплату доступа к материалам АРХИпроба 1 трек"),
-    ("ЭКЗпроба 1 трек", "Доступ к материалам ЭКЗпроба 1 трек",
-     "Благодарю за оплату доступа к материалам ЭКЗпроба 1 трек"),
-    ("АРХИпроба 2 трек", "Онлайн-курс АРХИпроба 2 трек", "Благодарю за оплату курса АРХИпроба 2 трек"),
-    ("ЭКЗпроба 2 трек", "Онлайн-курс ЭКЗпроба 2 трек", "Благодарю за оплату курса ЭКЗпроба 2 трек"),
-    ("Попробуй обучение", "Онлайн-курс Попробуй подготовку", "Благодарю за оплату курса Попробуй подготовку"),
+@pytest.mark.parametrize("title, name", [
+    ("АРХИпроба 1 трек", "Доступ к материалам АРХИпроба 1 трек"),
+    ("ЭКЗпроба 1 трек", "Доступ к материалам ЭКЗпроба 1 трек"),
+    ("АРХИпроба 2 трек", "Онлайн-курс АРХИпроба 2 трек"),
+    ("ЭКЗпроба 2 трек", "Онлайн-курс ЭКЗпроба 2 трек"),
+    ("Попробуй обучение", "Онлайн-курс Попробуй подготовку"),
 ])
-def test_track_receipt_wording(db, title, name, thanks):
+def test_track_receipt_wording(db, title, name):
     """Чек трека дословно по школе 19.10.2026: 1 трек — доступ к материалам,
     2 трек и «Попробуй подготовку» — онлайн-курс."""
     got_name, got_thanks = ps.holiday_receipt(_track(db, title=title))
     assert got_name == name
-    assert got_thanks == f"{thanks}\nАдминистратор тг-канала https://t.me/creativeanalytic свяжется с тобой"
+    assert "https://t.me/creativeanalytic" in got_thanks
 
 
 def test_closed_track_cannot_be_paid(client, db, user_factory, session_factory, prodamus):
@@ -462,6 +460,22 @@ def test_paying_one_track_keeps_open_link_of_another(client, db, user_factory, p
     assert {"АРХИпроба 1 трек", "ЭКЗпроба 1 трек"} <= _tags(db, student)
     staff_titles = [n.title for n in db.query(Notification).filter(Notification.user_id != student.id)]
     assert "Оплата по отменённой ссылке" not in staff_titles
+
+
+def test_track_payment_during_annual_checkout_keeps_track_notification(client, db, user_factory, prodamus, no_delivery):
+    from app.models.public_enrollment import PublicEnrollment
+
+    track = _track(db)
+    student = _newcomer(db, user_factory)
+    enrollment = PublicEnrollment(user_id=student.id, selected_tariff=TARIFF_WITH_YOU)
+    db.add(enrollment)
+    payment = ps.get_or_create_track_payment(db, student, track, datetime.now(timezone.utc), "https://x")
+    db.commit()
+
+    assert _post_webhook(client, payment).status_code == 200
+    notice = db.query(Notification).filter_by(user_id=student.id, title="Оплата принята").one()
+    assert notice.text == ps.holiday_thanks_text(track)
+    assert enrollment.first_payment_id is None and student.program == PROGRAM_HOLIDAY
 
 
 # ── Короткий адрес набора (19.10.2026) ──────────────────────────────────────

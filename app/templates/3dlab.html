@@ -1074,8 +1074,10 @@ body.inset-mode #insetOpacityRow {
   }
   </script>
 
+  {% if staff_lab_design %}<link rel="stylesheet" href="/static/css/staff_workspace.css?v=1">{% endif %}
+  {% if student_lab_design %}<link rel="stylesheet" href="/static/css/student_workspace.css?v=2">{% endif %}
 </head>
-<body>
+<body{% if staff_lab_design %} class="staff-lab"{% elif student_lab_design %} class="student-lab"{% endif %}>
 <div id="bootLoader" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#050506;color:#e0e0e0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;">
   <div style="width:40px;height:40px;border-radius:999px;border:3px solid rgba(255,255,255,0.12);border-top-color:#fff;animation:bootspin 0.8s linear infinite;"></div>
   <div id="bootStatus" role="status" style="font-size:13px;opacity:.75;">Загрузка приложения…</div>

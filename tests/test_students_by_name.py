@@ -5,8 +5,6 @@
 посмотрел — видео-блок закрыт. Куратор видит ту же карточку только по своим
 ученикам (`/cabinet/curator/statistics`).
 """
-import json
-import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -292,22 +290,47 @@ def test_all_students_grant_does_not_bypass_closed_statistics(curator_client, db
     assert client.get("/cabinet/curator/statistics", follow_redirects=False).status_code == 403
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="нужен node")
-def test_students_by_name_script_parses(admin_client, db, user_factory, tmp_path):
-    """Скрипт карточки рендерится Jinja (данные вшиты `tojson`) — проверяем
-    готовую страницу: `node --check` по скрипту карточки."""
+@pytest.fixture
+def statistics_page(client):
+    sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+
+        def serve(route):
+            if not route.request.url.startswith("https://testserver/"):
+                route.abort()
+                return
+            response = client.get(route.request.url, follow_redirects=False)
+            headers = {k: v for k, v in response.headers.items()
+                       if k not in {"content-length", "content-encoding", "transfer-encoding"}}
+            route.fulfill(status=response.status_code, headers=headers, body=response.content)
+
+        page.route("**/*", serve)
+        yield page
+        browser.close()
+
+
+def _open_statistics_mode(page, path, mode):
+    page.goto("https://testserver" + path)
+    button = page.get_by_role("button", name=mode, exact=True, include_hidden=True)
+    panel = page.locator("details").filter(has=button)
+    if not button.is_visible():
+        panel.locator("summary").click()
+    button.click()
+    return panel
+
+
+def test_admin_can_find_student_in_statistics(admin_client, db, user_factory, statistics_page):
     client, _ = admin_client
-    user_factory(vk_id=820_050, name="Student", tariff=TARIFF_SELF)
+    student = user_factory(vk_id=820_050, name="Student", tariff=TARIFF_SELF)
     _cycle_with_video(db)
 
-    html = client.get("/cabinet/superadmin/activity").text
-    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
-    card = [s for s in scripts if "data-activity-portfolio" in s]
-    assert len(card) == 1
-    path = tmp_path / "card.js"
-    path.write_text(card[0], encoding="utf-8")
-    result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    panel = _open_statistics_mode(statistics_page, "/cabinet/superadmin/activity", "По ученику")
+    panel.get_by_role("searchbox").fill(str(student.id))
+    row = panel.locator(f'[data-student-id="{student.id}"]')
+    assert row.is_visible()
 
 
 # ── Ответы Александрии 23.10.2026 ───────────────────────────────────────────
@@ -440,20 +463,6 @@ def test_students_by_name_has_student_mode(admin_client, db, user_factory):
     assert html.count(" data-sbn-extra>") == 8  # 4 заголовка + 4 ячейки одного ученика
 
 
-def test_student_statistics_layout_contract():
-    """Общий вид для персонала: статус отделён, лента читается по ячейкам."""
-    from pathlib import Path
-
-    template = Path("app/templates/partials/students_by_name.html").read_text(encoding="utf-8")
-    css = Path("app/static/css/superadmin_stats_ios.css").read_text(encoding="utf-8")
-    assert "['Действие', 'Статус', 'Дата']" in template
-    assert "node('span', 'sbn-feed-mark'" in template
-    assert "node('span', 'sbn-feed-date'" in template
-    assert re.search(r"\.sbn-visit\s*\{[^}]*border-inline-start", css)
-    assert re.search(r"\.sbn-feed-row\s*\{[^}]*grid-template-columns", css)
-    assert re.search(r'data-sbn-mode="student"[^\n]+\.bottom-nav[^\n]+\{\s*position: relative', css)
-
-
 # ── Кураторы, ответы Александрии 24.10.2026 ─────────────────────────────────
 
 def test_curator_overview_has_only_led_tariffs(db, user_factory):
@@ -522,21 +531,17 @@ def test_curator_page_opens_by_student_without_self_tariff(curator_client, db, u
     assert "setMode(curatorView ? 'student' : 'all');" in html
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="нужен node")
-def test_curator_card_script_parses(curator_client, db, user_factory, tmp_path):
+def test_curator_can_find_assigned_student_in_statistics(curator_client, db, user_factory, statistics_page):
     client, curator = curator_client
     led = user_factory(vk_id=820_130, name="Led", tariff=TARIFF_CONFIDENT_MAX)
     led.curator_id = curator.id
     db.commit()
     _cycle_with_video(db)
 
-    html = client.get("/cabinet/curator/statistics").text
-    card = [s for s in re.findall(r"<script>(.*?)</script>", html, re.S) if "data-activity-portfolio" in s]
-    assert len(card) == 1
-    path = tmp_path / "card.js"
-    path.write_text(card[0], encoding="utf-8")
-    result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    panel = _open_statistics_mode(statistics_page, "/cabinet/curator/statistics", "По ученику")
+    panel.get_by_role("searchbox").fill(str(led.id))
+    row = panel.locator(f'[data-student-id="{led.id}"]')
+    assert row.is_visible()
 
 
 # ── «Занятия»: кто нажимал кнопку «Ссылка» (владелец 27.10.2026) ────────────
@@ -584,22 +589,14 @@ def test_meetings_mode_lists_who_pressed_link_without_time(db, user_factory):
     assert link.id not in [i["id"] for i in overview["assignments"] + overview["videos"]]
 
 
-def test_students_by_name_has_meetings_mode_and_script_parses(
-    admin_client, db, user_factory, tmp_path,
+def test_meetings_filter_selects_prepared_lesson(
+    admin_client, db, user_factory, statistics_page,
 ):
     client, _ = admin_client
-    user_factory(vk_id=820_202, name="Student", tariff=TARIFF_SELF)
-    _cycle_with_link(db)
+    student = user_factory(vk_id=820_202, name="Student", tariff=TARIFF_SELF)
+    _, _, link = _cycle_with_link(db)
 
-    html = client.get("/cabinet/superadmin/activity").text
-
-    assert 'data-sbn-mode="meetings"' in html
-    # Данные вшиты `tojson`, кириллица в нём экранирована.
-    assert json.dumps("Подключение к занятию")[1:-1] in html
-    if shutil.which("node"):
-        [card] = [s for s in re.findall(r"<script>(.*?)</script>", html, re.S)
-                  if "data-activity-portfolio" in s]
-        path = tmp_path / "card.js"
-        path.write_text(card, encoding="utf-8")
-        result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
-        assert result.returncode == 0, result.stderr
+    panel = _open_statistics_mode(statistics_page, "/cabinet/superadmin/activity", "Занятия")
+    panel.locator("[data-sbn-item]").select_option(str(link.id))
+    row = panel.locator(f'[data-student-id="{student.id}"]')
+    assert row.is_visible()

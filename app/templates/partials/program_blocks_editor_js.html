@@ -67,10 +67,17 @@ var BODY_FORMAT_HINT = '';
 // они загружали 1 фото только, где сразу 2 эскиза»). Ровно столько примет
 // сервер, работа сдана только при N из N. Пусто — до 10, сдано с первого.
 var REQUIRED_PHOTOS_FIELD = ''
+    {% if cycle_assignment_editor %} + '<div class="prg-photo-count">' {% endif %}
     + '<label class="prg-field">Сколько фото сдать'
     + '  <input type="number" min="1" max="10" step="1" data-b-required-photos aria-label="Сколько фото сдать" placeholder="Любое, до 10">'
+    {% if cycle_assignment_editor %}
+    + '</label>'
+    + hintHTML('Ученик сдаст ровно столько фото. Пустое поле разрешает приложить до 10 фото.', 'Подсказка о количестве фото')
+    + '</div>';
+    {% else %}
     + '  <span class="prg-hint">Ученик сдаст ровно столько. Нужен один снимок со всей работой – поставьте 1 и напишите это в условии.</span>'
     + '</label>';
+    {% endif %}
 
 // Пока в форме пишется или грузится запись — блока «Голосовое / кружок»
 // или пункта правил (контейнер с `data-mrf-busy`, см. media-recorder-field.js),
@@ -200,6 +207,14 @@ function hintHTML(text, label) {
         + '<button type="button" class="hint-pop-close" aria-label="Закрыть">&times;</button>'
         + '<div class="hint-pop-body">' + escapeHTML(text) + '</div>'
         + '</div></span>';
+}
+
+function blockHelpHTML(text, label) {
+    {% if cycle_assignment_editor %}
+    return hintHTML(text, label);
+    {% else %}
+    return '<p class="prg-hint">' + escapeHTML(text) + '</p>';
+    {% endif %}
 }
 
 // Пункт «Доступности блока» — своя свёрнутая строка: название, «?» с
@@ -368,13 +383,18 @@ function blockDialogSettingsHTML(type) {
         + '  </span></summary>'
         + '  <div class="prg-settings-body">'
         + '  <div class="prg-blk-setting" data-sum-list="отвечают">'
-        + '    <p class="prg-hint">Кто может ответить на обратную связь куратора. Не отметили ни одного – ученик только читает ответ.</p>'
+        + blockHelpHTML('Кто может ответить на обратную связь куратора. Не отметили ни одного – ученик только читает ответ.', 'Подсказка о доступе к диалогу')
         + checks
         + '  </div>'
         + '  <label class="prg-field prg-blk-setting">Сколько сообщений может отправить ученик'
         + '    <input type="number" min="1" max="' + DIALOG_REPLY_LIMIT_MAX + '" step="1" data-b-dialog-limit data-sum="до" data-sum-unit=" сообщ." placeholder="1" aria-label="Сколько сообщений может отправить ученик">'
+        {% if not cycle_assignment_editor %}
         + '    <span class="prg-hint">Считаются только сообщения ученика, одно сообщение может быть с несколькими фото. Куратор пишет без ограничений.</span>'
+        {% endif %}
         + '  </label>'
+        {% if cycle_assignment_editor %}
+        + hintHTML('Считаются только сообщения ученика. В одном сообщении может быть несколько фото. Куратор пишет без ограничений.', 'Подсказка о лимите сообщений')
+        {% endif %}
         + '  </div>'
         + '</details>';
 }
@@ -397,7 +417,7 @@ function blockLinkedFeedbackHTML(type) {
         + '  </span></summary>'
         + '  <div class="prg-settings-body">'
         + '  <div class="prg-blk-students prg-blk-setting" data-b-linked data-sum-count="связано заданий:">'
-        + '    <p class="prg-hint">Куратор откроет работу по этому заданию и увидит рядом работы ученика по выбранным прошлым – с датой сдачи и циклом. Ответ он пишет один на все, ученик видит его по каждой работе.</p>'
+        + blockHelpHTML('Куратор увидит работы ученика по выбранным заданиям рядом и сможет написать один ответ на все.', 'Подсказка об общей обратной связи')
         + '    <input type="search" data-b-linked-search autocomplete="off"'
         + '      placeholder="Название задания, цикла или ID" aria-label="Найти прошлое задание со сдачей работы">'
         + '    <div class="prg-blk-student-results" data-b-linked-results hidden></div>'
@@ -582,7 +602,7 @@ function blockBodyHTML(type) {
             + TITLE_FIELD_OPTIONAL
             + BODY_FIELD_OPTIONAL
             + '<div data-media-recorder data-b-media data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
-            + '<p class="prg-hint">Запишите голосовое до 10 минут или кружок до минуты — либо прикрепите готовый файл. Ученик откроет запись в задании и отметит блок выполненным.</p>';
+            + blockHelpHTML('Запишите голосовое до 10 минут или кружок до минуты либо прикрепите готовый файл. Ученик откроет запись в задании и отметит блок выполненным.', 'Подсказка о записи');
     }
     if (type === 'upload') {
         // Приём работ прямо в задании (владелец 07.09.2026: «работы нужно
@@ -593,7 +613,7 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Пришлите работу»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + REQUIRED_PHOTOS_FIELD
-            + '<p class="prg-hint">Ученик загрузит фото с описанием прямо в задании. Работа уйдёт на проверку, шаг закроется, когда загружено нужное число фото.</p>';
+            + blockHelpHTML('Ученик загрузит фото с описанием прямо в задании. Работа уйдёт на проверку, шаг закроется, когда загружено нужное число фото.', 'Подсказка о сдаче работы');
     }
     if (type === 'photo_upload') {
         return ''
@@ -624,7 +644,7 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Работы для сравнения"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<p class="prg-hint">Загрузите от двух до десяти работ и отметьте ту, что, по-вашему, наберёт больше баллов. Ученик увидит работы парами в порядке загрузки, выберет свою и после отправки узнает, совпал ли его выбор с вашим.</p>'
+            + blockHelpHTML('Загрузите от двух до десяти работ и отметьте ту, что, по-вашему, наберёт больше баллов. Ученик увидит работы парами в порядке загрузки, выберет свою и после отправки узнает, совпал ли его выбор с вашим.', 'Подсказка о сравнении работ')
             // Тренажёр (владелец 29.09.2026, по образцу диагностики): пройти
             // пары самому и увидеть итог. Кнопка видна сразу, а не после
             // сохранения, как у диагностики: id из базы тренажёру не нужны
@@ -659,7 +679,7 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Оцени себя»"></label>'
             + BODY_FIELD_OPTIONAL
             + '<div class="prg-blk-options">'
-            + '  <p class="prg-hint">Навыки, которые ученик оценит от 1 до 10.</p>'
+            + blockHelpHTML('Навыки, которые ученик оценит от 1 до 10.', 'Подсказка о шкале навыков')
             + '  <div data-b-options></div>'
             + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить навык</button></div>'
             + '</div>';
@@ -674,7 +694,7 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Правила школы»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст согласия" placeholder="Текст согласия, например «Отметьте каждый пункт, с которым ознакомились»"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<div class="prg-blk-options">'
-            + '  <p class="prg-hint">Пункты правил: текст, фото, видео или аудио. Под каждым у ученика галочка, шаг закроется, только когда он отметит все.</p>'
+            + blockHelpHTML('Пункты правил могут содержать текст, фото, видео или аудио. Шаг закроется, когда ученик отметит все пункты.', 'Подсказка о пунктах правил')
             + '  <div data-b-options></div>'
             + '  <div class="prg-actions">'
             + '    <button type="button" class="btn-outline" data-add-rule-item="text">+ Текст</button>'
@@ -698,7 +718,7 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото и скриншоты, необязательно"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<p class="prg-hint">Ученик увидит видео, фото и пояснение, а под ними кнопку. Она ведёт на экран загрузки работ, шаг закроется сам, когда работа загружена.</p>';
+            + blockHelpHTML('Ученик увидит видео, фото и пояснение. Под ними будет кнопка загрузки работ. Шаг закроется, когда работа загружена.', 'Подсказка о загрузке портфолио');
     }
     if (type === 'link') {
         // У ссылки название работает ещё и надписью на кнопке — но только
@@ -708,7 +728,8 @@ function blockBodyHTML(type) {
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название, оно же надпись на кнопке" placeholder="Название, оно же надпись на кнопке"></label>'
             + BODY_FIELD_OPTIONAL
-            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>';
+            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>'
+            + '<label class="prg-field">Окончание занятия (МСК)<input type="datetime-local" data-b-lesson-end></label>';
     }
     if (type === 'diagnostic') {
         // Псевдо-тип, которого нет в БД (владелец 24.09.2026, второй раунд) —
@@ -760,7 +781,7 @@ function blockBodyHTML(type) {
         + questionTypeOptionsHTML()
         + '</select></label>'
         + '<div class="prg-blk-options" data-b-options-wrap hidden>'
-        + '  <p class="prg-hint">Отметьте верный вариант, если это проверка знаний. Без отметки ученик просто голосует.</p>'
+        + blockHelpHTML('Отметьте верный вариант, если это проверка знаний. Без отметки ученик просто голосует.', 'Подсказка о верных ответах')
         + '  <div data-b-options></div>'
         + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
         + '</div>'
@@ -792,8 +813,13 @@ function blockSettingsHTML(type) {
     // У портфолио своё окно в часах (18.09.2026), и оно главнее: там срок
     // остаётся запасным для старых блоков, как и «Закроется».
     var submitHint = LATE_SUBMISSION_BLOCK_TYPES.indexOf(type) >= 0
-        ? 'Пусто – без срока. Сдать работу или ответить ученик сможет и после срока – это запишется как опоздание. Поменять уже сданное после срока нельзя.'
-        : 'Пусто – без срока. Отметить выполнение ученик сможет и после срока, но в статистике это зачтётся опозданием.';
+        ? 'Сдать работу или ответить ученик сможет и после срока – это запишется как опоздание. Поменять уже сданное после срока нельзя.'
+        : 'Отметить выполнение ученик сможет и после срока, но в статистике это зачтётся опозданием.';
+    {% if cycle_assignment_editor %}
+    submitHint = 'Сначала действует свой срок элемента, затем срок ближайшего контейнера и общий срок задания. ' + submitHint;
+    {% else %}
+    submitHint = 'Отдельный срок блока важнее общего срока задания. Если у блока нет своего срока, действует срок задания. ' + submitHint;
+    {% endif %}
     // Разметка панели — та же, что у макроса `settings_panel`
     // (partials/program_settings_panel.html); сводку в заголовке пересчитывает
     // `refreshSettingsPanel`, метки `data-sum*` — в шапке его партиала.
@@ -862,9 +888,9 @@ function blockSettingsHTML(type) {
             'Срок сдачи',
             submitHint,
             'без срока',
-            '<input type="datetime-local" data-b-submit-until data-sum="срок" aria-label="Дата и время срока сдачи">'
+            '<input type="datetime-local" data-b-submit-until data-sum="срок" {% if cycle_assignment_editor %}data-sum-inherit-task {% endif %}aria-label="Дата и время срока сдачи">'
             + (HAS_TARIFFS ? '<div class="prg-blk-deadlines" data-sum-rows="свой срок у">'
-            + '<p class="prg-hint">Свой срок по тарифу: пусто – работает срок выше, а если и его нет – срок задания.</p>'
+            + blockHelpHTML('Если оставить поле тарифа пустым, действует срок блока, а при его отсутствии – срок задания.', 'Подсказка о сроках блока по тарифам')
             + tariffDeadlinesHTML()
             + '</div>' : '')
         )
@@ -992,7 +1018,7 @@ function ruleItemHTML(kind) {
     } else if (kind === 'video') {
         content = ''
             + '<div data-media-recorder data-mrf-modes="note" data-mrf-attach-only data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
-            + '<p class="prg-hint">Видеофайл до 50 МБ – это примерно 2–5 минут.</p>';
+            + blockHelpHTML('Видеофайл до 50 МБ – это примерно 2–5 минут.', 'Подсказка о размере видео');
     } else if (kind === 'audio') {
         content = ''
             + '<div data-media-recorder data-mrf-modes="voice" data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>';
@@ -1132,7 +1158,11 @@ function pollQuestionHTML() {
         + questionTypeOptionsHTML()
         + '  </select></label>'
         + '  <div class="prg-blk-options" data-b-options-wrap>'
+        {% if cycle_assignment_editor %}
+        + '    <span data-poll-options-tip>' + hintHTML('', 'Подсказка о вариантах ответа') + '</span>'
+        {% else %}
         + '    <p class="prg-hint" data-poll-options-hint></p>'
+        {% endif %}
         + '    <div data-b-options>' + blockOptionHTML('question') + blockOptionHTML('question') + '</div>'
         + '    <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
         + '  </div>'
@@ -1171,7 +1201,7 @@ function syncPollQuestion(question) {
         field.placeholder = isScale ? 'Что оценить, например «Сложность контрольной»' : 'Вариант ответа';
         field.setAttribute('aria-label', field.placeholder);
     });
-    var hint = question.querySelector('[data-poll-options-hint]');
+    var hint = question.querySelector('[data-poll-options-hint], [data-poll-options-tip] .hint-pop-body');
     if (hint) {
         hint.textContent = isScale
             ? 'Пункты, которые ученик оценит от 0 до 10. Оценки видны при проверке ответов и в историю навыков ученика не попадают.'
@@ -1485,6 +1515,8 @@ function fillBlockRow(row, block) {
     if (attendedBox) attendedBox.checked = !!block.optional_if_attended;
     var opensAt = row.querySelector('[data-b-opens]');
     if (opensAt) opensAt.value = block.opens_at || '';
+    var lessonEnd = row.querySelector('[data-b-lesson-end]');
+    if (lessonEnd) lessonEnd.value = block.lesson_ends_at || '';
     var closesAt = row.querySelector('[data-b-closes]');
     if (closesAt) closesAt.value = block.closes_at || '';
     var lockedMessage = row.querySelector('[data-b-locked-message]');
@@ -1615,10 +1647,16 @@ function fillBlockRow(row, block) {
 // номер даёт зацепку взгляду без чтения текста внутри (ревью 03.09.2026).
 function renumberBlocks(holder) {
     if (!holder) return;
+    holder = holder.closest('[data-blocks]') || holder;
     var orderHeading = holder.parentElement.querySelector('[data-block-order]');
     if (orderHeading) orderHeading.hidden = !holder.querySelector('[data-block], [data-universal-key]');
     holder.querySelectorAll('[data-universal-remove]').forEach(function (button) {
-        button.hidden = !!button.closest('[data-universal-key]').querySelector('[data-block]');
+        button.hidden = !!button.closest('[data-universal-key]').querySelector('[data-block], [data-universal-key]');
+    });
+    holder.querySelectorAll('[data-container-indent]').forEach(function (button) {
+        var card = button.closest('[data-universal-key]');
+        button.disabled = !previousContainer(card);
+        card.querySelector('[data-container-outdent]').disabled = !card.parentElement.closest('[data-universal-key]');
     });
     holder.querySelectorAll('[data-block]').forEach(function (row, index) {
         var num = row.querySelector('[data-block-number]');
@@ -1636,7 +1674,7 @@ function moveBlockRow(moved, step) {
     var neighbour = moved;
     do {
         neighbour = step < 0 ? neighbour.previousElementSibling : neighbour.nextElementSibling;
-    } while (neighbour && !neighbour.hasAttribute('data-block'));
+    } while (neighbour && !neighbour.matches('[data-block], [data-universal-key]'));
     if (!neighbour) return;
     // Порядок в DOM и есть порядок блоков: `collectFormBlocks` читает строки
     // сверху вниз, отдельного поля сортировки нет.
@@ -1688,11 +1726,17 @@ function removeBlockRow(row) {
     restore.focus({preventScroll: true});
 }
 
-function createUniversalCard(holder, key, month) {
+function previousContainer(card) {
+    var previous = card.previousElementSibling;
+    while (previous && !previous.matches('[data-universal-key]')) previous = previous.previousElementSibling;
+    return previous;
+}
+
+function createUniversalCard(holder, key, month, settings) {
     var card = document.createElement('fieldset');
     card.className = 'prg-ticket prg-universal';
     card.dataset.universalKey = key || Array.from(
-        window.crypto.getRandomValues(new Uint8Array(12)),
+        window.crypto.getRandomValues(new window.Uint8Array(12)),
         function (byte) { return byte.toString(16).padStart(2, '0'); }
     ).join('');
     // У формы дня учебный месяц определяется по самому дню.
@@ -1700,10 +1744,27 @@ function createUniversalCard(holder, key, month) {
     var monthField = cycleForm
         ? '<label class="prg-field">Учебный месяц<input type="month" data-universal-month></label>'
         : '';
+    var containerFields = cycleForm ? '<div class="prg-container-fields">'
+        + '<details class="prg-settings" data-settings-panel data-settings-empty="По настройкам уровня выше">'
+        + '<summary><span class="prg-settings-head"><span class="prg-settings-title">Настройки контейнера</span>'
+        + '<span class="prg-settings-summary" data-settings-summary>По настройкам уровня выше</span></span></summary>'
+        + '<div class="prg-settings-body">'
+        + '<label class="prg-field">Название блока<input type="text" maxlength="200" data-container-title></label>'
+        + '<label class="prg-field">Откроется не раньше<input type="datetime-local" data-container-opens data-sum="откроется"></label>'
+        + '<label class="prg-field">Закроется<input type="datetime-local" data-container-closes data-sum="закроется"></label>'
+        + '<label class="prg-field">Срок сдачи<input type="datetime-local" data-container-deadline data-sum="срок"></label>'
+        + monthField + '</div></details></div>' : '';
     card.innerHTML = '<legend>Универсальный блок</legend>'
-        + (cycleForm ? '<div class="prg-ticket-head"><button type="button" class="btn-outline" data-universal-remove>Убрать пустой блок</button></div>' : '')
-        + '<div data-universal-sections></div>'
-        + monthField
+        + '<div class="prg-ticket-head' + (cycleForm ? ' prg-container-head' : '') + '">'
+        + '<button type="button" class="btn-outline" data-universal-up aria-label="Переместить универсальный блок вверх">↑</button>'
+        + '<button type="button" class="btn-outline" data-universal-down aria-label="Переместить универсальный блок вниз">↓</button>'
+        + (cycleForm ? '<button type="button" class="btn-outline" data-container-indent>Вложить в предыдущий блок</button>'
+            + '<button type="button" class="btn-outline" data-container-outdent>На уровень выше</button>' : '')
+        + (cycleForm ? '<button type="button" class="btn-outline" data-universal-remove>Убрать пустой блок</button>' : '')
+        + '</div>'
+        + containerFields
+        + '<div class="prg-container-contents" data-universal-sections></div>'
+        + (cycleForm ? '<button type="button" class="btn-outline" data-container-add>Добавить вложенный блок</button>' : '')
         + '<label class="prg-field">Добавить секцию<select data-universal-type>'
         + '<option value="">Выбрать секцию</option>'
         + '<optgroup label="Материалы">'
@@ -1719,10 +1780,49 @@ function createUniversalCard(holder, key, month) {
         + '<option value="portfolio">Портфолио «До»</option></optgroup></select></label>';
     var monthInput = card.querySelector('[data-universal-month]');
     if (monthInput) monthInput.value = month || '';
+    if (cycleForm) {
+        settings = settings || {};
+        var title = card.querySelector('[data-container-title]');
+        var legend = card.querySelector('legend');
+        title.value = settings.title || '';
+        function showTitle() { legend.textContent = title.value.trim() || 'Универсальный блок'; }
+        title.addEventListener('input', showTitle);
+        showTitle();
+        card.querySelector('[data-container-opens]').value = settings.opens_at || '';
+        card.querySelector('[data-container-closes]').value = settings.closes_at || '';
+        card.querySelector('[data-container-deadline]').value = settings.submit_until || '';
+        card.querySelector('[data-container-add]').addEventListener('click', function () {
+            var child = createUniversalCard(card.querySelector('[data-universal-sections]'));
+            renumberBlocks(child.parentElement);
+            focusContainerTitle(child);
+        });
+        card.querySelector('[data-container-indent]').addEventListener('click', function () {
+            var previous = previousContainer(card);
+            if (!previous) return;
+            previous.querySelector('[data-universal-sections]').appendChild(card);
+            renumberBlocks(card.parentElement);
+            refreshSettingsPanels(card);
+            card.querySelector('[data-container-indent]').focus();
+        });
+        card.querySelector('[data-container-outdent]').addEventListener('click', function () {
+            var parent = card.parentElement.closest('[data-universal-key]');
+            if (!parent) return;
+            parent.after(card);
+            renumberBlocks(card.parentElement);
+            refreshSettingsPanels(card);
+            card.querySelector('[data-container-indent]').focus();
+        });
+    }
+    card.querySelector('[data-universal-up]').addEventListener('click', function () {
+        moveBlockRow(card, -1);
+    });
+    card.querySelector('[data-universal-down]').addEventListener('click', function () {
+        moveBlockRow(card, 1);
+    });
     var remove = card.querySelector('[data-universal-remove]');
     if (remove) {
         remove.addEventListener('click', function () {
-            if (card.querySelector('[data-block]')) return;
+            if (card.querySelector('[data-block], [data-universal-key]')) return;
             card.remove();
             renumberBlocks(holder);
         });
@@ -1739,9 +1839,13 @@ function createUniversalCard(holder, key, month) {
         syncBlockOptions(row);
         renumberBlocks(holder);
         toggle.focus({preventScroll: true});
-        if (cycleForm) row.scrollIntoView({block: 'start'});
+        if (cycleForm) {
+            refreshSettingsPanels(row);
+            row.scrollIntoView({block: 'start'});
+        }
     });
     holder.appendChild(card);
+    if (cycleForm) refreshSettingsPanel(card.querySelector('[data-settings-panel]'));
     return card;
 }
 
@@ -1798,26 +1902,49 @@ function addUniversalCard(form) {
     var holder = form.querySelector('[data-blocks]');
     var card = createUniversalCard(holder);
     renumberBlocks(holder);
+    if (form.matches('[data-item-form]')) {
+        focusContainerTitle(card);
+        return;
+    }
     var picker = card.querySelector('[data-universal-type]');
     picker.focus({preventScroll: true});
     picker.scrollIntoView({block: 'center'});
+}
+
+function focusContainerTitle(card) {
+    var title = card.querySelector('[data-container-title]');
+    title.closest('details').open = true;
+    title.focus();
+}
+
+function editorContainerHost(holder, item, cards, copy) {
+    var nested = item.container_path && item.container_path.length;
+    var path = nested ? item.container_path
+        : item.universal_key ? [{key: item.universal_key, portfolio_month: item.portfolio_month}] : [];
+    var host = holder;
+    path.forEach(function (node) {
+        var card = cards.get(node.key);
+        if (!card) {
+            card = createUniversalCard(host, copy ? null : node.key, node.portfolio_month, node);
+            if (!nested) card.dataset.legacyContainer = 'true';
+            cards.set(node.key, card);
+        }
+        host = card.querySelector('[data-universal-sections]');
+    });
+    return host;
 }
 
 function renderFormBlocks(form, rows) {
     var holder = form.querySelector('[data-blocks]');
     if (!holder) return;
     holder.innerHTML = '';
-    var card = null;
+    var cards = new Map();
     (rows || []).forEach(function (block) {
-        if (!block.universal_key) card = null;
-        else if (!card || card.dataset.universalKey !== block.universal_key) {
-            card = createUniversalCard(holder, block.universal_key, block.portfolio_month);
-        }
-        var target = card ? card.querySelector('[data-universal-sections]') : holder;
+        var target = editorContainerHost(holder, block, cards, false);
         target.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
         var row = target.lastElementChild;
         fillBlockRow(row, block);
-        if (card) prepareUniversalSection(row, false);
+        if (target !== holder) prepareUniversalSection(row, false);
         // enhance ПОСЛЕ fillBlockRow — textarea.value уже заполнено сохранённым
         // текстом, WYSIWYG-редактор сразу инициализируется с ним, без refresh().
         window.RichTextField.enhanceAll(row);
@@ -1836,12 +1963,35 @@ function collectFormBlocks(form, onIncomplete) {
         }
         var idAttr = row.getAttribute('data-block-id');
         var item = {id: idAttr ? Number(idAttr) : null, block_type: type};
+        if (form.matches('[data-item-form]')) item.container_path = [];
         if (row.dataset.uploadButtonLabel) item.upload_button_label = row.dataset.uploadButtonLabel;
         var card = row.closest('[data-universal-key]');
         if (card) {
             item.universal_key = card.dataset.universalKey;
             var month = card.querySelector('[data-universal-month]');
             item.portfolio_month = month ? month.value || null : null;
+            if (form.matches('[data-item-form]')) {
+                for (var ancestor = card; ancestor; ancestor = ancestor.parentElement.closest('[data-universal-key]')) {
+                    var node = {
+                        key: ancestor.dataset.universalKey,
+                        title: ancestor.querySelector('[data-container-title]').value.trim(),
+                        portfolio_month: ancestor.querySelector('[data-universal-month]').value || null,
+                        opens_at: ancestor.querySelector('[data-container-opens]').value || null,
+                        closes_at: ancestor.querySelector('[data-container-closes]').value || null,
+                        submit_until: ancestor.querySelector('[data-container-deadline]').value || null
+                    };
+                    item.container_path.unshift(node);
+                    item.portfolio_month = item.portfolio_month || node.portfolio_month;
+                }
+                // Flat legacy groups keep their existing presentation until used as containers.
+                if (card.dataset.legacyContainer && item.container_path.length === 1
+                    && !card.querySelector('[data-universal-key]')) {
+                    var legacy = item.container_path[0];
+                    if (!legacy.title && !legacy.opens_at && !legacy.closes_at && !legacy.submit_until) {
+                        delete item.container_path;
+                    }
+                }
+            }
         }
         var body = row.querySelector('[data-b-body]');
         if (body) item.body = body.value.trim();
@@ -1944,6 +2094,7 @@ function collectFormBlocks(form, onIncomplete) {
         }
         if (type === 'link') {
             item.url = (row.querySelector('[data-b-url]').value || '').trim();
+            item.lesson_ends_at = row.querySelector('[data-b-lesson-end]').value || null;
             if (!item.url) return incomplete('Вставьте адрес ссылки.');
         }
         if (type === 'media') {

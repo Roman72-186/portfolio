@@ -107,6 +107,8 @@ def test_login_post_very_long_input_no_crash(client):
                        data={"login": "x" * 1000, "password": "y" * 1000},
                        follow_redirects=False)
     assert resp.status_code in (200, 422)
+    assert "session_id" not in client.cookies
+    assert client.get("/cabinet/student", follow_redirects=False).status_code == 302
 
 
 # ---------------------------------------------------------------------------

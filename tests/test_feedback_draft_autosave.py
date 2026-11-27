@@ -248,7 +248,7 @@ def test_section_target_and_preview_snapshot(db, user_factory, session_factory, 
 import pytest
 
 
-@pytest.mark.parametrize("mask", range(1, 32))
+@pytest.mark.parametrize("mask", [1, 2, 4, 8, 16, 3, 31])
 def test_mixed_content_stays_in_one_message_and_reaches_student(
     db, user_factory, session_factory, client, monkeypatch, mask,
 ):

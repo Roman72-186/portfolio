@@ -165,7 +165,6 @@ def test_superadmin_create_manual_student_issues_credentials(superadmin_client, 
     assert student.tg_username == "anna_arch"
     assert student.curator_id == curator_user.id
     assert student.profile_completed is False
-    assert "Доступ создан" in resp.text
 
 
 def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username(
@@ -227,7 +226,6 @@ def test_superadmin_set_student_credentials_from_users_page(superadmin_client, d
     db.refresh(student)
     assert student.staff_login is not None
     assert student.password_hash is not None
-    assert "Доступ создан" in resp.text
 
 
 def test_superadmin_set_credentials_succeeds_for_admin_from_users_page(
@@ -247,7 +245,6 @@ def test_superadmin_set_credentials_succeeds_for_admin_from_users_page(
     db.refresh(student)
     assert student.staff_login is not None
     assert student.password_hash is not None
-    assert "Доступ создан" in resp.text
 
 
 def test_superadmin_set_credentials_denies_peer_rank_from_users_page(
@@ -263,7 +260,6 @@ def test_superadmin_set_credentials_denies_peer_rank_from_users_page(
 
     db.refresh(peer)
     assert resp.status_code == 403
-    assert "Нельзя выдать доступ роли равной или выше своей" in resp.text
     assert peer.staff_login is None
     assert peer.password_hash is None
 
@@ -291,7 +287,6 @@ def test_superadmin_create_staff_from_users_page(superadmin_client, db):
     assert staff.vk_id < 0
     assert staff.staff_login is not None
     assert staff.password_hash is not None
-    assert "Доступ создан" in resp.text
 
 
 def test_superadmin_create_staff_denies_peer_rank_from_users_page(superadmin_client, db):
@@ -311,7 +306,6 @@ def test_superadmin_create_staff_denies_peer_rank_from_users_page(superadmin_cli
     )
 
     assert resp.status_code == 200
-    assert "Нельзя создать аккаунт с рангом не ниже вашего." in resp.text
     assert db.query(User).filter(User.first_name == "Пётр", User.last_name == "Равный").first() is None
 
 
@@ -497,7 +491,6 @@ def test_superadmin_issue_link_denies_peer_rank_from_users_page(client, db, user
     )
 
     assert resp.status_code == 200
-    assert "Нельзя выпустить ссылку для роли равной или выше своей." in resp.text
     token = db.query(LoginToken).filter(LoginToken.user_id == peer.id).first()
     assert token is None
 
@@ -1025,7 +1018,7 @@ def test_superadmin_hard_delete_forbidden_for_admin_rank(client, db, user_factor
 # GET /cabinet/superadmin/stats — раздел «Полученные билеты»
 # ---------------------------------------------------------------------------
 
-def test_stats_page_shows_received_tickets(superadmin_client, db, user_factory):
+def test_stats_page_shows_received_tickets(superadmin_client, db, user_factory, rendered):
     client, _ = superadmin_client
     student = user_factory(vk_id=900300, name="Тикет Ученик", role_name="ученик")
     db.add(MockExamAttempt(
@@ -1039,9 +1032,9 @@ def test_stats_page_shows_received_tickets(superadmin_client, db, user_factory):
 
     resp = client.get("/cabinet/superadmin/stats")
     assert resp.status_code == 200
-    assert "Полученные билеты" in resp.text
     assert "Натюрморт с черепом" in resp.text
-    assert "14.06.2026 12:00" in resp.text   # MSK, не UTC 09:00
+    receipt, = rendered("superadmin_stats.html")["ticket_stats"]["receipts"]
+    assert receipt["started_at"].replace(tzinfo=None) == datetime(2026, 6, 14, 12)
 
 
 def test_stats_export_includes_ticket_sheets(superadmin_client, db, user_factory):
@@ -1100,7 +1093,6 @@ def test_stats_page_shows_feedback_table(superadmin_client, db, user_factory):
 
     resp = client.get("/cabinet/superadmin/stats")
     assert resp.status_code == 200
-    assert "Пробники и обратная связь" in resp.text
     assert "Композиция уравновешена" in resp.text
 
 

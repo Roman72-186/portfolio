@@ -15,7 +15,7 @@ from PIL import Image
 
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, Work
 from app.services import s3 as s3_service
-from app.services.works import THUMB_MAX_PX, delete_works_with_dependents, upload_work_thumb
+from app.services.works import THUMB_MAX_PX, upload_work_thumb
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
 
@@ -31,14 +31,12 @@ class _FakeS3:
 
     def __init__(self):
         self.objects: dict[str, bytes] = {}
-        self.deleted: list[str] = []
 
     def upload(self, path, data, content_type="image/jpeg"):
         self.objects[path] = data
         return f"https://s3.example.com/{path}"
 
     def delete(self, path):
-        self.deleted.append(path)
         self.objects.pop(path, None)
         return True
 
@@ -88,7 +86,7 @@ def test_thumb_lands_next_to_photo_and_is_small():
     assert max(thumb.size) == THUMB_MAX_PX
 
 
-def test_deleting_work_removes_its_thumb(db, user_factory):
+def test_deleting_work_removes_its_thumb(client, db, user_factory, session_factory):
     student = user_factory(vk_id=960_101)
     work = Work(
         user_id=student.id, work_type=WORK_TYPE_AFTER, month="сентябрь", year=2026,
@@ -98,12 +96,16 @@ def test_deleting_work_removes_its_thumb(db, user_factory):
     db.add(work)
     db.commit()
 
+    work_id = work.id
+    _login(client, session_factory, _chief(user_factory))
     fake = _FakeS3()
+    fake.objects.update({"p/a.jpg": b"photo", "thumbs/p/a.jpg": b"preview", "p/b.jpg": b"other"})
     with _with(fake):
-        delete_works_with_dependents(db, [work])
-    db.commit()
+        response = client.delete(f"/cabinet/students/{student.id}/works/{work_id}")
 
-    assert fake.deleted == ["p/a.jpg", "thumbs/p/a.jpg"]
+    assert response.status_code == 200
+    assert db.get(Work, work_id) is None
+    assert fake.objects == {"p/b.jpg": b"other"}
 
 
 # ── Загрузка ────────────────────────────────────────────────────────────────

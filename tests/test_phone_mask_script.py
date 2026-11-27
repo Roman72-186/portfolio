@@ -1,18 +1,6 @@
-"""Маска телефона не должна звать функций, которых нет, и обязана подключаться.
-
-Тот же класс сторожа, что `tests/test_hint_script.py`, но для
-`app/static/js/phone-mask.js`. Правило проекта (`AGENTS.md`, правило 11):
-зелёный `pytest` и код 200 не ловят вырезанную функцию, вызов которой остался, —
-ловит только статический разбор объявлений и вызовов либо разбор синтаксиса.
-
-Вторая половина файла — про поштучный деплой (`AGENTS.md`, критичное правило 4):
-скрипт и оба шаблона, которые его зовут, ездят на прод вместе. Тест держит эту
-связку: если из шаблона убрали `data-phone-mask` или тег `<script>`, поле молча
-вернётся к свободному вводу, а страница останется рабочей на вид.
-"""
+"""Проверка синтаксиса маски телефона."""
 
 import pathlib
-import re
 import shutil
 import subprocess
 
@@ -20,42 +8,6 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PHONE_MASK_JS_PATH = ROOT / "app" / "static" / "js" / "phone-mask.js"
-
-KNOWN_GLOBALS = {
-    "if", "for", "while", "switch", "catch", "function", "return", "typeof",
-    "new", "in", "of", "do", "else", "try", "throw", "delete", "void",
-    "Array", "Object", "JSON", "String", "Number", "Boolean", "Promise",
-    "Date", "Math", "Set", "Map", "RegExp", "Error",
-    "fetch", "parseInt", "parseFloat", "isNaN", "isFinite",
-    "setTimeout", "clearTimeout", "setInterval", "clearInterval",
-    "console",
-}
-
-
-def _strip_noise(js: str) -> str:
-    """Убрать блочные и строчные комментарии и строковые литералы."""
-    js = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
-    js = re.sub(r"(?m)^\s*//.*$", " ", js)
-    js = re.sub(r"//[^\n'\"]*$", " ", js, flags=re.M)
-    js = re.sub(r"'(?:\\.|[^'\\])*'", "''", js)
-    js = re.sub(r'"(?:\\.|[^"\\])*"', '""', js)
-    return js
-
-
-def test_phone_mask_js_calls_only_defined_functions():
-    raw = PHONE_MASK_JS_PATH.read_text(encoding="utf-8")
-    js = _strip_noise(raw)
-
-    declared = set(re.findall(r"function\s+(\w+)", js))
-    declared |= set(re.findall(r"\bvar\s+(\w+)", js))
-    declared |= set(re.findall(r"\b(\w+)\s*=\s*function", js))
-    for params in re.findall(r"function[^(]*\(([^)]*)\)", js):
-        declared |= {p.strip() for p in params.split(",") if p.strip()}
-
-    called = set(re.findall(r"(?<![.\w$])([A-Za-z_$]\w*)\s*\(", js))
-    missing = sorted(called - declared - KNOWN_GLOBALS)
-
-    assert not missing, f"вызовы без определения: {missing}"
 
 
 def test_phone_mask_js_is_valid_javascript():

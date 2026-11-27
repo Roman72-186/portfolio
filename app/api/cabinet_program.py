@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import hashlib
 import json
 import re
 import uuid
@@ -19,6 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import case, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.constants import (
@@ -496,6 +498,13 @@ def _cycle_block_students(db: DBSession, user: dict, edit_payloads: dict) -> lis
     ]
 
 
+def _item_revision(item: TrackerTask) -> str:
+    stamp = item.updated_at
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.astimezone(timezone.utc).isoformat()
+
+
 def _edit_payloads(
     db: DBSession, items: list[TrackerTask], details: dict
 ) -> dict[int, dict]:
@@ -520,6 +529,7 @@ def _edit_payloads(
         detail = details.get(item.id, {})
         payload: dict = {
             "kind": item.kind,
+            "revision": _item_revision(item),
             "title": item.title,
             "description": item.description or "",
             "subject": item.subject,
@@ -661,10 +671,12 @@ def _edit_payloads(
                 "poll_key": b.poll_key,
                 "poll_intro": b.poll_intro,
                 "universal_key": b.universal_key,
+                "container_path": b.container_path or [],
                 "portfolio_month": b.portfolio_month,
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
                 "optional_if_attended": b.optional_if_attended,
+                "lesson_ends_at": msk_input_value(b.lesson_ends_at) or None,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "levels": sorted(block_levels.get(b.id, set())),
@@ -1841,7 +1853,7 @@ _POLL_SHARED_FIELDS = (
     "hidden_until_done", "is_required", "subject", "tariffs", "required_tariffs",
     "levels", "student_ids", "tag_ids",
     "opens_at", "closes_at", "submit_until", "submit_deadlines",
-    "locked_message", "bypass_sequence", "universal_key", "portfolio_month",
+    "locked_message", "bypass_sequence", "universal_key", "portfolio_month", "container_path",
 )
 
 
@@ -1907,6 +1919,27 @@ class LinkedBlockLabel(BaseModel):
     label: str = Field(default="", max_length=1000)
 
 
+class ContainerPathItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")
+    title: str = Field(default="", max_length=200)
+    portfolio_month: str | None = Field(default=None, pattern=r"^[1-9][0-9]{3}-(0[1-9]|1[0-2])$")
+    opens_at: str | None = Field(default=None, max_length=32)
+    closes_at: str | None = Field(default=None, max_length=32)
+    submit_until: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        for value in (self.opens_at, self.closes_at, self.submit_until):
+            if value and parse_msk_local(value) is None:
+                raise ValueError("Укажите дату и время в настройках контейнера.")
+        if self.opens_at and self.closes_at:
+            if parse_msk_local(self.closes_at) <= parse_msk_local(self.opens_at):
+                raise ValueError("Дата закрытия контейнера должна быть позже даты открытия.")
+        return self
+
+
 class BlockItem(BaseModel):
     """Один блок содержимого элемента (владелец 31.08.2026, универсальный
     конструктор — см. `app/models/task_block.py`).
@@ -1924,6 +1957,7 @@ class BlockItem(BaseModel):
     id: int | None = Field(default=None, ge=1)
     block_type: str = Field(min_length=1, max_length=20)
     universal_key: str | None = Field(default=None, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    container_path: list[ContainerPathItem] | None = None
     portfolio_month: str | None = Field(default=None, pattern=r"^[1-9][0-9]{3}-(0[1-9]|1[0-2])$")
     title: str | None = Field(default=None, max_length=200)
     body: str | None = Field(default=None, max_length=5000)
@@ -1961,6 +1995,7 @@ class BlockItem(BaseModel):
     # Видео «обязательно только тем, кто не был на занятии» (27.10.2026).
     # Сервис сохраняет его только у видео.
     optional_if_attended: bool = False
+    lesson_ends_at: str | None = Field(default=None, max_length=32)
     subject: str | None = Field(default=None, max_length=50)
     tariffs: list[str] = Field(default_factory=list, max_length=10)
     # Кого обязать выполнить, если блок обязательный — отдельная ось от
@@ -2046,6 +2081,10 @@ class BlockItem(BaseModel):
     # generic-полях `title`/`body`, как у диагностики.
     poll_key: str | None = Field(default=None, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     questions: list[PollQuestionItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
+
+    def sync_payload(self) -> dict:
+        exclude = {"lesson_ends_at"} if "lesson_ends_at" not in self.model_fields_set else None
+        return self.model_dump(exclude=exclude)
 
     @model_validator(mode="after")
     def poll_needs_questions(self) -> "BlockItem":
@@ -2184,6 +2223,8 @@ class CycleItemPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    creation_request_id: uuid.UUID | None = None
+
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
@@ -2285,6 +2326,7 @@ def program_cycle_items(
     from app.services import intake_link
 
     offer = intake_link.offer_for_week(db, topic.id) if holiday and not is_stage else None
+    can_create_flow_offer = holiday and not offer and intake_link.can_attach_offer(db, topic)
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
@@ -2292,7 +2334,8 @@ def program_cycle_items(
             "topic": topic,
             "cycle_label": cycle_label(db, topic),
             "flow_offer": offer,
-            "can_create_flow_offer": holiday and not offer and intake_link.can_attach_offer(db, topic),
+            "can_create_flow_offer": can_create_flow_offer,
+            "holiday_intakes": intake_link.holiday_intakes(db) if can_create_flow_offer else [],
             "stage_label": stage_label,
             "stage_id": stage.id if stage is not None else None,
             "is_stage": is_stage,
@@ -2545,7 +2588,7 @@ def _blocks_with_diagnostic_expanded(
         if b.block_type == DIAGNOSTIC_PSEUDO_BLOCK_TYPE:
             items.extend(_expand_diagnostic_entry(db, task, b))
         else:
-            items.append(b.model_dump())
+            items.append(b.sync_payload())
     if not diagnostic_entries and task.diagnostic_config is not None:
         from app.models.task_block import TaskBlockResponse
         if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
@@ -2569,6 +2612,26 @@ def _validate_cycle_editor_blocks(db: DBSession, blocks: list[BlockItem], task_i
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _cycle_item_retry(
+    db: DBSession, prior: TrackerTask, *, topic_id: int, kind: str, user_id: int, fingerprint: str,
+) -> JSONResponse:
+    if prior.topic_id != topic_id or prior.created_by_id != user_id or prior.kind != kind or prior.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="Этот запрос уже обработан")
+    # The creation audit entry and the item commit together. The item itself
+    # may have changed since the initial request.
+    prefix = f'{{"topic_id": {topic_id}, "task_id": {prior.id}, '
+    audit = db.query(AuditLog.details).filter(
+        AuditLog.action == "program_cycle_item_create", AuditLog.performed_by_id == user_id,
+        AuditLog.details.startswith(prefix),
+    ).first()
+    if audit is None or json.loads(audit.details).get("request_fingerprint") != fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail="Задание уже создано. Откройте его в списке, чтобы внести правки.",
+        )
+    return JSONResponse({"ok": True, "task_id": prior.id})
+
+
 def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db: DBSession, kind: str):
     """Новое задание в цикле — без дня и без своей темы: `topic_id` ставится
     прямо на цикл (`LearningTopic(kind='week')`), а не на одноразовую тему
@@ -2579,6 +2642,18 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
     topic = get_topic(db, topic_id, kinds=_ITEM_HOLDER_KINDS)
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
+    request_id = str(payload.creation_request_id) if payload.creation_request_id else None
+    fingerprint = None
+    if request_id:
+        data = payload.model_dump(mode="json", exclude={"creation_request_id"})
+        fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        # Serialize editor submissions in the same cycle before checking request ID.
+        db.query(LearningTopic.id).filter_by(id=topic.id).with_for_update().one()
+        prior = db.query(TrackerTask).filter_by(creation_request_id=request_id).first()
+        if prior is not None:
+            return _cycle_item_retry(
+                db, prior, topic_id=topic_id, kind=kind, user_id=user["user_id"], fingerprint=fingerprint,
+            )
     if kind == ITEM_MATERIAL:
         _validate_cycle_editor_blocks(db, payload.blocks)
     task = create_task(
@@ -2593,13 +2668,24 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
         sort_order=next_sort_order_in_topic(db, topic.id),
         user_id=user["user_id"],
     )
+    task.creation_request_id = request_id
     task.starts_at = parse_msk_local(payload.starts_on)
     # Срок сдачи на всё задание (владелец 27.09.2026). Ставится до `db.flush()`
     # вместе с остальными полями задачи; сроки по тарифам синхронизируются
     # ниже, когда у задачи уже есть id.
     task.submit_until = parse_msk_local(payload.submit_until)
     task.is_published = True
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        if request_id is not None:
+            db.rollback()
+            prior = db.query(TrackerTask).filter_by(creation_request_id=request_id).first()
+            if prior is not None:
+                return _cycle_item_retry(
+                    db, prior, topic_id=topic_id, kind=kind, user_id=user["user_id"], fingerprint=fingerprint,
+                )
+        raise
     sync_task_level_submit_deadlines(
         db, task, [item.model_dump() for item in payload.submit_deadlines]
     )
@@ -2616,13 +2702,14 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
         # для всей задачи аудиторией и публикацией.
         block_items = _blocks_with_diagnostic_expanded(db, task, payload.blocks)
     sync_task_blocks(db, task_id=task.id, items=block_items)
+    audit_details = {"topic_id": topic.id, "task_id": task.id, "title": (task.title or "")[:200]}
+    if fingerprint is not None:
+        audit_details["request_fingerprint"] = fingerprint
     db.add(
         AuditLog(
             action="program_cycle_item_create",
             performed_by_id=user["user_id"],
-            details=json.dumps(
-                {"topic_id": topic.id, "task_id": task.id, "title": (task.title or "")[:200]}, ensure_ascii=False
-            ),
+            details=json.dumps(audit_details, ensure_ascii=False),
         )
     )
     db.commit()
@@ -2713,6 +2800,9 @@ def update_block_deadline(
     block = db.get(TaskBlock, block_id)
     if block is None:
         raise HTTPException(status_code=404, detail="Блок не найден")
+    task = db.get(TrackerTask, block.task_id, with_for_update=True)
+    if task is not None:
+        task.updated_at = datetime.now(timezone.utc)
     block.submit_until = parse_msk_local(payload.submit_until)
     sync_task_block_submit_deadlines(
         db, block, [item.model_dump() for item in payload.submit_deadlines]
@@ -2742,9 +2832,10 @@ def update_task_deadline(
     уже наступивший срок, и запрет на прошедший день выключил бы кнопку ровно
     тогда, когда она нужна.
     """
-    task = get_task(db, task_id)
-    if task is None:
+    task = db.get(TrackerTask, task_id, populate_existing=True, with_for_update=True)
+    if task is None or task.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Задание не найдено")
+    task.updated_at = datetime.now(timezone.utc)
     task.submit_until = parse_msk_local(payload.submit_until)
     sync_task_level_submit_deadlines(
         db, task, [item.model_dump() for item in payload.submit_deadlines]
@@ -2984,6 +3075,10 @@ def blocks_source_content(
             "poll_key": b.poll_key,
             "poll_intro": b.poll_intro,
             "universal_key": b.universal_key,
+            "container_path": [
+                {key: value for key, value in node.items() if key not in ("opens_at", "closes_at", "submit_until")}
+                for node in (b.container_path or [])
+            ],
             "portfolio_month": b.portfolio_month,
             "video_id": b.video_id,
             "url": b.url,
@@ -3550,7 +3645,7 @@ def create_mock_item(
         task.is_published = True
         db.flush()
         sync_task_blocks(
-            db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+            db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
         )
         db.add(
             AuditLog(
@@ -3685,6 +3780,8 @@ class SimpleItemPayload(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    revision: str | None = Field(default=None, max_length=40)
 
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
@@ -3909,7 +4006,7 @@ def create_video_item(
     task.is_published = True
     db.flush()
     sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
     )
     db.add(
         AuditLog(
@@ -3982,7 +4079,7 @@ def create_homework_item(
     task.is_published = True
     db.flush()
     sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
     )
     db.add(
         AuditLog(
@@ -4379,7 +4476,7 @@ def update_mock_item(
                 tariffs=payload.tariffs,
             )
     sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
     )
     update_task(
         task,
@@ -4464,6 +4561,12 @@ def _update_simple_item(
     db: DBSession,
 ) -> JSONResponse:
     task = _get_editable_task(db, task_id, kind)
+    db.refresh(task, with_for_update=True)
+    if task.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Элемент не найден")
+    if payload.revision is not None and payload.revision != _item_revision(task):
+        raise HTTPException(status_code=409, detail="Задание уже изменилось. Обновите страницу перед сохранением.")
+    task.updated_at = datetime.now(timezone.utc)
 
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)
@@ -4640,7 +4743,7 @@ def update_homework_item(
         is_required=payload.is_required,
     )
     sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
     )
     db.add(
         AuditLog(
@@ -4736,7 +4839,7 @@ def update_video_item(
         is_required=payload.is_required,
     )
     sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        db, task_id=task.id, items=[b.sync_payload() for b in payload.blocks]
     )
     db.add(
         AuditLog(

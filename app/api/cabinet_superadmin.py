@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPExce
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import func, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.config import settings
@@ -41,7 +42,7 @@ from app.dependencies import require_superadmin, require_admin_role, require_csr
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
-from app.models.intake_link import IntakeLink
+from app.models.intake_link import HolidayIntake, IntakeLink
 from app.services import intake_link as intake_link_service
 from app.services.feature_periods import invalidate_feature_cache
 from app.services.tz import MSK_TZ, now_msk, today_msk, msk_input_value, msk_text, parse_msk_local
@@ -1109,6 +1110,8 @@ def flows_list(
 def _render_periods(request, user, db, *, flows_only=False):
     base_url = str(request.base_url).rstrip("/")
     group_links = intake_link_service.holiday_tracks(db)
+    holiday_intakes = intake_link_service.holiday_intakes(db)
+    intake_titles = {intake.id: intake.title for intake in holiday_intakes}
     from app.constants import PROGRAM_HOLIDAY
     from app.models.learning_topic import LearningTopic, LearningTopicTag
     from app.services.video_topics import program_topic_filter
@@ -1134,6 +1137,7 @@ def _render_periods(request, user, db, *, flows_only=False):
         "request": request,
         "user": user,
         "flows_only": flows_only,
+        "holiday_intakes": holiday_intakes,
         # Ссылки групп каникулярного набора (созвон 13.10.2026): у каждой
         # группы своя, тег группы открывает ей каникулярный цикл.
         "group_links": [
@@ -1154,6 +1158,7 @@ def _render_periods(request, user, db, *, flows_only=False):
                 "access_from_text": msk_text(link.access_from or intake_link_service.TRIAL_STARTS.get(link.slug)),
                 "week_ids": weeks_by_tag.get(link.tag_id, []),
                 "title": link.title,
+                "holiday_intake_title": intake_titles.get(link.holiday_intake_id),
                 "tag_name": tag_names.get(link.tag_id),
                 "is_active": link.is_active,
                 "url": f"{base_url}/testpodgotovki" if link.slug == "testpodgotovki" else f"{base_url}/join/{link.slug}",
@@ -1172,6 +1177,7 @@ def _render_periods(request, user, db, *, flows_only=False):
         "has_entry_link": entry is not None,
         "entry_link": {
             "slug": entry.slug,
+            "holiday_intake_title": intake_titles.get(entry.holiday_intake_id),
             "is_active": intake_link_service.is_open(entry, now),
             # Короткий адрес набора (19.10.2026) — его и отправляют ученикам.
             "url": f"{base_url}{HOLIDAY_ENTRY_PATH}",
@@ -1193,6 +1199,35 @@ def _intake_link_for_edit(db: DBSession, slug: str, user_id: int) -> IntakeLink:
     return link
 
 
+@router.post("/intake/holiday-intakes")
+@router.post("/flows/holiday-intakes")
+def holiday_intake_create(
+    request: Request,
+    user: Annotated[dict, Depends(require_payments_staff)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    title: Annotated[str, Form()],
+):
+    name = " ".join(title.split())
+    if not name or len(name) > 100:
+        raise HTTPException(400, "Введите название набора до 100 знаков.")
+    db.add(HolidayIntake(title=name))
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Набор с таким названием уже есть.") from exc
+    destination = "/cabinet/flows" if request.url.path.startswith("/cabinet/flows/") else "/cabinet/periods"
+    return RedirectResponse(f"{destination}#intake-flows", status_code=303)
+
+
+def _selected_holiday_intake(db: DBSession, intake_id: int | None) -> int | None:
+    # Старые клиенты могут отправлять форму без нового поля.
+    if intake_id is not None and db.get(HolidayIntake, intake_id) is None:
+        raise HTTPException(400, "Выберите существующий набор.")
+    return intake_id
+
+
 @router.post("/intake/links")
 def intake_group_link_create(
     user: Annotated[dict, Depends(require_admin_role)],
@@ -1200,6 +1235,7 @@ def intake_group_link_create(
     _csrf: Annotated[None, Depends(require_csrf)],
     title: Annotated[str, Form()] = "",
     deadline: Annotated[str, Form()] = "",
+    holiday_intake_id: Annotated[int | None, Form()] = None,
 ):
     """«+ Ссылка» группы каникулярного набора. Название группы — оно же тег:
     по нему цикл открывается ученикам, и школе не нужно заводить тег
@@ -1214,6 +1250,7 @@ def intake_group_link_create(
         access_until = parse_msk_local(deadline.strip())
         if access_until is None:
             raise HTTPException(status_code=400, detail="Неверный формат даты")
+    intake_id = _selected_holiday_intake(db, holiday_intake_id)
     tag = get_or_create_tag(db, name)
     if db.query(IntakeLink.id).filter(IntakeLink.tag_id == tag.id, IntakeLink.access_from.is_not(None)).first():
         raise HTTPException(409, "Этот тег закреплён за отдельным потоком. Укажите другое название.")
@@ -1222,6 +1259,7 @@ def intake_group_link_create(
     intake_link_service.create_holiday_link(
         db, title=name, tag_id=tag.id, access_until=access_until,
         created_by_id=user["user_id"],
+        holiday_intake_id=intake_id,
     )
     db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
@@ -1262,6 +1300,7 @@ def intake_flow_create(
     access_from: Annotated[str, Form()],
     access_until: Annotated[str, Form()],
     source_week: Annotated[int, Form()] = 0,
+    holiday_intake_id: Annotated[int | None, Form()] = None,
 ):
     from app.constants import PROGRAM_HOLIDAY
     from app.models.learning_topic import LearningTopic, LearningTopicTag
@@ -1277,6 +1316,7 @@ def intake_flow_create(
     sale_start, sale_end, start, end = _parse_flow_schedule(
         sales_from, sales_until, access_from, access_until,
     )
+    intake_id = _selected_holiday_intake(db, holiday_intake_id)
     if db.query(Tag.id).filter(func.lower(Tag.name) == title.lower()).first():
         raise HTTPException(409, "Это название уже занято. Укажите другое название потока.")
 
@@ -1303,6 +1343,7 @@ def intake_flow_create(
     actor = user["user_id"]
     link = intake_link_service.create_holiday_link(
         db, title=title, tag_id=tag.id, access_until=end, created_by_id=actor,
+        holiday_intake_id=intake_id,
     )
     link.price_kop = price_kop
     link.sales_from = sale_start
@@ -1344,6 +1385,7 @@ def intake_offer_from_week(
     _csrf: Annotated[None, Depends(require_csrf)],
     price: Annotated[str, Form()],
     sales_from: Annotated[str, Form()],
+    holiday_intake_id: Annotated[int | None, Form()] = None,
 ):
     from app.models.learning_topic import LearningTopic
     from app.services import video_topics
@@ -1360,6 +1402,7 @@ def intake_offer_from_week(
     if sale is None or sale >= end:
         raise HTTPException(400, "Продажи должны начаться до закрытия недели.")
 
+    intake_id = _selected_holiday_intake(db, holiday_intake_id)
     tag_name = f"{week.title[:33]} (#{week.id})"
     if db.query(Tag.id).filter(Tag.name == tag_name).first():
         raise HTTPException(409, "Тег этой недели уже существует.")
@@ -1368,6 +1411,7 @@ def intake_offer_from_week(
     db.flush()
     link = intake_link_service.create_holiday_link(
         db, title=week.title, tag_id=tag.id, access_until=end, created_by_id=user["user_id"],
+        holiday_intake_id=intake_id,
     )
     link.price_kop = price_kop
     link.sales_from = sale
@@ -1386,11 +1430,13 @@ def intake_entry_link_create(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     deadline: Annotated[str, Form()] = "",
+    holiday_intake_id: Annotated[int | None, Form()] = None,
 ):
     """Общая ссылка каникулярного набора (17.10.2026): одна на набор, трек
     человек выбирает и оплачивает уже на платформе. Создаётся выключенной;
     вторая не заводится."""
     if intake_link_service.entry_link(db) is None:
+        intake_id = _selected_holiday_intake(db, holiday_intake_id)
         access_until = None
         if deadline.strip():
             access_until = parse_msk_local(deadline.strip())
@@ -1398,6 +1444,7 @@ def intake_entry_link_create(
                 raise HTTPException(status_code=400, detail="Неверный формат даты")
         intake_link_service.create_entry_link(
             db, access_until=access_until, created_by_id=user["user_id"],
+            holiday_intake_id=intake_id,
         )
         db.commit()
     return RedirectResponse("/cabinet/periods", status_code=303)
@@ -3640,6 +3687,7 @@ def superadmin_impersonate_enter(
     except (_BadData, KeyError, TypeError):
         return home
     now = datetime.now(timezone.utc)
+    cookie_session_id = str(uuid.uuid4())
     switched = (
         db.query(_DBSession)
         .filter(
@@ -3648,7 +3696,10 @@ def superadmin_impersonate_enter(
             _DBSession.impersonated_by_id.isnot(None),
             _DBSession.expires_at > now,
         )
-        .update({_DBSession.is_active: True}, synchronize_session=False)
+        .update(
+            {_DBSession.id: cookie_session_id, _DBSession.is_active: True},
+            synchronize_session=False,
+        )
     )
     db.commit()
     if switched != 1:
@@ -3658,7 +3709,7 @@ def superadmin_impersonate_enter(
     response = RedirectResponse("/cabinet", status_code=303)
     response.set_cookie(
         key="session_id",
-        value=session_id,
+        value=cookie_session_id,
         httponly=True,
         secure=True,
         samesite="lax",

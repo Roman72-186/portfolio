@@ -4,30 +4,12 @@
 адрес уводит в «Учеников», поэтому здесь только ГП. Фильтры только сужают
 круг, который задаёт `_accessible_students`.
 """
-from app.models.task_block import BLOCK_QUESTION, QUESTION_TEXT, TaskBlock
-from app.models.tracker import TrackerTask
-from app.services.task_blocks import save_response
+from datetime import datetime, timezone
+
+from app.models.task_block import BLOCK_UPLOAD, TaskBlock, TaskBlockSubmission
+from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
 
 URL = "/cabinet/staff/students-review"
-
-
-def _unchecked_answer(db, student):
-    """Непроверенный ответ на блок задания — входит в счётчик вкладки
-    «Задания». Пробник первой версии в счёт не идёт с 06.10.2026."""
-    task = TrackerTask(title="Материал", kind="material", is_published=True, assign_to_all=True)
-    db.add(task)
-    db.flush()
-    block = TaskBlock(
-        task_id=task.id, block_type=BLOCK_QUESTION, question_type=QUESTION_TEXT,
-        body="Как прошло?", sort_order=0,
-    )
-    db.add(block)
-    db.flush()
-    save_response(
-        db, task_id=task.id, user_id=student.id, blocks=[block],
-        answers={block.id: {"text": "Свет и тень"}},
-    )
-    db.commit()
 
 
 def _as(client, session_factory, user):
@@ -68,18 +50,23 @@ def test_head_teacher_finds_student_by_username_not_vk_id(db, user_factory, sess
     assert "Искомый" not in by_vk
 
 
-def test_status_filter_splits_unchecked_and_checked(db, user_factory, session_factory, client):
+def test_status_filter_splits_unchecked_and_checked(db, user_factory, session_factory, client, rendered):
     head = user_factory(vk_id=870_031, name="ГП", role_name="админ")
     busy = user_factory(vk_id=870_032, name="Есть Непроверенное")
-    user_factory(vk_id=870_033, name="Всё Сдано")
-    _unchecked_answer(db, busy)
+    clear = user_factory(vk_id=870_033, name="Всё Сдано")
+    task = TrackerTask(title="Пробник", kind=ITEM_MOCK_EXAM, is_published=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD)
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=busy.id, submitted_at=datetime.now(timezone.utc)))
+    db.commit()
     client = _as(client, session_factory, head)
 
-    unchecked = client.get(URL, params={"status": "unchecked"}).text
-    checked = client.get(URL, params={"status": "checked"}).text
-
-    assert "Есть Непроверенное" in unchecked and "Всё Сдано" not in unchecked
-    assert "Всё Сдано" in checked and "Есть Непроверенное" not in checked
+    for status, expected in (("unchecked", busy), ("checked", clear)):
+        assert client.get(URL, params={"status": status}).status_code == 200
+        assert [row["student"].id for row in rendered("staff_students_review.html")["rows"]] == [expected.id]
 
 
 def test_tariff_filter_and_newcomer_without_tariff(db, user_factory, session_factory, client):

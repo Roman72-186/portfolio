@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import app.api.auth as auth_module
 from app.constants import INTAKE_TRIAL_SLUG, PROGRAM_ANNUAL, PROGRAM_HOLIDAY
-from app.models.intake_link import IntakeLink
+from app.models.intake_link import HolidayIntake, IntakeLink
 from app.models.session import Session
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -123,6 +123,11 @@ def test_join_open_link_carries_its_slug_to_telegram(client, db, monkeypatch):
 
 def test_new_user_by_group_link_gets_program_tag_deadline_without_channel(client, db, monkeypatch):
     link = _group_link(db)
+    cohort = HolidayIntake(title="Каникулы, первая группа")
+    db.add(cohort)
+    db.flush()
+    link.holiday_intake_id = cohort.id
+    db.commit()
     calls = _mock_callback(client, monkeypatch, intake_slug=link.slug, member=None)
 
     resp = _callback(client)
@@ -134,6 +139,7 @@ def test_new_user_by_group_link_gets_program_tag_deadline_without_channel(client
     assert user.is_group_member is True
     assert user.tariff == ""
     assert user.access_until == DEADLINE
+    assert user.holiday_intake_id == cohort.id
     assert db.get(UserTag, (user.id, link.tag_id)) is not None
 
 
@@ -255,10 +261,18 @@ def test_bot_start_keeps_holiday_student_without_channel(db, monkeypatch, user_f
 
 def test_create_group_link_makes_tag_and_closed_link(admin_client, db):
     client, _admin = admin_client
+    response = client.post("/cabinet/intake/holiday-intakes", data={"title": "Старт 6 декабря"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    cohort = db.query(HolidayIntake).one()
+    assert client.post(
+        "/cabinet/intake/links", data={"title": "Другая группа", "holiday_intake_id": cohort.id + 1},
+    ).status_code == 400
 
     resp = client.post(
         "/cabinet/intake/links",
-        data={"csrf_token": "x", "title": "Каникулы 2", "deadline": "2026-11-01T23:59"},
+        data={"csrf_token": "x", "title": "Каникулы 2", "deadline": "2026-11-01T23:59",
+              "holiday_intake_id": cohort.id},
         follow_redirects=False,
     )
 
@@ -267,6 +281,7 @@ def test_create_group_link_makes_tag_and_closed_link(admin_client, db):
     tag = db.get(Tag, link.tag_id)
     assert tag.name == "Каникулы 2" and tag.is_hidden is False
     assert link.is_active is False
+    assert link.holiday_intake_id == cohort.id
     assert link.access_until == datetime(2026, 11, 1, 20, 59, tzinfo=timezone.utc)
 
     assert client.get("/cabinet/periods").status_code == 200

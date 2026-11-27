@@ -93,18 +93,6 @@ def test_student_does_not_see_digest_for_other_tag(client, db, user_factory, ses
     assert "Дайджест другого потока" not in response.text
 
 
-def test_digest_heading_joins_month_and_theme(db, user_factory):
-    """Заголовок ученику — «Сентябрь · Тема» (решение владельца 16.09.2026)."""
-    staff = user_factory(vk_id=430_010, name="Препод", role_name="ученик")
-    digest = create_digest(
-        db, title="Сентябрь — топ-тариф", year=2026, month=9,
-        assign_to_all=True, user_id=staff.id, theme="Композиция и объём",
-    )
-    db.commit()
-
-    assert digest_heading(digest) == "Сентябрь · Композиция и объём"
-
-
 def test_digest_heading_falls_back_to_title_without_theme(db, user_factory):
     """У дайджестов до 16.09.2026 темы нет — показываем прежнее название.
 

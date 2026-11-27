@@ -12,8 +12,10 @@ from unittest.mock import patch
 import pytest
 
 from app.models.notification import Notification
+from app.models.learning_topic import LearningTopic
 from app.models.task_block import (
     BLOCK_TEXT,
+    BLOCK_TIMED,
     BLOCK_UPLOAD,
     TaskBlock,
     TaskBlockFeedbackLink,
@@ -98,6 +100,58 @@ def _staff_says(client, session_factory, curator, submission, text="Разбор
         return response
 
 
+@pytest.mark.parametrize("score_first", [False, True])
+def test_linked_controls_finish_after_shared_feedback_and_their_own_scores(
+    client, db, group, user_factory, session_factory, score_first,
+):
+    first_block, _, main_block = group["blocks"]
+    first_block.block_type = main_block.block_type = BLOCK_TIMED
+    first = group["works"]["first"]
+    first.control_review_mode = "full"
+    main = group["submit_main"]()
+    main.control_review_mode = "full"
+    db.commit()
+    teacher = user_factory(vk_id=995_003, role_name="админ")
+    user_id = group["student"].id
+
+    def score(submission):
+        _login(client, session_factory, teacher)
+        with patch("app.api.task_block_feedback.notify"):
+            response = client.post(
+                f"/cabinet/staff/task-block-submissions/{submission.id}/score", json={"score": 80},
+            )
+        assert response.status_code == 200, response.text
+
+    score(main)
+    if score_first:
+        score(first)
+        db.refresh(first)
+        assert first.reviewed_at is None
+    assert _staff_says(client, session_factory, group["curator"], main).status_code == 200
+    if not score_first:
+        db.refresh(main)
+        assert main.reviewed_at is not None
+        assert unreviewed_counts_by_student(db, curator_id=None, student_id=user_id) == {user_id: 1}
+        score(first)
+
+    db.refresh(first)
+    assert first.reviewed_at is not None
+    assert unreviewed_counts_by_student(db, curator_id=None, student_id=user_id) == {}
+
+    _login(client, session_factory, teacher)
+    response = client.post(f"/cabinet/staff/task-block-submissions/{main.id}/delete-feedback")
+    assert response.status_code == 200, response.text
+    for submission in (main, first):
+        db.refresh(submission)
+        assert submission.reviewed_at is None
+        assert submission.reviewed_by_id is None
+        assert submission.score == 80
+    assert unreviewed_counts_by_student(db, curator_id=None, student_id=user_id) == {user_id: 1}
+
+    assert _staff_says(client, session_factory, group["curator"], main).status_code == 200
+    assert unreviewed_counts_by_student(db, curator_id=None, student_id=user_id) == {}
+
+
 # --- связка в конструкторе ----------------------------------------------------
 
 def test_links_are_saved_and_dropped_when_block_stops_taking_work(db, group):
@@ -157,6 +211,9 @@ def test_linked_works_wait_silently_until_main_is_submitted(db, group):
 
 
 def test_queue_shows_one_row_with_all_works(db, group):
+    # A linked control counts once through the main submission.
+    group["blocks"][0].block_type = BLOCK_TIMED
+    db.flush()
     main = group["submit_main"]()
 
     queue = submission_review_queue(db, student_id=group["student"].id)
@@ -168,6 +225,142 @@ def test_queue_shows_one_row_with_all_works(db, group):
     ]
     counts = unreviewed_counts_by_student(db, curator_id=None, student_id=group["student"].id)
     assert counts[group["student"].id] == 1
+
+
+@pytest.mark.parametrize(("linked_mode", "main_mode", "shared"), [
+    ("score", None, False),
+    ("legacy-score", None, False),
+    ("text", "full", False),
+    ("full", "score", False),
+    ("score", "score", False),
+    ("text", "text", True),
+])
+def test_feedback_group_preserves_review_modes(db, group, linked_mode, main_mode, shared):
+    from app.services.linked_feedback import main_submission_for, standalone_review_clause, work_group
+
+    first_block, _, main_block = group["blocks"]
+    first = group["works"]["first"]
+    first_block.block_type = BLOCK_TIMED
+    if linked_mode == "legacy-score":
+        first_block.submit_until = first.submitted_at - timedelta(days=3)
+    else:
+        first.control_review_mode = linked_mode
+    if main_mode:
+        main_block.block_type = BLOCK_TIMED
+    db.flush()
+    if linked_mode in ("score", "legacy-score"):
+        early_queue = submission_review_queue(db, student_id=group["student"].id)
+        assert [row["submission_id"] for row in early_queue] == [first.id]
+    main = group["submit_main"]()
+    main.control_review_mode = main_mode
+    db.commit()
+
+    queue = submission_review_queue(db, student_id=group["student"].id)
+    expected = {main.id}
+    if not shared:
+        expected.add(first.id)
+    if main_mode in ("score", "text"):
+        expected.add(group["works"]["second"].id)
+    assert {row["submission_id"] for row in queue} == expected
+    holiday_rows = db.query(TaskBlockSubmission).join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+    holiday_rows = holiday_rows.filter(TaskBlockSubmission.user_id == group["student"].id)
+    standalone = holiday_rows.filter(standalone_review_clause(db, holiday_rows)).all()
+    assert {submission.id for submission in standalone} == expected
+    feedback_main = main_submission_for(db, first)
+    assert (feedback_main.id if feedback_main else None) == (main.id if shared else None)
+    table = work_group(db, main)
+    assert (table is not None and first.id in {work.submission.id for work in table.linked}) == shared
+
+
+def test_ordinary_main_with_timely_linked_control_appears_in_full_filter(
+    db, group, client, session_factory,
+):
+    from app.services.curator_review_queue import build_review_queue
+
+    first_block, second_block, _ = group["blocks"]
+    first_block.block_type = second_block.block_type = BLOCK_TIMED
+    group["works"]["first"].control_review_mode = "full"
+    second = group["works"]["second"]
+    second.submitted_at = None
+    second.control_review_mode = "full"
+    main = group["submit_main"]()
+    now = datetime.now(timezone.utc)
+    cycle = LearningTopic(
+        title="Цикл", kind="week", is_published=True, assign_to_all=True,
+        opens_at=now - timedelta(days=12), ends_at=now + timedelta(days=1),
+    )
+    db.add(cycle)
+    db.flush()
+    for task in group["tasks"]:
+        task.topic_id = cycle.id
+        task.subject = "Рисунок"
+    db.commit()
+
+    def filtered_group():
+        queue = build_review_queue(
+            db, group["curator"].id, subject="Рисунок", tariff="", cycle_id=cycle.id, status="full",
+        )
+        grouped = [work for card in queue["cards"] for work in card["works"]]
+        assert [work["submission_id"] for work in grouped] == [main.id]
+        return grouped[0]
+
+    assert not filtered_group()["waits_for_score"]
+    assert _staff_says(client, session_factory, group["curator"], main).status_code == 200
+    db.expire_all()
+    assert filtered_group()["waits_for_score"]
+
+    second.submitted_at = datetime.now(timezone.utc)
+    db.commit()
+    assert not filtered_group()["waits_for_score"]
+
+
+def test_control_uploaded_after_shared_dialog_closed_can_be_reviewed_separately(
+    db, group, client, session_factory, user_factory,
+):
+    from app.models.task_block_feedback import TaskBlockFeedback
+    from app.services.linked_feedback import main_submission_for, work_group
+
+    first = group["works"]["first"]
+    second = group["works"]["second"]
+    group["blocks"][0].block_type = BLOCK_TIMED
+    group["blocks"][1].block_type = BLOCK_TIMED
+    first.submitted_at = None
+    second.control_review_mode = "full"
+    main = group["submit_main"]()
+    curator = group["curator"]
+    assert _staff_says(client, session_factory, curator, main).status_code == 200
+    with patch("app.api.task_block_feedback.notify"):
+        closed = client.post(f"/cabinet/staff/task-block-submissions/{main.id}/close-feedback")
+    assert closed.status_code == 200, closed.text
+
+    first.submitted_at = datetime.now(timezone.utc)
+    first.control_review_mode = "full"
+    db.commit()
+    assert main_submission_for(db, first) is None
+    assert main_submission_for(db, second).id == main.id
+    assert {work.submission.id for work in work_group(db, main).linked} == {second.id}
+    rows = submission_review_queue(db, student_id=group["student"].id)
+    assert {work["submission_id"] for work in rows} == {first.id, main.id}
+
+    feedback = db.query(TaskBlockFeedback).filter_by(submission_id=main.id).one()
+    closed_at = feedback.feedback_closed_at
+    feedback.feedback_closed_at = None
+    db.flush()
+    assert main_submission_for(db, first).id == main.id
+    assert {work.submission.id for work in work_group(db, main).linked} == {first.id, second.id}
+    feedback.feedback_closed_at = closed_at
+    db.commit()
+
+    page = client.get(f"/cabinet/staff/task-block-submissions/{first.id}/feedback", follow_redirects=False)
+    assert page.status_code == 200
+    assert _staff_says(client, session_factory, curator, first).status_code == 200
+    head = user_factory(vk_id=995_013, role_name="админ")
+    _login(client, session_factory, head)
+    with patch("app.api.task_block_feedback.notify"):
+        scored = client.post(f"/cabinet/staff/task-block-submissions/{first.id}/score", json={"score": 80})
+    assert scored.status_code == 200, scored.text
+    db.refresh(first)
+    assert first.reviewed_at is not None
 
 
 def test_group_row_names_tasks_it_includes(db, group, user_factory, client, session_factory):

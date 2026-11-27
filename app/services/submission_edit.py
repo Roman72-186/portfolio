@@ -86,7 +86,7 @@ def upload_deadline(
     (`services/student_reminders.py`): им нужен тот же момент заранее, а не
     отказ после, и второй копии правила там быть не должно.
     """
-    from app.services.task_blocks import submit_deadline_for, submit_deadline_is_set
+    from app.services.task_blocks import container_close_at, submit_deadline_for, submit_deadline_is_set
 
     sources = dict(
         user_tariff=user_tariff,
@@ -96,7 +96,7 @@ def upload_deadline(
     # `block=None` — домашка: срок задания и его строки тарифа, те же правила.
     deadlines = [] if late_allowed else [submit_deadline_for(block, task, **sources)]
     if block is not None:
-        deadlines.append(block.closes_at)
+        deadlines.extend((block.closes_at, container_close_at(block)))
     if not late_allowed and not submit_deadline_is_set(block, task, **sources):
         deadlines.append(task.due_at)
     present = [_utc(value) for value in deadlines if value]

@@ -89,6 +89,8 @@ class User(Base):
     course_periods: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lessons_count: Mapped[str | None] = mapped_column(String(5), nullable=True)
     enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Набор при бесплатном зачислении. Покупки определяются по ссылке оплаты.
+    holiday_intake_id: Mapped[int | None] = mapped_column(ForeignKey("holiday_intakes.id"))
     last_vk_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Таймстемпы активности/онбординга (для статистики; ставятся один раз, кроме last_login_at)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -154,6 +156,7 @@ class User(Base):
         nullable=True,
     )
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    curator_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Архив прошлого потока: ученик убран из рабочих списков (вместе с is_active=False),

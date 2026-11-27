@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=66">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -23,22 +23,13 @@
 {% set holiday = program == 'holiday' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
-    {% include "partials/program_switch.html" %}
-    {% include "partials/program_path.html" %}
-
-    <div class="prg-head">
-        <div>
-            <h1>Циклы программы</h1>
-            <p class="prg-hint">
-                Цикл — период, за который ученик видит свои задания одной лентой.
-                В предобучении это два-три дня, в основном обучении — неделя или месяц.
-            </p>
-        </div>
+    {% from "components/program_page_header.html" import program_page_header with context %}
+    {% set header_actions %}
         {% if prg_edit %}
-        <button type="button" class="btn-blue" data-cycle-new>Новый цикл</button>
+        <button type="button" class="btn-blue" data-cycle-new>Создать цикл</button>
         {% endif %}
-    </div>
-
+    {% endset %}
+    {{ program_page_header('Циклы программы', 'Задайте даты цикла, чтобы собрать его задания в одной ленте ученика.', actions=header_actions) }}
 
     {# Форма свёрнута, пока её не открыли кнопкой «Новый цикл» или «Название и
        даты» (аудит 29.09.2026): чаще всего сюда заходят открыть уже заведённый
@@ -207,10 +198,11 @@
     {% endif %}
 
     <section class="prg-items">
-        <h2>Уже заведены</h2>
+        <h2>Циклы</h2>
         {% if cycles %}
         {% for cycle in cycles %}
-        <article class="prg-item" data-cycle-id="{{ cycle.id }}">
+        {% set child_href = '/cabinet/staff/program/cycles/' ~ cycle.id %}
+        <article class="prg-item" data-cycle-id="{{ cycle.id }}" data-aop-published="{{ 'true' if cycle.is_published else 'false' }}">
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
                 {% if not cycle.locks_next %}<span class="prg-badge">Дальше пускает без сдачи</span>{% endif %}
@@ -218,7 +210,7 @@
                 {% if cycle.tariff_access is not none %}<span class="prg-badge">Доступ по тарифам</span>{% endif %}
                 {% for tag in cycle.tags %}<span class="prg-badge">{{ tag.name }}</span>{% endfor %}
                 {% for tag in cycle.excluded_tags %}<span class="prg-badge">Скрыт от: {{ tag.name }}</span>{% endfor %}
-                <h3>{{ cycle.label }}</h3>
+                <h3>{% if user.role_rank >= 4 %}<a class="aop-item-link" href="{{ child_href }}">{{ cycle.label }}</a>{% else %}{{ cycle.label }}{% endif %}</h3>
                 {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
                     <span>с {{ cycle.starts_on }}</span>
@@ -247,7 +239,7 @@
                главный (туда же уводит сохранение нового цикла), поэтому он
                синий, а не третья одинаковая рамка. #}
             <div class="prg-item-actions prg-item-actions--compact">
-                <a class="btn-blue" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
+                {% if user.role_rank < 4 %}<a class="btn-blue" href="{{ child_href }}">Задания</a>{% endif %}
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Статистика</a>
                 {% if prg_edit %}
                 <button type="button" class="btn-outline" data-cycle-edit
@@ -272,7 +264,7 @@
         {% elif period_filter %}
         <p class="prg-hint">В этом периоде пока нет циклов.</p>
         {% else %}
-        <p class="prg-hint">Пока ни одного цикла. Пока цикла нет, ученик видит задания текущей календарной недели.</p>
+        <p class="prg-hint">Циклов пока нет. Ученики видят задания текущей календарной недели.</p>
         {% endif %}
     </section>
 </div>

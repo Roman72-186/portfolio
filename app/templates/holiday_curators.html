@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Кураторы каникулярного набора{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/program.css?v=76">{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <a class="btn-outline" href="/cabinet/students?program=holiday">К списку учеников</a>
+    <div class="prg-head"><h1>Назначить кураторов</h1></div>
+    <p>У ученика один куратор на все каникулярные потоки.</p>
+    {% if assigned is not none %}<p role="status">Назначения обновлены у {{ assigned }} учеников.</p>{% endif %}
+    <form method="get" class="prg-form">
+        <label class="prg-field">Поток
+            <select name="flow" required>
+                <option value="">Выберите поток</option>
+                {% for track in tracks %}
+                <option value="{{ track.id }}" {{ 'selected' if flow == track.id }}>{{ track.title }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label><input type="checkbox" name="show_assigned" value="true" {{ 'checked' if show_assigned }}> Показать учеников с куратором</label>
+        <div class="prg-actions"><button class="btn-outline" type="submit">Показать учеников</button></div>
+    </form>
+    {% if students and curators %}
+    <form method="post" class="prg-form" action="/cabinet/holiday-curators" id="holiday-curator-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <input type="hidden" name="flow" value="{{ flow }}">
+        <fieldset class="card">
+            <legend>Ученики</legend>
+            {% for student in students %}
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" name="student_id" value="{{ student.id }}">
+                <span>{{ student.last_name or '' }} {{ student.first_name or student.name }}
+                {% if student.curator_id %} · {{ curator_names.get(student.curator_id, 'Куратор назначен') }}{% endif %}</span>
+            </label>
+            {% endfor %}
+        </fieldset>
+        <label class="prg-field">Куратор
+            <select name="curator_id" required>
+                <option value="">Выберите куратора</option>
+                {% for curator in curators %}<option value="{{ curator.id }}">{{ curator.name }}</option>{% endfor %}
+            </select>
+        </label>
+        {% if show_assigned %}
+        <label><input type="checkbox" name="replace_existing" value="true"> Заменить куратора у выбранных учеников</label>
+        {% endif %}
+        <div class="prg-actions"><button class="btn-blue" type="submit">Назначить</button></div>
+        <p role="alert" data-assignment-error hidden></p>
+    </form>
+    <script>
+    document.getElementById('holiday-curator-form').addEventListener('submit', async function (event) {
+        if (!window.csrfFetch) return;
+        event.preventDefault();
+        const error = this.querySelector('[data-assignment-error]');
+        const button = this.querySelector('button[type="submit"]');
+        const body = new FormData(this);
+        error.hidden = true;
+        if (!body.has('student_id')) {
+            error.textContent = 'Выберите хотя бы одного ученика.';
+            error.hidden = false;
+            return;
+        }
+        button.disabled = true;
+        const fallback = 'Не удалось назначить куратора. Попробуйте ещё раз.';
+        try {
+            const response = await window.csrfFetch(this.action, {method: 'POST', body});
+            const result = await response.json().catch(() => ({}));
+            if (response.ok && result.url) {
+                window.location.assign(result.url);
+                return;
+            }
+            const reason = window.csrfMessage(result, fallback);
+            error.textContent = typeof reason === 'string' ? reason : fallback;
+        } catch {
+            error.textContent = fallback;
+        }
+        error.hidden = false;
+        button.disabled = false;
+    });
+    </script>
+    {% elif flow %}
+    <p>{{ 'Нет действующих кураторов.' if students else 'В этом потоке пока нет учеников по выбранному фильтру.' }}</p>
+    {% endif %}
+</div>
+{% endblock %}

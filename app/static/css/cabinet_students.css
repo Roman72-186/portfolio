@@ -104,6 +104,15 @@
     overflow: hidden; background: var(--bg);
 }
 
+.review-return-link {
+    margin: 0;
+    padding: 0 16px;
+    flex-shrink: 0;
+    color: var(--blue-text);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+}
+
 /* ── Tab bar (pill style) ── */
 .tab-bar {
     display: none; align-items: center; gap: 4px;
@@ -389,12 +398,17 @@
 /* ── Toast ── */
 .save-toast {
     position: fixed; bottom: 24px; right: 24px;
+    max-width: min(420px, calc(100% - 48px)); overflow-wrap: anywhere;
     background: var(--ok-strong); color: var(--on-color);
     padding: 12px 20px; border-radius: var(--r-md);
     font-size: 14px; font-weight: 700;
     box-shadow: 0 4px 20px color-mix(in srgb, var(--ok-strong) 30%, transparent);
     z-index: 300; opacity: 0; transform: translateY(12px);
     transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+}
+.save-toast.is-error {
+    background: var(--error-fill);
+    box-shadow: 0 4px 20px color-mix(in srgb, var(--error-fill) 30%, transparent);
 }
 .save-toast.show { opacity: 1; transform: translateY(0); }
 
@@ -676,6 +690,29 @@
 }
 /* Дата вместо числа: 30px из `.stat-tile-value` не влезают в плитку 150px. */
 .activity-when { font-size: 16px; letter-spacing: 0; }
+.student-stat-section {
+    margin-block: 16px;
+    padding: clamp(12px, 3vw, 20px);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+}
+.student-stat-section > .section-title {
+    margin: 0 0 14px;
+    color: var(--text);
+    font-size: 16px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.student-stat-section .activity-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+}
+.student-stat-section .stat-tile {
+    min-width: 0;
+    border: 1px solid var(--line);
+    overflow-wrap: anywhere;
+}
+.student-stat-section > :last-child { margin-bottom: 0; }
 .activity-note { margin-bottom: 12px; }
 /* Отступ снизу: во «Статистике» за списком сразу идёт заголовок следующего раздела. */
 .activity-feed { list-style: none; margin: 0 0 16px; padding: 0; }

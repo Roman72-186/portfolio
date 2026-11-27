@@ -109,6 +109,8 @@ _MODERATOR_READ_SECTIONS = (
 # Отдельные адреса — точное совпадение. `/cabinet` только сам по себе:
 # префиксом он открыл бы весь кабинет.
 _MODERATOR_READ_EXACT = frozenset({
+    "/cabinet/staff/statistics",
+    "/cabinet/superadmin/stats/telegram",
     "/",
     "/cabinet",
     "/cabinet/notifications/feed",  # опрос колокольчика из base.html

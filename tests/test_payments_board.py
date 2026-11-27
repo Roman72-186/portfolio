@@ -674,6 +674,7 @@ def test_unpaid_tab_stays_empty_when_everyone_paid(db, client, session_factory, 
 
     page = client.get("/cabinet/superadmin/payments?month=2026-10&status=unpaid")
     assert page.status_code == 200
-    assert 'aria-current="page">Не оплатили · 0' in page.text
-    assert "За этот месяц нет учеников, от которых ждём оплату." in page.text
     assert "Иванова Анна" not in page.text
+    paid = client.get("/cabinet/superadmin/payments?month=2026-10&status=paid")
+    assert paid.status_code == 200
+    assert "Иванова Анна" in paid.text

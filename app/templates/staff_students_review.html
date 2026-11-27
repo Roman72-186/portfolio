@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {#
-Экран «Проверка по ученику» — очередь «кого проверять» для ГП и суперадмина.
+Экран «Проверка по ученику» — очередь «кого проверять» для куратора, ГП и суперадмина.
 Появился 01.09.2026, снят 05.10.2026, возвращён в меню 06.10.2026 (владелец).
 Своей проверки у экрана нет: строка ведёт во вкладку «Задания» карточки
 ученика, где проверка живёт с 05.10.2026. Счётчик тот же, что в списке
@@ -11,10 +11,15 @@ tests/test_reuse_ratchet.py.
 #}
 {% block title %}Проверка по ученику{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=review-demo-61">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 {% endblock %}
 {% block content %}
+{% include "_curator_nav.html" %}
 <div class="prg-page">
+    <nav class="prg-actions" aria-label="Программа проверки">
+        <a class="btn-blue" href="/cabinet/staff/students-review" aria-current="page">Годовой курс</a>
+        <a class="btn-outline" href="/cabinet/staff/students-review/holiday">Каникулярный набор</a>
+    </nav>
     <div class="prg-head">
         <div class="prg-head-copy">
             <h1>Проверка по ученику</h1>
@@ -37,12 +42,12 @@ tests/test_reuse_ratchet.py.
         <div class="prg-grid2">
             <label class="prg-field">Поиск
                 <input type="search" name="q" value="{{ filters.q }}"
-                       placeholder="Имя, @username или номер" autocomplete="off">
+                       placeholder="Имя, ник в Telegram или номер" autocomplete="off">
             </label>
             <label class="prg-field">Проверка
                 <select name="status">
                     <option value="">Все</option>
-                    <option value="{{ status_unchecked }}" {{ 'selected' if filters.status == status_unchecked }}>Есть непроверенное</option>
+                    <option value="{{ status_unchecked }}" {{ 'selected' if filters.status == status_unchecked }}>Есть работы на проверку</option>
                     <option value="{{ status_checked }}" {{ 'selected' if filters.status == status_checked }}>Всё проверено</option>
                 </select>
             </label>
@@ -57,6 +62,7 @@ tests/test_reuse_ratchet.py.
                     <option value="{{ newcomer_tariff }}" {{ 'selected' if filters.tariff == newcomer_tariff }}>Новенький (без тарифа)</option>
                 </select>
             </label>
+            {% if can_filter_curator %}
             <label class="prg-field">Куратор
                 <select name="curator">
                     <option value="">Любой</option>
@@ -66,9 +72,10 @@ tests/test_reuse_ratchet.py.
                     <option value="{{ no_curator }}" {{ 'selected' if filters.curator == no_curator }}>Без куратора</option>
                 </select>
             </label>
+            {% endif %}
         </div>
         <div class="prg-actions">
-            <button type="submit" class="btn-blue">Найти</button>
+            <button type="submit" class="btn-blue">Применить фильтры</button>
             {% if is_filtered %}<a class="btn-outline" href="/cabinet/staff/students-review">Сбросить</a>{% endif %}
         </div>
     </form>

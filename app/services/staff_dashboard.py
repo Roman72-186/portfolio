@@ -1075,10 +1075,16 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
     )
 
     works = db.query(Work).filter(Work.status == "success", Work.user_id.in_(reportable_ids))
-    works_by_type = dict(
-        works.with_entities(Work.work_type, func.count(Work.id)).group_by(Work.work_type).all()
+    work_type_counts = works.with_entities(Work.work_type, func.count(Work.id)).group_by(Work.work_type)
+    first_login = func.min(UserSession.created_at)
+    recently_joined_student_ids = (
+        db.query(UserSession.user_id)
+        .filter(UserSession.impersonated_by_id.is_(None))
+        .group_by(UserSession.user_id)
+        .having(first_login >= msk_midnight(date(2026, 8, 1)))
     )
-    total_works = sum(works_by_type.values())
+    works_by_type = dict(work_type_counts.filter(Work.user_id.in_(recently_joined_student_ids)).all())
+    total_works = works.count()
     works_this_month = works.filter(Work.created_at >= month_start).count()
 
     avg_raw = (
@@ -1142,6 +1148,7 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
         "students_blocked": students_blocked,
         "new_students_month": new_students_month,
         "works_by_type": works_by_type,
+        "works_by_type_total": sum(works_by_type.values()),
         "total_works": total_works,
         "works_this_month": works_this_month,
         "avg_mock_score": avg_mock_score,

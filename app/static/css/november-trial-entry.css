@@ -1,0 +1,11 @@
+    .trial-entry { width: 100%; max-width: 480px; margin: clamp(12px, 5vw, 48px) auto 0; }
+    .trial-entry .status-card { max-width: none; padding: clamp(20px, 5vw, 32px); }
+    .trial-entry h1 { margin: 0 0 16px; font-size: clamp(24px, 5vw, 32px); }
+    .trial-entry p { color: var(--muted); }
+    .trial-entry dl { margin: 0; border-block: 1px solid var(--line); }
+    .trial-entry dl > div { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; padding: 12px 0; }
+    .trial-entry dl > div + div { border-top: 1px solid var(--line); }
+    .trial-entry dt { color: var(--muted); }
+    .trial-entry dd { margin: 0; font-weight: 600; }
+    .trial-entry-actions { display: grid; gap: 12px; margin-top: 24px; }
+    .trial-entry-actions a { justify-content: center; text-align: center; min-height: 44px; }

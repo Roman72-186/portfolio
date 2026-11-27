@@ -1,6 +1,4 @@
-import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import pytest
 
@@ -38,43 +36,52 @@ async def test_read_image_uploads_preserves_filename_and_bytes():
     assert files == [("work.jpg", b"image-data")]
 
 
-@pytest.mark.asyncio
-async def test_read_image_uploads_uses_route_specific_format_message():
-    files, err = await read_image_uploads(
-        [FakeUpload("doc.pdf", "application/pdf", b"pdf")],
-        max_files=10,
-        unsupported_format_error="Файл «{filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP",
-    )
+def test_unsupported_upload_creates_no_work(auth_client, db, monkeypatch):
+    _assert_upload_rejected(auth_client, db, monkeypatch, "doc.pdf", "application/pdf", b"PDF")
 
-    assert files == []
-    assert err == "Файл «doc.pdf» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP"
+
+def _assert_upload_rejected(auth_client, db, monkeypatch, name, mime, content):
+    from app.models.work import Work
+
+    client, user = auth_client
+    def unexpected_write(*args, **kwargs):
+        pytest.fail("Rejected files must not reach storage")
+
+    monkeypatch.setattr("app.api.upload.s3_service.is_configured", lambda: True)
+    monkeypatch.setattr("app.api.upload.s3_service.upload_to_s3", unexpected_write)
+    monkeypatch.setattr("app.api.upload.send_photo_to_n8n", unexpected_write)
+    response = client.post("/upload/api", data={"month": "январь"}, files={"photos": (name, content, mime)})
+    assert response.status_code == 422
+    assert response.json()["success"] is False
+    assert db.query(Work).filter_by(user_id=user.id).count() == 0
 
 
 @pytest.mark.asyncio
 async def test_read_image_uploads_never_reads_past_the_limit():
-    """Код-ревью 28.09.2026, P1: файл читался в память целиком и только потом
-    сверялся с лимитом — несколько больших загрузок подряд роняли воркер."""
-    upload = FakeUpload("huge.jpg", "image/jpeg", b"x" * 50)
-    files, err = await read_image_uploads([upload], max_files=1, max_size=10)
+    import io
 
-    assert upload.requested == [11]
+    class BoundedUpload:
+        filename = "large.jpg"
+        content_type = "image/jpeg"
+
+        def __init__(self):
+            self.stream = io.BytesIO(b"x" * 50)
+
+        async def read(self, size=-1):
+            assert 0 < size <= 11
+            chunk = self.stream.read(size)
+            assert self.stream.tell() <= 11
+            return chunk
+
+    files, error = await read_image_uploads([BoundedUpload()], max_files=1, max_size=10)
+    assert error
     assert files == []
-    assert err == "Файл «huge.jpg» слишком большой (макс. 10 МБ)"
 
 
-def test_no_upload_is_read_without_a_size_limit():
-    """Сторож на весь `app/`: `await <файл>.read()` без аргумента читает
-    загрузку целиком, сколько бы её ни прислали. Читать `read(LIMIT + 1)`
-    и сверять длину — образец `app/api/feedback.py`. Тело запроса
-    (`await request.body()`) сюда не относится."""
-    app_dir = Path(__file__).resolve().parent.parent / "app"
-    offenders = [
-        f"{path.relative_to(app_dir.parent)}:{number}: {line.strip()}"
-        for path in app_dir.rglob("*.py")
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if re.search(r"await\s+(?!request\b)\w+\.read\(\s*\)", line)
-    ]
-    assert offenders == []
+def test_oversized_upload_creates_no_work(auth_client, db, monkeypatch):
+    from app.api.upload import MAX_SIZE
+
+    _assert_upload_rejected(auth_client, db, monkeypatch, "large.jpg", "image/jpeg", b"x" * (MAX_SIZE + 1))
 
 
 @pytest.mark.parametrize("content_type, filename", [

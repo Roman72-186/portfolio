@@ -61,10 +61,12 @@ def test_every_action_rule_matches_a_live_route():
     assert dead == []
 
 
-def test_every_action_has_a_rule_and_a_known_section():
+def test_route_actions_have_rules_and_all_actions_have_known_sections():
+    # This permission expands the results on the existing statistics route.
+    scope_permissions = {"statistics:all_students"}
     keys = {key for key, _, _ in section_access._ACTION_RULES}
     for action in section_access.ACTIONS:
-        assert action.key in keys
+        assert action.key in keys or action.key in scope_permissions
         assert action.section is None or action.section in section_access.SECTIONS_BY_KEY
 
 
@@ -180,27 +182,45 @@ def test_head_creates_staff_only_below_own_rank(client, db, session_factory, hea
     assert db.query(User).filter(User.first_name == "Новый").count() == 1
 
 
-@pytest.mark.parametrize(
-    ("key", "method", "path"),
-    [
-        ("program:video_delete", "POST", "/cabinet/admin/videos/987654/delete"),
-        ("guest_exam:participants", "POST", "/cabinet/staff/guest-exam/participants/987654/delete"),
-        ("feedback:dialogs", "POST", "/cabinet/superadmin/feedback/987654/reopen"),
-        ("students:portfolio_months", "PATCH", "/cabinet/students/987654/portfolio/month"),
-    ],
-)
-def test_superadmin_only_actions_open_with_action(
-    client, db, session_factory, head, key, method, path,
-):
-    """Без действия — отказ доступа; с ним запрос доходит до обработчика
-    (несуществующий объект — уже его ответ, не 403)."""
-    _login(client, session_factory, head)
-    kwargs = {"json": {"confirmation": "x", "month": "01", "year": 2026}}
-    assert client.request(method, path, follow_redirects=False, **kwargs).status_code == 403
+def test_superadmin_only_actions_open_with_action(client, db, session_factory, head, student, monkeypatch):
+    from app.models.guest_exam import GuestExamConfig, GuestParticipant
+    from app.models.learning_video import LearningVideo
+    from app.services import guest_exam
+    from test_feedback_dialog import _mk_cycle
+    from test_photo_rotation import _work
+    from test_routes_video_admin import _configure_upload, VIDEO_ID
 
-    _grant(db, head, key)
-    resp = client.request(method, path, follow_redirects=False, **kwargs)
-    assert resp.status_code != 403, resp.text
+    _configure_upload(monkeypatch)
+    monkeypatch.setattr("app.api.video_admin.delete_video", lambda video_id: None)
+    video = LearningVideo(bunny_library_id=720058, bunny_video_id=VIDEO_ID, title="Черновик", status="ready", is_published=False)
+    config = GuestExamConfig(token="action-test", title="Пробник", is_active=True)
+    db.add_all([video, config])
+    db.commit()
+    guest = guest_exam.create_participant(db, config, "Гость")
+    guest_id = guest.id
+    cycle = _mk_cycle(db, student.id, subject="Рисунок", closed=True)
+    work = _work(db, student, "fixture/photo.jpg")
+    cases = [
+        ("program:video_delete", "POST", f"/cabinet/admin/videos/{video.id}/delete",
+         {"confirmation": video.title}, 200, lambda: video.deleted_at is not None),
+        ("guest_exam:participants", "POST", f"/cabinet/staff/guest-exam/participants/{guest_id}/delete",
+         {}, 303, lambda: db.get(GuestParticipant, guest_id) is None),
+        ("feedback:dialogs", "POST", f"/cabinet/superadmin/feedback/{cycle.id}/reopen",
+         {}, 200, lambda: cycle.closed_at is None),
+        ("students:portfolio_months", "PATCH", f"/cabinet/students/{student.id}/portfolio/month",
+         {"from_month": work.month, "from_year": work.year, "to_month": "ноябрь", "to_year": 2026},
+         200, lambda: work.month == "ноябрь"),
+    ]
+    _login(client, session_factory, head)
+    for key, method, path, payload, status, changed in cases:
+        assert client.request(method, path, json=payload, follow_redirects=False).status_code == 403
+        db.expire_all()
+        assert not changed(), key
+        _grant(db, head, key)
+        result = client.request(method, path, json=payload, follow_redirects=False)
+        assert result.status_code == status, key
+        db.expire_all()
+        assert changed(), key
 
 
 # ── Экран «Доступы» ───────────────────────────────────────────────────────────

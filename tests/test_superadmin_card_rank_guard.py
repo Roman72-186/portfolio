@@ -98,6 +98,9 @@ def test_chief_teacher_still_edits_student(client, db, session_factory, people, 
     )
 
     assert resp.status_code in (200, 303), resp.text
+    db.refresh(student)
+    field = {"tags": "about", "curator": "curator_id", "cohort-tag": "cohort_tag"}[route]
+    assert str(getattr(student, field)) == _form(data, curator)[field]
 
 
 def test_superadmin_still_edits_own_profile(client, db, session_factory, people):

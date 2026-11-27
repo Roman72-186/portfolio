@@ -624,6 +624,21 @@ def assert_clean_enough(state: dict, target_files: list[Path], *, allow_dirty: b
     print("  --allow-dirty: продолжаем, деплой будет помечен как грязный")
 
 
+def _publish_version_marker(sftp, payload: dict) -> None:
+    remote_path = f"{REMOTE_DIR}/{VERSION_FILE}"
+    tmp_path = f"{remote_path}.tmp-{os.getpid()}"
+    try:
+        with sftp.open(tmp_path, "w") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        sftp.posix_rename(tmp_path, remote_path)
+    except BaseException:
+        try:
+            sftp.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def write_version_marker(
     sftp, state: dict, *, target_files: list[Path], dirty_ok: bool, previous: dict | None
 ) -> None:
@@ -649,8 +664,7 @@ def write_version_marker(
             "dirty_files": [],
             "note": "git был недоступен при деплое — версия не установлена",
         }
-        with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "w") as f:
-            f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        _publish_version_marker(sftp, payload)
         print("\n  Версия на сервере: неизвестна (git был недоступен)")
         return
     rel = sorted(p.relative_to(LOCAL_DIR).as_posix() for p in target_files)
@@ -680,8 +694,7 @@ def write_version_marker(
         # Историю заплаток храним, иначе после второй поштучной заливки нельзя
         # восстановить, какой файл приехал из какого коммита.
         payload["patches"] = history[-20:]
-    with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "w") as f:
-        f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+    _publish_version_marker(sftp, payload)
     mark = " (грязный)" if payload["dirty"] else ""
     if rel:
         base_short = (payload["commit"] or "неизвестен")[:7]
@@ -897,6 +910,30 @@ def assert_uploadable(local_paths: list[Path]) -> None:
             )
 
 
+def snapshot_release_files(sftp, local_paths: list[Path]) -> dict[str, bytes | None]:
+    snapshot = {}
+    for local_path in local_paths:
+        remote_path = f"{REMOTE_DIR}/{local_path.relative_to(LOCAL_DIR).as_posix()}"
+        try:
+            with sftp.open(remote_path, "rb") as handle:
+                snapshot[remote_path] = handle.read()
+        except FileNotFoundError:
+            snapshot[remote_path] = None
+    return snapshot
+
+
+def restore_release_files(sftp, snapshot: dict[str, bytes | None]) -> None:
+    for remote_path, previous in snapshot.items():
+        if previous is None:
+            try:
+                sftp.remove(remote_path)
+            except FileNotFoundError:
+                pass
+        else:
+            with sftp.open(remote_path, "wb") as handle:
+                handle.write(previous)
+
+
 def upload_files(sftp, local_paths: list[Path]):
     """Upload specific files, creating parent dirs as needed."""
     for local_path in local_paths:
@@ -973,6 +1010,9 @@ def main():
         f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
     )
     acquire_deploy_lock(client, lock_token)
+    restore_files = {}
+    rollback_needed = False
+    compose_started = False
     try:
         # Дамп — до первого изменения на сервере: не вышел, значит прод не тронут.
         if skip_db_dump:
@@ -991,6 +1031,9 @@ def main():
         previous_marker = read_version_marker(sftp)
 
         if target_files:
+            if not sync_env and all(path.relative_to(LOCAL_DIR).parts[0] == "app" for path in target_files):
+                restore_files = snapshot_release_files(sftp, target_files)
+                rollback_needed = True
             print(f"Uploading {len(target_files)} file(s) -> {REMOTE_DIR}")
             upload_files(sftp, target_files)
         else:
@@ -1020,6 +1063,7 @@ def main():
 
         # Build and start (пересобирает только app, db и redis не трогает)
         print(f"\nBuilding and starting containers (compose: {COMPOSE_FILE})...")
+        compose_started = True
         stdin, stdout, stderr = client.exec_command(
             f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
             timeout=600,
@@ -1042,7 +1086,6 @@ def main():
         # Иначе упавший build оставлял бы на сервере запись о новом коммите при
         # работающем старом образе, а `--status` подтверждал бы, что всё выкачено.
         if build_status != 0:
-            sftp.close()
             raise SystemExit(
                 f"\nОТМЕНА: сборка на сервере вернула код {build_status}.\n"
                 "Маркер версии не записан, но прод УЖЕ ЗАТРОНУТ: каталог app/ примонтирован\n"
@@ -1054,7 +1097,6 @@ def main():
             )
 
         if not wait_until_healthy(client):
-            sftp.close()
             raise SystemExit(
                 "\nОТМЕНА: контейнер не вышел в состояние healthy.\n"
                 "Маркер версии не записан, поэтому --status не покажет этот коммит\n"
@@ -1072,7 +1114,7 @@ def main():
             dirty_ok=allow_dirty,
             previous=previous_marker,
         )
-        sftp.close()
+        rollback_needed = False
 
         # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
         print("\nFlushing Redis cache...")
@@ -1084,7 +1126,24 @@ def main():
         redis_err = stderr.read().decode().strip()
         print(f"  Redis FLUSHDB: {redis_out or redis_err or '(no output)'}")
 
+    except BaseException:
+        if rollback_needed:
+            try:
+                restore_release_files(sftp, restore_files)
+                if compose_started:
+                    _, rollback_output, _ = client.exec_command(
+                        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
+                        timeout=600,
+                    )
+                    rollback_output.read()
+                    if rollback_output.channel.recv_exit_status() != 0 or not wait_until_healthy(client):
+                        raise RuntimeError("Проверка контейнера после отката не прошла")
+                print("Предыдущая версия файлов восстановлена.")
+            except Exception as rollback_error:
+                print(f"Не удалось восстановить предыдущую версию: {rollback_error}", file=sys.stderr)
+        raise
     finally:
+        sftp.close()
         release_deploy_lock(client, lock_token)
         client.close()
 

@@ -38,14 +38,13 @@ def test_curator_queue_switches_subject_and_keeps_filters(db, user_factory, sess
     assert opening.status_code == 200
     queue = rendered("curator_review_queue.html")
     assert queue["subject"] == "Рисунок"
-    assert 'aria-current="page">Рисунок' in opening.text
 
     client.get(queue_url, params={"cycle_id": cycle.id, "tariff": TARIFF_CONFIDENT_MAX, "status": "all"})
     queue = rendered("curator_review_queue.html")
     switched = client.get(queue["subject_links"]["Композиция"])
     assert switched.status_code == 200
-    assert 'aria-current="page">Композиция' in switched.text
     queue = rendered("curator_review_queue.html")
+    assert queue["subject"] == "Композиция"
     assert queue["period"]["cycle"].id == cycle.id
     assert queue["tariff"] == TARIFF_CONFIDENT_MAX
     assert queue["status"] == "all"
@@ -108,22 +107,28 @@ def test_students_list_counts_unreviewed_for_curator(auth_client, db, user_facto
     assert client.get("/cabinet/students").status_code == 200
 
     rows = {row["id"]: row for row in rendered("cabinet_students.html")["sidebar_students"]}
-    assert rows[student.id]["unchecked"] == 1
+    assert rows[student.id]["unchecked"] == 0
 
 
-def test_old_review_addresses_lead_curator_to_student_card(db, user_factory, session_factory, client):
-    """Недельная лента снята 05.10.2026; на её адреса ведут уведомления и
-    закладки. Списка у куратора нет — его адрес уводит в «Учеников»."""
+def test_curator_review_contains_only_assigned_students(db, user_factory, session_factory, client):
     curator = user_factory(vk_id=860_104, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_105, name="Назначенный ученик")
+    outsider = user_factory(vk_id=860_106, name="Чужой ученик")
+    student.curator_id = curator.id
+    db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
 
-    listing = client.get("/cabinet/staff/students-review", follow_redirects=False)
-    detail = client.get("/cabinet/staff/students-review/42?week=2026-09-03", follow_redirects=False)
+    listing = client.get("/cabinet/staff/students-review", params={"curator": "none"})
+    assert listing.status_code == 200
+    assert "Назначенный ученик" in listing.text
+    assert "Чужой ученик" not in listing.text
+    assert 'name="curator"' not in listing.text
+    assert 'href="/cabinet/staff/students-review/holiday"' in listing.text
 
-    assert listing.status_code == 302
-    assert listing.headers["location"] == "/cabinet/students"
+    detail = client.get(f"/cabinet/staff/students-review/{student.id}", follow_redirects=False)
     assert detail.status_code == 302
-    assert detail.headers["location"] == "/cabinet/students?student=42&tab=tasks"
+    assert detail.headers["location"] == f"/cabinet/students?student={student.id}&tab=tasks"
+    assert client.get(f"/cabinet/students/{outsider.id}/tasks").status_code in (403, 404)
 
 
 def test_review_list_rows_lead_to_tasks_tab(db, user_factory, session_factory, client):
@@ -203,8 +208,8 @@ def test_mock_is_not_counted_in_card_or_list(db, user_factory, session_factory, 
     task, block = _task_with_question(db)
     db.commit()
     _answer(db, task, block, student, "Ответ")
-    assert study_now()["unreviewed"] == 1
-    assert unreviewed_counts_by_student(db, curator_id=None, role_rank=5)[student.id] == 1
+    assert study_now()["unreviewed"] == 0
+    assert student.id not in unreviewed_counts_by_student(db, curator_id=None, role_rank=5)
 
 
 def test_chief_returns_mock_and_nobody_reviews_until_resubmission(
@@ -434,6 +439,8 @@ def test_head_teacher_can_toggle_any_task_block_answer(db, user_factory, session
     resp = client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": True})
 
     assert resp.status_code == 200
+    db.refresh(answer)
+    assert answer.reviewed_at is not None
 
 
 # ── точка А сюда больше не входит ───────────────────────────────────────────

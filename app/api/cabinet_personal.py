@@ -214,6 +214,7 @@ def cabinet_personal_track(
             }, status_code=403)
         return RedirectResponse("/cabinet/personal", status_code=302)
     owned = intake_link_service.tracks_of(db, user["user_id"])
+    now = datetime.now(timezone.utc)
     owned_ids = {link.id for link in owned}
     return templates.TemplateResponse(request, "cabinet_personal_track.html", {
         "request": request,
@@ -249,8 +250,8 @@ def cabinet_personal_track(
         # Когда откроется программа (служба заботы 19.10.2026) — пока не
         # открылась; служебные не ждут, им дата не печатается.
         "program_opens_text": (
-            msk_text(intake_link_service.program_opens_at(owned))
-            if intake_link_service.waits_for_program(user["user_id"], datetime.now(timezone.utc), owned)
+            msk_text(intake_link_service.program_opens_at(owned, now=now))
+            if intake_link_service.waits_for_program(user["user_id"], now, owned)
             else ""
         ),
         "support_url": SUPPORT_URL,

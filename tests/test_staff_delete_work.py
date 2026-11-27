@@ -90,3 +90,20 @@ def test_staff_deletes_work_without_feedback(
     assert [c.args[0] for c in s3_delete.call_args_list] == [work.s3_path, f"thumbs/{work.s3_path}"]
     db.expire_all()
     assert db.get(Work, work.id) is None
+
+
+def test_failed_file_delete_is_retried_after_work_commit(db, regular_user):
+    from app.models.work import PendingWorkFileDeletion
+    from app.services.works import commit_work_deletions, delete_works_with_dependents, process_work_file_deletions
+
+    work = _work(db, regular_user)
+    work_id = work.id
+    with patch("app.services.works.s3_service.delete_from_s3", return_value=False) as delete:
+        delete_works_with_dependents(db, [work])
+        delete.assert_not_called()
+        commit_work_deletions(db)
+    assert db.get(Work, work_id) is None
+    assert db.query(PendingWorkFileDeletion).count() == 2
+    with patch("app.services.works.s3_service.delete_from_s3", return_value=True):
+        process_work_file_deletions(db)
+    assert db.query(PendingWorkFileDeletion).count() == 0

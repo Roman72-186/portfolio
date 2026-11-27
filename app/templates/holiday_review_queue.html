@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Проверка каникуляров{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/program.css?v=76">{% endblock %}
+{% block content %}
+{% include "_curator_nav.html" %}
+<div class="prg-page">
+    <nav class="prg-actions" aria-label="Программа проверки">
+        <a class="btn-outline" href="/cabinet/staff/students-review">Годовой курс</a>
+        <a class="btn-blue" href="/cabinet/staff/students-review/holiday" aria-current="page">Каникулярный набор</a>
+    </nav>
+    <div class="prg-head"><h1>Проверка каникуляров</h1></div>
+    <form method="get" class="prg-form">
+        <div class="prg-grid2">
+            <label class="prg-field">Поток
+                <select name="flow">
+                    <option value="">Все потоки</option>
+                    {% for track in tracks %}
+                    <option value="{{ track.id }}" {{ 'selected' if flow == track.id }}>{{ track.title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="prg-field">Статус
+                <select name="status">
+                    <option value="pending" {{ 'selected' if status == 'pending' }}>На проверку</option>
+                    <option value="reviewed" {{ 'selected' if status == 'reviewed' }}>Проверено</option>
+                    <option value="all" {{ 'selected' if status == 'all' }}>Все сдачи</option>
+                </select>
+            </label>
+            {% if can_filter_curator %}
+            <label class="prg-field">Куратор
+                <select name="curator">
+                    <option value="">Все кураторы</option>
+                    <option value="0" {{ 'selected' if curator == 0 }}>Без куратора</option>
+                    {% for item in curators %}
+                    <option value="{{ item.id }}" {{ 'selected' if curator == item.id }}>{{ item.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% endif %}
+        </div>
+        <button class="btn-blue" type="submit">Показать</button>
+    </form>
+    <section class="prg-items" aria-label="Сданные работы">
+        {% for submission, task, student in rows %}
+        <a class="prg-item" href="/cabinet/staff/task-block-submissions/{{ submission.id }}/feedback?{{ work_query }}">
+            <div class="prg-item-copy">
+                <h3>{{ task.title }}</h3>
+                <div class="prg-meta">
+                    <span>{{ student.last_name or '' }} {{ student.first_name or student.name }}</span>
+                    {% set mapped = tracks_by_topic.get(task.topic_id, []) %}
+                    {% if flow is none and mapped|length == 1 %}<span>{{ mapped[0].title }}</span>{% endif %}
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                {% set reviewed = submission.reviewed_at and submission.id not in pending_group_ids %}
+                <span class="prg-badge{{ ' prg-badge--done' if reviewed }}">
+                    {{ 'Проверено' if reviewed else 'На проверку' }}
+                </span>
+            </div>
+        </a>
+        {% else %}
+        <p class="prg-empty">Сдач по этим фильтрам пока нет.</p>
+        {% endfor %}
+    </section>
+    <nav class="prg-actions" aria-label="Страницы результатов">
+        {% if prev_url %}<a class="btn-outline" href="{{ prev_url }}">Назад</a>{% endif %}
+        {% if next_url %}<a class="btn-outline" href="{{ next_url }}">Дальше</a>{% endif %}
+    </nav>
+</div>
+{% endblock %}

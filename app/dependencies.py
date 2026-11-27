@@ -18,6 +18,7 @@ from app.services import intake_link as intake_link_service
 from app.services import view_host
 from app.services.access_state import access_expired as user_access_expired
 from app.services.portfolio_window import intake_portfolio_gate_required
+from app.services.portfolio_access import has_legacy_portfolio_admission
 from app.services.rbac import (
     MODERATOR_ROLE_NAME,
     REVISION_MIN_RANK,
@@ -249,6 +250,19 @@ def get_current_user(
     if view_host.is_view_request(request) and not session.impersonated_by_id:
         raise HTTPException(status_code=401, detail="Сессия просмотра не найдена")
 
+    if session.impersonated_by_id:
+        from app.services.user_management import can_impersonate_by_rank
+
+        actor = db.get(User, session.impersonated_by_id)
+        actor_rank = actor.role.rank if actor and actor.role else 0
+        if (
+            not actor or not actor.is_active or actor.deleted_at or actor.archived_at
+            or not can_impersonate_by_rank(actor.id, actor_rank, user)
+        ):
+            session.is_active = False
+            db.commit()
+            raise HTTPException(status_code=401, detail="Сессия просмотра завершена")
+
     now = datetime.now(timezone.utc)
     expires_at = _as_utc(session.expires_at)
     if expires_at < now:
@@ -291,7 +305,14 @@ def get_current_user(
     from app.services import public_purchase
     enrollment = public_purchase.enrollment_for(db, user.id)
     public_purchase_pending = enrollment is not None and enrollment.activated_at is None
-    if public_purchase_pending and not public_purchase.allows_path(db, enrollment, request.url.path):
+    purchase_path_allowed = public_purchase_pending and public_purchase.allows_path(
+        db, enrollment, request.url.path,
+    )
+    # До оплаты годового курса продолжают действовать правила каникулярного кабинета.
+    holiday_purchase_path = user.program == PROGRAM_HOLIDAY and purchase_path_allowed
+    if user.program == PROGRAM_HOLIDAY:
+        public_purchase_pending = holiday_purchase_path
+    if public_purchase_pending and not purchase_path_allowed:
         raise HTTPException(status_code=403, detail=public_purchase.PURCHASE_REQUIRED)
     purchase_payment = public_purchase.confirmed_payment(db, enrollment) if public_purchase_pending else None
     if public_purchase_pending and request.url.path == "/cabinet/profile" and purchase_payment is None:
@@ -312,6 +333,11 @@ def get_current_user(
     viewer_tariff = user.viewer_tariff if role_name == MODERATOR_ROLE_NAME else None
     if viewer_tariff:
         levels = tariff_viewer_levels()
+        # Узкое персональное право на очников первой недели – единственное
+        # исключение для тарифного просмотра. Другие разделы остаются закрыты.
+        from app.services.first_week_attendance import ATTENDANCE_ACTION
+        configured = resolve_levels(db, user_id=user.id, role_id=user.role_id, role_name=role_name)
+        levels[ATTENDANCE_ACTION] = configured.get(ATTENDANCE_ACTION, "none")
     elif is_configurable_role(role_name):
         levels = resolve_levels(
             db, user_id=user.id, role_id=user.role_id, role_name=role_name,
@@ -371,12 +397,24 @@ def get_current_user(
     # Сроков два — пробный (`access_until`) и оплаченный (`paid_until`), правило
     # одно: `services/access_state.py`.
     access_expired = role_rank == 1 and not public_purchase_pending and user_access_expired(user, now)
-    if access_expired and not is_path_allowed_when_access_expired(request.url.path):
+    holiday_feedback_read = (
+        role_rank == 1 and user.program == PROGRAM_HOLIDAY and request.method in ("GET", "HEAD")
+        and (request.url.path == "/cabinet/my-feedback" or (
+            request.url.path.startswith("/cabinet/task-block-submissions/")
+            and request.url.path.endswith("/feedback")
+        ))
+    )
+    holiday_checkout_csrf = (
+        role_rank == 1 and user.program == PROGRAM_HOLIDAY
+        and request.method == "GET" and request.url.path == "/csrf"
+    )
+    if access_expired and not (holiday_feedback_read or holiday_checkout_csrf
+                               or is_path_allowed_when_access_expired(request.url.path)):
         raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
 
     # Каникулярный набор — урезанный кабинет, тем же приёмом. Только ученик:
     # сотруднику признак программы ничего не закрывает.
-    limited_cabinet = role_rank == 1 and user.program == PROGRAM_HOLIDAY
+    limited_cabinet = role_rank == 1 and user.program == PROGRAM_HOLIDAY and not holiday_purchase_path
     # Трек не оплачен (17.10.2026): до оплаты открыты только «Личная
     # информация» и страница треков под ней — тот же список, что у истёкшего
     # срока. Трек ученика — его тег (`intake_link.track_of`), запрос только у
@@ -384,16 +422,16 @@ def get_current_user(
     holiday_unpaid = (
         limited_cabinet and not access_expired and intake_link_service.needs_track(db, user)
     )
-    if holiday_unpaid and not is_path_allowed_when_holiday_unpaid(request.url.path):
+    if holiday_unpaid and not (holiday_feedback_read or is_path_allowed_when_holiday_unpaid(request.url.path)):
         raise HTTPException(status_code=403, detail=HOLIDAY_UNPAID_DETAIL)
     # Трек оплачен, программа ещё не открылась — тем же приёмом.
     holiday_waiting = (
         limited_cabinet and not access_expired and not holiday_unpaid
         and intake_link_service.waits_for_program(user.id, now, intake_link_service.tracks_of(db, user.id))
     )
-    if holiday_waiting and not is_path_allowed_when_holiday_waiting(request.url.path):
+    if holiday_waiting and not (holiday_feedback_read or is_path_allowed_when_holiday_waiting(request.url.path)):
         raise HTTPException(status_code=403, detail=HOLIDAY_WAITING_DETAIL)
-    if limited_cabinet and not is_path_allowed_in_limited_cabinet(request.url.path):
+    if limited_cabinet and not (holiday_feedback_read or is_path_allowed_in_limited_cabinet(request.url.path)):
         raise HTTPException(status_code=403, detail=LIMITED_CABINET_DETAIL)
 
     # Расхождение Telegram-ника — тем же приёмом, что и истёкший доступ выше.
@@ -405,17 +443,18 @@ def get_current_user(
     tg_username_mismatch = (
         role_rank == 1 and not public_purchase_pending and user.profile_completed and user.tg_username_mismatch
     )
-    if tg_username_mismatch and not is_path_allowed_when_tg_mismatch(request.url.path):
+    if tg_username_mismatch and not (holiday_feedback_read or is_path_allowed_when_tg_mismatch(request.url.path)):
         raise HTTPException(status_code=403, detail=TG_MISMATCH_DETAIL)
 
     # Гейт «Портфолио «До»» — держим на завершённой анкете (`profile_completed`)
     # тем же приёмом, что и расхождение Telegram-ника выше: пока идёт самая
     # первая анкета, приоритетнее её редирект на /cabinet/profile
     # (`needs_profile_setup` в самих роутах), а не этот гейт.
+    legacy_portfolio_admission = has_legacy_portfolio_admission(db, user)
     portfolio_required = (
         user.access_until is None
         or intake_portfolio_gate_required(db, user_id=user.id)
-    )
+    ) and not legacy_portfolio_admission
     portfolio_gate = (
         role_rank == 1
         and not public_purchase_pending
@@ -452,6 +491,7 @@ def get_current_user(
         "public_purchase_pending": public_purchase_pending,
         "purchase_paid_tariff": purchase_payment.tariff if purchase_payment else None,
         "portfolio_do_completed": user.portfolio_do_completed,
+        "legacy_portfolio_admission": legacy_portfolio_admission,
         "portfolio_gate": portfolio_gate,
         "drive_folder_id": user.drive_folder_id,
         "curator_id": user.curator_id,

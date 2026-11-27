@@ -75,6 +75,7 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="dashboard", href="/cabinet/curator?sections=1", label="Все разделы", icon="🏠"),
     NavItem(key="curator_demo", href="/cabinet/curator/overview", label="Статистика", icon="📈"),
     NavItem(key="students", href="/cabinet/students", label="Ученики", icon="👥"),
+    NavItem(key="students_review", href="/cabinet/staff/students-review", label="Проверка по ученику", icon="📝"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     # Статистика своей группы — «Ученики поимённо» (Александрия 22.10.2026);
     # статистика одного ученика — по ссылке оттуда, во вкладке его карточки.
@@ -378,6 +379,11 @@ def curator_nav_items(
 # Урезанный кабинет каникулярного набора (созвон 13.10.2026): сервер держит
 # тот же набор белым списком `dependencies.LIMITED_CABINET_ALLOWED_*`.
 LIMITED_CABINET_NAV_KEYS = ("learning", "portfolio", "personal")
+HOLIDAY_FEEDBACK_NAV = StudentNavItem(
+    key="holiday_feedback", desktop_href="/cabinet/my-feedback", mobile_href="/cabinet/my-feedback",
+    desktop_label="Моя обратная связь", mobile_label="Моя ОС",
+    aria_label="Моя обратная связь", icon="cycle",
+)
 
 
 def student_nav_items(
@@ -391,12 +397,13 @@ def student_nav_items(
     только АОП, портфолио и «Личная информация»."""
     if access_expired:
         allowed = {"personal"}
-        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
+        items = tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
+        return items + (HOLIDAY_FEEDBACK_NAV,) if limited else items
     if limited:
         allowed = set(LIMITED_CABINET_NAV_KEYS)
         if lab3d_open:
             allowed.add("3dlab")
-        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed)
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key in allowed) + (HOLIDAY_FEEDBACK_NAV,)
     if not lab3d_open:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key != "3dlab")
     return STUDENT_NAV_ITEMS
@@ -408,6 +415,16 @@ def student_nav_items(
 # него как у ГП, поэтому по `min_rank` меню собралось бы целиком — из
 # ссылок, отвечающих «Нет доступа».
 MODERATOR_NAV_KEYS = ("students", "archive", "activity")
+
+MODERATOR_BOT_ANALYTICS_ITEM = StaffNavItem(
+    key="bot_analytics",
+    href="/cabinet/superadmin/stats/telegram",
+    sidebar_label="Статистика по Telegram-боту",
+    pill_label="Telegram-бот",
+    aria_label="Статистика по Telegram-боту",
+    tooltip="Переходы, запуски и прохождение шагов в боте",
+    icon="cases",
+)
 
 # «Статистика активности» — пункт только модератора: у ГП и суперадмина она
 # открывается с дашборда, их меню эта правка не меняет.
@@ -486,6 +503,7 @@ def staff_nav_items(
     closed_sections: frozenset[str] | None = None,
     granted_sections: frozenset[str] | None = None,
     payments: bool = False,
+    bot_links: bool = False,
 ) -> tuple[StaffNavItem, ...]:
     hidden = closed_nav_keys(closed_sections)
     if role_name == "модератор":
@@ -499,6 +517,8 @@ def staff_nav_items(
             if key in by_key and key not in keys
         ]
         items = tuple(by_key[key] for key in keys)
+        if bot_links and "statistics" not in (closed_sections or ()):
+            items += (MODERATOR_BOT_ANALYTICS_ITEM,)
         return items + (PAYMENTS_NAV_ITEM, FLOWS_NAV_ITEM) if payments else items
     # Раздел, открытый сверх роли, показывает свой пункт и выше ранга — так
     # ГП видит «Рассылки», когда суперадмин открыл их в «Доступах». Остальные

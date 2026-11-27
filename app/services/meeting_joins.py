@@ -145,7 +145,6 @@ def link_opens(db: Session, block_ids) -> dict[tuple[int, int], datetime]:
 # Откуда «был / не был» по кнопке «Ссылка» — для подписей в статистике.
 ATTENDED_PRESSED = "pressed"
 ATTENDED_STAFF = "staff_yes"
-ATTENDED_IN_PERSON = "in_person"
 ABSENT_STAFF = "staff_no"
 
 AUDIT_LESSON_ATTENDANCE = "lesson_attendance"
@@ -167,10 +166,7 @@ def attendance_by_block(db: Session, block_ids) -> dict[tuple[int, int], str]:
         return {}
     result = {key: ATTENDED_PRESSED for key in link_opens(db, ids)}
     for mark in db.query(LessonAttendanceMark).filter(LessonAttendanceMark.block_id.in_(ids)):
-        result[(mark.block_id, mark.user_id)] = (
-            ATTENDED_IN_PERSON if mark.attended and mark.attendance_format == "in_person"
-            else ATTENDED_STAFF if mark.attended else ABSENT_STAFF
-        )
+        result[(mark.block_id, mark.user_id)] = ATTENDED_STAFF if mark.attended else ABSENT_STAFF
     return result
 
 
@@ -230,7 +226,7 @@ def set_attendance(
         performed_by_id=staff_id,
         target_user_id=student_id,
         details=(f"{'Был' if attended else 'Не был'} на занятии: {title}"
-                 + (f" · {attendance_format}" if attended and attendance_format else ""))[:1000],
+                 + (f" · {attendance_format}" if attendance_format and attended else ""))[:1000],
     ))
     db.flush()
     maybe_close_task_by_blocks(db, block.task_id, student_id)
@@ -314,17 +310,12 @@ def student_meeting_joins(db: Session, student_id: int) -> list[dict]:
         mark = marks.get(block_id_from_details(row.details))
         if mark is not None and not mark.attended:
             continue
-        if mark is not None and mark.attended:
-            source = ATTENDED_IN_PERSON if mark.attendance_format == "in_person" else ATTENDED_STAFF
-            entries.append((row.details, mark.marked_at, source))
-        else:
-            entries.append((row.details, row.created_at, ATTENDED_PRESSED))
+        entries.append((row.details, row.created_at, ATTENDED_PRESSED))
     pressed = {details for details, _, _ in entries}
     for block_id, mark in marks.items():
         details = f"{_BLOCK_PREFIX}{block_id}"
         if mark.attended and details not in pressed:
-            source = ATTENDED_IN_PERSON if mark.attendance_format == "in_person" else ATTENDED_STAFF
-            entries.append((details, mark.marked_at, source))
+            entries.append((details, mark.marked_at, ATTENDED_STAFF))
     # Нажатие и отметка — из разных таблиц: сравниваем в UTC, наивное — как UTC.
     entries.sort(
         key=lambda entry: entry[1] if entry[1].tzinfo else entry[1].replace(tzinfo=timezone.utc),

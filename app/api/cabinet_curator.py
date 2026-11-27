@@ -164,6 +164,7 @@ def cabinet_curator_demo(
     stage_id: Annotated[int | None, Query(ge=-1)] = None,
     cycle_id: Annotated[int | None, Query(ge=0)] = None,
     subject: Annotated[str, Query(max_length=30)] = "",
+    control_id: Annotated[int | None, Query(gt=0)] = None,
 ):
     from app.services.curator_demo import build_curator_demo
 
@@ -178,7 +179,9 @@ def cabinet_curator_demo(
         "request": request,
         "user": user,
         "nav_active": "curator_demo",
-        "demo": build_curator_demo(db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject),
+        "demo": build_curator_demo(
+            db, user["user_id"], stage_id=stage_id, cycle_id=cycle_id, subject=subject, control_id=control_id,
+        ),
     })
 
 

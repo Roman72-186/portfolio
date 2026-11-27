@@ -82,7 +82,10 @@ var taskDraft = (function () {
             return;
         }
         try {
-            s.setItem(key, JSON.stringify({saved_at: Date.now(), data: JSON.parse(snap)}));
+            var data = JSON.parse(snap);
+            data.revision = form.dataset.itemRevision || null;
+            data.creation_request_id = form.dataset.creationRequestId || null;
+            s.setItem(key, JSON.stringify({saved_at: Date.now(), data: data}));
         } catch (e) { return; }
     }
 
@@ -163,6 +166,11 @@ var taskDraft = (function () {
             var actions = el('div', 'prg-draft-actions');
             var resume = el('button', 'btn-blue', 'Продолжить');
             resume.type = 'button';
+            var stale = itemId !== 'new' && entry.data.revision !== editPayloads[itemId].revision;
+            if (stale) {
+                notice.appendChild(el('p', 'prg-draft-text',
+                    'Задание изменилось после сохранения черновика. Сохранение черновика заблокировано.'));
+            }
             var drop = el('button', 'btn-outline', 'Удалить черновик');
             drop.type = 'button';
             actions.appendChild(resume);
@@ -170,6 +178,7 @@ var taskDraft = (function () {
             notice.appendChild(actions);
             resume.addEventListener('click', function () {
                 notice.remove();
+                if (stale && !entry.data.revision) entry.data.revision = 'legacy-draft';
                 fillItemForm(itemId === 'new' ? '' : itemId, entry.data);
                 track(true);
             });
@@ -182,5 +191,5 @@ var taskDraft = (function () {
     }
 
     showNotices();
-    return {track: track, clear: clear};
+    return {track: track, clear: clear, save: save};
 })();

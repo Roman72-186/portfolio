@@ -115,6 +115,19 @@ def test_lesson_end_roundtrip_and_copy_clears_calendar_time(client, db, user_fac
     assert not copied.get("lesson_ends_at")
     assert copied["subject"] == "Рисунок"
 
+    data = {
+        "title": "Два занятия", "is_required": True,
+        "blocks": [{"id": block.id, "block_type": "link", "url": "https://zoom.us/j/1"}],
+    }
+    update = f"{PROGRAM}/items/{task_id}/material"
+    assert client.post(update, json=data, headers=CSRF).status_code == 200
+    db.refresh(block)
+    assert block.lesson_ends_at.hour == 15
+    data["blocks"][0]["lesson_ends_at"] = None
+    assert client.post(update, json=data, headers=CSRF).status_code == 200
+    db.refresh(block)
+    assert block.lesson_ends_at is None
+
 
 def test_copy_keeps_submission_photo_count_and_clears_deadline(client, db, user_factory, session_factory):
     _login_chief(client, user_factory, session_factory)

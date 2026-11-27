@@ -1,12 +1,26 @@
 {% extends "base.html" %}
 {% from "components/hint.html" import hint %}
+{% macro return_work_form(request, submission) %}
+    <form class="prg-form hw-hint" data-return-form hidden
+          action="/cabinet/staff/task-block-submissions/{{ submission.id }}/revision">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <label class="form-label" for="return-comment">Что доделать – ученик получит это в уведомлении</label>
+        <textarea id="return-comment" class="field-input" name="comment" rows="3" maxlength="2000"
+                  placeholder="Например: доделай тени и пришли до вечера воскресенья"></textarea>
+        <div class="prg-actions">
+            <button type="button" class="btn-outline" data-return-cancel>Отмена</button>
+            <button type="submit" class="btn-blue">Вернуть работу</button>
+        </div>
+        <p class="prg-message" aria-live="polite"></p>
+    </form>
+{% endmacro %}
 {% block title %}Обратная связь – {{ task.title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
-<link rel="stylesheet" href="/static/css/curator_review.css?v=compact-7">
+<link rel="stylesheet" href="/static/css/curator_review.css?v=feedback-actions-2">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page task-feedback">
@@ -107,8 +121,15 @@
 
     <section class="card">
         <h2 class="section-label">Оценка
-            {{ hint("«Пометить проверенной» убирает работу из списка непроверенных. «Вернуть в очередь» отменяет эту отметку. «Вернуть на доработку» открывает поле для комментария перед отправкой ученику.", "Что делают кнопки проверки") }}
+            {% if is_control and control_mode != "score" and viewer_role != "student" %}
+                {{ hint("Контрольная считается проверенной, когда выставлен балл и ученик получил обратную связь.", "Когда контрольная считается проверенной") }}
+            {% elif requires_review and not is_control %}
+                {{ hint("После отправки обратной связи работа автоматически считается проверенной. «Вернуть в очередь» отменяет отметку.", "Что делают кнопки проверки") }}
+            {% endif %}
         </h2>
+        {% if viewer_role != 'student' and control_status %}
+        <p class="card-desc"><strong>{{ control_status }}</strong>{% if control_mode %} · {{ {'full':'Полный разбор и балл','text':'Текстовая ОС и балл','score':'Только балл'}[control_mode] }}{% endif %}</p>
+        {% endif %}
         {# Баллы прошлых работ общей ОС — здесь, рядом с баллом этой: лента
            работ выше только показывает. #}
         {% if group %}
@@ -150,33 +171,20 @@
         {% else %}
         <p class="card-desc">Главный преподаватель ещё не поставил оценку.</p>
         {% endif %}
-        {% if not submission.needs_revision %}
+        {% if not submission.needs_revision and requires_review and not is_control %}
         <div class="prg-actions review-action-row">
             <button type="button" class="btn-outline" data-review-toggle
                     data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">
                 {{ 'Вернуть в очередь' if submission.reviewed_at else 'Пометить проверенной' }}
             </button>
-            {% if can_send_revision %}
-            <button type="button" class="btn-outline" data-return-toggle>Вернуть на доработку</button>
-            {% endif %}
             <p class="prg-message" data-review-status aria-live="polite"></p>
         </div>
-        {# Возврат на доработку (владелец 14.10.2026): ученику уведомление с
-           комментарием и «Заменить фото» в задании, новое фото — финальное. #}
-        {% if can_send_revision %}
-        <form class="prg-form" data-return-form hidden
-              action="/cabinet/staff/task-block-submissions/{{ submission.id }}/revision">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <label class="form-label" for="return-comment">Что доделать – ученик получит это в уведомлении</label>
-            <textarea id="return-comment" class="field-input" name="comment" rows="3" maxlength="2000"
-                      placeholder="Например: доделай тени и пришли до вечера воскресенья"></textarea>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-return-cancel>Отмена</button>
-                <button type="submit" class="btn-blue">Вернуть работу</button>
-            </div>
-            <p class="prg-message" aria-live="polite"></p>
-        </form>
         {% endif %}
+        {% if can_send_revision and not (review_demo or is_control) %}
+        <div class="prg-actions hw-hint">
+            <button type="button" class="btn-outline" data-return-toggle>Вернуть на доработку</button>
+        </div>
+        {{ return_work_form(request, submission) }}
         {% endif %}
         {% if submission.needs_revision %}
         <span class="chip">На доработке</span>
@@ -269,7 +277,7 @@
         <p class="card-desc hw-hint" data-reply-state>{{ reply.staff_text }}</p>
         {% endif %}
         {# «Завершить ОС» закрывает диалог и сотруднику (ОС, фаза 2, О25). #}
-        {% if (viewer_role != 'student' and not rating_panel.closed and (not review_demo or autosave is not none)) or (viewer_role == 'student' and reply.allowed) %}
+        {% if (viewer_role != 'student' and control_mode != "score" and not rating_panel.closed and (not review_demo or autosave is not none)) or (viewer_role == 'student' and not read_only and reply.allowed) %}
         {% if viewer_role == 'student' %}<p class="card-desc hw-hint" data-reply-state>{{ reply.student_text }}</p>{% endif %}
         <form class="hw-form{% if not review_demo %} hw-async-form{% endif %}" method="post"{% if review_demo %} data-demo-composer{% endif %}
               {% if autosave is defined and autosave is not none and viewer_role != 'student' %}data-review-draft-url="/cabinet/staff/task-block-submissions/{{ submission.id }}/draft"
@@ -282,7 +290,7 @@
             {% if autosave is defined and autosave is not none %}
             <div class="review-editor-row review-editor-drafts" data-review-draft-controls hidden>
                 <div class="prg-field">
-                    <span class="review-help-label"><label for="review-draft">Черновики</label> {{ hint("Выбери сохранённый черновик, чтобы продолжить правку. Кнопка «Новое замечание» сохраняет текущий текст и открывает пустое поле для следующего.", "Как пользоваться черновиками") }}</span>
+                    <span class="review-help-label"><label for="review-draft">Черновики</label> {{ hint("«Новое замечание» сохраняет текущий текст в черновиках" if review_demo else "Выбери сохранённый черновик, чтобы продолжить правку. Кнопка «Новое замечание» сохраняет текущий текст и открывает пустое поле для следующего.", "Как пользоваться черновиками") }}</span>
                     <select id="review-draft" class="field-input" data-review-draft-picker>
                         <option value="">Новое замечание</option>
                     </select>
@@ -299,6 +307,7 @@
             {% if review_demo %}
             </div>
             <div class="review-composer-tools">
+                {% if control_mode != "text" %}
                 <details class="review-composer-menu">
                     <summary class="btn-outline" aria-label="Вложения" title="Вложения">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 11.5l-8.7 8.7a5 5 0 0 1-7.1-7.1L15 3.4a3.5 3.5 0 0 1 5 5l-9.8 9.8a2 2 0 0 1-2.8-2.8l8.7-8.7"/></svg>
@@ -320,6 +329,7 @@
                     </div>
                 </details>
                 {% endif %}
+                {% endif %}
                 <button type="button" class="btn-blue" data-send-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/send-feedback" data-review-draft-count="{{ draft_count }}"{% if not draft_count %} disabled{% endif %}>Предпросмотр</button>
             </div>
             <input hidden type="file" name="photo" accept="image/*">
@@ -330,6 +340,7 @@
             {% endif %}
             <ul class="review-composer-files" data-demo-files hidden></ul>
             {% else %}
+            {% if viewer_role == 'student' or control_mode != "text" %}
             {% if viewer_role != 'student' %}<div data-media-recorder></div>{% endif %}
             <label class="form-label hw-label-gap" for="feedback-photo">Фото, необязательно</label>
             <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
@@ -339,8 +350,9 @@
             <input id="feedback-video" type="file" class="field-input" name="video" accept="video/*">
             <label class="form-label hw-label-gap" for="feedback-audio">Голосовое, необязательно (до 25 МБ)</label>
             <input id="feedback-audio" type="file" class="field-input" name="audio" accept="audio/*">
-            <button type="submit" class="{{ 'btn-blue' if viewer_role == 'student' else 'btn-outline' }} hw-submit">{{ 'Отправить' if viewer_role == 'student' else 'Добавить сообщение' }}</button>
-            {% if viewer_role != 'student' %}
+            {% endif %}
+            <button type="submit" class="{{ 'btn-blue' if viewer_role == 'student' else 'btn-outline' }} hw-submit">{{ 'Отправить' if viewer_role == 'student' else ('Сохранить в черновики' if review_demo else 'Добавить сообщение') }}</button>
+            {% if viewer_role != 'student' and not review_demo %}
             {{ hint("Добавляет текст или вложения в черновики. Чтобы ученик увидел сообщение, нажми кнопку отправки ОС.", "Что делает кнопка «Добавить сообщение»") }}
             {% endif %}
             {% endif %}
@@ -351,7 +363,7 @@
         {% endif %}
         {# Сообщения сотрудника — черновик, пока не нажата «Отправить ОС»: она
            открывает их ученику и шлёт одно уведомление (владелец 22.10.2026). #}
-        {% if viewer_role != 'student' and (draft_count or (autosave is defined and autosave is not none and not rating_panel.closed)) %}
+        {% if viewer_role != 'student' and control_mode != 'score' and (draft_count or (autosave is defined and autosave is not none and not rating_panel.closed)) %}
         <div class="hw-hint">
             {% if not review_demo %}
             <div class="review-help-label">
@@ -364,12 +376,12 @@
             {% if review_demo %}
             <dialog class="card review-preview" data-review-preview aria-labelledby="review-preview-title">
                 <h3 id="review-preview-title" class="section-label">Состав обратной связи
-                    {{ hint("«Отправить ОС» откроет ученику замечания и вложения из списка. «Вернуться к правке» закроет предпросмотр и оставит черновики в редакторе.", "Что делают кнопки предпросмотра") }}
+                    {{ hint("Если вернуться к правке, черновики сохранятся", "Что будет с черновиками") }}
                 </h3>
                 <ol class="review-preview-items" data-review-preview-items></ol>
                 <div class="modal-actions">
                     <button type="button" class="btn-outline" data-review-preview-cancel>Вернуться к правке</button>
-                    <button type="button" class="btn-blue" data-review-preview-send>Отправить ОС</button>
+                    <button type="button" class="btn-blue" data-review-preview-send>Отправить ученику</button>
                 </div>
             </dialog>
             {% endif %}
@@ -378,9 +390,37 @@
         {% endif %}
     </section>
 
+    {% set show_return = can_send_revision and (review_demo or is_control) %}
+    {% if show_return or rating_panel.can_close or rating_panel.close_hint or (revision and revision.can_delete) %}
+    <section class="card" aria-labelledby="work-actions-title">
+        <h2 class="section-label" id="work-actions-title">Действия с работой</h2>
+        <div class="prg-actions hw-hint work-actions">
+            {% if show_return %}
+            <div class="work-action">
+                <button type="button" class="btn-outline" data-return-toggle>Вернуть на доработку</button>
+            </div>
+            {% endif %}
+            {% with feedback_actions_inline=true %}
+            {% include "partials/feedback_rating.html" %}
+            {% endwith %}
+            {% if revision and revision.can_delete %}
+            <div class="work-action">
+                <button type="button" class="btn-outline" data-delete-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/delete-feedback">Удалить обратную связь</button>
+                {{ hint("Если обратная связь ушла не тому ученику или не на ту работу, удали её. Ученик перестанет её видеть, а работа вернётся в очередь непроверенной. Балл останется. Сообщение, которое бот уже прислал в Telegram, отозвать нельзя.", "Что произойдёт при удалении обратной связи") }}
+            </div>
+            {% endif %}
+        </div>
+        {% if show_return %}{{ return_work_form(request, submission) }}{% endif %}
+        {% if revision and revision.can_delete %}
+        <p class="prg-message" data-delete-status aria-live="polite"></p>
+        {% endif %}
+    </section>
+    {% endif %}
+    {% if rating_panel.closed and not read_only %}
     {% with feedback_staff_label="Главный преподаватель" %}
     {% include "partials/feedback_rating.html" %}
     {% endwith %}
+    {% endif %}
 
     {# Возврат завершённой ОС автору на правку (05.10.2026): вернуть — ГП и
        суперадмин, завершить правку — автор или они же. Ученик блока не видит. #}
@@ -400,17 +440,6 @@
     </section>
     {% endif %}
 
-    {# Удаление ошибочной ОС целиком (21.10.2026): ГП и суперадмин, пока ОС
-       не завершена, не оценена и ученик не ответил —
-       `services/feedback_edit.py::task_block_delete_refusal`. Ученик блока не видит. #}
-    {% if revision and revision.can_delete %}
-    <section class="card">
-        <h2 class="section-label">Удалить обратную связь</h2>
-        <p class="card-desc">Если обратная связь ушла не тому ученику или не на ту работу, удали её. Ученик перестанет её видеть, а работа вернётся в очередь непроверенной. Балл останется. Сообщение, которое бот уже прислал в Telegram, отозвать нельзя.</p>
-        <div class="prg-actions hw-hint"><button type="button" class="btn-outline" data-delete-feedback="/cabinet/staff/task-block-submissions/{{ submission.id }}/delete-feedback">Удалить обратную связь</button></div>
-        <p class="prg-message" data-delete-status aria-live="polite"></p>
-    </section>
-    {% endif %}
     {% if review_demo %}
     <section class="card">
         <h2 class="section-label">Прошлые работы</h2>
@@ -422,8 +451,7 @@
             </a></li>
             {% else %}<li>Ранее сданных работ пока нет.</li>{% endfor %}
         </ul>
-        <a class="btn-outline" data-review-navigation href="/cabinet/students?student={{ submission.user_id }}&amp;tab=portfolio">Портфолио ученика</a>
-        {{ hint("Откроет портфолио ученика, где можно посмотреть его работы вне этого задания.", "Что откроется в портфолио") }}
+        <a class="btn-outline" data-review-navigation href="{{ student_portfolio_url }}">Портфолио ученика</a>
     </section>
     {% endif %}
 
@@ -453,8 +481,10 @@
             method: 'POST', credentials: 'same-origin',
             headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
             body: JSON.stringify({score: score})
-        }).then(function (response) {
-            if (!response.ok) throw new Error('Проверь оценку: допустимо от 0 до 100.');
+        }).then(async function (response) {
+            var result = await response.json().catch(function () { return {}; });
+            if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить оценку.');
+            if (result.control) window.location.reload();
             message.classList.remove('is-error');
             message.textContent = 'Оценка сохранена';
         }).catch(function (error) {
@@ -507,10 +537,12 @@
             var button = returnForm.querySelector('button[type=submit]');
             var status = returnForm.querySelector('.prg-message');
             button.disabled = true;
-            fetch(returnForm.action, {
-                method: 'POST', credentials: 'same-origin',
-                headers: {'Accept': 'application/json', 'X-CSRF-Token': csrfToken},
-                body: new FormData(returnForm)
+            Promise.resolve(window.curatorReviewDraft?.flush()).then(function () {
+                return fetch(returnForm.action, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {'Accept': 'application/json', 'X-CSRF-Token': csrfToken},
+                    body: new FormData(returnForm)
+                });
             }).then(function (response) {
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) {
@@ -715,7 +747,7 @@
 })();
 </script>
 {% if viewer_role == 'student' %}
-{% set active_tab = "learning" %}
+{% set active_tab = "holiday_feedback" if back_url == "/cabinet/my-feedback" else "learning" %}
 {% include "partials/bottom_nav.html" %}
 {% endif %}
 {% endblock %}

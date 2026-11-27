@@ -8,14 +8,13 @@
 // Копии — только для глаз: `aria-hidden`, без фокуса; сервер отдаёт ряд
 // один раз, и тесты шаблона видят его как прежде.
 //
-// Ряд, который целиком помещается в экран, не зацикливается: иначе одни и те
-// же кнопки стояли бы рядом два-три раза. Мышью ряд тянется перетаскиванием —
-// колеса для горизонтали у обычной мыши нет.
+// Student rows keep one card per week and wrap only when they overflow.
 (function () {
     var strip = document.querySelector('.lrn-cycles');
     if (!strip) return;
 
     var originals = Array.prototype.slice.call(strip.children);
+    var uniqueWeeks = strip.hasAttribute('data-loop-weeks');
     var looping = false;
     var period = 0;  // ширина одного ряда вместе с промежутком до копии
 
@@ -26,7 +25,7 @@
     // Позиция, сдвинутая на целое число рядов внутрь среднего: под пальцем
     // та же картинка, а с обеих сторон есть куда крутить.
     function wrap(left) {
-        if (!looping) return left;
+        if (!looping || period <= 0) return left;
         while (left < period / 2) left += period;
         while (left > period * 1.5) left -= period;
         return left;
@@ -37,6 +36,7 @@
             var copy = el.cloneNode(true);
             copy.setAttribute('aria-hidden', 'true');
             copy.setAttribute('tabindex', '-1');
+            copy.removeAttribute('aria-current');
             copy.setAttribute('data-clone', '');
             return copy;
         });
@@ -45,7 +45,6 @@
     function centerCurrent() {
         var current = strip.querySelector('.is-current:not([data-clone])');
         if (!current) return;
-        // Ширина — по рамке на экране: текущая плитка увеличена (scale 1.2).
         var width = current.getBoundingClientRect().width;
         strip.scrollLeft = wrap(offsetIn(current) + width / 2 - strip.clientWidth / 2);
     }
@@ -70,6 +69,7 @@
     }
 
     function sync() {
+        if (uniqueWeeks) return;
         if (!looping && strip.scrollWidth > strip.clientWidth + 1) startLoop();
         else if (looping && period <= strip.clientWidth) stopLoop();
     }
@@ -89,6 +89,39 @@
     // Перетаскивание мышью. Палец и тачпад крутят ряд сами. Сдвиг больше
     // пяти пикселей — это протяжка, а не нажатие: клик по кнопке, на которой
     // отпустили мышь, гасится, иначе протяжка открывала бы чужой цикл.
+    function wrapAtEdge(start, delta) {
+        var max = strip.scrollWidth - strip.clientWidth;
+        if (!uniqueWeeks || max <= 1) return false;
+        if (start <= 1 && delta < 0) strip.scrollLeft = max;
+        else if (start >= max - 1 && delta > 0) strip.scrollLeft = 0;
+        else return false;
+        return true;
+    }
+
+    var touchStart = null;
+    if (uniqueWeeks) {
+        strip.addEventListener('touchstart', function (event) {
+            var touch = event.touches[0];
+            touchStart = {x: touch.clientX, y: touch.clientY, scroll: strip.scrollLeft};
+        }, {passive: true});
+        strip.addEventListener('touchend', function (event) {
+            if (!touchStart) return;
+            var touch = event.changedTouches[0];
+            var dx = touchStart.x - touch.clientX;
+            if (Math.abs(dx) > Math.max(24, Math.abs(touchStart.y - touch.clientY))) {
+                wrapAtEdge(touchStart.scroll, dx);
+            }
+            touchStart = null;
+        }, {passive: true});
+        var lastWheel = -Infinity;
+        strip.addEventListener('wheel', function (event) {
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+            var newGesture = event.timeStamp - lastWheel > 180;
+            lastWheel = event.timeStamp;
+            if (newGesture && wrapAtEdge(strip.scrollLeft, event.deltaX)) event.preventDefault();
+        }, {passive: false});
+    }
+
     var drag = null;
     var dragged = false;
     strip.addEventListener('pointerdown', function (e) {
@@ -109,7 +142,10 @@
         drag.scroll += left - target;
         strip.scrollLeft = left;
     });
-    window.addEventListener('pointerup', function () { drag = null; });
+    window.addEventListener('pointerup', function (event) {
+        if (drag && dragged) wrapAtEdge(drag.scroll, drag.x - event.clientX);
+        drag = null;
+    });
     strip.addEventListener('click', function (e) {
         if (!dragged) return;
         dragged = false;

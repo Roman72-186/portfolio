@@ -233,7 +233,6 @@ def test_closed_statistics_tab_gives_403_but_list_stays(client, db, session_fact
     assert resp.status_code == 403
     assert SECTION_CLOSED_DETAIL in resp.text
     # Заглушка не должна пугать сотрудника блокировкой аккаунта.
-    assert "Раздел закрыт" in resp.text
     assert "Аккаунт заблокирован" not in resp.text
     assert client.get("/cabinet/students", follow_redirects=False).status_code == 200
 

@@ -396,7 +396,7 @@ def test_staff_feedback_page_renders(auth_client, db, user_factory, session_fact
 
     page = client.get(f"/cabinet/staff/homework/submissions/{submission.id}/feedback")
     assert page.status_code == 200
-    assert "Обратная связь" in page.text
+    assert task.title in page.text
 
 
 def test_staff_submissions_list_shows_submitted_student(admin_client, db, user_factory):

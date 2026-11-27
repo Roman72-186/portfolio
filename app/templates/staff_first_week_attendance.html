@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Посещаемость первой недели{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=18">
+{% endblock %}
+{% block content %}
+<div class="ss-wrap ios-ss">
+    <div class="ss-header">
+        <a href="/cabinet/students" class="back-link">← Ученики</a>
+        <h1 class="ss-title">Очники: посещаемость первой недели</h1>
+    </div>
+    <p>Выберите занятие и отметьте присутствие. У очника, который был очно или подключился онлайн, запись этого занятия становится необязательной. Пометка «Очник» сама по себе посещение не засчитывает.</p>
+    {% if lessons %}
+    <form method="get" class="ss-filters">
+        <label for="lesson">Занятие
+            <select name="lesson_id" id="lesson" class="form-input">
+            {% for lesson in lessons %}<option value="{{ lesson.id }}" {% if lesson.id == lesson_id %}selected{% endif %}>{{ lesson.label }}</option>{% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="btn-outline">Открыть занятие</button>
+    </form>
+    <div class="ss-table-wrap"><table class="ss-table">
+        <thead><tr><th>Ученик</th><th>Посещение</th><th>Отметить</th></tr></thead>
+        <tbody>
+        {% for student in students %}
+        <tr>
+            <td data-label="Ученик">{{ student.name }}</td>
+            <td data-label="Посещение">{{ student.status }}</td>
+            <td data-label="Отметить">
+                <form method="post" action="/cabinet/staff/first-week-attendance/{{ student.id }}/{{ lesson_id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <label>Новая отметка
+                        <select name="attendance" class="form-input" aria-label="Посещение: {{ student.name }}" required>
+                            <option value="">Выберите отметку</option>
+                            <option value="in_person">Был очно</option>
+                            <option value="online">Был онлайн</option>
+                            <option value="absent">Не был</option>
+                        </select>
+                    </label>
+                    <button type="submit" class="btn-blue">Сохранить</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}<tr><td colspan="3">На это занятие нет учеников с пометкой «Очник».</td></tr>{% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<p>Пока нет опубликованных занятий первой недели со ссылкой подключения.</p>{% endif %}
+</div>
+{% endblock %}

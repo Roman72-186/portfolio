@@ -21,6 +21,7 @@ from app.services.exam_cycle import (
     cycle_submission_state,
     find_open_cycle_for_ticket,
     intermediate_upload_state,
+    lock_probnik_upload,
 )
 from app.services.feature_periods import is_feature_available
 from app.services.mock_exam_access import (
@@ -949,14 +950,21 @@ async def upload_mock_exam_api(
     if not is_subject_allowed_for_student(db, user["user_id"], subject):
         return JSONResponse({"success": False, "error": "Этот предмет недоступен для твоей группы"}, status_code=403)
 
-    from app.services.exam_cycle import get_active_tickets
+    from app.services.exam_cycle import get_active_tickets, get_unsubmitted_active_tickets
 
+    await run_in_threadpool(lock_probnik_upload, db, user["user_id"])
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
         return JSONResponse({"success": False, "error": f"Нет активного билета по предмету «{subject}»"}, status_code=404)
+    available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
+    if not available_tickets:
+        return JSONResponse({
+            "success": False,
+            "error": f"Пробник по «{subject}» уже сдан в текущем цикле. Дождись результата проверки.",
+        }, status_code=409)
     active_ticket = next(
         (
-            ticket for ticket in active_tickets
+            ticket for ticket in available_tickets
             if _get_open_attempt_for_ticket(db, user["user_id"], subject, ticket.id)
         ),
         None,
@@ -1546,6 +1554,7 @@ async def upload_mock_exam(
     now = datetime.now(timezone.utc)
     from app.services.exam_cycle import get_active_tickets, get_unsubmitted_active_tickets
 
+    await run_in_threadpool(lock_probnik_upload, db, user["user_id"])
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
         return _err(f"Нет активного билета по предмету «{subject}»")

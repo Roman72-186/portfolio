@@ -123,7 +123,6 @@ def test_moderator_opens_observer_pages(moderator_client, path):
 def test_moderator_gets_403_outside_whitelist(moderator_client, path):
     resp = moderator_client.get(path, follow_redirects=False)
     assert resp.status_code == 403
-    assert "Модератору открыты только" in resp.text
 
 
 def test_moderator_refusal_leaves_log_line(moderator_client, caplog):
@@ -280,6 +279,11 @@ def test_moderator_with_every_section_open_browses_without_writes(
     assert "/cabinet/staff/program/cycles" in paths
 
     writes = []
+    # Доступ к редактору фигур и финансовым операциям отдельно ограничен ролью.
+    forbidden = {
+        "/cabinet/3dlab/figures", "/cabinet/superadmin/payment-import",
+        "/cabinet/superadmin/payments", "/cabinet/superadmin/payments/export",
+    }
 
     def _on_execute(conn, cursor, statement, *args):
         head = statement.lstrip().split(None, 2)
@@ -292,8 +296,12 @@ def test_moderator_with_every_section_open_browses_without_writes(
     try:
         for current in paths:
             resp = client.get(current, follow_redirects=False)
-            assert resp.status_code < 500, current
-            assert resp.status_code != 403 or "Модератору" not in resp.text, current
+            if current in forbidden:
+                assert resp.status_code == 403, current
+                continue
+            assert resp.status_code in (200, 301, 302, 303, 307, 308), current
+            if resp.is_redirect:
+                assert client.get(resp.headers["location"], follow_redirects=True).status_code == 200
     finally:
         event.remove(engine, "before_cursor_execute", _on_execute)
 

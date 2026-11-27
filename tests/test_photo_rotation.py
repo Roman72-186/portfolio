@@ -139,7 +139,17 @@ def test_chief_teacher_rotates_school_content(client, db, user_factory, session_
     chief = user_factory(vk_id=970_010, name="Главный", is_admin=True, role_name="админ")
     _login(client, session_factory, chief)
 
-    assert _rotate(client, "tickets/t.jpg", _FakeS3()).status_code == 200
+    import io
+    from PIL import Image
+    from test_services_utils import _marked_image
+
+    storage = _FakeS3()
+    key = "tickets/t.jpg"
+    storage.objects[key] = _marked_image()
+    assert _rotate(client, key, storage).status_code == 200
+    image = Image.open(io.BytesIO(storage.objects[key]))
+    assert image.size == (80, 120)
+    assert max(image.getpixel((60, 20))) < 32
 
 
 def test_moderator_only_watches(client, db, user_factory, session_factory):

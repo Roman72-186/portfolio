@@ -27,6 +27,10 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import or_, update
 
 from pywebpush import WebPushException, webpush_async
 
@@ -56,6 +60,8 @@ PUSH_TTL_SEC = 24 * 60 * 60
 # Страховка на одно уведомление целиком: Telegram с повторами, голосовое
 # (скачать + перекодировать) и все push-подписки получателя.
 NOTIFY_TIMEOUT_SEC = 180
+TELEGRAM_MAX_ATTEMPTS = 8
+TELEGRAM_LEASE_SEC = 600
 
 
 @dataclass
@@ -93,7 +99,7 @@ def _load_delivery(notification_id: int) -> _Delivery | None:
         if notification is None:
             return None
         user = db.get(User, notification.user_id)
-        if user is None:
+        if user is None or not user.is_active or user.deleted_at is not None:
             return None
         delivery = _Delivery(message=_Message(
             title=notification.title,
@@ -131,10 +137,115 @@ async def _deliver(notification_id: int) -> None:
     delivery = _load_delivery(notification_id)
     if delivery is None:
         return
-    if delivery.telegram_chat_id:
-        await _send_telegram(delivery.telegram_chat_id, delivery.message)
+    await _deliver_telegram(notification_id, delivery)
     for target in delivery.push_targets:
-        await _send_push(target, delivery.message)
+        await _send_push(target)
+
+
+def _claim_telegram(notification_id: int) -> int | None:
+    """Atomic lease; release the DB connection before touching the network."""
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        claimed = db.execute(update(Notification).where(
+            Notification.id == notification_id,
+            Notification.telegram_attempts < TELEGRAM_MAX_ATTEMPTS,
+            or_(
+                Notification.telegram_status.is_(None),
+                (Notification.telegram_status.in_(("pending", "sending")))
+                & (Notification.telegram_next_attempt_at <= now),
+            ),
+        ).values(
+            telegram_status="sending",
+            telegram_attempts=Notification.telegram_attempts + 1,
+            telegram_next_attempt_at=now + timedelta(seconds=TELEGRAM_LEASE_SEC),
+        ))
+        if not claimed.rowcount:
+            db.rollback()
+            return None
+        attempt = db.query(Notification.telegram_attempts).filter(Notification.id == notification_id).scalar()
+        db.commit()
+        return attempt
+
+
+def _finish_telegram(notification_id: int, attempt: int, ok: bool) -> None:
+    now = datetime.now(timezone.utc)
+    status = "sent" if ok else ("failed" if attempt >= TELEGRAM_MAX_ATTEMPTS else "pending")
+    with SessionLocal() as db:
+        db.execute(update(Notification).where(
+            Notification.id == notification_id,
+            Notification.telegram_status == "sending",
+            Notification.telegram_attempts == attempt,
+        ).values(
+            telegram_status=status,
+            telegram_sent_at=now if ok else None,
+            telegram_next_attempt_at=(
+                now + timedelta(seconds=min(3600, 60 * 2 ** (attempt - 1)))
+                if status == "pending" else None
+            ),
+        ))
+        db.commit()
+    # No message body, chat id, API URL or exception text in delivery logs.
+    logger.warning("Telegram delivery notification_id=%s attempt=%s status=%s", notification_id, attempt, status)
+
+
+async def _deliver_telegram(notification_id: int, delivery: _Delivery | None) -> None:
+    if delivery is None or not delivery.telegram_chat_id:
+        with SessionLocal() as db:
+            db.execute(update(Notification).where(
+                Notification.id == notification_id,
+                or_(
+                    Notification.telegram_status == "pending",
+                    (Notification.telegram_status == "sending")
+                    & (Notification.telegram_next_attempt_at <= datetime.now(timezone.utc)),
+                ),
+            ).values(telegram_status="skipped", telegram_next_attempt_at=None))
+            db.commit()
+        return
+    attempt = _claim_telegram(notification_id)
+    if attempt is None:
+        return
+    try:
+        ok = await _send_telegram(delivery.telegram_chat_id, delivery.message)
+    except Exception as exc:
+        logger.warning("Telegram delivery exception notification_id=%s type=%s", notification_id, type(exc).__name__)
+        ok = False
+    _finish_telegram(notification_id, attempt, bool(ok))
+
+
+def retry_telegram_sync() -> None:
+    """Retry only queued Telegram deliveries, never historical rows or Web Push."""
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        due = (
+            Notification.telegram_status.in_(("pending", "sending")),
+            Notification.telegram_next_attempt_at <= now,
+        )
+        # A crash on the final attempt must not leave an eternal sending lease.
+        db.execute(update(Notification).where(
+            *due, Notification.telegram_attempts >= TELEGRAM_MAX_ATTEMPTS,
+        ).values(telegram_status="failed", telegram_next_attempt_at=None))
+        ids = [row[0] for row in db.query(Notification.id).filter(
+            *due, Notification.telegram_attempts < TELEGRAM_MAX_ATTEMPTS,
+        ).order_by(Notification.telegram_next_attempt_at, Notification.id).limit(100).all()]
+        db.commit()
+
+    async def run():
+        limit = asyncio.Semaphore(NOTIFY_CONCURRENCY)
+
+        async def one(notification_id):
+            async with limit:
+                try:
+                    await asyncio.wait_for(
+                        _deliver_telegram(notification_id, _load_delivery(notification_id)),
+                        timeout=NOTIFY_TIMEOUT_SEC,
+                    )
+                except Exception as exc:
+                    logger.warning("Telegram retry notification_id=%s type=%s", notification_id, type(exc).__name__)
+
+        await asyncio.gather(*(one(nid) for nid in ids))
+
+    if ids:
+        asyncio.run(run())
 
 
 async def notify_many(notification_ids: list[int]) -> None:
@@ -161,7 +272,7 @@ def notify_many_sync(notification_ids: list[int]) -> None:
     asyncio.run(notify_many(notification_ids))
 
 
-async def _send_telegram(chat_id: int, notification: _Message) -> None:
+async def _send_telegram(chat_id: int, notification: _Message) -> bool:
     text = notification.title
     if notification.text:
         text = f"{text}\n\n{notification.text}"
@@ -172,10 +283,10 @@ async def _send_telegram(chat_id: int, notification: _Message) -> None:
             if await telegram_service.send_voice(
                 chat_id, data, filename=name, content_type=mime, caption=text,
             ):
-                return
+                return True
         # Голосовое не собралось или Telegram его не принял — ученик всё
         # равно получает уровень текстом, запись ждёт его в уведомлениях сайта.
-    await telegram_service.send_message(chat_id, text)
+    return await telegram_service.send_message(chat_id, text)
 
 
 async def _telegram_voice(audio_url: str) -> tuple[str, bytes, str] | None:
@@ -197,10 +308,34 @@ async def _telegram_voice(audio_url: str) -> tuple[str, bytes, str] | None:
     return await asyncio.to_thread(media_transcode.telegram_voice, name, data, "audio/mp4")
 
 
-async def _send_push(target: _PushTarget, notification: _Message) -> None:
+PUSH_ENDPOINT_COOKIE = "push_device_endpoint"
+
+
+def is_allowed_push_endpoint(endpoint: str) -> bool:
+    try:
+        url = urlsplit(endpoint)
+        host = url.hostname or ""
+        return (
+            len(endpoint) <= 2048 and url.scheme == "https"
+            and url.username is None and url.password is None
+            and url.port in (None, 443) and bool(url.path) and not url.fragment
+            and (
+                host in {"fcm.googleapis.com", "android.googleapis.com", "web.push.apple.com",
+                         "updates.push.services.mozilla.com"}
+                or host.endswith((".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com"))
+            )
+        )
+    except ValueError:
+        return False
+
+
+async def _send_push(target: _PushTarget) -> None:
+    if not is_allowed_push_endpoint(target.endpoint):
+        return
     payload = json.dumps({
-        "title": notification.title,
-        "body": notification.text or "",
+        # A shared browser can still receive a queued push after an account switch.
+        "title": "Apparchi",
+        "body": "Новое уведомление в кабинете",
         # Полный адрес, а не путь: подписку держит браузер того сайта, где её
         # оформили, и путь он достраивает своим адресом. Подписки, заведённые
         # на apparchi.ru до переезда 11.10.2026, иначе открывали бы мёртвый

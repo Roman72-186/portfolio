@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.config import settings
-from app.constants import TARIFFS_CURRENT
+from app.constants import PROGRAM_ANNUAL, PROGRAM_HOLIDAY, TARIFFS_CURRENT
 from app.models.payment import COHORT_FROM, Payment, PaymentPrice, STATUS_PAID
 from app.models.public_enrollment import PublicEnrollment
 from app.models.user import User
@@ -135,6 +135,52 @@ def test_oauth_does_not_enroll_existing_student(client, db, sales, user_factory,
     assert response.headers['location'] == '/cabinet'
     assert db.query(PublicEnrollment).count() == 0
     assert student.tariff == 'УВЕРЕННЫЙ'
+
+
+@pytest.mark.parametrize('expired', [False, True])
+def test_holiday_student_can_buy_annual_course_on_existing_account(
+    client, db, sales, user_factory, session_factory, monkeypatch, expired,
+):
+    from app.api import auth
+
+    student = user_factory(tariff='', is_group_member=False)
+    student.telegram_chat_id = 999111222
+    student.program = PROGRAM_HOLIDAY
+    now = datetime.now(timezone.utc)
+    student.access_until = now + timedelta(days=-1 if expired else 1)
+    db.commit()
+    client.cookies.set('session_id', session_factory(student).id)
+    before = client.get('/cabinet/personal', follow_redirects=False)
+    client.cookies.clear()
+
+    async def forbidden_check(*args):
+        pytest.fail('Holiday student must be able to pay before joining the annual channel')
+
+    monkeypatch.setattr(auth.telegram_service, 'check_channel_membership', forbidden_check)
+    response = _oauth(client, monkeypatch)
+    assert response.headers['location'] == '/purchase'
+    assert db.query(User).count() == 1
+    enrollment = public_purchase.enrollment_for(db, student.id)
+    assert enrollment.selected_tariff == TARIFF
+    assert client.get('/cabinet/personal', follow_redirects=False).status_code == before.status_code
+    page = client.get('/purchase', follow_redirects=False)
+    assert page.status_code == 200
+    assert INVITE not in page.text
+
+    link = client.post('/purchase/payment-link')
+    assert link.status_code == 200
+    payment = db.query(Payment).one()
+    assert payment.user_id == student.id
+    assert payment.amount_kop == 100000
+    assert student.program == PROGRAM_HOLIDAY
+
+    _settle(db, payment, paid_at=public_purchase.NOVEMBER_PRESALE)
+    assert student.program == PROGRAM_ANNUAL
+    assert enrollment.first_payment_id == payment.id
+    assert enrollment.activated_at is None
+    assert not student.profile_completed
+    assert not student.is_group_member
+    assert INVITE not in client.get('/purchase').text
 
 
 @pytest.mark.parametrize('path', ['/cabinet', '/cabinet/learning', '/cabinet/personal',
@@ -424,6 +470,8 @@ def test_refund_during_telegram_check_cannot_admit(client, db, buyer, monkeypatc
     response = client.post('/purchase/check-channel', follow_redirects=False)
     assert response.status_code == 200
     assert buyer[1].activated_at is None
+    db.refresh(buyer[0])
+    assert not buyer[0].is_group_member
     assert INVITE not in response.text
 
 
@@ -567,6 +615,21 @@ def test_purchase_start_disabled(client):
     response = client.get('/purchase/start', params={'tariff': 'fake'}, follow_redirects=False)
     assert response.status_code == 302
     assert response.headers['location'] == '/tariffs'
+
+
+def test_purchase_start_rate_limit_shows_readable_page(client):
+    for _ in range(20):
+        response = client.get('/purchase/start', follow_redirects=False)
+        assert response.status_code == 302
+
+    response = client.get('/purchase/start', follow_redirects=False)
+    assert response.status_code == 429
+    assert response.headers['content-type'] == 'text/html; charset=utf-8'
+    assert response.headers['retry-after'] == '60'
+    assert response.headers['cache-control'] == 'no-store'
+    assert 'Слишком много запросов' in response.text
+    assert 'Подождите минуту' in response.text
+    assert 'href="/tariffs"' in response.text
 
 
 def test_november_presale_access_boundary(client, db, buyer, monkeypatch):

@@ -32,6 +32,11 @@ class Notification(Base):
     broadcast_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("broadcasts.id", ondelete="SET NULL"), nullable=True
     )
+    # NULL status identifies legacy/non-queued rows: never replay them wholesale.
+    telegram_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    telegram_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    telegram_next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     # Момент первого прочтения (для метрики «время реакции»); NULL у непрочитанных
     # и у прочитанных до введения поля.
@@ -41,6 +46,7 @@ class Notification(Base):
     )
 
     __table_args__ = (
+        Index("ix_notifications_telegram_due", "telegram_status", "telegram_next_attempt_at"),
         # Ускоряет запрос: ORDER BY is_read ASC, created_at DESC
         Index("ix_notifications_user_read_created", "user_id", "is_read", "created_at"),
     )

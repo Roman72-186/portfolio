@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Статистика куратора{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/curator_demo.css?v=6">
+<link rel="stylesheet" href="/static/css/curator_demo.css?v=7">
 {% endblock %}
 
-{% macro pupil_list(rows, with_progress=false) %}
+{% macro pupil_list(rows, with_progress=false, with_last_seen=true) %}
 <ul class="curator-demo-pupils">
     {% for row in rows %}
     <li>
@@ -14,7 +14,7 @@
         {% if with_progress %}
         <span class="text-muted">{{ row.done }} из {{ row.total }}</span>
         {% if row.remaining %}<ul>{% for label in row.remaining %}<li>{{ label }}</li>{% endfor %}</ul>{% endif %}
-        {% elif row.last_seen %}
+        {% elif with_last_seen and row.last_seen %}
         <span class="text-muted">{{ row.last_seen.strftime('%d.%m.%Y') }}</span>
         {% endif %}
     </li>
@@ -55,12 +55,18 @@
                 {% endfor %}
             </select>
         </label>
-        <button class="btn-blue" type="submit">Показать</button>
+        <button class="btn-blue" type="submit">Применить фильтры</button>
     </form>
     {% endif %}
 
     <section class="card" aria-labelledby="demo-important-title">
         <h2 id="demo-important-title" class="card-title">Важное</h2>
+        <details class="curator-demo-group">
+            <summary>Назначены за последние 7 суток · {{ demo.recent_assignments|length }}</summary>
+            {% if demo.recent_assignments %}
+            {{ pupil_list(demo.recent_assignments, with_last_seen=false) }}
+            {% else %}<p class="text-muted">За последние 7 суток вам никого не назначили.</p>{% endif %}
+        </details>
         {% if demo.absent %}
         <details class="curator-demo-group">
             <summary>Три календарных дня без активности · {{ demo.absent|length }}</summary>
@@ -89,7 +95,7 @@
                 <p class="stat-tile-value">{{ groups.done|length }} из {{ total }}</p>
                 {% for key, label in [('done', 'Завершили'), ('remaining', 'Не завершили')] %}
                 <details class="curator-demo-group">
-                    <summary>{{ label }} · {{ groups[key]|length }}</summary>
+                    <summary>{{ label }}{% if key == 'remaining' %} · {{ groups[key]|length }}{% endif %}</summary>
                     {{ pupil_list(groups[key], true) if groups[key] else 'В этой группе пока никого.' }}
                 </details>
                 {% endfor %}
@@ -109,37 +115,55 @@
             {% for key in ('done', 'started', 'none') %}
             {% set count = demo.practice[key]|length %}
             {% if count %}
-            <span class="curator-pie-sector curator-pie-{{ key }}{% if count == demo.practice_total %} curator-pie-full{% endif %}"
+            <span class="curator-pie-sector curator-pie-{{ key }}"
                   style="--sector-start: {{ pie.offset * 360 / demo.practice_total }}deg; --sector-size: {{ count * 360 / demo.practice_total }}deg"></span>
             {% endif %}
             {% set pie.offset = pie.offset + count %}
             {% endfor %}
         </div>
-        {% for key, label in [('done', 'Сдали всё'), ('started', 'В процессе'), ('none', 'Нет действий на платформе')] %}
+        {% for key, label in [('done', 'Сдали всё'), ('started', 'В процессе'), ('none', 'Не начали задания')] %}
         {% set count = demo.practice[key]|length %}
         <details class="curator-demo-group">
-            <summary>{{ label }} · {{ count }} из {{ demo.practice_total }} ({{ (count * 100 / demo.practice_total)|round|int }}%)
+            <summary>{{ label }} · {{ count }} из {{ demo.practice_total }}
             </summary>
             {{ pupil_list(demo.practice[key], true) if count else 'В этой группе пока никого.' }}
         </details>
         {% endfor %}
         {% else %}<p class="text-muted">По этому предмету нет назначенных работ за выбранную неделю.</p>{% endif %}
     </section>
-    {% for control in demo.controls %}
+    {% if demo.control %}
     <section class="card">
         <h2 class="card-title">Баллы за контрольную</h2>
-        <p>{{ control.label }}</p>
-        {% for label, rows in control.groups.items() %}
+        {% if demo.control_options|length > 1 %}
+        <form class="curator-demo-filters" method="get" action="/cabinet/curator/overview">
+            {% if demo.stage_id is not none %}
+            <input type="hidden" name="stage_id" value="{{ demo.stage_id }}">
+            {% endif %}
+            <input type="hidden" name="cycle_id" value="{{ demo.cycle.id }}">
+            <input type="hidden" name="subject" value="{{ demo.subject }}">
+            <label class="field-label">Контрольная
+                <select class="field-select" name="control_id">
+                    {% for id, label in demo.control_options.items() %}
+                    <option value="{{ id }}" {% if id == demo.control_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button class="btn-blue" type="submit">Показать баллы</button>
+        </form>
+        {% else %}
+        <p>{{ demo.control.label }}</p>
+        {% endif %}
+        {% for label, rows in demo.control.groups.items() %}
         <details class="curator-demo-group">
             <summary>{{ label }} · {{ rows|length }}</summary>
-            {{ pupil_list(rows) }}
+            {{ pupil_list(rows, with_last_seen=false) }}
         </details>
         {% endfor %}
     </section>
-    {% endfor %}
+    {% endif %}
     {% endif %}
 
 
 </div>
-<script src="/static/js/curator_pie.js?v=2" defer></script>
+<script src="/static/js/curator_pie.js?v=3" defer></script>
 {% endblock %}

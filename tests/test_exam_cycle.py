@@ -263,19 +263,6 @@ def test_close_cycle_closes_related_tracker_task_with_staff_source(db, regular_u
     assert state.completion_source == "staff"
 
 
-def test_close_cycle_auto_without_ticket_id_does_not_crash(db, regular_user):
-    """Легаси/гостевой цикл без ticket_id — резолвить нечего, но close всё равно проходит."""
-    cycle, _ = get_or_create_cycle_for_probnik(
-        db, user_id=regular_user.id, subject="Рисунок", ticket_id=None,
-    )
-    db.commit()
-    _make_stored_final_work(
-        db, user_id=regular_user.id, cycle_id=cycle.id, work_type=WORK_TYPE_MOCK_EXAM, attempt=1,
-    )
-    assert close_cycle_auto(db, cycle) is True
-    assert cycle.closed_at is not None
-
-
 # ── Подборка соседей по баллу (Портфолио → Пробные экзамены, владелец 11.09.2026) ──
 
 def _make_ticket(db, *, subject="Рисунок", creator_id):

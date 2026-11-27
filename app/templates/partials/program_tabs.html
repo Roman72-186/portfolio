@@ -14,8 +14,13 @@
    ниже меряет полосу уже со стилями — встроенный скрипт ждёт загрузки
    стилей, подключённых выше него. #}
 <link rel="stylesheet" href="/static/css/program_tabs.css?v=2">
+{% set aop_design = user.role_rank >= 4 %}
+{% if aop_design %}
+<link rel="stylesheet" href="/static/css/aop_workspace.css?v=4">
+<script src="/static/js/superadmin_dashboard.js?v=2" defer></script>
+{% endif %}
 {% set _prg_p = request.url.path %}
-<nav class="prg-tabs" aria-label="Актуальное образовательное пространство">
+<nav class="prg-tabs{% if aop_design %} aop-navigation{% endif %}" aria-label="Актуальное образовательное пространство">
     {# Вкладка «Календарь» скрыта из навигации 10.09.2026 (владелец: «давай
        календарь пока скроем») — циклы стали способом заводить задания,
        календарь как способ создания больше не предлагается. Сам раздел
@@ -32,6 +37,7 @@
     {% set _prg_ctx = prg_path if prg_path is defined and prg_path else {} %}
     {% set _prg_stages_href = '/cabinet/staff/program/stages' ~ ('?period=' ~ _prg_ctx.period_id if _prg_ctx.period_id else '') %}
     {% set _prg_cycles_href = '/cabinet/staff/program/cycles' ~ ('?stage=' ~ _prg_ctx.stage_id if _prg_ctx.stage_id else ('?period=' ~ _prg_ctx.period_id if _prg_ctx.period_id else '')) %}
+    {% if aop_design %}<div class="aop-route" role="group" aria-label="Структура программы">{% endif %}
     {% set _prg_periods = _prg_p.startswith('/cabinet/staff/program/periods') %}
     <a class="prg-tab{% if _prg_periods %} is-active{% endif %}"
        href="/cabinet/staff/program/periods"
@@ -44,7 +50,10 @@
     <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
        href="{{ _prg_cycles_href }}"
        {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>
-    <span class="prg-tabs-sep" aria-hidden="true"></span>
+    {% if aop_design %}
+    </div>
+    <div class="aop-tools" role="group" aria-label="Инструменты программы">
+    {% else %}<span class="prg-tabs-sep" aria-hidden="true"></span>{% endif %}
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"
        {% if _prg_p.startswith('/cabinet/staff/digest') %}aria-current="page"{% endif %}>Дайджест</a>
@@ -54,6 +63,7 @@
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/admin/videos') %} is-active{% endif %}"
        href="/cabinet/admin/videos"
        {% if _prg_p.startswith('/cabinet/admin/videos') %}aria-current="page"{% endif %}>Загрузка видео</a>
+    {% if aop_design %}</div>{% endif %}
 </nav>
 <script>
 /* На телефоне вкладки не помещаются в ширину (аудит 29.09.2026): докручиваем
@@ -61,7 +71,7 @@
    где он, — и гасим край, за которым ещё есть вкладки. */
 (function () {
     var strip = document.currentScript.previousElementSibling;
-    if (!strip || !strip.classList.contains('prg-tabs')) return;
+    if (!strip || !strip.classList.contains('prg-tabs') || strip.classList.contains('aop-navigation')) return;
     function markClipped() {
         var max = strip.scrollWidth - strip.clientWidth;
         strip.classList.toggle('is-clipped-start', strip.scrollLeft > 1);

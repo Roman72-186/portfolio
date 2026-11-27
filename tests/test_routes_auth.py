@@ -21,9 +21,16 @@ def test_session_timestamp_normalizer_accepts_sqlite_naive_datetime():
     assert normalized.hour == 10
 
 
-def test_root_no_session_shows_login(client):
-    resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 200  # страница входа, а не редирект в кабинет
+def test_guest_sessions_cannot_open_cabinet(client, user_factory, session_factory):
+    user = user_factory()
+    for session in (None, session_factory(user, hours=-1), session_factory(user, active=False)):
+        client.cookies.clear()
+        if session:
+            client.cookies.set("session_id", session.id)
+        assert client.get("/", follow_redirects=False).status_code == 200
+        response = client.get("/cabinet/student", follow_redirects=False)
+        assert response.status_code == 302
+        assert "session_expired" in response.headers["location"]
 
 
 def test_root_with_valid_session_redirects_to_cabinet(client, db, user_factory, session_factory):
@@ -34,25 +41,6 @@ def test_root_with_valid_session_redirects_to_cabinet(client, db, user_factory, 
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 302
     assert "/cabinet" in resp.headers["location"]
-
-
-def test_root_with_expired_session_shows_login(client, db, user_factory, session_factory):
-    user = user_factory()
-    sess = session_factory(user, hours=-1)  # expired 1 hour ago
-
-    client.cookies.set("session_id", sess.id)
-    resp = client.get("/", follow_redirects=False)
-    # Expired session → stays on login page (no redirect to cabinet)
-    assert resp.status_code == 200
-
-
-def test_root_with_inactive_session_shows_login(client, db, user_factory, session_factory):
-    user = user_factory()
-    sess = session_factory(user, active=False)
-
-    client.cookies.set("session_id", sess.id)
-    resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------

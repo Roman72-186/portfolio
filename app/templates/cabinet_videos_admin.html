@@ -44,7 +44,7 @@ FORM: Operate, расширение существующего кабинета 
 
     <section class="vam-upload" aria-labelledby="vam-upload-title">
         <div>
-            <h2 id="vam-upload-title">Загрузить новое видео</h2>
+            <h2 id="vam-upload-title">Новое видео</h2>
             <form id="video-upload-form" class="vam-fields">
                 <label class="vam-field">Название
                     <input id="video-title" type="text" maxlength="200" autocomplete="off">
@@ -62,20 +62,20 @@ FORM: Operate, расширение существующего кабинета 
             </form>
             <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие распространённые форматы. Файл не сохраняется на сервере Apparchi. Выбрали один файл – действуют название, описание и обложка выше; выбрали несколько – название берётся из имени файла, описание и обложку можно добавить позже в списке ниже.</p>
             <div class="vam-actions">
-                <button id="video-upload-start" type="submit" form="video-upload-form" class="btn-blue" {% if not upload_available %}disabled{% endif %}>Начать загрузку</button>
+                <button id="video-upload-start" type="submit" form="video-upload-form" class="btn-blue" {% if not upload_available %}disabled{% endif %}>Загрузить видео</button>
             </div>
             <p id="video-upload-message" class="vam-message" aria-live="polite"></p>
         </div>
         <div class="vam-upload-state" aria-live="polite">
             <strong id="video-upload-state-title">Активных загрузок нет</strong>
             <div id="video-upload-queue" class="vam-upload-queue"></div>
-            <p>Окно можно оставить открытым или перейти на другую вкладку кабинета – загрузка идёт в этой вкладке браузера независимо от неё. При временном разрыве соединения загрузчик попробует продолжить автоматически.</p>
+            <p>Оставьте эту страницу открытой до конца передачи файла. Пока он загружается, можно работать в другой вкладке браузера.</p>
         </div>
     </section>
     {% endif %}
 
     <section class="vam-queue" aria-labelledby="vam-queue-title">
-        <h2 id="vam-queue-title">Уже загруженные видео</h2>
+        <h2 id="vam-queue-title">Загруженные видео</h2>
         {% if videos %}
         <div class="vam-list">
             {% for video in videos %}
@@ -105,6 +105,17 @@ FORM: Operate, расширение существующего кабинета 
                     <span class="vam-badge vam-badge--working">{{ status_labels.get(video.status, video.status) }}</span>
                     {% endif %}
                 </div>
+                {% if prg_edit and video.status in ('uploading', 'failed') %}
+                <p class="vam-config-warning">
+                    {% if video.status == 'uploading' %}
+                    Хранилище ещё не подтвердило получение файла. Если загрузка идёт, дождитесь её окончания. Если очередь пуста, нажмите «Обновить статус». Если статус прежний, выберите тот же файл в форме «Новое видео» в браузере, где начали загрузку.
+                    {% elif video.bunny_status == 6 %}
+                    Хранилище сообщило об ошибке при загрузке файла. Выберите исходный файл в форме «Новое видео» и загрузите его ещё раз.
+                    {% else %}
+                    Хранилище сообщило об ошибке обработки видео. Проверьте, что исходный файл воспроизводится, и загрузите его ещё раз.
+                    {% endif %}
+                </p>
+                {% endif %}
                 <div class="vam-row-actions">
                     {% if prg_edit and video.status in ('uploading', 'processing', 'failed', 'delete_failed') %}
                     <button type="button" class="btn-outline" data-video-action="refresh">Обновить статус</button>
@@ -280,6 +291,13 @@ FORM: Operate, расширение существующего кабинета 
                 item.state === 'uploading' || item.state === 'paused';
         });
     }
+
+    window.addEventListener('beforeunload', function (event) {
+        if (hasActiveUploads()) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
 
     function updateSummary() {
         var visible = queueItems.filter(function (item) { return item.state !== 'done'; });
@@ -459,8 +477,15 @@ FORM: Operate, расширение существующего кабинета 
                     filetype: item.file.type || 'application/octet-stream',
                     title: item.createPayload.title
                 },
-                onError: function () {
-                    finishItem(item, 'error', 'Загрузка прервалась. Можно повторить тем же файлом.');
+                onError: function (error) {
+                    var status = error && error.originalResponse && error.originalResponse.getStatus();
+                    var reason = 'Браузер не получил подтверждение передачи файла.';
+                    if (navigator.onLine === false) reason = 'Браузер потерял подключение к сети.';
+                    else if (status === 401 || status === 403) reason = 'Хранилище отклонило разрешение на загрузку.';
+                    else if (status === 413) reason = 'Хранилище отклонило запрос из-за размера передаваемых данных.';
+                    else if (status === 429) reason = 'Хранилище получило слишком много запросов.';
+                    else if (status >= 400) reason = 'Хранилище вернуло ошибку HTTP ' + status + '.';
+                    finishItem(item, 'error', reason + ' Нажмите «Повторить».');
                 },
                 onProgress: function (uploaded, total) {
                     var value = total ? Math.round(uploaded / total * 100) : 0;

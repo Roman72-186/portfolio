@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app import constants
 from app.constants import INTAKE_TRIAL_SLUG, PROGRAM_HOLIDAY
-from app.models.intake_link import IntakeLink
+from app.models.intake_link import HolidayIntake, IntakeLink
 from app.models.user import User
 from app.services.tags import add_tag_to_user
 from app.services.tz import _as_utc
@@ -120,6 +120,8 @@ def apply_to_new_user(db: DBSession, user: User, link: IntakeLink | None) -> Non
         user.access_until = link.access_until
         user.tariff = ""
     if is_holiday(link):
+        if not link.price_kop and link.holiday_intake_id is not None:
+            user.holiday_intake_id = link.holiday_intake_id
         user.program = PROGRAM_HOLIDAY
         user.tariff = ""
         # Платный трек тег при входе не даёт — его ставит оплата
@@ -259,11 +261,11 @@ def is_scheduled_offer(link: IntakeLink | None) -> bool:
     return bool(link and (link.access_from is not None or link.slug in TRIAL_STARTS))
 
 
-def program_opens_at(tracks=()) -> datetime:
+def program_opens_at(tracks=(), *, now: datetime | None = None) -> datetime:
     """Когда каникулярному открывается программа — `constants.HOLIDAY_PROGRAM_OPENS_AT`.
     Читается через модуль, а не копией имени: тесты двигают дату в одном месте."""
     return min(
-        (track_opens_at(track) for track in tracks),
+        (track_opens_at(track) for track in tracks if now is None or not date_passed(track, now)),
         default=constants.HOLIDAY_PROGRAM_OPENS_AT,
     )
 
@@ -273,16 +275,18 @@ def waits_for_program(user_id: int, now: datetime, tracks=()) -> bool:
     19.10.2026). Служебные (`REPORT_EXCLUDED_USER_IDS`) не ждут: ими проверяют
     программу, пока её наполняют. Что закрыто на время ожидания —
     `dependencies.get_current_user`."""
-    return now < program_opens_at(tracks) and user_id not in constants.REPORT_EXCLUDED_USER_IDS
+    return now < program_opens_at(tracks, now=now) and user_id not in constants.REPORT_EXCLUDED_USER_IDS
 
 
 def create_entry_link(
     db: DBSession, *, access_until: datetime | None, created_by_id: int,
+    holiday_intake_id: int | None = None,
 ) -> IntakeLink:
     """Общая ссылка набора — выключенной, как ссылка группы."""
     link = IntakeLink(
         slug=_new_slug(db),
         title="Каникулярный набор",
+        holiday_intake_id=holiday_intake_id,
         program=PROGRAM_HOLIDAY,
         tag_id=None,
         access_until=access_until,
@@ -351,11 +355,13 @@ def can_attach_offer(db: DBSession, week) -> bool:
 def create_holiday_link(
     db: DBSession, *, title: str, tag_id: int, access_until: datetime | None,
     created_by_id: int,
+    holiday_intake_id: int | None = None,
 ) -> IntakeLink:
     """Новая ссылка группы — выключенной: включает её человек, проверив дату."""
     link = IntakeLink(
         slug=_new_slug(db),
         title=title,
+        holiday_intake_id=holiday_intake_id,
         program=PROGRAM_HOLIDAY,
         tag_id=tag_id,
         access_until=access_until,
@@ -365,3 +371,7 @@ def create_holiday_link(
     db.add(link)
     db.flush()
     return link
+
+
+def holiday_intakes(db: DBSession) -> list[HolidayIntake]:
+    return db.query(HolidayIntake).order_by(HolidayIntake.id.desc()).all()

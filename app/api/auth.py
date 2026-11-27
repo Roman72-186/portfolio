@@ -17,7 +17,7 @@ from app.cache import (
     invalidate_session, pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
 )
 from app.config import settings
-from app.constants import HOLIDAY_ENTRY_PATH, INTAKE_TRIAL_SLUG, SUPPORT_URL
+from app.constants import HOLIDAY_ENTRY_PATH, INTAKE_TRIAL_SLUG, PROGRAM_HOLIDAY, SUPPORT_URL
 from app.csrf import generate_csrf_token
 from app.db.database import get_db
 from app.dependencies import (
@@ -672,11 +672,21 @@ async def telegram_login_callback(
     # проверки канала даёт только серверная запись покупки, не query-параметр.
     from app.services import public_purchase
     link = intake_link_service.get_link(db, intake_slug) if intake_slug else None
-    existing_user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    user_query = db.query(User).filter(User.telegram_chat_id == chat_id)
+    existing_user = user_query.first()
+    if purpose == "purchase" and existing_user and existing_user.program == PROGRAM_HOLIDAY:
+        # Повторный вход из второй вкладки должен увидеть уже созданную покупку.
+        existing_user = user_query.populate_existing().with_for_update().first()
     enrollment = public_purchase.enrollment_for(db, existing_user.id) if existing_user else None
-    if (enrollment and enrollment.activated_at is None) or (purpose == "purchase" and not existing_user):
+    holiday_student = (
+        existing_user is not None and existing_user.program == PROGRAM_HOLIDAY
+        and not existing_user.is_admin and existing_user.role is not None
+        and existing_user.role.rank == 1
+    )
+    starts_purchase = purpose == "purchase" and enrollment is None and (not existing_user or holiday_student)
+    if (enrollment and enrollment.activated_at is None) or starts_purchase:
         purchase_tariff = (redis_pkce or cookie_pkce).get("purchase_tariff")
-        if not existing_user and (
+        if starts_purchase and (
             not public_purchase.sales_ready()
             or purchase_tariff not in {t["tariff"] for t in public_purchase.catalog(db)}
         ):
@@ -684,7 +694,6 @@ async def telegram_login_callback(
         if existing_user and (not existing_user.is_active or existing_user.deleted_at is not None):
             return templates.TemplateResponse(request, "blocked.html", {"request": request}, status_code=403)
         if not existing_user:
-            from app.models.public_enrollment import PublicEnrollment
             tg_from = _TgFrom(id=chat_id, username=claims.get("preferred_username"),
                               first_name=claims.get("given_name"), last_name=claims.get("family_name"))
             existing_user, created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from,
@@ -694,6 +703,8 @@ async def telegram_login_callback(
                 # Его тариф, программу и членство покупка не переписывает.
                 return _create_session_response(db, existing_user, request)
             existing_user.program_access_from = None
+        if starts_purchase:
+            from app.models.public_enrollment import PublicEnrollment
             db.add(PublicEnrollment(user_id=existing_user.id, selected_tariff=purchase_tariff))
         response = _create_session_response(db, existing_user, request)
         response.headers["location"] = "/purchase"
@@ -811,7 +822,7 @@ async def admin_permanent_access(
     key: str | None = None,
 ):
     """Permanent superadmin login via static secret key from .env."""
-    if not key or not settings.admin_access_token or not secrets.compare_digest(key, settings.admin_access_token):
+    if not key or not settings.admin_access_token or not secrets.compare_digest(key.encode(), settings.admin_access_token.encode()):
         raise HTTPException(status_code=404)
 
     user = db.query(User).filter(User.staff_login == settings.admin_staff_login).first()
@@ -1327,6 +1338,8 @@ def lab3d_page(
     return templates.TemplateResponse(request, "3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
+        "staff_lab_design": user.get("role_name") in ("админ", "суперадмин"),
+        "student_lab_design": user.get("role_rank") == 1,
         "lab_open_card_ids": sorted(user.get("lab3d_open_card_ids", [])) if user.get("role_rank") == 1 else None,
     })
 
@@ -1558,9 +1571,18 @@ def logout(
         invalidate_session(session_id)
         session = db.query(Session).filter(Session.id == session_id).first()
         if session:
+            from app.models.push_subscription import PushSubscription
+            from app.services.notify import PUSH_ENDPOINT_COOKIE
+
             session.is_active = False
+            endpoint = request.cookies.get(PUSH_ENDPOINT_COOKIE)
+            if endpoint:
+                db.query(PushSubscription).filter_by(
+                    endpoint=endpoint, user_id=session.user_id,
+                ).update({"is_active": False})
             db.commit()
 
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("session_id")
+    response.delete_cookie("push_device_endpoint")
     return response

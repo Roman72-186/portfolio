@@ -55,11 +55,13 @@ def test_student_cannot_open_stages(auth_client):
     assert client.get(STAGES_PAGE, follow_redirects=False).status_code in (302, 403)
 
 
-def test_admin_opens_stages(admin_client):
+def test_admin_opens_stages(admin_client, db):
     client, _ = admin_client
+    _create_stage(client)
+    stage, = _stages(db)
     resp = client.get(STAGES_PAGE)
     assert resp.status_code == 200
-    assert "Этапы программы" in resp.text
+    assert stage.title in resp.text
 
 
 # ── создание этапа ──────────────────────────────────────────────────────────

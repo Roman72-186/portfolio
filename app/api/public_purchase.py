@@ -161,9 +161,7 @@ async def check_channel(request: Request, user: Annotated[dict, Depends(get_curr
     student = db.query(User).filter(User.id == user["user_id"]).populate_existing().one()
     if not student.is_active or student.deleted_at is not None:
         raise HTTPException(status_code=403, detail="Аккаунт недоступен")
-    student.is_group_member = True
-    db.flush()
-    if not public_purchase.activate(db, student.id, datetime.now(timezone.utc)):
+    if not public_purchase.activate(db, student.id, datetime.now(timezone.utc), membership_confirmed=True):
         db.rollback()
         return _render(request, db, user, error="Доступ пока не открыт. Проверь оплату или напиши в службу заботы.")
     db.commit()

@@ -966,6 +966,16 @@ def track_refund_reason(db: DBSession, payment: Payment, now: datetime) -> str:
     return ""
 
 
+def _lock_payment_owner(db: DBSession, user_id: int) -> User | None:
+    # Lock the user first even if their enrollment does not exist yet.
+    from app.services.public_purchase import enrollment_for
+
+    user = db.query(User).filter(User.id == user_id).populate_existing().with_for_update().first()
+    if user is not None:
+        enrollment_for(db, user_id, lock=True)
+    return user
+
+
 def record_paid(
     db: DBSession,
     payment: Payment,
@@ -987,14 +997,9 @@ def record_paid(
     (`notify_many`).
     """
     from app.services.public_purchase import enrollment_for, AFTER_PAYMENT_TEXT
-    public_enrollment = enrollment_for(db, payment.user_id, lock=True)
+    # Callers lock the user before reading the payment state or creating an order.
+    public_enrollment = enrollment_for(db, payment.user_id)
     user = db.get(User, payment.user_id)
-    if public_enrollment:
-        # Другой webhook мог завершиться, пока ждали блокировку покупки.
-        db.refresh(payment)
-        if payment.status in (STATUS_PAID, STATUS_REFUNDED):
-            return []
-        user = db.query(User).filter(User.id == payment.user_id).populate_existing().with_for_update().one()
     # Ручную отметку ставит сотрудник, который сам знает, за что деньги.
     refund_reason = track_refund_reason(db, payment, now) if source == SOURCE_PRODAMUS else ""
     payment.status = STATUS_PAID
@@ -1053,8 +1058,10 @@ def record_paid(
     # к материалам. Возврат платежа тариф назад не возвращает — это решает
     # сотрудник в карточке.
     tariff_from = ""
-    public_initial = public_enrollment is not None and public_enrollment.activated_at is None
-    if public_initial and payment.kind == KIND_MONTH:
+    public_initial = (
+        payment.kind == KIND_MONTH and public_enrollment is not None and public_enrollment.activated_at is None
+    )
+    if public_initial:
         # Источник тарифа – оплаченный заказ, даже если другая вкладка уже
         # создала новую ссылку. Вторая оплата не меняет первый купленный тариф.
         if public_enrollment.first_payment_id is None:
@@ -1062,7 +1069,7 @@ def record_paid(
             tariff_from = user.tariff or ""
             apply_tariff_change(db, performed_by_id, user, payment.tariff)
         user.pay_next_tariff = ""
-    if (not public_initial and user is not None and user.pay_next_tariff
+    if (payment.kind == KIND_MONTH and not public_initial and user is not None and user.pay_next_tariff
             and payment.tariff == user.pay_next_tariff):
         tariff_from = user.tariff or ""
         apply_tariff_change(db, performed_by_id, user, user.pay_next_tariff)
@@ -1073,6 +1080,14 @@ def record_paid(
             payment.note, f"тариф сменился с этой оплатой, был {_tariff_name(tariff_from) or '—'}",
         )
         extended += f", тариф {_tariff_name(tariff_from) or '—'} → {_tariff_name(user.tariff)}"
+
+    # Сначала применяем подтверждённую смену тарифа, затем проверяем цену.
+    # Оплата старой ссылки для другого тарифа цену нового тарифа не задаёт.
+    if (user is not None and payment.kind == KIND_MONTH
+            and payment.tariff == (user.tariff or "") and not user.pay_next_tariff
+            and paid_sum_kop > 0 and price_kop(db, user) is None):
+        user.pay_price_kop = paid_sum_kop
+        extended += f", установлена цена следующих счетов {rub_text(paid_sum_kop)}"
 
     from app.services.portfolio_onboarding import grant_after_payment
     grant_after_payment(db, payment, new_enrollment=public_initial or moved_to_annual)
@@ -1176,7 +1191,8 @@ def mark_paid_manually(
     Своей логики зачисления нет: строка платежа и дальше та же `record_paid`,
     что у вебхука. Не коммитит; уведомления разослать после commit.
     """
-    if not has_window(student):
+    student = _lock_payment_owner(db, student.id)
+    if student is None or not has_window(student):
         raise PaymentSettingsError("Сначала задайте ученику окно оплаты в карточке")
     if amount_kop <= 0:
         raise PaymentSettingsError("Сумма должна быть больше нуля")
@@ -1215,6 +1231,8 @@ def revert_paid(db: DBSession, payment: Payment, *, refund: bool, performed_by_i
     кабинет по неоплате не закрылся бы никогда. Поэтому после возврата
     оплаченным остаётся месяц перед возвращённым. Не коммитит.
     """
+    _lock_payment_owner(db, payment.user_id)
+    db.refresh(payment)
     if payment.status != STATUS_PAID:
         raise PaymentSettingsError("Платёж не оплачен")
     if not refund and payment.source != SOURCE_MANUAL:
@@ -1322,6 +1340,8 @@ def process_webhook(db: DBSession, data: dict, now: datetime) -> WebhookResult:
         )
         return WebhookResult(200, "unknown order", notes)
 
+    _lock_payment_owner(db, payment.user_id)
+    db.refresh(payment)
     if payment.status == STATUS_PAID:
         # Повтор того же уведомления — ничего не меняем.
         if not prodamus_order_id or payment.prodamus_order_id == prodamus_order_id:

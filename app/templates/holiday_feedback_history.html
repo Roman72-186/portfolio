@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Моя обратная связь{% endblock %}
+{% block extra_styles %}<link rel="stylesheet" href="/static/css/program.css?v=76">{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head"><h1>Моя обратная связь</h1></div>
+    {% for (_, title), rows in groups.items() %}
+    <section class="prg-items" aria-label="{{ title }}">
+        <h2>{{ title }}</h2>
+        {% for row in rows %}
+        <a class="prg-item" href="/cabinet/task-block-submissions/{{ row.id }}/feedback?history=1">
+            <h3>{{ row.title }}</h3>
+        </a>
+        {% endfor %}
+    </section>
+    {% else %}
+    <p>Преподаватели ещё не отправили обратную связь по твоим работам.</p>
+    {% endfor %}
+</div>
+{% set active_tab = "holiday_feedback" %}
+{% include "partials/bottom_nav.html" %}
+{% endblock %}

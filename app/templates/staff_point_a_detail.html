@@ -17,13 +17,19 @@
 #}
 {% block title %}{{ student.name }} — точка А{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 {% endblock %}
 {% block content %}
 <div class="prg-page prg-page--point-a">
     <div class="prg-head">
         <div class="prg-head-copy">
             <h1>{{ student.name }}</h1>
+            {% if student.point_a_before_only %}
+            <p>Для первого определения уровня используется оценка портфолио «До».</p>
+            {% endif %}
+            {% if student.point_a_assigned_level is not none %}
+            <p>Сообщённый уровень программы – {{ student.point_a_assigned_level }}.</p>
+            {% endif %}
             <p>
                 {% if student.tariff %}{{ student.tariff }} · {% endif %}
                 {% if point_a.average is not none %}
@@ -32,7 +38,7 @@
                 Средний балл появится, когда поставите оценки
                 {% endif %}
             </p>
-            {% if point_a.is_done %}
+            {% if point_a.level is not none %}
             <p>
                 {% if student.point_a_notified_at %}
                 Уведомление отправлено {{ student.point_a_notified_at.strftime('%d.%m.%Y %H:%M') }}

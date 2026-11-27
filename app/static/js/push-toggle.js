@@ -12,7 +12,10 @@
             body: JSON.stringify(body),
             cache: 'no-store'
         });
-        if (!response.ok || (await response.json()).ok !== true) throw new Error();
+        if (!response.ok) throw new Error();
+        var data = await response.json();
+        if (data.ok !== true) throw new Error();
+        return data;
     }
 
     function readyWithin(promise) {
@@ -42,7 +45,10 @@
                 return navigator.serviceWorker.ready;
             }));
             manager = registration.pushManager;
-            input.checked = !!(await readyWithin(manager.getSubscription()));
+            var subscription = await readyWithin(manager.getSubscription());
+            input.checked = subscription
+                ? (await readyWithin(post('/cabinet/push/status', {endpoint: subscription.endpoint}))).active
+                : false;
         } catch (_) {
             note.textContent = 'Не удалось подготовить уведомления. Обнови страницу, чтобы повторить.';
             return;
@@ -61,7 +67,7 @@
             try {
                 if (enable && await Notification.requestPermission() !== 'granted') {
                     input.checked = false;
-                    note.textContent = 'Разрешение на уведомления не выдано.';
+                    note.textContent = 'Разреши уведомления для сайта в настройках браузера и попробуй ещё раз.';
                     return;
                 }
                 var active = await manager.getSubscription();

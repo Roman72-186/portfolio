@@ -381,13 +381,15 @@ def test_rules_before_another_step_open_it_and_keep_the_task_open(auth_client, d
 # полужирным шрифтом вопроса (выделенное жирным терялось), у текста пункта
 # была своя копия стилей, а подпись у галочки — сырая строка со звёздочками.
 
-def test_rules_label_comes_formatted_like_a_question_option(auth_client, db):
+def test_rules_label_preserves_text_and_escapes_user_markup(auth_client, db):
     """Подпись у галочки — готовый HTML из `format_rich_text`, как у варианта вопроса."""
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
-    block = _rules_block(db, task, rules=("**Ознакомлен(а)** с правилами",), tail=False)
+    block = _rules_block(db, task, rules=("**Ознакомлен(а)** с <черновик>",), tail=False)
 
     item = _blocks_payload(client, task.id, block.id)
 
-    assert item["options"][0]["text_html"] == "<strong>Ознакомлен(а)</strong> с правилами"
+    label = item["options"][0]["text_html"]
+    assert "Ознакомлен(а)" in label
+    assert "&lt;черновик&gt;" in label

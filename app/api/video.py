@@ -135,6 +135,8 @@ def _personal_bridge(user: dict, bridge: str | None) -> str | None:
     глобальную настройку, то есть остальные ходят как ходили.
     """
     flag = str(bridge or "").strip().lower()
+    if flag == "direct":
+        return ""
     if flag == "ru":
         return BRIDGE_RU_BASE
     if flag not in ("1", "true", "on"):
@@ -145,7 +147,9 @@ def _personal_bridge(user: dict, bridge: str | None) -> str | None:
 def _bridge_query(proxy_base: str | None) -> str:
     """Флаг моста для адреса перевыпуска ссылки: без него через пять минут
     плеер тихо уехал бы на общую настройку и проверка смешала бы два моста."""
-    if not proxy_base:
+    if proxy_base == "":
+        return "?bridge=direct"
+    if proxy_base is None:
         return ""
     return "?bridge=ru" if proxy_base == BRIDGE_RU_BASE else "?bridge=1"
 
@@ -196,7 +200,11 @@ def _player_payload(
         viewer_name = str(user.get("name") or "").strip() or "Имя не указано"
 
     viewer_username = str(user.get("tg_username") or "").strip().lstrip("@")
+    effective_bridge = settings.bunny_player_proxy_base if proxy_base is None else proxy_base
+    alternate_route = "direct" if effective_bridge else "ru"
+    video_page = f"/cabinet/videos/{video.id}" if video.id else "/cabinet/video"
     payload = {
+        "alternate_player_page": f"{video_page}?bridge={alternate_route}",
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
         "cover_url": getattr(video, "cover_s3_url", None),
@@ -251,6 +259,7 @@ def _player_payload(
 # JSON), а мёртвый после удаления мини-опроса `video_already_completed`
 # продолжил бы утекать в разметку без всякого потребителя.
 _PLAYER_DATA_KEYS = (
+    "alternate_player_page",
     "player_url",
     "video_title",
     "cover_url",
@@ -667,6 +676,7 @@ def cabinet_video_legacy(
     request: Request,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
+    bridge: str | None = None,
 ):
     if not settings.bunny_stream_enabled:
         return _not_found(request, user)
@@ -680,8 +690,10 @@ def cabinet_video_legacy(
         )
         .first()
     )
+    proxy_base = _personal_bridge(user, bridge)
+    query = _bridge_query(proxy_base)
     if catalog_video:
-        return RedirectResponse(f"/cabinet/videos/{catalog_video.id}", status_code=302)
+        return RedirectResponse(f"/cabinet/videos/{catalog_video.id}{query}", status_code=302)
     if db.query(LearningVideo.id).first():
         return _not_found(request, user)
     return _render_player(
@@ -690,7 +702,8 @@ def cabinet_video_legacy(
         db,
         video=legacy_pilot_video(),
         progress_endpoint="/cabinet/video/progress",
-        player_url_endpoint="/cabinet/video/player-url",
+        player_url_endpoint="/cabinet/video/player-url" + query,
+        proxy_base=proxy_base,
     )
 
 
@@ -698,11 +711,12 @@ def cabinet_video_legacy(
 def refresh_legacy_player_url(
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
+    bridge: str | None = None,
 ):
     """Пилотный ролик живёт только пока каталог пуст — те же условия, что у страницы."""
     if not settings.bunny_stream_enabled or db.query(LearningVideo.id).first():
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    return _player_url_payload(legacy_pilot_video())
+    return _player_url_payload(legacy_pilot_video(), proxy_base=_personal_bridge(user, bridge))
 
 
 def _close_video_task_once(db: DBSession, *, user_id: int, topic_id: int) -> None:

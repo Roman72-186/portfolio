@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from json import dumps
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -14,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
+from app.constants import PROGRAM_HOLIDAY
 from app.db.database import get_db
 from app.dependencies import (
     require_admin_role,
@@ -45,7 +47,13 @@ from app.services.feedback_rating import (
     rating_panel,
     send_rating_to_care_topic,
 )
+from app.services.holiday_review import (
+    HISTORY_PATH, QUEUE_PATH, topic_open_for_participant, tracks_for_topics,
+)
+from app.services.video_topics import program_topic_filter
+from app.models.learning_topic import LearningTopic
 from app.services.linked_feedback import (
+    absorbed_for_mains,
     absorbed_main_block,
     main_submission_for,
     work_group,
@@ -63,6 +71,7 @@ from app.services.feedback_edit import (
     task_block_edit_refusal,
     task_block_return_refusal,
 )
+from app.services.curator_review_demo import can_handle_late_controls
 from app.services.notify import notify
 from app.services.rbac import can_score, can_send_work_to_revision
 from app.services.section_access import can
@@ -72,6 +81,7 @@ from app.services.task_block_feedback import (
     draft_messages,
     get_or_create_feedback,
     notify_counterpart,
+    current_submission_has_feedback,
     send_drafts,
     role_from_rank,
     send_message,
@@ -79,7 +89,10 @@ from app.services.task_block_feedback import (
     student_can_reply,
 )
 from app.services.submission_changes import change_history
-from app.services.task_blocks import list_submission_images
+from app.services.task_blocks import (
+    is_control_submission, list_submission_images, requires_submission_review,
+    set_submission_reviewed, submission_control_review_mode,
+)
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import validate_video_link
 from app.tmpl import templates
@@ -104,11 +117,21 @@ def _submission_or_404(db: DBSession, submission_id: int) -> TaskBlockSubmission
     return submission
 
 
+def _lock_submission(db: DBSession, submission: TaskBlockSubmission) -> None:
+    db.refresh(submission, with_for_update=True)
+
+
 def _staff_guard(db: DBSession, user: dict, submission: TaskBlockSubmission) -> User:
-    return get_student_for_staff_access(
+    student = get_student_for_staff_access(
         db, user, submission.user_id,
         not_found_detail="Сдача не найдена", forbidden_detail="Это не ваш студент",
     )
+    if student.program == PROGRAM_HOLIDAY:
+        if student.deleted_at is not None or not student.is_active:
+            raise HTTPException(status_code=404, detail="Сдача не найдена")
+        if (user.get("nav_rank") or user["role_rank"]) < 4 and student.curator_id != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Это не ваш студент")
+    return student
 
 
 def _student_guard(user: dict, submission: TaskBlockSubmission) -> None:
@@ -122,6 +145,27 @@ def _context(db: DBSession, submission: TaskBlockSubmission) -> tuple[TaskBlock,
     if block is None or task is None:
         raise HTTPException(status_code=404, detail="Сдача не найдена")
     return block, task
+
+
+def _holiday_feedback_read_only(db: DBSession, user: dict, task: TrackerTask) -> bool:
+    if user.get("program") != PROGRAM_HOLIDAY:
+        return False
+    if any(user.get(flag) for flag in ("access_expired", "holiday_unpaid", "holiday_waiting", "tg_username_mismatch")):
+        return True
+    if task.topic_id is None:
+        return False
+    return not db.query(LearningTopic.id).filter(
+        LearningTopic.id == task.topic_id,
+        LearningTopic.deleted_at.is_(None),
+        topic_open_for_participant(LearningTopic.id, user["user_id"], datetime.now(timezone.utc)),
+    ).first()
+
+
+def _sent_feedback_exists():
+    return TaskBlockFeedback.messages.any(
+        TaskBlockFeedbackMessage.is_draft.is_(False)
+        & (TaskBlockFeedbackMessage.sender_role != "student")
+    )
 
 
 def _feedback(db: DBSession, submission_id: int) -> TaskBlockFeedback | None:
@@ -231,6 +275,7 @@ def _render(
     from app.services.curator_review_demo import (
         can_preview_review,
         can_use_demo_recording,
+        demo_review_query,
         demo_review_url,
         has_personal_demo_review,
     )
@@ -248,6 +293,14 @@ def _render(
     block, task = _context(db, submission)
     feedback = _feedback(db, submission.id)
     awaits_group = absorbed_main_block(db, submission) is not None
+    read_only = viewer_role == "student" and _holiday_feedback_read_only(db, user, task)
+    if read_only and not (
+        feedback and any(not m.is_draft and m.sender_role != "student" for m in feedback.messages)
+        and db.query(LearningTopic.id).filter(
+            LearningTopic.id == task.topic_id, program_topic_filter(PROGRAM_HOLIDAY),
+        ).first()
+    ):
+        raise HTTPException(status_code=404, detail="Обратная связь не найдена")
     messages = feedback.messages if feedback else []
     if viewer_role == "student":
         # Черновик ОС ученику не виден, пока не нажата «Отправить ОС»
@@ -264,6 +317,16 @@ def _render(
         f"/cabinet/students?student={submission.user_id}&tab=tasks"
         if viewer_role != "student" else "/cabinet/learning"
     )
+    if viewer_role == "student" and (read_only or request.query_params.get("history") == "1"):
+        back_url = HISTORY_PATH
+    elif viewer_role != "student" and request.query_params.get("holiday_queue") == "1":
+        filters = {
+            key: request.query_params[key] for key in ("flow", "status", "curator", "page")
+            if key in request.query_params
+        }
+        back_url = QUEUE_PATH + "?" + urlencode(filters)
+    mode = submission_control_review_mode(db, submission)
+    is_control = is_control_submission(db, submission)
     past_works = []
     queue_navigation = None
     if viewer_role != "student":
@@ -273,48 +336,77 @@ def _render(
             row for row in submission_review_queue(db, student_id=submission.user_id, limit=12)
             if row["submission_id"] != submission.id and row["submitted_at"] < submission.submitted_at
         ][:4] if submission.submitted_at else []
+        if review_demo and mode and task.topic_id and (block.subject or task.subject):
+            past_works = [
+                row for row in submission_review_queue(
+                    db, student_id=submission.user_id, cycle_id=task.topic_id,
+                    subject=block.subject or task.subject, limit=1000,
+                )
+                if row["submission_id"] != submission.id and not row["requires_review"]
+            ]
         if demo_has_queue:
             from app.services.curator_review_queue import review_neighbors
 
             student_curator = db.get(User, submission.user_id).curator_id
-            curator_id = student_curator or user["user_id"]
-            queue_navigation = review_neighbors(db, curator_id, submission, request.query_params)
+            all_students = selected_curator == "all"
+            curator_id = None if all_students else student_curator or user["user_id"]
+            queue_navigation = review_neighbors(db, curator_id, submission, request.query_params, include_late=can_handle_late_controls(user))
             if queue_navigation:
-                detail_viewer_id = user["user_id"] if demo_recording else curator_id
+                detail_viewer_id = "all" if all_students else user["user_id"] if demo_recording else curator_id
                 queue_navigation = {
-                    key: demo_review_url(url, curator_id if key == "queue_url" else detail_viewer_id) if url else None
+                    key: demo_review_url(url, (curator_id or "all") if key == "queue_url" else detail_viewer_id) if url else None
                     for key, url in queue_navigation.items()
                 }
+    has_sent_feedback = current_submission_has_feedback(submission, feedback)
     group, submission_images, work_choices, image_choices = _review_choices(db, submission, task)
+    portfolio_params = {"student": str(submission.user_id), "tab": "portfolio"}
+    if review_demo:
+        portfolio_params.update(from_review=str(submission.id), **demo_review_query(request.query_params))
+        if student and student.program == PROGRAM_HOLIDAY:
+            portfolio_params["program"] = PROGRAM_HOLIDAY
     return templates.TemplateResponse(request, "task_block_feedback_detail.html", {
         "request": request,
         "user": user,
         "viewer_role": viewer_role,
+        "requires_review": (
+            requires_submission_review(block.block_type, task.kind)
+            or bool(group and any(work.requires_review for work in group.linked))
+        ),
+        "control_mode": mode,
+        "is_control": is_control,
+        "control_status": (
+            "Проверено" if submission.reviewed_at else
+            "Ждём баллы" if submission.score is None else "Ждёт ОС"
+        ) if is_control and not submission.needs_revision else None,
         "review_demo": review_demo,
         "demo_has_queue": demo_has_queue,
-        "demo_recording": demo_recording,
+        "demo_recording": demo_recording and mode != "text",
         "demo_curator": selected_curator,
         "demo_can_switch_to_head": review_demo and not demo_recording and can_use_demo_recording(user, None),
         "autosave": (
             _autosave_context(messages, user["user_id"])
-            if review_demo and not is_closed(feedback)
+            if review_demo and mode != "score" and not is_closed(feedback)
             and not awaits_group and can(user, "students_review") else None
         ),
         # Балл ставит только ГП и выше; куратор видит его только для чтения.
         "can_score": (
             viewer_role != "student" and (not review_demo or demo_recording)
             and can_score(user.get("role_rank", 1))
+            and (mode != "score" or can_handle_late_controls(user))
         ),
         # «Вернуть на доработку» — только здесь, в диалоге (владелец 14.10.2026),
         # куратор и выше (`rbac.WORK_REVISION_MIN_RANK`). Раздел проверки —
         # как у кнопок проверки: модератору его не положено, и кнопка ответила бы 403.
         "can_send_revision": (
-            viewer_role != "student" and can(user, "students_review")
+            viewer_role != "student" and not submission.needs_revision
+            and mode != "score" and can(user, "students_review")
             and can_send_work_to_revision(user.get("role_rank", 1))
+            and (not is_control or (submission.score is not None and has_sent_feedback))
         ),
         "student": student,
         "submission": submission,
         "past_works": past_works,
+        "student_portfolio_url": "/cabinet/students?" + urlencode(portfolio_params),
         "review_images": image_choices,
         "review_works": work_choices,
         "review_sections": REVIEW_SECTIONS,
@@ -342,6 +434,7 @@ def _render(
         "revision": _revision_state(db, feedback, user) if viewer_role != "student" else None,
         # Может ли ученик ответить — одно правило на роут и экран (01.10.2026).
         "reply": student_can_reply(db, submission, feedback),
+        "read_only": read_only,
         # Сколько сообщений ждут «Отправить ОС» (владелец 22.10.2026).
         "draft_count": len(draft_messages(feedback)) if viewer_role != "student" else 0,
         # ОС, фаза 2: «Завершить ОС» и оценка ученика (О10–О26). Когда
@@ -378,6 +471,36 @@ def staff_feedback_page(
     )
 
 
+@router.get(HISTORY_PATH.removeprefix("/cabinet"), response_class=HTMLResponse)
+def holiday_feedback_history(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    if user.get("program") != PROGRAM_HOLIDAY:
+        raise HTTPException(status_code=404)
+    rows = (
+        db.query(TaskBlockSubmission.id, TrackerTask.title, TrackerTask.topic_id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .join(LearningTopic, LearningTopic.id == TrackerTask.topic_id)
+        .join(TaskBlockFeedback, TaskBlockFeedback.submission_id == TaskBlockSubmission.id)
+        .filter(TaskBlockSubmission.user_id == user["user_id"],
+                program_topic_filter(PROGRAM_HOLIDAY), _sent_feedback_exists())
+        .order_by(TaskBlockSubmission.submitted_at.desc(), TaskBlockSubmission.id.desc())
+        .all()
+    )
+    by_topic = tracks_for_topics(db, {row.topic_id for row in rows})
+    groups = {}
+    for row in rows:
+        tracks = by_topic.get(row.topic_id, [])
+        key = (tracks[0].id, tracks[0].title) if len(tracks) == 1 else (None, "Другие задания")
+        groups.setdefault(key, []).append(row)
+    return templates.TemplateResponse(request, "holiday_feedback_history.html", {
+        "user": user, "groups": groups,
+    })
+
+
 @router.get("/task-block-submissions/{submission_id}/feedback", response_class=HTMLResponse)
 def student_feedback_page(
     submission_id: int,
@@ -391,7 +514,9 @@ def student_feedback_page(
     if main is not None:
         # Ответ по этой работе — общий, в диалоге главной (13.10.2026).
         return RedirectResponse(
-            f"/cabinet/task-block-submissions/{main.id}/feedback", status_code=302,
+            f"/cabinet/task-block-submissions/{main.id}/feedback"
+            + ("?history=1" if request.query_params.get("history") == "1" else ""),
+            status_code=302,
         )
     return _render(
         request, db, submission=submission, user=user, viewer_role="student", student=None,
@@ -417,12 +542,21 @@ def score_submission(
     Куратор проверяет работу отметкой «проверено» и диалогом."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    _lock_submission(db, submission)
     if submission.needs_revision:
         raise HTTPException(status_code=409, detail="Сначала дождитесь новой сдачи")
+    mode = submission_control_review_mode(db, submission)
+    is_control = is_control_submission(db, submission)
+    if mode == "score" and not can_handle_late_controls(user):
+        raise HTTPException(status_code=403, detail="Балл за эту работу ставит Лиза.")
     previous_score = int(submission.score) if submission.score is not None else None
     submission.score = payload.score
     submission.scored_at = datetime.now(timezone.utc)
     submission.scored_by_id = user["user_id"]
+    if is_control and submission.reviewed_at is None:
+        main = main_submission_for(db, submission) if mode != "score" else None
+        if mode == "score" or current_submission_has_feedback(submission, _feedback(db, (main or submission).id)):
+            set_submission_reviewed(db, submission_id=submission.id, user_id=user["user_id"], reviewed=True)
     notification = None
     if previous_score != payload.score:
         block, task = _context(db, submission)
@@ -442,7 +576,7 @@ def score_submission(
     db.commit()
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
-    return JSONResponse({"ok": True, "score": payload.score})
+    return JSONResponse({"ok": True, "score": payload.score, **({"control": True} if is_control else {})})
 
 
 @router.post("/staff/task-block-submissions/{submission_id}/revision", response_class=JSONResponse)
@@ -457,8 +591,15 @@ def send_submission_to_revision(
     """Открыть повторную загрузку конкретной работы, сохранив её диалог."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    _lock_submission(db, submission)
     if submission.needs_revision:
         raise HTTPException(status_code=409, detail="Работа уже на доработке")
+    if is_control_submission(db, submission) and (
+        submission_control_review_mode(db, submission) == "score"
+        or submission.score is None
+        or not current_submission_has_feedback(submission, _feedback(db, submission.id))
+    ):
+        raise HTTPException(status_code=409, detail="Доработка доступна после оценки и отправки обратной связи.")
     comment_clean = comment.strip()
     if len(comment_clean) > 2000:
         raise HTTPException(status_code=422, detail="Комментарий слишком длинный")
@@ -558,6 +699,12 @@ async def staff_message(
 ):
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    mode = submission_control_review_mode(db, submission)
+    if mode == "score":
+        return _error(403, "За эту сдачу можно поставить только балл.")
+    has_media = video_link or video_note or any(upload and upload.filename for upload in (photo, video, audio))
+    if mode == "text" and has_media:
+        return _error(422, "За эту сдачу можно отправить только текст и балл.")
     if review_demo:
         from app.services.curator_review_demo import can_preview_submission_review, can_use_demo_recording
 
@@ -623,6 +770,8 @@ async def student_message(
 ):
     submission = _submission_or_404(db, submission_id)
     _student_guard(user, submission)
+    if _holiday_feedback_read_only(db, user, _context(db, submission)[1]):
+        return JSONResponse({"ok": False, "error": "Поток завершён. Обратную связь можно читать."}, status_code=403)
     # Строка диалога под блокировкой до коммита: два одновременных ответа
     # иначе оба насчитали бы «осталось одно сообщение» и прошли бы мимо
     # лимита (на SQLite в тестах `FOR UPDATE` молча пропускается).
@@ -695,6 +844,8 @@ def save_feedback_draft(
         return _error(403, "Нет доступа к проверке работ.")
     if absorbed_main_block(db, submission) is not None:
         return _error(409, "Откройте общую обратную связь, чтобы сохранить замечание к этой работе.")
+    if submission_control_review_mode(db, submission) == "score":
+        return _error(403, "За эту сдачу можно поставить только балл.")
     if "\x00" in data.text:
         return _error(422, "В тексте замечания есть недопустимый символ.")
 
@@ -815,10 +966,19 @@ def send_feedback(
         not can(user, "students_review") or absorbed_main_block(db, submission) is not None
     ):
         return _error(403, "Этот диалог недоступен для отправки.")
+    _lock_submission(db, submission)
+    mode = submission_control_review_mode(db, submission)
+    if mode == "score":
+        return _error(403, "За эту сдачу можно поставить только балл.")
     # Отправка, предпросмотр и autosave используют одну блокировку диалога.
     feedback = _locked_feedback(db, submission.id)
     if is_closed(feedback):
         return _error(403, "Обратная связь завершена – диалог закрыт.")
+    if mode == "text" and any(
+        message.photo_s3_url or message.video_s3_url or message.video_url or message.audio_s3_url
+        for message in draft_messages(feedback)
+    ):
+        return _error(422, "Уберите вложения из черновиков: за эту сдачу доступна только текстовая ОС.")
     if preview or snapshot is not None:
         drafts = serialize_messages(draft_messages(feedback))
         if not drafts:
@@ -849,6 +1009,19 @@ def send_feedback(
             return _error(409, "Черновики изменились. Откройте предпросмотр ещё раз.")
     if not send_drafts(feedback):
         return _error(409, "Новых сообщений нет – отправлять нечего.")
+    if submission.reviewed_at is None and not submission.needs_revision and (
+        not is_control_submission(db, submission) or submission.score is not None
+    ):
+        set_submission_reviewed(
+            db, submission_id=submission.id, user_id=user["user_id"], reviewed=True,
+        )
+    for linked in absorbed_for_mains(db, [submission]).get(submission.id, []):
+        if not is_control_submission(db, linked):
+            continue
+        _lock_submission(db, linked)
+        if (linked.reviewed_at is None and not linked.needs_revision and linked.score is not None
+                and current_submission_has_feedback(linked, feedback)):
+            set_submission_reviewed(db, submission_id=linked.id, user_id=user["user_id"], reviewed=True)
     notification = notify_counterpart(
         db, submission=submission, recipient_id=submission.user_id,
         sender_role=role_from_rank(user.get("role_rank", 1)),
@@ -998,6 +1171,7 @@ def delete_feedback(
     Ученику ничего не сообщается."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
+    _lock_submission(db, submission)
     feedback = db.query(TaskBlockFeedback).filter(
         TaskBlockFeedback.submission_id == submission.id
     ).with_for_update().first()
@@ -1052,6 +1226,8 @@ async def student_rating(
     submission = _submission_or_404(db, submission_id)
     _student_guard(user, submission)
     block, task = _context(db, submission)
+    if _holiday_feedback_read_only(db, user, task):
+        return JSONResponse({"ok": False, "error": "Поток завершён. Обратную связь можно читать."}, status_code=403)
     feedback = _feedback(db, submission.id)
     try:
         value, text, images = await read_rating_form(score, comment, screenshots)

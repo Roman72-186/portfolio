@@ -537,7 +537,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     {% endif %}
 
     <!-- ── ЧТО ДАЛЬШЕ ── -->
-    {% if not user.portfolio_do_completed %}
+    {% if not user.portfolio_do_completed and not user.legacy_portfolio_admission %}
     <a href="/upload" class="next-card next-card--blue">
         <div class="next-card-title">Загрузи работы «До»</div>
         <div class="next-card-note">Первый шаг – покажи свои работы до обучения у нас. Это займёт пару минут.</div>

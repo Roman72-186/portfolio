@@ -41,6 +41,9 @@ from app.models.notification import Notification
 from app.models.work import Work
 from app.services.feedback import CHIEF_TEACHER_LABEL_RU, ROLE_STUDENT
 from app.services.feedback_rating import _absolute, get_rating, has_staff_message, is_closed
+from app.services.linked_feedback import absorbed_for_mains
+from app.services.task_block_feedback import current_submission_has_feedback
+from app.services.task_blocks import is_control_submission
 
 # Вложения, которые можно убрать из сообщения: ключ формы → поля строки.
 # Файл в S3 не удаляется: убранное вложение остаётся восстановимым, а
@@ -147,6 +150,16 @@ def delete_task_block_feedback(db: DBSession, feedback, submission, *, user_id: 
     «проверено» у сдачи — работа возвращается в очередь. Балл не трогаем
     (владелец 21.10.2026): его ставят отдельно от диалога. Файлы в S3 остаются,
     как при правке. Проверку `task_block_delete_refusal` делает вызывающий."""
+    # A shared answer also completes scored controls in the group. Lock those
+    # rows before removing its review marks so concurrent scoring cannot retain them.
+    for linked in absorbed_for_mains(db, [submission]).get(submission.id, []):
+        if not is_control_submission(db, linked):
+            continue
+        db.refresh(linked, with_for_update=True)
+        if current_submission_has_feedback(linked, feedback):
+            linked.reviewed_at = None
+            linked.reviewed_by_id = None
+
     messages = feedback.messages
     first_text = next((m.text for m in messages if m.text), None) or ""
     db.add(AuditLog(

@@ -6,7 +6,7 @@
     <h1 class="page-title">{% if payment %}Оплата прошла, спасибо!{% else %}Оплата годового курса{% endif %}</h1>
     <p class="page-subtitle">{{ (payment.tariff if payment else enrollment.selected_tariff) | tariff_label }}{% if amount %} · {{ rub_text(amount) }}{% endif %} · {{ period }}</p>
 </div>
-{% if waiting_for_start %}<p class="alert" role="status">Можно оплатить курс сейчас. Канал «Путь к сотке» и АОП откроются 22 ноября в 00:00 по Москве.</p>{% endif %}
+{% if waiting_for_start %}<p class="alert" role="status">Можно оплатить курс сейчас. Канал «Путь к сотке» и АОП откроются 22 ноября в 12:00 по Москве.</p>{% endif %}
 {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 {% if paid_expired %}
 <p class="alert" role="status">Срок оплаты уже закончился. Напиши в службу заботы, чтобы продолжить обучение.</p>

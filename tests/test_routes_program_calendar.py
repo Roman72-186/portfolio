@@ -113,6 +113,8 @@ def test_day_shows_only_its_own_items(client, db, user_factory, session_factory,
 
     page = client.get(f"{PROGRAM}/2026-08-24").text
 
+    assert '<header class="prg-workspace-header"' in page
+    assert f'href="{PROGRAM}?month=2026-08">К календарю</a>' in page
     assert "Понедельник" in page
     assert "Вторник" not in page
 

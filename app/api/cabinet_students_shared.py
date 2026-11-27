@@ -15,6 +15,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -30,6 +31,7 @@ from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
     require_admin_role,
+    require_action,
     require_csrf,
     require_csrf_header,
     require_curator,
@@ -43,6 +45,8 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.models.intake_link import HolidayIntake, IntakeLink
+from app.models.payment import KIND_HOLIDAY, STATUS_PAID, Payment
 from app.services.rbac import can_score as role_can_score
 from app.services.section_access import ACTION_CLOSED_DETAIL, can, has_grant
 from app.services.tariff_view import RETURN_COOKIE as TARIFF_VIEW_RETURN_COOKIE
@@ -54,9 +58,10 @@ from app.services.activity_stats import student_statistics
 from app.services.video_credit import credit_video_block, student_video_blocks
 from app.services.meeting_joins import set_attendance
 from app.services.tracker import task_audience_user_ids
-from app.models.task_block import BLOCK_LINK, TaskBlock
+from app.models.task_block import BLOCK_LINK, TaskBlock, TaskBlockSubmission
+from app.services.curator_review_demo import can_preview_submission_review, demo_review_query
 from pydantic import BaseModel, ConfigDict
-from app.services.point_a import maybe_notify_point_a_level, point_a_level, student_point_a
+from app.services.point_a import maybe_notify_point_a_level, student_point_a
 from app.services.review_aggregate import (
     DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
     student_review_items, unreviewed_counts_by_student,
@@ -81,7 +86,9 @@ from app.services.user_management import (
     can_manage_user_by_rank,
     tariff_change_clears_access,
 )
-from app.services.works import WorkHasFeedbackError, delete_works_with_dependents, upload_work_thumb
+from app.services.works import (
+    WorkHasFeedbackError, commit_work_deletions, delete_works_with_dependents, upload_work_thumb,
+)
 from app.services.tz import MSK_TZ, msk_input_value, msk_text, parse_msk_local, today_msk
 from app.services.utils import compress_image, study_duration_text, has_case_growth
 from app.tmpl import format_rich_text, tariff_label, tariff_slug, templates
@@ -89,6 +96,103 @@ from app.tmpl import format_rich_text, tariff_label, tariff_slug, templates
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cabinet")
+
+# У этих ссылок дата старта не была заполнена. Октябрьские треки объединяем.
+_LEGACY_HOLIDAY_INTAKES = {
+    3: "2026-10", 4: "2026-10", 5: "2026-10", 6: "2026-10", 7: "2026-10",
+    8: "2026-11",
+}
+_UNKNOWN_HOLIDAY_INTAKE = "unknown"
+
+
+def _holiday_intake_label(key: str) -> str:
+    if key == _UNKNOWN_HOLIDAY_INTAKE:
+        return "Набор не указан"
+    if key in ("2026-10", "2026-11"):
+        return {"2026-10": "Октябрь 2026", "2026-11": "Ноябрь 2026"}[key]
+    if key == "2026-11-29":
+        return "Старт 29 ноября"
+    return "Старт " + datetime.fromisoformat(key).strftime("%d.%m.%Y")
+
+
+def _paid_holiday_intakes(
+    db: DBSession, student_ids: list[int],
+) -> tuple[dict[int, int], dict[int, str]]:
+    named: dict[int, int] = {}
+    legacy: dict[int, str] = {}
+    purchases = (
+        db.query(Payment.user_id, IntakeLink.id, IntakeLink.access_from, IntakeLink.holiday_intake_id)
+        .join(IntakeLink, Payment.intake_link_id == IntakeLink.id)
+        .filter(
+            Payment.user_id.in_(student_ids),
+            Payment.kind == KIND_HOLIDAY,
+            Payment.status == STATUS_PAID,
+            IntakeLink.program == PROGRAM_HOLIDAY,
+        )
+        .order_by(Payment.paid_at.desc().nullslast(), Payment.id.desc())
+    )
+    for student_id, link_id, access_from, intake_id in purchases:
+        if intake_id is not None:
+            named.setdefault(student_id, intake_id)
+            continue
+        key = _LEGACY_HOLIDAY_INTAKES.get(link_id)
+        if key is None and access_from is not None:
+            # SQLite в локальных тестах отдаёт UTC без tzinfo.
+            if access_from.tzinfo is None:
+                access_from = access_from.replace(tzinfo=timezone.utc)
+            key = access_from.astimezone(MSK_TZ).date().isoformat()
+        if key and key > legacy.get(student_id, ""):
+            legacy[student_id] = key
+    return named, legacy
+
+
+# У этих ссылок дата старта не была заполнена. Октябрьские треки объединяем.
+_LEGACY_HOLIDAY_INTAKES = {
+    3: "2026-10", 4: "2026-10", 5: "2026-10", 6: "2026-10", 7: "2026-10",
+    8: "2026-11",
+}
+_UNKNOWN_HOLIDAY_INTAKE = "unknown"
+
+
+def _holiday_intake_label(key: str) -> str:
+    if key == _UNKNOWN_HOLIDAY_INTAKE:
+        return "Набор не указан"
+    if key in ("2026-10", "2026-11"):
+        return {"2026-10": "Октябрь 2026", "2026-11": "Ноябрь 2026"}[key]
+    if key == "2026-11-29":
+        return "Старт 29 ноября"
+    return "Старт " + datetime.fromisoformat(key).strftime("%d.%m.%Y")
+
+
+def _paid_holiday_intakes(
+    db: DBSession, student_ids: list[int],
+) -> tuple[dict[int, int], dict[int, str]]:
+    named: dict[int, int] = {}
+    legacy: dict[int, str] = {}
+    purchases = (
+        db.query(Payment.user_id, IntakeLink.id, IntakeLink.access_from, IntakeLink.holiday_intake_id)
+        .join(IntakeLink, Payment.intake_link_id == IntakeLink.id)
+        .filter(
+            Payment.user_id.in_(student_ids),
+            Payment.kind == KIND_HOLIDAY,
+            Payment.status == STATUS_PAID,
+            IntakeLink.program == PROGRAM_HOLIDAY,
+        )
+        .order_by(Payment.paid_at.desc().nullslast(), Payment.id.desc())
+    )
+    for student_id, link_id, access_from, intake_id in purchases:
+        if intake_id is not None:
+            named.setdefault(student_id, intake_id)
+            continue
+        key = _LEGACY_HOLIDAY_INTAKES.get(link_id)
+        if key is None and access_from is not None:
+            # SQLite в локальных тестах отдаёт UTC без tzinfo.
+            if access_from.tzinfo is None:
+                access_from = access_from.replace(tzinfo=timezone.utc)
+            key = access_from.astimezone(MSK_TZ).date().isoformat()
+        if key and key > legacy.get(student_id, ""):
+            legacy[student_id] = key
+    return named, legacy
 
 
 # Тело удаления переехало в `app/services/works.py` (18.09.2026): ту же
@@ -438,11 +542,14 @@ def _sidebar_rows(
     # кому открыт список, а не только пробники у ГП, как было раньше. Тот же
     # расчёт, что «Не проверено» в карточке, и та же область куратора.
     if students and not archived_b:
+        from app.services.curator_review_demo import can_handle_late_controls
+
         counts = unreviewed_counts_by_student(
             db,
             curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
             role_rank=user["role_rank"],
             student_id=only_student_id,
+            include_late=can_handle_late_controls(user),
         )
         visible_ids = {s.id for s in students}
         unchecked_by_user = {uid: n for uid, n in counts.items() if uid in visible_ids}
@@ -492,6 +599,26 @@ def _sidebar_rows(
     # Каникулярному — сколько разных адресов входа за неделю: школа смотрит,
     # не делят ли доступ (созвон 13.10.2026). Годовым строка не нужна.
     holiday_ids = [s.id for s in students if s.program == PROGRAM_HOLIDAY]
+    if holiday_ids and not archived_b:
+        paid_intakes, legacy_intakes = _paid_holiday_intakes(db, holiday_ids)
+        intakes_by_user = {
+            student.id: paid_intakes.get(student.id, student.holiday_intake_id)
+            for student in students if student.program == PROGRAM_HOLIDAY
+        }
+        intake_ids = {value for value in intakes_by_user.values() if value is not None}
+        named_titles = dict(db.query(HolidayIntake.id, HolidayIntake.title).filter(
+            HolidayIntake.id.in_(intake_ids)
+        ).all()) if intake_ids else {}
+        for row in rows:
+            if row["id"] in intakes_by_user:
+                intake_id = intakes_by_user[row["id"]]
+                if intake_id in named_titles:
+                    row["holiday_intake"] = f"intake-{intake_id}"
+                    row["holiday_intake_label"] = named_titles[intake_id]
+                else:
+                    key = legacy_intakes.get(row["id"], _UNKNOWN_HOLIDAY_INTAKE)
+                    row["holiday_intake"] = key
+                    row["holiday_intake_label"] = _holiday_intake_label(key)
     if holiday_ids and is_admin_panel:
         ips = distinct_ips_by_user(db, holiday_ids)
         for row in rows:
@@ -532,6 +659,7 @@ def students_panel(
     show_hidden: str = Query(""),
     has_access_deadline: str = Query(""),
     program: str = Query(""),
+    from_review: int = Query(0),
 ):
     return _render_students_panel(
         request, user, db,
@@ -540,6 +668,7 @@ def students_panel(
         show_hidden=show_hidden,
         has_access_deadline=has_access_deadline,
         program=program,
+        from_review=from_review,
     )
 
 
@@ -554,6 +683,7 @@ def _render_students_panel(
     archived: str = "",
     has_access_deadline: str = "",
     program: str = "",
+    from_review: int = 0,
 ):
     is_admin_panel = user["role_rank"] >= 4
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
@@ -665,11 +795,22 @@ def _render_students_panel(
     )
     has_missing_enrollment_year = any(not s.enrollment_year for s in students)
 
+    review_return_url = None
+    if from_review > 0 and any(s.id == student for s in students):
+        submission = db.get(TaskBlockSubmission, from_review)
+        if (
+            submission and submission.user_id == student and submission.submitted_at
+            and can_preview_submission_review(db, user, submission.id)
+        ):
+            query = urlencode(demo_review_query(request.query_params))
+            review_return_url = f"/cabinet/staff/task-block-submissions/{submission.id}/feedback?{query}"
+
     return templates.TemplateResponse(request, "cabinet_students.html", {
         "request": request,
         "user": user,
         "sidebar_students": sidebar_students,
         "initial_student_id": student,
+        "review_return_url": review_return_url,
         "initial_tab": tab if tab in valid_tabs else "portfolio",
         "nav_active": (
             "archive" if archived_b
@@ -710,6 +851,10 @@ def _render_students_panel(
         "active_hard_filters": active_hard_filters,
         "program_switch": program_switch,
         "is_holiday_view": holiday_b and not archived_b,
+        "holiday_intake_options": sorted({
+            (row["holiday_intake"], row["holiday_intake_label"])
+            for row in sidebar_students if "holiday_intake" in row
+        }),
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
         "is_archive_view": archived_b,
@@ -718,6 +863,88 @@ def _render_students_panel(
         "submitted_students": submitted_students,
         "not_submitted_students": not_submitted_students,
     })
+
+
+def _holiday_assignment_students(db: DBSession, user: dict, flow_id: int):
+    from app.models.tag import UserTag
+    from app.services.holiday_review import active_holiday_students, holiday_review_tracks
+
+    track = holiday_review_tracks(db).filter(IntakeLink.id == flow_id).one_or_none()
+    if track is None:
+        raise HTTPException(status_code=404, detail="Поток не найден")
+    members = db.query(UserTag.user_id).filter(UserTag.tag_id == track.tag_id)
+    return active_holiday_students(db, user).filter(User.id.in_(members.statement))
+
+
+@router.get("/holiday-curators", response_class=HTMLResponse)
+def holiday_curators(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    flow: Annotated[str, Query(pattern=r"^\d{0,9}$")] = "",
+    show_assigned: bool = False,
+    assigned: int | None = None,
+):
+    from app.services.holiday_review import holiday_review_tracks
+
+    if (user.get("nav_rank") or user["role_rank"]) < 4 or not can(user, "students"):
+        raise HTTPException(status_code=403, detail=ACTION_CLOSED_DETAIL)
+    flow_id = int(flow) if flow else None
+    students = []
+    if flow_id is not None:
+        query = _holiday_assignment_students(db, user, flow_id)
+        if not show_assigned:
+            query = query.filter(User.curator_id.is_(None))
+        students = query.order_by(User.last_name, User.first_name, User.id).all()
+    curators = _curator_options(db)
+    return templates.TemplateResponse(request, "holiday_curators.html", {
+        "user": user, "nav_active": "students", "tracks": holiday_review_tracks(db).all(), "flow": flow_id,
+        "students": students, "curators": curators, "show_assigned": show_assigned,
+        "curator_names": {entry["id"]: entry["name"] for entry in curators}, "assigned": assigned,
+    })
+
+
+@router.post("/holiday-curators")
+def assign_holiday_curators(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    flow: Annotated[int, Form()],
+    curator_id: Annotated[int, Form()],
+    student_id: Annotated[list[int], Form()],
+    replace_existing: Annotated[bool, Form()] = False,
+):
+    from app.services.holiday_review import ASSIGN_PATH
+    from app.services.user_management import assign_curator, get_curator_for_assignment
+
+    if (user.get("nav_rank") or user["role_rank"]) < 4 or not can(user, "students"):
+        raise HTTPException(status_code=403, detail=ACTION_CLOSED_DETAIL)
+    curator = get_curator_for_assignment(db, curator_id, active_only=True)
+    if curator is None:
+        raise HTTPException(status_code=404, detail="Куратор не найден")
+    selected = set(student_id)
+    students = (
+        _holiday_assignment_students(db, user, flow).filter(User.id.in_(selected))
+        .order_by(User.id).with_for_update(of=User).all()
+    )
+    if not selected or len(students) != len(selected):
+        raise HTTPException(status_code=400, detail="Выберите учеников этого потока")
+    if not replace_existing and any(student.curator_id not in (None, curator.id) for student in students):
+        raise HTTPException(status_code=409, detail="Подтвердите замену назначенного куратора")
+    changed = [student for student in students if student.curator_id != curator.id]
+    for student in changed:
+        assign_curator(db, user["user_id"], student, curator)
+    db.commit()
+    if changed:
+        for (session_id,) in db.query(Session.id).filter(
+            Session.user_id.in_([student.id for student in changed]), Session.is_active.is_(True),
+        ):
+            invalidate_session(session_id)
+    destination = f"{ASSIGN_PATH}?flow={flow}&assigned={len(changed)}"
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"url": destination})
+    return RedirectResponse(destination, status_code=303)
 
 
 @router.get("/students/{student_id}/row", response_class=HTMLResponse)
@@ -784,9 +1011,13 @@ def get_student_profile(
     # «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ученику.
     # Счётчик — по сдачам вкладки «Задания» за всё время, туда и ведёт
     # «Проверить» (правило 12). Пробник первой версии не считается с 06.10.2026.
+    from app.services.curator_review_demo import can_handle_late_controls
+
+    include_late = can_handle_late_controls(user)
     study_now = {
         "unreviewed": sum(
-            1 for i in _task_items_all_time(db, user, student_id) if not i.is_reviewed
+            1 for i in _task_items_all_time(db, user, student_id)
+            if i.pending_review and (include_late or i.control_review_mode != "score")
         ),
     }
     # Шапка как у ученика в «Трекере» (владелец 05.10.2026): средний балл
@@ -797,7 +1028,7 @@ def get_student_profile(
     point_a_average = point_a.average if point_a.is_done else None
     hero = {
         "point_a_average": point_a_average,
-        "point_a_level": point_a_level(point_a_average) if point_a_average is not None else None,
+        "point_a_level": point_a.level,
     }
     # Подробности точки А — «оценено не всё, пока N» и ссылка на её экран —
     # только ГП и суперадмину: экран закрыт `require_admin_role`.
@@ -893,6 +1124,8 @@ def _task_item_json(item) -> dict:
         # Для порядка во «Все» по дате сдачи (`cabinet_students.js::buildTasks`).
         "submitted_at": submitted.isoformat() if submitted else None,
         "is_reviewed": item.is_reviewed,
+        "requires_review": item.requires_review,
+        "control_review_mode": item.control_review_mode,
         "needs_revision": item.needs_revision,
         "question": item.question,
         "chosen": item.chosen or [],
@@ -928,6 +1161,8 @@ def get_student_tasks(
     # кнопок проверки, которых его ранг 4 формально хватает, ему не рисуется.
     can_review = student.archived_at is None and can(user, "students_review")
     enrolled_at = student.enrolled_at or student.created_at
+    from app.services.curator_review_demo import can_handle_late_controls
+
     items = _task_items_all_time(db, user, student_id)
     return JSONResponse({
         "student": {
@@ -941,6 +1176,7 @@ def get_student_tasks(
         },
         "items": [_task_item_json(i) for i in items],
         "can_review": can_review,
+        "can_handle_late_controls": can_handle_late_controls(user),
         "can_score": can_review and role_can_score(user["role_rank"]),
     })
 
@@ -1205,7 +1441,41 @@ def credit_student_video(
 class LessonAttendanceIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     attended: bool
-    attendance_format: Literal["in_person", "online"] | None = None
+
+
+@router.get("/staff/first-week-attendance", response_class=HTMLResponse)
+def first_week_attendance_page(
+    request: Request,
+    user: Annotated[dict, Depends(require_action("students:first_week_attendance"))],
+    db: Annotated[DBSession, Depends(get_db)],
+    lesson_id: int | None = None,
+):
+    from app.services.first_week_attendance import page_data
+    try:
+        data = page_data(db, lesson_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return templates.TemplateResponse(request, "staff_first_week_attendance.html", {
+        "request": request, "user": user, **data,
+    })
+
+
+@router.post("/staff/first-week-attendance/{student_id}/{block_id}")
+def first_week_attendance_mark(
+    student_id: int,
+    block_id: int,
+    attendance: Annotated[Literal["in_person", "online", "absent"], Form()],
+    user: Annotated[dict, Depends(require_action("students:first_week_attendance"))],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    from app.services.first_week_attendance import mark_attendance, PAGE_URL
+    try:
+        mark_attendance(db, student_id=student_id, block_id=block_id, attendance=attendance, staff_id=user["user_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return RedirectResponse(f"{PAGE_URL}?lesson_id={block_id}", status_code=303)
 
 
 @router.post("/students/{student_id}/lesson-links/{block_id}/attendance")
@@ -1231,7 +1501,6 @@ def mark_lesson_attendance(
     set_attendance(
         db, block=block, student_id=student.id, attended=payload.attended,
         staff_id=user["user_id"],
-        attendance_format=payload.attendance_format,
     )
     db.commit()
     logger.info(
@@ -1753,7 +2022,7 @@ async def bulk_delete_works(
     except WorkHasFeedbackError as exc:
         return _work_has_feedback_response(exc)
 
-    db.commit()
+    commit_work_deletions(db)
     return JSONResponse({"ok": True, "deleted_count": deleted_count})
 
 
@@ -1873,5 +2142,5 @@ def delete_work(
         _delete_work_rows_with_dependents(db, [work])
     except WorkHasFeedbackError as exc:
         return _work_has_feedback_response(exc)
-    db.commit()
+    commit_work_deletions(db)
     return JSONResponse({"ok": True})

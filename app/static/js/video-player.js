@@ -209,6 +209,16 @@
         }
 
         function populatePlayer(data) {
+            if (data.alternate_player_page) {
+                var alternate = document.createElement('a');
+                alternate.href = data.alternate_player_page;
+                alternate.textContent = 'Видео зависло? Открыть через другое соединение';
+                if (endpoint) {
+                    alternate.target = '_blank';
+                    alternate.rel = 'noopener';
+                }
+                progressStatus.after(alternate);
+            }
             watermark.innerHTML = '';
             [data.viewer_watermark.name, data.viewer_watermark.username].forEach(function (line) {
                 var span = document.createElement('span');

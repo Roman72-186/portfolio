@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
 <script src="/static/js/statistics-pagination.js?v=1" defer></script>
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 {% endblock %}
 {% block content %}
 {% from "components/tg_copy.html" import tg_copy %}
@@ -23,16 +23,15 @@
 <div class="prg-page" data-stats-pagination>
     {% include "partials/program_tabs.html" %}
 
-    <div class="prg-head">
-        <div>
-            <h1>{{ stats.label }}</h1>
-            <p class="prg-hint">
-                Период {{ stats.start.strftime('%d.%m.%Y') }} – {{ stats.end.strftime('%d.%m.%Y') }}.
-                Учеников: {{ stats.students }}, прошли цикл целиком: {{ stats.finished }}.
-            </p>
-        </div>
+    {% from "components/program_page_header.html" import program_page_header with context %}
+    {% set header_description %}
+        Период {{ stats.start.strftime('%d.%m.%Y') }} – {{ stats.end.strftime('%d.%m.%Y') }}.
+        Учеников: {{ stats.students }}, прошли цикл целиком: {{ stats.finished }}.
+    {% endset %}
+    {% set header_actions %}
         <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
-    </div>
+    {% endset %}
+    {{ program_page_header(stats.label, header_description, actions=header_actions) }}
 
     <section class="prg-items">
         <h2>По тарифам</h2>

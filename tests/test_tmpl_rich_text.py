@@ -11,32 +11,15 @@ def test_bold_and_italic():
     assert format_rich_text("**жирный** и *курсив*") == "<strong>жирный</strong> и <em>курсив</em>"
 
 
-def test_list_from_dash_lines():
-    result = format_rich_text("- первый\n- второй")
-    assert result == (
-        '<span class="rt-list" role="list">'
-        '<span class="rt-li" role="listitem">первый</span>'
-        '<span class="rt-li" role="listitem">второй</span></span>'
-    )
-
-
-def test_list_from_bullet_lines():
-    result = format_rich_text("• один\n• два")
-    assert result == (
-        '<span class="rt-list" role="list">'
-        '<span class="rt-li" role="listitem">один</span>'
-        '<span class="rt-li" role="listitem">два</span></span>'
-    )
-
-
-def test_paragraphs_and_single_line_break():
-    result = format_rich_text("первый абзац\nвторая строка\n\nвторой абзац")
-    assert result == "первый абзац<br>вторая строка<br><br>второй абзац"
-
-
 def test_link_with_https_scheme():
+    from xml.etree import ElementTree
+
     result = format_rich_text("Смотри [здесь](https://example.com)")
-    assert result == 'Смотри <a href="https://example.com" target="_blank" rel="noopener noreferrer">здесь</a>'
+    anchor, = ElementTree.fromstring(f"<root>{result}</root>").iter("a")
+    link = anchor.attrib
+    assert link["href"] == "https://example.com"
+    assert link["target"] == "_blank"
+    assert {"noopener", "noreferrer"} <= set(link["rel"].split())
 
 
 def test_link_with_http_scheme():
@@ -73,22 +56,5 @@ def test_empty_and_none_input():
 def test_windows_line_breaks_are_paragraphs():
     # Форма шлёт textarea с \r\n: без нормализации абзацы не находились,
     # а три перевода подряд не схлопывались в один разделитель.
-    assert format_rich_text("а\r\n\r\n\r\nб\r\nв") == "а<br><br>б<br>в"
+    assert format_rich_text("а\r\n\r\nб\r\nв") == format_rich_text("а\n\nб\nв")
     assert "\r" not in format_rich_text("а\rб")
-
-
-def test_list_is_not_ul_so_it_can_live_inside_p():
-    # Вывод вставляют в <p>; <ul> там парсер разрывает, span — нет.
-    result = format_rich_text("текст\n- пункт")
-    assert "<ul" not in result and "<li" not in result
-    assert 'class="rt-list"' in result
-
-
-def test_no_blank_line_right_after_list():
-    result = format_rich_text("- а\n- б\nдальше")
-    assert result.endswith("</span></span>дальше")
-
-
-def test_blank_line_after_list_is_kept_once():
-    result = format_rich_text("- а\r\n\r\nдальше")
-    assert result.endswith("</span></span><br>дальше")

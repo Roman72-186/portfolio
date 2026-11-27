@@ -45,6 +45,8 @@ def test_superadmin_can_score_too(client, db, user_factory, session_factory, stu
     _as(client, session_factory, boss)
 
     assert client.post(URL.format(student.id), json={"score": 55}).status_code == 200
+    db.refresh(student)
+    assert (student.portfolio_before_score, student.portfolio_before_scored_by_id) == (55, boss.id)
 
 
 def test_curator_is_refused(client, db, user_factory, session_factory, student):

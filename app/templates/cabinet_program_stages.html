@@ -4,7 +4,7 @@
    роуты `program_stages` и `program_periods`. #}
 {% block title %}{{ 'Периоды программы' if level == 'period' else 'Этапы программы' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=66">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -27,31 +27,13 @@
 {% set noun = 'период' if is_period else 'этап' %}
 <div class="prg-page">
     {% include "partials/program_tabs.html" %}
-    {% include "partials/program_switch.html" %}
-    {% include "partials/program_path.html" %}
-
-    <div class="prg-head">
-        <div>
-            {% if is_period %}
-            <h1>Периоды программы</h1>
-            <p class="prg-hint">
-                Период – самый крупный отрезок курса: «Предобучение», «1 семестр».
-                Внутри него этапы, их привязывают к периоду на вкладке «Этапы».
-            </p>
-            {% else %}
-            <h1>Этапы программы</h1>
-            <p class="prg-hint">
-                Этап объединяет несколько циклов подряд — например, «Предобучение» или
-                учебный месяц. Внутри этапа преподаватель заводит циклы на вкладке «Циклы»
-                и привязывает их к этапу выпадающим списком.
-            </p>
-            {% endif %}
-        </div>
+    {% from "components/program_page_header.html" import program_page_header with context %}
+    {% set header_actions %}
         {% if prg_edit %}
-        <button type="button" class="btn-blue" data-stage-new>Новый {{ noun }}</button>
+        <button type="button" class="btn-blue" data-stage-new>Создать {{ noun }}</button>
         {% endif %}
-    </div>
-
+    {% endset %}
+    {{ program_page_header('Периоды программы' if is_period else 'Этапы программы', 'Периоды делят курс на крупные части. Добавляйте этапы внутри каждого периода.' if is_period else 'Этап объединяет циклы, например циклы предобучения или учебного месяца.', actions=header_actions) }}
 
     {# Форма свёрнута до кнопки «Новый этап» или «Название и даты» — тот же
        приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
@@ -100,7 +82,7 @@
             </select>
         </label>
         {% if not periods %}
-        <p class="prg-hint">Периодов пока нет. Заведите его на вкладке <a href="/cabinet/staff/program/periods">«Периоды»</a>, потом этап.</p>
+        <p class="prg-hint">Создайте период на вкладке <a href="/cabinet/staff/program/periods">«Периоды»</a>, затем добавьте этап.</p>
         {% endif %}
         {% endif %}
         <label class="prg-field prg-field--row">
@@ -116,14 +98,15 @@
     {% endif %}
 
     <section class="prg-items">
-        <h2>Уже заведены</h2>
+        <h2>{{ 'Периоды' if noun == 'период' else 'Этапы' }}</h2>
         {% if stages %}
         {% for stage in stages %}
-        <article class="prg-item" data-stage-id="{{ stage.id }}">
+        {% set child_href = '/cabinet/staff/program/stages?period=' ~ stage.id if is_period else '/cabinet/staff/program/cycles?stage=' ~ stage.id %}
+        <article class="prg-item" data-stage-id="{{ stage.id }}" data-aop-published="{{ 'true' if stage.is_published else 'false' }}">
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if stage.is_published else 'Скрыт' }}</span>
                 {% if stage.period_label %}<span class="prg-badge">{{ stage.period_label }}</span>{% endif %}
-                <h3>{{ stage.label }}</h3>
+                <h3>{% if user.role_rank >= 4 %}<a class="aop-item-link" href="{{ child_href }}">{{ stage.label }}</a>{% else %}{{ stage.label }}{% endif %}</h3>
                 {% if stage.description %}<p>{{ stage.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
                     <span>с {{ stage.starts_on }}</span>
@@ -136,16 +119,8 @@
                 </div>
             </div>
             <div class="prg-item-actions">
-                {% if is_period %}
-                <a class="btn-blue" href="/cabinet/staff/program/stages?period={{ stage.id }}">Этапы периода</a>
-                {% else %}
-                {# Со списком, суженным до этого этапа (аудит 29.09.2026: ссылка вела на
-                   все циклы подряд). #}
-                {# Заданий прямо на этапе больше не заводят (владелец 06.10.2026:
-                   «задания будут только внутри циклов», «проваливаемся в этап —
-                   показываем только циклы»), кнопка «Задания этапа» снята; на
-                   проде их ноль. Экран `/cycles/{stage_id}` жив для старых ссылок. #}
-                <a class="btn-blue" href="/cabinet/staff/program/cycles?stage={{ stage.id }}">Циклы этапа</a>
+                {% if user.role_rank < 4 %}
+                <a class="btn-blue" href="{{ child_href }}">{{ 'Этапы периода' if is_period else 'Циклы этапа' }}</a>
                 {% endif %}
                 {% if prg_edit %}
                 <button type="button" class="btn-outline" data-stage-edit
@@ -164,7 +139,7 @@
         </article>
         {% endfor %}
         {% elif is_period %}
-        <p class="prg-hint">Пока ни одного периода. Заведите первый – к нему привязываются этапы.</p>
+        <p class="prg-hint">Периодов пока нет. Создайте период, чтобы добавить к нему этапы.</p>
         {% elif period_filter %}
         <p class="prg-hint">В этом периоде пока нет этапов. Привяжите этап к периоду в форме «Название и даты».</p>
         {% else %}

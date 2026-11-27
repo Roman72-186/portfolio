@@ -9,19 +9,19 @@
     <a href="/cabinet/learning" class="back-link">← Кабинет</a>
 
     <h1 class="page-title">
-        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Уведомления
+        Уведомления
         {% if unread_count > 0 %}
-        <span class="page-title-badge">{{ unread_count }} новых</span>
+        <span class="page-title-badge">Новых: {{ unread_count }}</span>
         {% endif %}
     </h1>
 
     <div class="push-toggle-card">
         <div class="push-toggle-body">
-            <div class="push-toggle-title">Push-уведомления в браузере</div>
+            <div class="push-toggle-title">Уведомления браузера</div>
             <div class="push-toggle-note" id="pushToggleNote">Проверка поддержки браузера…</div>
         </div>
         <label class="push-toggle-switch">
-            <input type="checkbox" id="pushToggleInput" disabled>
+            <input type="checkbox" id="pushToggleInput" aria-label="Уведомления браузера" aria-describedby="pushToggleNote" disabled>
             <span class="push-toggle-track"></span>
         </label>
     </div>
@@ -36,7 +36,7 @@
         {% else %}
         <div class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% endif %}
-            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
+            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% endif %}</div>
             <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
                 {% set bc_item = broadcast_messages.get(n.broadcast_id) if n.broadcast_id else none %}
@@ -79,7 +79,7 @@
     var standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
     window.mountPushToggle(input, note, {{ settings.vapid_public_key | tojson }}, ios && !standalone
         ? 'На iPhone открой сайт в Safari и добавь его на экран «Домой». Уведомления можно включить при входе через новую иконку.'
-        : 'Браузер не поддерживает push-уведомления. Если ты в Telegram, открой сайт в обычном браузере.');
+        : 'Открой сайт в другом браузере. Если ты в Telegram, выйди во внешний браузер.');
 })();
 </script>
 

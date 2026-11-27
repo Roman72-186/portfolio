@@ -453,7 +453,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
 </script>
 <div class="split-wrap">
     {% from "partials/staff_check_sidebar.html" import check_sidebar %}
-    {% call check_sidebar("Проверка пробников", "Имя или номер ученика…", total_unchecked, total_students, tariffs) %}
+    {% call check_sidebar("Проверка пробников", "Имя или номер на платформе", total_unchecked, total_students, tariffs) %}
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
@@ -480,7 +480,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
             </button>
             {% else %}
             <div style="padding:20px;text-align:center;color:var(--dim);font-size:13px">
-                Нет пробников для проверки
+                Пробников на проверку нет
             </div>
             {% endfor %}
             {% if sidebar_students %}<p id="mock-search-empty" class="empty-mini" role="status" hidden>Ученики не найдены.</p>{% endif %}
@@ -490,7 +490,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
         <div class="split-main-scroll" id="main-panel">
             <div class="empty-state" id="select-prompt">
                 <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></div>
-                <div class="empty-text">Выберите ученика слева</div>
+                <div class="empty-text">Выберите ученика, чтобы открыть его пробники</div>
             </div>
         </div>
     </div>

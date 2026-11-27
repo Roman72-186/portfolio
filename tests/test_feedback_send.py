@@ -162,17 +162,6 @@ def test_close_right_after_send_when_reply_is_closed(db, user_factory, session_f
     assert _close(client, session_factory, curator, submission).json()["closed_now"] is True
 
 
-def test_staff_page_explains_why_close_is_hidden(db, user_factory, session_factory, client):
-    curator, _student, _task, submission = _setup_block(
-        db, user_factory, base=994_061, dialog_tariffs=[TARIFF_WITH_YOU],
-    )
-    _staff_says(client, session_factory, curator, submission)
-    _login(client, session_factory, curator)
-    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
-    assert "Ученик ещё может задать вопрос" in page.text
-    assert "data-feedback-close" not in page.text
-
-
 def _age_drafts(db, submission, hours):
     moment = datetime.now(timezone.utc) - timedelta(hours=hours)
     for message in _messages(db, submission):

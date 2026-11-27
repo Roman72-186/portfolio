@@ -53,12 +53,14 @@ def test_curator_is_refused_on_every_score_route(path, client, user_factory, ses
     assert resp.status_code == 403, f"{path}: куратор не должен ставить балл"
 
 
-def test_chief_teacher_passes_the_rank_check(client, user_factory, session_factory):
-    """Обратная сторона: ГП до эндпоинта доходит (404 — работы нет, но не 403)."""
+def test_chief_teacher_can_save_score(client, db, user_factory, session_factory):
+    from test_task_block_feedback import _submission
+
+    student = user_factory()
+    submission = _submission(db, student)
     chief = user_factory(vk_id=995_002, name="Главный", role_name="админ")
     client.cookies.set("session_id", session_factory(chief).id)
-
-    resp = client.post(
-        "/cabinet/staff/task-block-submissions/999999/score", json={"score": 80},
-    )
-    assert resp.status_code == 404
+    response = client.post(f"/cabinet/staff/task-block-submissions/{submission.id}/score", json={"score": 80})
+    assert response.status_code == 200
+    db.refresh(submission)
+    assert (submission.score, submission.scored_by_id) == (80, chief.id)

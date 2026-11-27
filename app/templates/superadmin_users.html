@@ -20,7 +20,7 @@
 
     <div class="su-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
-        <h1 class="su-title">Управление пользователями</h1>
+        <h1 class="su-title">Пользователи</h1>
     </div>
 
     <nav class="su-tabs" aria-label="Разделы пользователей">
@@ -36,7 +36,7 @@
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>
             Поиск
-            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username или номер..." class="su-input--search">
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, ник в Telegram или номер" class="su-input--search">
         </label>
         <label>
             Роль
@@ -119,7 +119,7 @@
             <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %}>
             <span>Без периодов</span>
         </label>
-        <button type="submit" class="btn-blue btn-save">Найти</button>
+        <button type="submit" class="btn-blue btn-save">Применить фильтры</button>
     </form>
 
     {% if page_error %}
@@ -430,13 +430,15 @@ function toggleUsersList() {
     const expand = section.classList.contains('is-collapsed');
     section.classList.toggle('is-collapsed', !expand);
     btn.textContent = expand ? 'Скрыть пользователей' : 'Показать пользователей';
-    sessionStorage.setItem(USERS_LIST_EXPANDED_KEY, expand ? '1' : '');
+    try { sessionStorage.setItem(USERS_LIST_EXPANDED_KEY, expand ? '1' : ''); } catch (_) {}
 }
 
-if (sessionStorage.getItem(USERS_LIST_EXPANDED_KEY) === '1') {
-    document.getElementById('usersListSection').classList.remove('is-collapsed');
-    document.getElementById('usersToggleBtn').textContent = 'Скрыть пользователей';
-}
+try {
+    if (sessionStorage.getItem(USERS_LIST_EXPANDED_KEY) === '1') {
+        document.getElementById('usersListSection').classList.remove('is-collapsed');
+        document.getElementById('usersToggleBtn').textContent = 'Скрыть пользователей';
+    }
+} catch (_) {}
 
 function copyText(elemId, btn) {
     const el = document.getElementById(elemId);

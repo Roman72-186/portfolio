@@ -8,9 +8,9 @@
 
 <div class="notif-page ios-notifications">
     <h1 class="page-title">
-        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Уведомления
+        Уведомления
         {% if unread_count > 0 %}
-        <span class="page-title-badge">{{ unread_count }} новых</span>
+        <span class="page-title-badge">Новых: {{ unread_count }}</span>
         {% endif %}
     </h1>
 
@@ -19,7 +19,7 @@
         {% for n in notifications %}
         {% set href = ('/cabinet/staff/task-block-submissions/' ~ n.task_block_submission_id ~ '/feedback') if n.task_block_submission_id else none %}
         {% if href %}<a href="{{ href }}" class="notif-card {% if not n.is_read %}unread{% endif %}">{% else %}<div class="notif-card {% if not n.is_read %}unread{% endif %}">{% endif %}
-            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
+            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% endif %}</div>
             <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
                 {% if n.text %}

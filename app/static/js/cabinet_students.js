@@ -307,7 +307,6 @@ function renderProfile(data) {
 
     // Status badges
     html += '<div class="profile-field full-width">'
-        + '<div class="profile-field-label">Статус</div>'
         + '<div class="profile-status-badges">'
         + '<span class="profile-badge ' + (s.profile_completed ? 'ok' : 'no') + '">'
         + (s.profile_completed ? '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Анкета заполнена' : '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Анкета не заполнена') + '</span>'
@@ -373,12 +372,12 @@ function buildStudyNow(s) {
     if (!sn) return '';
     var html = '';
     if (sn.unreviewed) {
-        html += '<span class="profile-badge no">Не проверено: ' + sn.unreviewed + '</span>';
+        html += '<span class="profile-badge no">На проверку: ' + sn.unreviewed + '</span>';
         if (!IS_ARCHIVE_VIEW) {
-            html += '<button type="button" class="btn-outline" onclick="openReview(\'tasks\')">Проверить</button>';
+            html += '<button type="button" class="btn-outline" onclick="openReview(\'tasks\')">Открыть задания</button>';
         }
     } else {
-        html += '<span class="profile-badge ok">Всё проверено</span>';
+        html += '<span class="profile-badge ok">Работ на проверку нет</span>';
     }
     var pa = sn.point_a;
     if (pa) {
@@ -423,9 +422,9 @@ function buildTasks(data) {
     var items = data.items || [];
     var html = '<div class="section-title">Задания из ленты</div>';
     if (!items.length) {
-        return html + '<div class="no-works">В заданиях ученик пока ничего не сдал и не ответил</div>';
+        return html + '<div class="no-works">Ученик пока не сдавал работы и не отвечал на вопросы</div>';
     }
-    var pending = items.filter(function(it) { return !it.is_reviewed; });
+    var pending = items.filter(function(it) { return it.requires_review !== false && !it.is_reviewed && !it.needs_revision && (it.control_review_mode !== "score" || data.can_handle_late_controls); });
     var showAll = _tasksFilter === 'all';
     function pill(value, label, active) {
         return '<button type="button" class="nav-pill-item' + (active ? ' active' : '') + '"'
@@ -446,7 +445,7 @@ function buildTasks(data) {
         })
         : pending;
     if (!list.length) {
-        return html + '<div class="no-works">Всё проверено. Прошлые сдачи — во вкладке «Все».</div>';
+        return html + '<div class="no-works">Работ на проверку нет</div>';
     }
     list.forEach(function(it) { html += buildTaskItem(it, data); });
     return html;
@@ -454,8 +453,9 @@ function buildTasks(data) {
 
 function buildTaskItem(it, data) {
     var badge = it.needs_revision ? '<span class="profile-badge no">На доработке</span>'
-        : (it.is_reviewed ? '<span class="profile-badge ok">Проверено</span>'
-                          : '<span class="profile-badge no">Не проверено</span>');
+        : it.requires_review === false ? '<span class="profile-badge ok">Сдано</span>'
+        : it.is_reviewed ? '<span class="profile-badge ok">Проверено</span>'
+        : '<span class="profile-badge no">Не проверено</span>';
     if (it.score != null) badge += '<span class="profile-badge">' + it.score + ' / 100</span>';
     var meta = [it.subject, it.submitted_label].filter(Boolean).join(' · ');
     var html = '<div class="profile-details" data-task-item data-domain="' + esc(it.domain) + '" data-id="' + it.id + '"'
@@ -527,11 +527,11 @@ function buildTaskActions(it, data) {
         html += '<a class="btn-blue" href="' + esc(it.review_url) + '">'
             + (data.can_score && !it.needs_revision ? 'Оценить и ответить' : 'Ответить') + '</a>';
     } else if (it.domain === 'homework' && it.review_url) {
-        html += '<a class="btn-outline" href="' + esc(it.review_url) + '">Открыть</a>';
+        html += '<a class="btn-outline" href="' + esc(it.review_url) + '">Открыть домашнюю работу</a>';
     }
-    if (data.can_review && !it.needs_revision && it.domain !== 'homework') {
+    if (data.can_review && it.requires_review !== false && !it.control_review_mode && !it.needs_revision && it.domain !== 'homework') {
         html += '<button type="button" class="btn-outline" onclick="toggleTaskReviewed(this)">'
-            + (it.is_reviewed ? 'Вернуть в очередь' : 'Просмотрено') + '</button>';
+            + (it.is_reviewed ? 'Вернуть в очередь' : 'Отметить как просмотренное') + '</button>';
     }
     return html ? '<div class="profile-status-badges">' + html + '</div>' : '';
 }
@@ -746,11 +746,11 @@ function buildPortfolio(data) {
 
     var sid = data.student.id;
 
-    // «+ Загрузить» живёт здесь, а не на шапке ученика (владелец 06.10.2026):
+    // «Загрузить работы» находится здесь, а не на шапке ученика (владелец 06.10.2026):
     // загружают только «До» и «В процессе обучения» — разделы этой вкладки.
     if (CAN_SCORE) {
         html += '<div class="portfolio-upload-row">'
-            + '<button type="button" class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
+            + '<button type="button" class="admin-upload-btn" onclick="openUploadModal()">Загрузить работы</button>'
             + '</div>';
     }
 
@@ -1004,12 +1004,19 @@ function toggleEditForm(id, btn) {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-function showToast(msg) {
+var toastTimer;
+
+function showToast(msg, isError) {
     var t = document.getElementById('save-toast');
     if (!t) return;
+    clearTimeout(toastTimer);
     t.textContent = msg;
+    t.classList.toggle('is-error', Boolean(isError));
     t.classList.add('show');
-    setTimeout(function() { t.classList.remove('show'); }, 3000);
+    toastTimer = setTimeout(function() {
+        t.classList.remove('show');
+        t.textContent = '';
+    }, isError ? 8000 : 3000);
 }
 
 // ── Sidebar filters ─────────────────────────────────────────────────────────
@@ -1060,6 +1067,7 @@ function filterSidebar() {
     var tariff = tariffSelect ? tariffSelect.value : _activeTariff;
     var curator = (document.getElementById('filter-curator') || {}).value || '';
     var year = (document.getElementById('filter-year') || {}).value || '';
+    var intake = (document.getElementById('filter-holiday-intake') || {}).value || '';
     var onlyUnreviewed = !!(document.getElementById('filter-unreviewed') || {}).value;
     var queryTokens = q.split(' ').map(function(token) {
         return token.replace(/^@/, '');
@@ -1081,7 +1089,8 @@ function filterSidebar() {
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;
         var matchR = !onlyUnreviewed || +(row.dataset.unreviewed || 0) > 0;
-        var shown = matchQ && matchT && matchC && matchY && matchR;
+        var matchIntake = !intake || row.dataset.holidayIntake === intake;
+        var shown = matchQ && matchT && matchC && matchY && matchR && matchIntake;
         row.style.display = shown ? '' : 'none';
         if (shown) anyShown = true;
     });
@@ -1435,17 +1444,25 @@ function refreshSidebarRow(id) {
         .catch(function() {});
 }
 
-function manageSave(path, fields, message, failText) {
-    managePost(path, fields)
+function manageSave(path, fields, message, failText, keepFormOnError) {
+    return managePost(path, fields)
         .then(function(res) {
             if (!res.ok || !res.data.ok) {
-                alert(window.csrfMessage(res.data, failText));
-                reloadProfile();
+                var error = window.csrfMessage(res.data, failText);
+                if (keepFormOnError) {
+                    showToast(error, true);
+                } else {
+                    alert(error);
+                    reloadProfile();
+                }
                 return;
             }
             reloadProfile(message);
         })
-        .catch(function() { alert(NET_ERROR); });
+        .catch(function() {
+            if (keepFormOnError) showToast(NET_ERROR, true);
+            else alert(NET_ERROR);
+        });
 }
 
 function saveCurator(sel) {
@@ -1477,7 +1494,7 @@ function savePayment() {
         pay_price: document.getElementById('manage-pay-price').value,
         paid_month: document.getElementById('manage-paid-month').value,
         pay_next_tariff: document.getElementById('manage-pay-next-tariff').value
-    }, 'Оплата сохранена', 'Не удалось сохранить оплату');
+    }, 'Оплата сохранена', 'Не удалось сохранить оплату', true);
 }
 
 function markPayment() {
@@ -1487,7 +1504,7 @@ function markPayment() {
         amount: document.getElementById('manage-mark-amount').value,
         paid_on: document.getElementById('manage-mark-date').value,
         comment: document.getElementById('manage-mark-comment').value
-    }, 'Оплата отмечена', 'Не удалось отметить оплату');
+    }, 'Оплата отмечена', 'Не удалось отметить оплату', true);
 }
 
 function saveLabels() {
@@ -1839,16 +1856,15 @@ function buildRecentLogins(rows) {
 function buildStatsMeetings(a) {
     var m = a.meetings || {};
     var joins = m.joins || [];
-    var html = '<div class="section-title">Занятия</div><div class="activity-tiles">'
-        + activityTile('Был на занятиях', joins.length)
-        + '</div>'
-        + '<div class="profile-field-label">На каких занятиях был</div>';
+    var html = '<section class="student-stat-section"><h2 class="section-title">Занятия</h2><div class="activity-tiles">'
+        + activityTile('Занятий с отметкой', joins.length)
+        + '</div>';
     if (!joins.length) {
-        return html + '<div class="no-works">Пока не был ни на одном занятии: не нажимал «Подключиться», и преподаватель не отмечал.</div>';
+        return html + '<div class="no-works">Пока нет отметок о занятиях</div></section>';
     }
     return html + '<ul class="activity-feed">' + joins.map(function(j) {
-        return statsRow(j.event, statsBadge(j.by_staff ? 'отметил преподаватель' : 'нажал кнопку'));
-    }).join('') + '</ul>';
+        return statsRow(j.event, statsBadge(j.by_staff ? 'отметил преподаватель' : 'открыл ссылку'));
+    }).join('') + '</ul></section>';
 }
 
 function buildStatistics(data) {
@@ -1858,9 +1874,9 @@ function buildStatistics(data) {
     var sc = data.school;
     var html = '';
 
-    html += '<div class="section-title">Задания</div>';
+    html += '<section class="student-stat-section"><h2 class="section-title">Задания</h2>';
     if (t.behind) {
-        html += '<div class="profile-status-badges activity-note"><span class="profile-badge no">Отстаёт от графика: прошлая неделя не закрыта</span></div>';
+        html += '<div class="profile-status-badges activity-note"><span class="profile-badge no">Прошлая неделя не закрыта</span></div>';
     }
     html += '<div class="activity-tiles">'
         + activityTile('Сделано', t.done || 0)
@@ -1871,28 +1887,28 @@ function buildStatistics(data) {
 
     if (sc) html += buildStatsTimed(sc) + buildStatsDiagnostics(sc);
 
-    html += '<div class="section-title">Видео</div><div class="activity-tiles">'
+    html += '</section><section class="student-stat-section"><h2 class="section-title">Видео</h2><div class="activity-tiles">'
         + activityTile('Начал смотреть', v.started || 0)
         + activityTile('Досмотрел', v.completed || 0)
-        + activityTile('Открывал за ' + a.days + ' дней', v.opens || 0)
-        + activityTile('Последний просмотр', v.last_opened || 'Не смотрел', true)
+        + activityTile('Открытий за ' + a.days + ' дней', v.opens || 0)
+        + activityTile('Последнее открытие видео', v.last_opened || 'Не открывал', true)
         + '</div>';
     if (sc) html += buildStatsVideos(sc);
     if (data.video_credit) html += buildVideoCredit(data.video_credit);
 
-    html += buildStatsMeetings(a);
+    html += '</section>' + buildStatsMeetings(a);
 
-    html += '<div class="section-title">Входы и загрузки</div><div class="activity-tiles">'
+    html += '<section class="student-stat-section"><h2 class="section-title">Входы и загрузки</h2><div class="activity-tiles">'
         + activityTile('Был на платформе', a.last_login || 'Не заходил', true)
-        + activityTile('На платформе за ' + a.days + ' дней', a.time_on_platform || '0 м.', true)
+        + activityTile('Время на платформе за ' + a.days + ' дней', a.time_on_platform || '0 м.', true)
         + activityTile('Входов за ' + a.days + ' дней', a.logins || 0)
         + activityTile('Загрузок за ' + a.days + ' дней', a.uploads || 0)
         + '</div>';
     if (data.recent_logins) html += buildRecentLogins(data.recent_logins);
 
-    html += '<div class="section-title">Последние события</div>';
+    html += '</section><section class="student-stat-section"><h2 class="section-title">Последние события</h2>';
     var feed = a.feed || [];
-    if (!feed.length) return html + '<div class="no-works">Событий пока нет.</div>';
+    if (!feed.length) return html + '<div class="no-works">Событий пока нет.</div></section>';
     html += '<ul class="activity-feed">' + feed.map(function(e) {
         return '<li class="activity-feed-item' + (e.kind === 'staff' ? ' activity-feed-item--staff' : '') + '">'
             + '<span class="activity-feed-time">' + esc(e.at) + '</span>'
@@ -1900,7 +1916,7 @@ function buildStatistics(data) {
             + (e.details ? ' · ' + esc(e.details) : '')
             + (e.by ? ' · ' + esc(e.by) : '')
             + '</span></li>';
-    }).join('') + '</ul>';
+    }).join('') + '</ul></section>';
     return html;
 }
 
@@ -2011,6 +2027,7 @@ function _uploadRenderPreviews() {
     var row = document.getElementById('upload-count-row');
     var label = document.getElementById('upload-count-label');
     var btn = document.getElementById('upload-submit-btn');
+    grid.querySelectorAll('img').forEach(function (img) { URL.revokeObjectURL(img.src); });
     grid.innerHTML = '';
     if (!_uploadFiles.length) {
         row.style.display = 'none';
@@ -2099,6 +2116,7 @@ function submitUpload(e) {
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/cabinet/students/' + studentId + '/upload');
+    xhr.timeout = 900000;
     xhr.setRequestHeader('X-CSRF-Token', token);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.setRequestHeader('Accept', 'application/json');
@@ -2107,7 +2125,7 @@ function submitUpload(e) {
         if (!ev.lengthComputable) return;
         btn.textContent = 'Загружаем ' + Math.round((ev.loaded / ev.total) * 100) + '%…';
     };
-    xhr.onerror = function() {
+    xhr.onerror = xhr.ontimeout = xhr.onabort = function() {
         finishUpload();
         alert(NET_ERROR);
     };

@@ -92,6 +92,19 @@ def _is_sent_staff(message: TaskBlockFeedbackMessage) -> bool:
     return message.sender_role != ROLE_STUDENT and not message.is_draft
 
 
+def current_submission_has_feedback(submission: TaskBlockSubmission, feedback: TaskBlockFeedback | None) -> bool:
+    """Feedback sent for a previous photo version does not complete a new review."""
+    from app.services.tz import _as_utc
+
+    if feedback is None or submission.submitted_at is None:
+        return False
+    submitted_at = _as_utc(submission.submitted_at)
+    return any(
+        _is_sent_staff(message) and _as_utc(message.sent_at or message.created_at) >= submitted_at
+        for message in feedback.messages
+    )
+
+
 def reply_limit(db: DBSession, submission: TaskBlockSubmission) -> int | None:
     """Сколько сообщений ученик может написать в диалоге по этой сдаче;
     None — ответ ему закрыт: тип блока без сдачи или тариф **сейчас** (О6)

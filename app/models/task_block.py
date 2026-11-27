@@ -50,6 +50,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -337,6 +338,8 @@ class TaskBlock(Base):
     block_type: Mapped[str] = mapped_column(String(20), nullable=False, default=BLOCK_TEXT)
     # Scoped to the task. Existing section IDs remain the anchors for student data.
     universal_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Ancestors in root-to-leaf order. Existing leaf IDs stay stable for submissions.
+    container_path: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     portfolio_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -414,6 +417,7 @@ class TaskBlock(Base):
     # на стороне API) — та же конвенция, что у `day_bounds`, чтобы наивное
     # время из SQLite в тестах трактовалось как UTC без сюрпризов.
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lesson_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Закрытие доступа по календарю — обратная сторона `opens_at` (владелец
     # 10.09.2026, механика предобучения 17.09-03.10: «27 сентября в 23:30
@@ -1116,6 +1120,7 @@ class TaskBlockSubmission(Base):
     needs_revision: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     needs_revision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    control_review_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
     # Итоговая оценка за сдачу. Не связана с reviewed_at: преподаватель может
     # сначала открыть диалог и дать рекомендации, а оценить после доработки.
     score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)

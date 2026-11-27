@@ -486,6 +486,11 @@ def test_mock_exam_close_and_rate(db, user_factory, session_factory, client):
     message_url = f"/cabinet/feedback/{work.id}/message"
     headers = {"Accept": "application/json"}
     assert client.post(message_url, data={"text": "Разбор"}, headers=headers).status_code == 200
+    db.refresh(work)
+    db.refresh(cycle)
+    assert work.viewed_at is not None and work.viewed_by_id == curator.id
+    assert cycle.viewed_at is not None and cycle.viewed_by_id == curator.id
+    assert work.score is None and cycle.closed_at is None
     assert client.post(f"/cabinet/feedback/{work.id}/close-feedback").json()["closed_now"] is True
     assert client.post(message_url, data={"text": "Ещё"}, headers=headers).status_code == 403
 

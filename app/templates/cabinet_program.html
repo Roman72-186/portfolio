@@ -8,19 +8,17 @@ FORM: Operate, расширение кабинета.
 #}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=66">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=27">
 {% endblock %}
 {% block content %}
 <div class="prg-page ios-prg-cal">
     {% include "partials/program_tabs.html" %}
-    <div class="prg-head">
-        <div class="prg-head-copy">
-            <h1>Актуальное образовательное пространство</h1>
-            <p>Выберите день и соберите программу: пробник, видеоматериал, самостоятельная работа.</p>
-        </div>
+    {% from "components/program_page_header.html" import program_page_header with context %}
+    {% set header_actions %}
         <a class="btn-outline" href="/cabinet/staff/program?month={{ current_month }}">Текущий месяц</a>
-    </div>
+    {% endset %}
+    {{ program_page_header('Актуальное образовательное пространство', 'Выберите день, чтобы добавить пробник, видеоматериал или самостоятельную работу.', actions=header_actions) }}
 
     <div class="prg-monthbar">
         <a class="btn-outline prg-nav" href="/cabinet/staff/program?month={{ prev_month }}" aria-label="Предыдущий месяц">←</a>

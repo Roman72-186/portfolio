@@ -8,15 +8,19 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.feedback import Feedback
-from app.models.work import Work
+from app.models.work import PendingWorkFileDeletion, Work
 from app.services import s3 as s3_service
 from app.services.utils import compress_image
 
 # Превью для квадратиков карточки ученика: 84–88px на экране, на айфоне это
 # ~260 физических пикселей. Больше не нужно, меньше — видно мыло.
+logger = logging.getLogger(__name__)
+
 THUMB_MAX_PX = 320
 THUMB_QUALITY = 78
 
@@ -69,10 +73,49 @@ def delete_works_with_dependents(db: DBSession, works: list[Work]) -> int:
     if db.query(Feedback.id).filter(Feedback.work_id.in_(list(by_id))).first():
         raise WorkHasFeedbackError(WORK_HAS_FEEDBACK)
 
+    pending = db.info.setdefault("work_file_deletions", [])
     ordered = sorted(by_id.values(), key=lambda w: 1 if w.is_final else 0)
     for work in ordered:
         if work.s3_path:
-            s3_service.delete_from_s3(work.s3_path)
-            s3_service.delete_from_s3(s3_service.s3_path_thumb(work.s3_path))
+            objects = [
+                PendingWorkFileDeletion(path=work.s3_path),
+                PendingWorkFileDeletion(path=s3_service.s3_path_thumb(work.s3_path)),
+            ]
+            db.add_all(objects)
+            pending.extend(objects)
         db.delete(work)
     return len(ordered)
+
+
+def commit_work_deletions(db: DBSession) -> None:
+    pending = db.info.pop("work_file_deletions", [])
+    db.flush()
+    pending_ids = [item.id for item in pending]
+    db.commit()
+    if pending_ids:
+        try:
+            process_work_file_deletions(db, ids=pending_ids, limit=len(pending_ids))
+        except Exception:
+            db.rollback()
+            logger.exception("Immediate work file cleanup failed; pending rows will be retried")
+
+
+def process_work_file_deletions(
+    db: DBSession, *, ids: list[int] | None = None, limit: int = 100,
+) -> None:
+    query = db.query(PendingWorkFileDeletion)
+    if ids is not None:
+        query = query.filter(PendingWorkFileDeletion.id.in_(ids))
+    pending = (
+        query
+        .order_by(PendingWorkFileDeletion.attempts, PendingWorkFileDeletion.id)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+    for item in pending:
+        if s3_service.delete_from_s3(item.path):
+            db.delete(item)
+        else:
+            item.attempts += 1
+    db.commit()

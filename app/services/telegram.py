@@ -6,6 +6,7 @@
 приложения (app/main.py), общий request_with_retry для устойчивости к
 временным сбоям API.
 """
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -22,25 +23,37 @@ logger = logging.getLogger(__name__)
 _MEMBER_STATUSES = {"member", "administrator", "creator"}
 
 _client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def init_client() -> None:
-    global _client
+    global _client, _client_loop
+    _client_loop = asyncio.get_running_loop()
     _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
 
 
 async def close_client() -> None:
-    global _client
+    global _client, _client_loop
     if _client and not _client.is_closed:
         await _client.aclose()
     _client = None
+    _client_loop = None
 
 
-async def _get_client() -> httpx.AsyncClient:
-    global _client
-    if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=15.0, proxy=settings.telegram_proxy_url or None)
-    return _client
+async def _post(url: str, **kwargs) -> httpx.Response:
+    """Keep pooled connections on their owning lifespan loop.
+
+    Scheduler threads and standalone asyncio.run calls own a temporary client,
+    closed before their loop exits. They never replace the web worker pool.
+    """
+    loop = asyncio.get_running_loop()
+    if (_client is not None and not _client.is_closed
+            and (_client_loop is None or _client_loop is loop)):
+        return await _client.post(url, **kwargs)
+    async with httpx.AsyncClient(
+        timeout=15.0, proxy=settings.telegram_proxy_url or None,
+    ) as client:
+        return await client.post(url, **kwargs)
 
 
 def _api_url(method: str) -> str:
@@ -63,7 +76,6 @@ async def send_message(
         logger.warning("telegram.send_message: TELEGRAM_BOT_TOKEN не настроен")
         return False
 
-    client = await _get_client()
     payload: dict = {
         "chat_id": chat_id,
         "text": text,
@@ -87,7 +99,7 @@ async def send_message(
 
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url("sendMessage"), json=payload),
+            lambda: _post(_api_url("sendMessage"), json=payload),
             label="Telegram sendMessage",
         )
     except Exception as exc:
@@ -103,7 +115,10 @@ async def send_message(
             resp.status_code, chat_id, resp.text[:300],
         )
         return False
-    return True
+    try:
+        return resp.json().get("ok") is True
+    except (ValueError, AttributeError):
+        return False
 
 
 async def send_voice(
@@ -197,10 +212,9 @@ async def _post_files(method: str, chat_id: int, data: dict, files: dict) -> dic
         logger.warning("telegram.%s: TELEGRAM_BOT_TOKEN не настроен", method)
         return None
 
-    client = await _get_client()
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url(method), data=data, files=files, timeout=60.0),
+            lambda: _post(_api_url(method), data=data, files=files, timeout=60.0),
             label=f"Telegram {method}",
         )
     except Exception as exc:
@@ -233,10 +247,9 @@ async def check_channel_membership(user_id: int) -> bool | None:
         logger.warning("check_channel_membership: bot token или channel id не настроены")
         return None
 
-    client = await _get_client()
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url("getChatMember"), json={
+            lambda: _post(_api_url("getChatMember"), json={
                 "chat_id": settings.telegram_channel_id,
                 "user_id": user_id,
             }),
@@ -285,10 +298,9 @@ async def get_chat_username(
         logger.warning("get_chat_username: TELEGRAM_BOT_TOKEN не настроен")
         return False, None
 
-    client = await _get_client()
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url("getChat"), json={"chat_id": chat_id}, timeout=timeout),
+            lambda: _post(_api_url("getChat"), json={"chat_id": chat_id}, timeout=timeout),
             label="Telegram getChat",
             max_attempts=max_attempts,
         )
@@ -364,11 +376,10 @@ async def call_api(
         logger.warning("telegram.%s: TELEGRAM_BOT_TOKEN не настроен", method)
         return ApiResult(ok=False, description="Бот не настроен")
 
-    client = await _get_client()
     form = {key: str(value) for key, value in data.items() if value is not None}
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url(method), data=form, files=files, timeout=timeout),
+            lambda: _post(_api_url(method), data=form, files=files, timeout=timeout),
             label=f"Telegram {method}",
         )
     except Exception as exc:

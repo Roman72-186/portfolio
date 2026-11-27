@@ -174,6 +174,6 @@ def test_repeated_requests_do_not_add_queries(superadmin_client, sql_counter):
         assert resp.status_code == 200
         counts.append(counter.count)
 
-    assert max(counts) <= min(counts) + 2, (
-        f"Число запросов скачет между заходами: {counts}"
+    assert max(counts[1:]) <= counts[0] + 2, (
+        f"Повторный запрос дороже первого: {counts}"
     )

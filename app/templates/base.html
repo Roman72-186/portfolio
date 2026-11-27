@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+{% set staff_workspace = user is defined and user and user.role_name in ('админ', 'суперадмин') and (user.nav_rank or user.role_rank) >= 4 %}
+{% set student_workspace = user is defined and user and user.role_rank == 1 and not user.public_purchase_pending %}
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -61,8 +63,15 @@
     <!-- Base styles: versioned for cache-busting -->
     <link rel="stylesheet" href="/static/css/base.css?v=90">
     {% block extra_styles %}{% endblock %}
+    {% if student_workspace %}
+    <link rel="stylesheet" href="/static/css/student_workspace.css?v=4">
+    {% endif %}
+    {% if staff_workspace %}
+    <link rel="stylesheet" href="/static/css/staff_workspace.css?v=1">
+    <script src="/static/js/staff_workspace.js?v=2" defer></script>
+    {% endif %}
 </head>
-<body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
+<body class="{% if user is defined and user and user.impersonated_by_id %}is-impersonating {% endif %}{% if staff_workspace %}staff-workspace{% elif student_workspace %}student-workspace{% endif %}">
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
     {% if user is defined and user and user.role_rank == 1 and not user.public_purchase_pending %}
     {% include "partials/back_to_learning.html" %}
@@ -251,7 +260,7 @@
        открытой вкладки, а не только у формы с фото (разбор — в самом файле). #}
     <script src="/static/js/csrf.js?v=3"></script>
     {% if user is defined and user and user.role_rank == 1 %}
-    <script src="/static/js/push-toggle.js?v=1"></script>
+    <script src="/static/js/push-toggle.js?v=3"></script>
     {% endif %}
     {# «Был на платформе» и время на платформе — пинг видимой вкладки, только
        ученику и не во входе «глазами» (`services/presence.py`). #}
@@ -291,9 +300,9 @@
             {# Персонал (куратор и выше) — свой экран без push-переключателя,
                у /cabinet/notifications ученический макет и ссылка «← Кабинет»
                ведёт в /cabinet/learning, к персоналу отношения не имеющий. #}
-            <a href="/cabinet/staff/notifications">Все уведомления →</a>
+            <a href="/cabinet/staff/notifications">Все уведомления</a>
             {% else %}
-            <a href="/cabinet/notifications">Все уведомления и push →</a>
+            <a href="/cabinet/notifications">Все уведомления и настройки</a>
             {% endif %}
         </div>
     </div>
@@ -301,7 +310,7 @@
     {# Код колокольчика — в `/static/js/notif-bell.js` (с 01.10.2026, аудит АОП ученика,
        п. 4.1): он на каждой странице, встроенным качался заново при каждом заходе.
        Правишь файл — поднимай `?v=` здесь. #}
-    <script src="/static/js/notif-bell.js?v=3" data-csrf-token="{{ csrf_token(request) }}"></script>
+    <script src="/static/js/notif-bell.js?v=4" data-csrf-token="{{ csrf_token(request) }}"></script>
     {% endif %}
 
     {# Меню — по родной роли (`nav_rank`): в разделе, открытом сверх роли,

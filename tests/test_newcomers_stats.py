@@ -100,8 +100,9 @@ def test_activity_page_newcomers_mode(client, db, user_factory, session_factory,
     assert "Вход в продукт" in annual
 
 
-def test_activity_page_newcomers_empty(client, db, session_factory, admin_user):
+def test_activity_page_newcomers_empty(client, db, session_factory, admin_user, user_factory, rendered):
+    user_factory(vk_id=330099, name="Ученик годового курса")
     client = _login(client, session_factory, admin_user)
     page = client.get(f"/cabinet/superadmin/activity?program={REPORT_NEWCOMERS}")
     assert page.status_code == 200
-    assert "Новеньких пока нет" in page.text
+    assert rendered("superadmin_activity.html")["student_activity"]["students"] == []

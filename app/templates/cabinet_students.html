@@ -2,7 +2,7 @@
 {% block title %}Ученики{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=15">
-<link rel="stylesheet" href="/static/css/cabinet_students.css?v=26">
+<link rel="stylesheet" href="/static/css/cabinet_students.css?v=portfolio-return-1">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 {% endblock %}
 {% block content %}
@@ -25,12 +25,15 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
     <div class="sidebar">
         <div class="sidebar-header">
             <h1 class="sidebar-title">{{ sidebar_title }}</h1>
+            {% if can(user, "students:first_week_attendance") %}
+            <a href="/cabinet/staff/first-week-attendance" class="btn-outline">Посещаемость первой недели</a>
+            {% endif %}
             {# Годовой / Каникулярный (владелец 26.10.2026) — общий партиал,
                данные `report_scope.report_program_switch`. #}
             {% if program_switch %}
             <div class="sidebar-program-switch">{% include "partials/program_switch.html" %}</div>
             {% endif %}
-            <input type="text" class="sidebar-search" placeholder="{{ 'Имя, ник в Telegram или номер…' if is_admin_panel else 'Имя или номер ученика…' }}"
+            <input type="text" class="sidebar-search" placeholder="Имя, ник в Telegram или номер…"
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
@@ -139,7 +142,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             {% if not is_archive_view %}
             <select class="sidebar-select" id="filter-unreviewed" aria-label="Фильтр по проверке" onchange="filterSidebar()">
                 <option value="">Все ученики</option>
-                <option value="1">Есть непроверенное</option>
+                <option value="1">Есть работы на проверку</option>
             </select>
             {% endif %}
             {% if show_curator_filter and curators %}
@@ -161,11 +164,24 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
             {% endif %}
         </div>
         {% endif %}
+        {% if is_holiday_view and can_edit_card and (user.nav_rank or user.role_rank) >= 4 %}
+        <a class="btn-outline" href="/cabinet/holiday-curators">Назначить кураторов</a>
+        {% endif %}
+        {% if is_holiday_view and holiday_intake_options %}
+        <div class="sidebar-filters">
+            <select class="sidebar-select" id="filter-holiday-intake" aria-label="Набор" onchange="filterSidebar()">
+                <option value="">Все наборы</option>
+                {% for key, label in holiday_intake_options %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
             {% include "partials/student_row.html" %}
             {% endfor %}
-            {% if sidebar_students %}<div class="no-works" id="student-list-empty" hidden style="padding:24px 16px;text-align:center">Никого не нашли. Измените поиск или тариф.</div>{% endif %}
+            {% if sidebar_students %}<div class="no-works" id="student-list-empty" hidden style="padding:24px 16px;text-align:center">Ученики не найдены. Измените запрос или фильтры.</div>{% endif %}
             {% if not sidebar_students %}
             <div style="padding:24px 16px;font-size:13px;color:var(--dim);text-align:center">
                 {% if active_hard_filters %}
@@ -184,10 +200,14 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         <h1 class="profile-h1">Профиль ученика</h1>
 
         <!-- Mobile back button -->
+        {% if review_return_url %}
+        <a class="back-link review-return-link" href="{{ review_return_url }}">← К проверке</a>
+        {% else %}
         <button class="mobile-back-btn" onclick="mobileBackToList()">
             <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             К списку учеников
         </button>
+        {% endif %}
 
         <!-- Tab bar (shown after student selected) -->
         <div class="tab-bar" id="tab-bar">
@@ -213,7 +233,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
 {% include "partials/cycle_calendar_lib.html" %}
 
 <!-- Toast -->
-<div class="save-toast" id="save-toast">Балл сохранён</div>
+<div class="save-toast" id="save-toast" role="status" aria-atomic="true"></div>
 
 {# Пароль и ссылки входа из блока «Управление» показываются здесь один раз
    (владелец 05.10.2026: всё про ученика — в его карточке, без ухода в «Люди»). #}
@@ -239,7 +259,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
         <form id="upload-form" onsubmit="return submitUpload(event)">
             <input type="hidden" name="csrf_token" value="">
             <div class="upload-field">
-                <label class="upload-field-label" for="upload-work-type">Тип работы</label>
+                <label class="upload-field-label" for="upload-work-type">Раздел портфолио</label>
                 <select class="upload-select" name="work_type" id="upload-work-type" required onchange="syncUploadPeriod()">
                     <option value="before">До обучения</option>
                     <option value="after" selected>В процессе обучения</option>
@@ -262,12 +282,12 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                 </select>
             </div>
             <div class="upload-field">
-                <label class="upload-field-label" id="upload-photo-label" for="upload-photo-input">Фотографии (до 10)</label>
+                <label class="upload-field-label" id="upload-photo-label" for="upload-photo-input">Фотографии</label>
                 <label class="upload-dropzone" id="upload-dropzone">
                     <input type="file" name="photos" id="upload-photo-input" multiple accept="image/*" required>
                     <div class="upload-dz-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-                    <div class="upload-dz-title">Нажмите или перетащите фото</div>
-                    <div class="upload-dz-hint" id="upload-dz-hint">До 10 МБ · до 10 штук</div>
+                    <div class="upload-dz-title">Выбрать или перетащить фото</div>
+                    <div class="upload-dz-hint" id="upload-dz-hint">До 20 фото, до 10 МБ каждое</div>
                 </label>
                 <div class="upload-count-row" id="upload-count-row" style="display:none">
                     <span id="upload-count-label">Выбрано: 0</span>
@@ -295,5 +315,5 @@ const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 </script>
-<script src="/static/js/cabinet_students.js?v=54"></script>
+<script src="/static/js/cabinet_students.js?v=20261127"></script>
 {% endblock %}

@@ -36,7 +36,11 @@
         {% if program_opens_text %}
         <p data-program-opens>Программа откроется {{ program_opens_text }} по Москве.</p>
         {% endif %}
-        {% if user.profile_completed %}
+        {% if user.access_expired %}
+        <div class="prs-access-closed-actions">
+            <a href="/cabinet/my-feedback" class="btn-outline">Моя обратная связь</a>
+        </div>
+        {% elif user.profile_completed %}
         <div class="prs-access-closed-actions">
             <a href="/cabinet/learning" class="btn-blue">Открыть обучение</a>
         </div>
@@ -74,14 +78,14 @@
     {% if not owned %}
     <div class="prs-access-closed">
         <h2>Оплата пока не открыта</h2>
-        <p>Как только школа откроет набор, здесь появятся треки. Если что-то срочно – напиши в службу заботы.</p>
-        <div class="prs-access-closed-actions">
-            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в службу заботы</a>
-        </div>
+        <p>Как только школа откроет набор, здесь появятся треки.</p>
     </div>
     {% endif %}
     {% endfor %}
 
+    <div class="prs-access-closed-actions">
+        <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
+    </div>
 </div>
 {% if tracks %}
 {% include "partials/pay_opening.html" %}

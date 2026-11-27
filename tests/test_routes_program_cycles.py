@@ -43,9 +43,10 @@ def test_student_cannot_open_cycles(auth_client):
 
 def test_admin_opens_cycles(admin_client):
     client, _ = admin_client
+    assert client.post(PAGE, json=_payload(title="Цикл для списка")).status_code == 200
     resp = client.get(PAGE)
     assert resp.status_code == 200
-    assert "Циклы программы" in resp.text
+    assert "Цикл для списка" in resp.text
 
 
 # ── создание ────────────────────────────────────────────────────────────────
@@ -200,9 +201,15 @@ def test_cycle_card_warns_about_videos_bound_to_the_topic(admin_client, db, rend
     assert (card["items_count"], card["videos_count"]) == (0, 1)
 
 
-def test_student_cannot_delete_cycle(auth_client):
-    client, _ = auth_client
-    assert client.post(f"{PAGE}/1/delete").status_code in (302, 403)
+def test_student_cannot_delete_cycle(auth_client, db):
+    client, student = auth_client
+    from test_cycle_stats import _cycle
+
+    cycle = _cycle(db, student)
+    response = client.post(f"{PAGE}/{cycle.id}/delete", follow_redirects=False)
+    assert response.status_code == 403
+    db.expire_all()
+    assert db.get(LearningTopic, cycle.id) is not None
 
 
 def test_deleting_a_missing_cycle_gives_404(admin_client):

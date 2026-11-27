@@ -10,7 +10,7 @@
     </header>
     <div class="lab-config-grid">
         <section class="lab-config-panel" aria-labelledby="lab-pick-title">
-            <h2 id="lab-pick-title">Что открыть</h2>
+            <h2 id="lab-pick-title">Фигура или раздел</h2>
             <label for="lab-card-search">Найти фигуру</label>
             <input id="lab-card-search" type="search" placeholder="Название или раздел" autocomplete="off">
             <label for="lab-card">Фигура</label>
@@ -22,7 +22,7 @@
             <select id="lab-section"><option value="">Одна фигура</option></select>
         </section>
         <section class="lab-config-panel" aria-labelledby="lab-access-title">
-            <h2 id="lab-access-title">Кому открыта</h2>
+            <h2 id="lab-access-title">Кто увидит фигуры</h2>
             <p class="lab-config-hint">Ученику достаточно быть выбранным поимённо. Если отмечены тариф, уровень и трек, он должен подходить под каждый выбранный пункт.</p>
             <label><input type="checkbox" id="lab-everyone">Всем ученикам, включая новых</label>
             <fieldset><legend>Тарифы</legend>
@@ -35,7 +35,7 @@
                 <div class="lab-config-checks">{% for tag in tags %}<label><input type="checkbox" name="tag" value="{{ tag.id }}">{{ tag.name }}</label>{% endfor %}</div>
             </fieldset>
             <label for="lab-student-search">Ученики поимённо</label>
-            <input id="lab-student-search" type="search" placeholder="Найти ученика" autocomplete="off">
+            <input id="lab-student-search" type="search" placeholder="Имя ученика" autocomplete="off">
             <select id="lab-students" multiple size="7" aria-label="Выбрать учеников поимённо">
                 {% for student in students %}<option value="{{ student.id }}">{{ student.name }}</option>{% endfor %}
             </select>

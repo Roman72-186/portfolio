@@ -428,11 +428,6 @@ async function check({question, scale, mounted, expected, submit = true}) {
     // Реальные formOpen и collectAnswers; вместо разметки полей - DOM-заглушка.
     const renderer = api.create({});
     renderer.render = () => node();
-    const collectAnswers = renderer.collectAnswers;
-    renderer.collectAnswers = (blocks, scope) => {
-        assert.deepEqual(Array.from(blocks, b => b.id), [1]);
-        return collectAnswers(blocks, scope);
-    };
     api.create = () => renderer;
     api.runPoll = () => false; // сохранённый опрос рисуется без мастера
     api.el = (tag) => {const result = node(); if (tag === 'form') forms.push(result); return result;};
@@ -443,7 +438,7 @@ async function check({question, scale, mounted, expected, submit = true}) {
         forms[0].submit({preventDefault() {}});
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(requests.length, 1);
-        assert.equal(requests[0].answers[0].text, 'Новый ответ');
+        assert.deepEqual(requests[0].answers.map(a => a.text), ['Новый ответ']);
     }
 }
 (async () => {

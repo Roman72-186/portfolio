@@ -521,6 +521,14 @@ async def post_dialog_message(
     )
     if intermediate_score_value is not None:
         cycle.intermediate_score = intermediate_score_value
+    if not work.needs_revision:
+        now = datetime.now(timezone.utc)
+        if work.viewed_at is None:
+            work.viewed_at = now
+            work.viewed_by_id = user["user_id"]
+        if cycle.viewed_at is None and not cycle.is_on_revision:
+            cycle.viewed_at = now
+            cycle.viewed_by_id = user["user_id"]
 
     db.commit()
     background_tasks.add_task(notify, notification.id)

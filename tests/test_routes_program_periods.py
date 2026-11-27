@@ -63,11 +63,12 @@ def test_student_cannot_open_periods(auth_client):
     assert client.get(PERIODS_PAGE, follow_redirects=False).status_code in (302, 403)
 
 
-def test_admin_opens_periods(admin_client):
+def test_admin_opens_periods(admin_client, db):
     client, _ = admin_client
+    period = _period(client, db, title="Период для списка")
     resp = client.get(PERIODS_PAGE)
     assert resp.status_code == 200
-    assert "Периоды программы" in resp.text
+    assert period.title in resp.text
 
 
 # ── период ──────────────────────────────────────────────────────────────────
@@ -349,7 +350,10 @@ def test_tabs_inside_period_lead_into_period(admin_client, db):
     inside = _cycle(client, db, stage_id=stage.id, offset=1)
     outside = _cycle(client, db, stage_id=other.id, offset=10)
 
-    assert client.get(f"{STAGES_PAGE}?period={period.id}").status_code == 200
+    stages = client.get(f"{STAGES_PAGE}?period={period.id}")
+    assert stages.status_code == 200
+    assert '<ol class="prg-hint prg-workspace-path" data-program-path' in stages.text
+    assert f'<span aria-current="page">{period.title}</span>' in stages.text
 
     cycles = client.get(f"{CYCLES_PAGE}?period={period.id}").text
     assert f'data-cycle-id="{inside.id}"' in cycles

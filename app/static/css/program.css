@@ -1,8 +1,8 @@
 /* ───────────────────────────────────────────────
    Учебные программы: календарь месяца и сборка дня.
    Свой файл, а не base.css: тот правит параллельная сессия, и общий ?v=
-   бампали бы оба агента. Меняешь этот файл — подними ?v= в шаблонах
-   cabinet_program.html и cabinet_program_day.html.
+   бампали бы оба агента. Меняешь этот файл – подними ?v= во всех
+   шаблонах, которые его подключают.
    ─────────────────────────────────────────────── */
 
 .prg-page { max-width: 1040px; margin: 0 auto; }
@@ -15,6 +15,97 @@
 .prg-review-demo-action { margin-block-start: var(--s-5); }
 .prg-head h1 { margin: 0 0 6px; font: 800 24px/1.25 var(--font-display); color: var(--text); }
 .prg-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+.prg-workspace-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: var(--s-3);
+    margin-bottom: var(--s-6);
+    padding: clamp(var(--s-4), 3vw, var(--s-6));
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    overflow-wrap: anywhere;
+}
+.prg-workspace-header > * { max-inline-size: 100%; }
+.prg-workspace-header > .seg { flex-wrap: wrap; }
+
+.prg-workspace-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s-3) var(--s-5);
+    inline-size: 100%;
+}
+.prg-workspace-heading {
+    flex: 1 1 25rem;
+    min-inline-size: 0;
+    display: grid;
+    gap: var(--s-1);
+}
+.prg-workspace-heading h1 {
+    margin: 0;
+    font: 800 clamp(1.5rem, 3vw, 2rem)/1.25 var(--font-display);
+    color: var(--ink);
+}
+.prg-workspace-description {
+    max-inline-size: 72ch;
+    color: var(--muted);
+    font-size: var(--fs-body);
+    line-height: 1.55;
+}
+.prg-workspace-context > p { margin: 0; }
+.prg-workspace-path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--s-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.prg-workspace-path li { min-inline-size: 0; }
+.prg-workspace-path a {
+    display: inline-block;
+    min-inline-size: 24px;
+    min-block-size: 24px;
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+.prg-workspace-path [aria-current="page"] {
+    color: var(--ink);
+    font-weight: 600;
+}
+/* h1 уже показывает это название. Для скринридера сохраняем звено в списке. */
+.prg-workspace-path-current-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.prg-workspace-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+}
+.prg-workspace-context,
+.prg-workspace-settings {
+    display: grid;
+    justify-items: start;
+    gap: var(--s-2);
+    inline-size: 100%;
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--line);
+}
+.prg-workspace-header :is(.btn-blue, .btn-outline) { white-space: normal; }
+.prg-workspace-header :where(a, button, summary):focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+}
 
 /* ── Полоса месяца ──────────────────────────────────────────────────── */
 
@@ -245,14 +336,20 @@
    найденное и переиспользованное стекло `.is-centered` из вкладок недели
    (комментарий там же). Вертикальный padding строки увеличен под вылет
    масштабированной плашки, как и у ученической карусели. */
-.prg-cycle-switch { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 0 10px; margin-bottom: 12px; }
+.prg-cycle-switch { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .prg-cycle-pill {
-    position: relative;
-    display: inline-flex; align-items: center; padding: 6px 12px;
-    border-radius: var(--r-pill); border: 1px solid var(--line);
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 2.75rem;
+    min-inline-size: 0;
+    box-sizing: border-box;
+    padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
     background: var(--surface);
-    font: 700 13px/1 var(--font-body); color: var(--muted); text-decoration: none;
-    transition: transform 160ms ease, background 120ms ease, color 120ms ease;
+    color: var(--muted);
+    font: 700 13px/1.3 var(--font-body);
+    text-decoration: none;
 }
 @media (hover: hover) and (pointer: fine) {
     .prg-cycle-pill:hover:not(.is-active) {
@@ -261,28 +358,9 @@
     }
 }
 .prg-cycle-pill.is-active {
-    background: var(--blue-fill); border-color: var(--blue-fill); color: #fff;
-    transform: scale(1.2); z-index: 2;
-}
-/* На касание плашка выходила 27px (аудит 29.09.2026). Вид компактный по
-   решению владельца (24.09.2026), поэтому видимо она подрастает чуть-чуть, а
-   до 44px добирает невидимая зона нажатия `::before` (`::after` занят
-   стеклом активной плашки). Зазор между рядами растёт вместе с зоной —
-   иначе зоны соседних рядов наезжали бы друг на друга. */
-@media (max-width: 834px) {
-    .prg-cycle-switch { gap: 14px 10px; }
-    .prg-cycle-pill { padding: 8px 12px; }
-    .prg-cycle-pill::before { content: ''; position: absolute; inset: -7px -5px; }
-}
-.prg-cycle-pill.is-active::after {
-    content: '';
-    position: absolute; inset: -8px;
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--surface) 55%, transparent);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
-    z-index: -1;
+    background: var(--blue-fill);
+    border-color: var(--blue-fill);
+    color: var(--on-blue, white);
 }
 
 .prg-items h2 { margin: 0 0 10px; font: 700 17px/1.3 var(--font-display); color: var(--text); }
@@ -292,7 +370,12 @@
     border-radius: var(--r-md);
 }
 .prg-item + .prg-item { margin-top: 8px; }
-.prg-item h3 { margin: 6px 0 4px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
+.prg-item h3 {
+    margin: 6px 0 4px;
+    font: 700 15px/1.35 var(--font-display);
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
 .prg-item p { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .prg-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
 /* Своего display у блока действий не было: на широком экране кнопки стояли в
@@ -693,10 +776,83 @@
    варианта ответа — здесь только то, чего у них нет. Токены из base.css. */
 
 .prg-blocks { margin-top: 16px; }
-.prg-block-tools + .prg-block-tools {
-    margin-top: var(--s-4);
-    padding-top: var(--s-3);
+.prg-form[data-item-form] { gap: var(--s-4); }
+.prg-form[data-item-form] .prg-blocks { margin-top: 0; }
+.prg-form[data-item-form] .prg-block-tools + .prg-block-tools { margin-top: var(--s-4); }
+.prg-form[data-item-form] .prg-block-tools:not(details) {
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: var(--s-4);
 }
+.ios-prg-day .prg-form[data-item-form] .prg-cycle-editor-section {
+    min-inline-size: 0;
+    padding: clamp(var(--s-3), 2vw, var(--s-5));
+    border: 2px solid color-mix(in srgb, var(--blue-deep) 64%, var(--line));
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--blue-deep) 6%, var(--surface));
+}
+.prg-cycle-editor-section .prg-blocks-add { margin-block-start: var(--s-3); }
+.prg-cycle-editor-order { margin-block-start: var(--s-4); }
+.prg-cycle-editor-order:has(> [data-block-order][hidden]) { display: none; }
+.prg-cycle-editor-order > .prg-editor-heading { margin-block-end: var(--s-4); }
+.prg-editor-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+}
+.prg-editor-heading h3 { margin: 0; }
+.prg-universal { min-inline-size: 0; }
+.prg-container-fields, .prg-container-contents, .prg-universal > .prg-ticket-head {
+    margin-block-end: var(--s-3);
+}
+.prg-container-contents:empty { margin: 0; }
+.ios-prg-day .prg-form[data-item-form] > .prg-settings {
+    border: 2px solid color-mix(in srgb, var(--blue) 75%, var(--line));
+    background: color-mix(in srgb, var(--blue) 9%, var(--surface));
+}
+.ios-prg-day .prg-form[data-item-form] fieldset.prg-universal {
+    --container-accent: var(--blue-deep);
+    --container-fill: 14%;
+    min-inline-size: 0;
+    padding: clamp(var(--s-2), 2vw, var(--s-4));
+    border: 2px solid color-mix(in srgb, var(--container-accent) 82%, var(--line));
+    background: color-mix(in srgb, var(--container-accent) var(--container-fill), var(--surface));
+}
+.ios-prg-day .prg-form[data-item-form] .prg-universal .prg-universal {
+    --container-accent: var(--blue);
+    --container-fill: 9%;
+}
+.ios-prg-day .prg-form[data-item-form] .prg-universal .prg-universal .prg-universal {
+    --container-accent: var(--blue-mid);
+    --container-fill: 5%;
+    padding-inline: var(--s-2);
+}
+.prg-universal legend {
+    max-inline-size: 100%;
+    padding-inline: var(--s-2);
+    color: var(--ink);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+.prg-container-head { justify-content: flex-start; gap: var(--s-2); }
+.prg-container-head button:disabled { opacity: .5; }
+.prg-universal [data-container-add] { margin-block-end: var(--s-3); }
+.ios-prg-day .prg-form[data-item-form] [data-blocks] .prg-blk {
+    border-block-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+    border-inline-end-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+}
+.prg-photo-count {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-3);
+}
+.prg-photo-count > .hint-wrap { grid-area: 1 / 2; }
+.prg-photo-count > .prg-message { grid-column: 1 / -1; }
+.prg-form[data-item-form] .prg-actions { gap: var(--s-3); }
+.prg-form[data-item-form] [data-blocks] > .prg-ticket { padding: var(--s-4); }
+.prg-form[data-item-form] .prg-settings-body { gap: var(--s-3); }
 .prg-preview-condition { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (min-width: 1024px) {
     .prg-form[data-item-form] .prg-form-actions.cta-sticky {

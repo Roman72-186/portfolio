@@ -200,6 +200,24 @@ def test_task_with_video_is_one_video_lesson(db, user_factory):
     assert [n.title for n in _notes(db, student)] == ["Новый видеоурок: «Светотень»"]
 
 
+def test_nested_video_is_announced_when_its_container_opens(db, user_factory):
+    from app.services.tz import msk_input_value
+
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=800_063, name="Ученик")
+    task = _old_task(db, owner, title="Светотень")
+    opens = NOW.replace(second=0, microsecond=0) + timedelta(hours=2)
+    _block(
+        db, task, "video", video_id=_video(db).id, created_at=NOW - timedelta(days=1),
+        container_path=[{"key": "lesson", "opens_at": msk_input_value(opens)}],
+    )
+
+    _run(db, opens - timedelta(minutes=1))
+    assert _notes(db, student) == []
+    _run(db, opens + timedelta(minutes=1))
+    assert [n.title for n in _notes(db, student)] == ["Новое видео в задании «Светотень»"]
+
+
 def test_video_announced_with_its_task_is_not_repeated(db, user_factory):
     """Следующий прогон видит тот же ролик в окне поиска — он уже был в
     задании, когда о нём написали, второго сообщения быть не должно."""
@@ -485,6 +503,25 @@ def test_task_level_deadline_reaches_blocks(db, user_factory):
 
     _run(db)
 
+    assert [n.text for n in _notes(db, student)] == ["Осталось меньше трёх часов."]
+
+
+def test_container_deadline_reminder_waits_until_the_block_opens(db, user_factory):
+    from app.services.tz import msk_input_value
+
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=800_064, name="Ученик")
+    task = _old_task(db, owner)
+    opens = NOW.replace(second=0, microsecond=0) + timedelta(hours=2)
+    _block(db, task, container_path=[{
+        "key": "practice",
+        "opens_at": msk_input_value(opens),
+        "submit_until": msk_input_value(opens + timedelta(hours=2)),
+    }])
+
+    _run(db, opens - timedelta(minutes=1))
+    assert _notes(db, student) == []
+    _run(db, opens + timedelta(minutes=1))
     assert [n.text for n in _notes(db, student)] == ["Осталось меньше трёх часов."]
 
 

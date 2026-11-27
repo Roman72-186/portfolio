@@ -127,6 +127,26 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    if request.method == "GET" and request.url.path == "/purchase/start":
+        return HTMLResponse(
+            """<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Слишком много запросов</title>
+</head>
+<body>
+    <main>
+        <h1>Слишком много запросов</h1>
+        <p>Подождите минуту, затем вернитесь к тарифам и попробуйте снова.</p>
+        <a href="/tariffs">Вернуться к тарифам</a>
+    </main>
+</body>
+</html>""",
+            status_code=429,
+            headers={"Retry-After": "60", "Cache-Control": "no-store"},
+        )
     return JSONResponse(
         status_code=429,
         content={"detail": "Слишком много запросов. Подожди минуту."},
@@ -397,6 +417,9 @@ app.add_middleware(BodySizeLimitMiddleware)
 
 
 # Routers
+from app.api import bot_analytics
+
+app.include_router(bot_analytics.router)
 app.include_router(auth.router)
 app.include_router(cabinet.router)
 app.include_router(cabinet_student.router)

@@ -35,6 +35,9 @@ existing Jinja patterns and Spark design classes from `app/static/css/base.css`
 such as `.btn-blue`, `.btn-outline`, `.btn-danger`, and `.back-link`. Do not add
 new dependencies or rename public routes/API fields without a clear need.
 
+See [Apparchi UI standards](../AGENTS.md#стандарты-интерфейса) before changing
+templates, styles, or interaction behavior in the cabinet.
+
 ## Testing Guidelines
 
 Pytest is the primary test framework. Add or update focused tests for route,

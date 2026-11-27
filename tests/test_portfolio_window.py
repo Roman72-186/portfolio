@@ -15,10 +15,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock, TaskBlockState
+from app.models.learning_topic import LearningTopic
+from app.models.task_block import BLOCK_MEDIA, BLOCK_PORTFOLIO, TaskBlock, TaskBlockState
 from app.models.user import User
 from app.models.work import Work
 from app.services.cycle_feed import build_cycle_feed
+from app.services.portfolio_window import format_deadline_msk
 from app.services.program import day_bounds
 from app.services.task_blocks import LegacyPortfolioTypeChangeError, sync_blocks
 from app.services.tracker import create_task
@@ -181,6 +183,54 @@ def test_closed_window_rejects_the_form_upload(auth_client, db):
 # ── открытое окно ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("blocked_by_date", [False, True])
+def test_upload_links_to_the_required_step_when_it_can_be_completed(
+    auth_client, db, rendered, blocked_by_date,
+):
+    client, user = auth_client
+    cycle = LearningTopic(
+        title="Попробуй подготовку",
+        opens_at=_utc(now_msk() - timedelta(days=1)),
+        ends_at=_utc(now_msk() + timedelta(days=2)),
+        assign_to_all=True,
+        is_published=True,
+    )
+    db.add(cycle)
+    db.flush()
+    task = _task(db, user, title="Начало")
+    task.topic_id = cycle.id
+    intro = TaskBlock(
+        task_id=task.id, block_type=BLOCK_MEDIA, title="Что будет на курсе?",
+        is_required=True, sort_order=0,
+    )
+    db.add(intro)
+    future = _utc(now_msk() + timedelta(hours=1)) if blocked_by_date else None
+    portfolio = _portfolio_block(db, task, window_hours=72, opens_at=future)
+    url = f"/upload?section=before&block={portfolio.id}"
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert 'id="upload-form"' not in response.text
+    assert db.query(TaskBlockState).filter_by(user_id=user.id, block_id=portfolio.id).first() is None
+    if blocked_by_date:
+        assert "Загрузка закрыта" in response.text
+        assert "Перейти к заданию" not in response.text
+        return
+
+    assert "Что будет на курсе?" in response.text
+    assert "Отметить выполнение" in response.text
+    assert "Перейти к заданию" in response.text
+    path = f"/cabinet/learning?cycle={cycle.id}&task={task.id}"
+    assert f'href="{path.replace("&", "&amp;")}#learning-task-{task.id}"' in response.text
+    assert client.get(path).status_code == 200
+    assert rendered("cabinet_learning.html")["focus_task_id"] == task.id
+    assert client.post(f"/cabinet/tracker/blocks/{intro.id}/done").status_code == 200
+    assert client.get(path).status_code == 200  # лента запускает персональное окно
+    page = client.get(url)
+    assert 'id="upload-form"' in page.text
+    assert "Перейти к заданию" not in page.text
+
+
 def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
     client, user = auth_client
     task = _task(db, user)
@@ -231,6 +281,36 @@ def test_personal_window_closes_after_its_own_deadline(auth_client, db):
 
     assert _post_before(client).status_code == 422
     assert db.query(Work).count() == 0
+
+
+@pytest.mark.parametrize("personal_hours", [None, 48])
+def test_upload_shows_container_cutoff_and_stops_accepting_photos(auth_client, db, personal_hours):
+    client, user = auth_client
+    task = _task(db, user)
+    now = now_msk().replace(second=0, microsecond=0)
+    cutoff = now + timedelta(hours=2)
+    block = _portfolio_block(
+        db, task, opens_at=_utc(now - timedelta(days=1)),
+        closes_at=_utc(now + timedelta(hours=10)), window_hours=personal_hours,
+    )
+    block.container_path = [{"key": "outer", "closes_at": cutoff.isoformat()}]
+    if personal_hours:
+        db.add(TaskBlockState(block_id=block.id, user_id=user.id, started_at=_utc(now)))
+    db.commit()
+    _work(db, user)
+
+    url = f"/upload?section=before&block={block.id}"
+    page = client.get(url)
+    assert 'id="upload-form"' in page.text
+    assert format_deadline_msk(cutoff) in page.text
+
+    cutoff = now - timedelta(minutes=1)
+    block.container_path = [{"key": "outer", "closes_at": cutoff.isoformat()}]
+    db.commit()
+    page = client.get(url)
+    assert 'id="upload-form"' not in page.text
+    assert format_deadline_msk(cutoff) in page.text
+    assert _post_before(client, block=str(block.id)).status_code == 422
 
 
 # ── удаление своих работ ────────────────────────────────────────────────────

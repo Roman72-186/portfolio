@@ -34,7 +34,7 @@ from app.services.mock_exam_access import (
     ticket_closes_at,
     ticket_opens_at,
 )
-from app.services.notify import notify_many_sync
+from app.services.notify import notify_many_sync, retry_telegram_sync
 from app.services import telegram as telegram_service
 from app.services.tz import MSK_TZ, today_msk
 
@@ -521,6 +521,8 @@ def _run_birthday_check() -> None:
     про этого ученика не придёт совсем — догоняющей отправки нет.
     Флаг один на ученика, а не на пару «ученик — ГП»: все ГП получают
     напоминание в одном прогоне, ГП, назначенный позже, прошлых не получит.
+    Флаг означает создание уведомлений. Доставка Telegram хранится отдельно
+    в Notification и повторяется после ошибок, даже после смены даты.
     """
     db = SessionLocal()
     try:
@@ -580,6 +582,8 @@ def _run_birthday_check() -> None:
             for recipient_id in recipient_ids:
                 notif = Notification(
                     user_id=recipient_id,
+                    telegram_status="pending",
+                    telegram_next_attempt_at=datetime.now(timezone.utc),
                     title=f"День рождения — {who}",
                     text=f"Сегодня, {upcoming.strftime('%d.%m')}. Не забудьте поздравить.",
                 )
@@ -593,7 +597,7 @@ def _run_birthday_check() -> None:
             for recipient_id in recipient_ids:
                 invalidate_unread(recipient_id)
             logger.info(
-                "Birthday check: %d именинников, напоминания ушли %d получателям",
+                "Birthday check: %d именинников, напоминания созданы для %d получателей",
                 sent, len(recipient_ids),
             )
             notify_many_sync([n.id for n in created_notifications])
@@ -739,12 +743,25 @@ def _acquire_scheduler_lock() -> bool:
     return True
 
 
+def _run_work_file_deletions() -> None:
+    from app.services.works import process_work_file_deletions
+
+    with SessionLocal() as db:
+        process_work_file_deletions(db)
+
+
 def start_scheduler() -> None:
     global _scheduler
     if not _acquire_scheduler_lock():
         logger.info("Scheduler уже запущен в другом воркере, здесь не стартуем")
         return
     _scheduler = BackgroundScheduler(timezone="UTC")
+    _scheduler.add_job(
+        retry_telegram_sync, trigger="interval", minutes=1,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60),
+        id="telegram_delivery_retry", replace_existing=True,
+        max_instances=1, misfire_grace_time=60,
+    )
     _scheduler.add_job(
         _run_notification_check,
         trigger="interval",
@@ -864,6 +881,10 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=600,
+    )
+    _scheduler.add_job(
+        _run_work_file_deletions, trigger="interval", minutes=1,
+        id="work_file_deletions", replace_existing=True, max_instances=1,
     )
     _scheduler.start()
     logger.info(

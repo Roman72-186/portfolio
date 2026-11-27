@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 
-SECRET_QUERY_PARAMS = ("key", "token")
+SECRET_QUERY_PARAMS = ("key", "token", "t")
 
 _SECRET_RE = re.compile(
     r"(?P<prefix>[?&](?:" + "|".join(SECRET_QUERY_PARAMS) + r")=)[^&#\s]*"

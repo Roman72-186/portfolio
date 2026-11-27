@@ -1,0 +1,9 @@
+{% macro holiday_intake_select(control_id, intakes) -%}
+<label class="form-label" for="{{ control_id }}">Набор</label>
+<select class="form-select" id="{{ control_id }}" name="holiday_intake_id" required>
+    <option value="">Выберите набор</option>
+    {% for intake in intakes %}
+    <option value="{{ intake.id }}">{{ intake.title }}</option>
+    {% endfor %}
+</select>
+{%- endmacro %}

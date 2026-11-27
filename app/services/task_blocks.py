@@ -64,7 +64,7 @@ from app.models.task_block import (
     TaskBlockTariff,
     TaskBlockTariffDeadline,
 )
-from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask
+from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE, STATUS_OPEN, TrackerTask
 from app.services.tz import msk_midnight, parse_msk_local
 from app.services.first_week_attendance import recording_exemptions
 
@@ -627,7 +627,7 @@ def block_opened_for(
     moment = now or _now()
     return not (
         not_open_yet(getattr(task, "starts_at", None), moment)
-        or not_open_yet(block.opens_at, moment)
+        or not_open_yet(block_opens_at(block), moment)
     )
 
 
@@ -1231,6 +1231,13 @@ def _has_own_deadline(
     return block.submit_until is not None
 
 
+def container_submit_until(block: TaskBlock) -> datetime | None:
+    for node in reversed(getattr(block, "container_path", None) or []):
+        if (deadline := _moment(node.get("submit_until"))) is not None:
+            return deadline
+    return None
+
+
 def submit_deadline_for(
     block: TaskBlock | None,
     task,
@@ -1241,13 +1248,14 @@ def submit_deadline_for(
 ) -> datetime | None:
     """До какого момента **этот** ученик может закрыть **этот** блок.
 
-    Единственное место, где сходятся все четыре источника срока, и порядок
+    Единственное место, где сходятся источники срока, и порядок
     у них такой (владелец 27.09.2026):
 
     1. строка тарифа у блока — самая частная настройка, главнее всего;
     2. общий срок блока;
-    3. строка тарифа у задания;
-    4. общий срок задания.
+    3. срок ближайшего контейнера, у которого он задан;
+    4. строка тарифа у задания;
+    5. общий срок задания.
 
     Блок главнее задания целиком, а не по полю: если блок сказал про себя
     хоть что-то — включая «бессрочно», — срок задания к нему не применяется.
@@ -1259,10 +1267,12 @@ def submit_deadline_for(
     «до 9:30», а сервер примет работу в 11:00 (или наоборот).
 
     `block=None` — срок задания без блока: домашка (владелец 28.09.2026: «домашка
-    также должна работать по всем правилам»). Тогда остаются пункты 3 и 4.
+    также должна работать по всем правилам»). Тогда остаются пункты 4 и 5.
     """
     if block is not None and _has_own_deadline(block, block_overrides, user_tariff):
         return effective_submit_until(block, block_overrides, user_tariff)
+    if block is not None and (deadline := container_submit_until(block)) is not None:
+        return deadline
     if task is None:
         return None
     tariff = (user_tariff or "").strip().upper()
@@ -1279,15 +1289,16 @@ def submit_deadline_is_set(
     block_overrides: dict[str, datetime | None] | None = None,
     task_overrides: dict[str, datetime | None] | None = None,
 ) -> bool:
-    """Сказал ли кто-то из четырёх источников `submit_deadline_for` про срок
+    """Сказал ли кто-то из источников `submit_deadline_for` про срок
     хоть что-то — включая явное «бессрочно» строкой тарифа.
 
     Нужна там, где у пустого срока есть запасной вариант (статистика берёт
     конец цикла, владелец 28.09.2026): `submit_deadline_for` отдаёт `None` и на
     «ничего не настроено», и на «здесь без срока», а перебивать второе нельзя.
     """
-    if block is not None and _has_own_deadline(block, block_overrides, user_tariff):
-        return True
+    if block is not None:
+        if _has_own_deadline(block, block_overrides, user_tariff) or container_submit_until(block) is not None:
+            return True
     if task is None:
         return False
     tariff = (user_tariff or "").strip().upper()
@@ -1583,7 +1594,21 @@ def _is_empty(block_type: str, item: dict) -> bool:
 
 def validate_cycle_blocks(items: list[dict], *, legacy_empty_submission_ids: set[int]) -> None:
     """Reject incomplete blocks before sync can silently discard them."""
+    seen = {}
+    previous = ()
+    closed = set()
     for index, item in enumerate(items, start=1):
+        path = tuple(node["key"] for node in item.get("container_path") or ())
+        if len(path) != len(set(path)):
+            raise ValueError("Контейнер не может быть вложен в самого себя.")
+        for depth, node in enumerate(item.get("container_path") or ()):
+            key = node["key"]
+            identity = (path[:depth], node)
+            if key in closed or (key in seen and seen[key] != identity):
+                raise ValueError("Проверьте порядок и настройки вложенных контейнеров.")
+            seen[key] = identity
+        closed.update(key for depth, key in enumerate(previous) if path[:depth + 1] != previous[:depth + 1])
+        previous = path
         block_type = item["block_type"]
         if block_type not in BLOCK_TYPES:
             # The editor validates compound polls and diagnostics separately.
@@ -1647,13 +1672,24 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
                     "Сохраните режим загрузки портфолио у существующего блока."
                 )
         row.block_type = block_type
-        if item.get("universal_key"):
-            row.universal_key = item["universal_key"]
+        had_path = bool(row.container_path)
+        # A form opened before the rollout does not send the ancestor path.
+        if item.get("container_path") is not None:
+            row.container_path = item["container_path"] or None
+        universal_key = row.container_path[-1]["key"] if row.container_path else item.get("universal_key")
+        if universal_key:
+            row.universal_key = universal_key
             row.portfolio_month = item.get("portfolio_month")
-            if block_type in SUBMISSION_BLOCK_TYPES and not row.portfolio_month:
+            requires_month = block_type == BLOCK_PORTFOLIO or (
+                not row.container_path and block_type in SUBMISSION_BLOCK_TYPES
+            )
+            if requires_month and not row.portfolio_month:
                 task = db.get(TrackerTask, task_id)
                 if task is not None and task.due_at is None:
                     raise MissingPortfolioMonthError("Укажите учебный месяц для универсального блока со сдачей.")
+        elif had_path:
+            row.universal_key = None
+            row.portfolio_month = None
         row.sort_order = len(paired)
         row.title = _clean(item.get("title"), 200)
         row.body = (item.get("body") or "").strip() or None
@@ -1734,6 +1770,10 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # блоков, заведённых раньше, в базе лежит полночь, и она просто
         # показывается как «00:00».
         row.opens_at = _moment(item.get("opens_at"))
+        if block_type != BLOCK_LINK:
+            row.lesson_ends_at = None
+        elif "lesson_ends_at" in item:
+            row.lesson_ends_at = _moment(item["lesson_ends_at"])
         row.closes_at = _moment(item.get("closes_at"))
         # Закрытие раньше открытия — куратор перепутал поля; отбрасываем
         # молча, как и везде в этой функции с некорректным вводом, а не
@@ -2592,7 +2632,7 @@ def is_block_accessible(
     """
     moment = now or _now()
     target = blocks[block_index]
-    if not_open_yet(target.opens_at, moment):
+    if not_open_yet(block_opens_at(target), moment):
         return False
     # Закрытие по календарю; у нового портфолио абсолютный closes_at заменён
     # персональным окном — каждому ученику одинаковое число часов с его старта.
@@ -2602,11 +2642,32 @@ def is_block_accessible(
         return False
     if target.bypass_sequence:
         return True
+    return _first_sequence_blocker(
+        target, blocks[:block_index], states=states,
+        audiences_by_block=audiences_by_block, viewer=viewer,
+        required_tariffs_by_block=required_tariffs_by_block, required_by_block=required_by_block,
+        subject_by_block=subject_by_block, now=moment,
+    ) is None
+
+
+def _first_sequence_blocker(
+    target: TaskBlock,
+    prior_blocks: list[TaskBlock],
+    *,
+    states: dict[int, TaskBlockState],
+    audiences_by_block: dict[int, BlockAudience],
+    viewer: BlockViewer,
+    required_by_block: dict[int, bool] | None,
+    subject_by_block: dict[int, str | None] | None,
+    now,
+    required_tariffs_by_block: dict[int, set[str]] | None = None,
+) -> TaskBlock | None:
     target_subject = (
         subject_by_block.get(target.id) if subject_by_block is not None else None
     )
-    return not any(
-        (
+    return next((
+        prior for prior in prior_blocks
+        if (
             subject_by_block is None
             or shares_queue(subject_by_block.get(prior.id), target_subject)
         )
@@ -2617,10 +2678,9 @@ def is_block_accessible(
             viewer=viewer,
             required_tariffs_by_block=required_tariffs_by_block,
             required_by_block=required_by_block,
-            now=moment,
+            now=now,
         )
-        for prior in blocks[:block_index]
-    )
+    ), None)
 
 
 def shares_queue(prior_subject: str | None, target_subject: str | None) -> bool:
@@ -2634,6 +2694,21 @@ def shares_queue(prior_subject: str | None, target_subject: str | None) -> bool:
     if not prior_subject or not target_subject:
         return True
     return prior_subject == target_subject
+
+
+def block_opens_at(block: TaskBlock) -> datetime | None:
+    """The leaf can only open once every ancestor is open."""
+    dates = [_moment(block.opens_at)]
+    dates.extend(_moment(node.get("opens_at")) for node in getattr(block, "container_path", None) or [])
+    return max((date for date in dates if date is not None), default=None)
+
+
+def container_close_at(block: TaskBlock) -> datetime | None:
+    return min(
+        (closes for node in (getattr(block, "container_path", None) or [])
+         if (closes := _moment(node.get("closes_at"))) is not None),
+        default=None,
+    )
 
 
 def block_still_doable(
@@ -2653,6 +2728,9 @@ def block_still_doable(
     очередь, но не этап, или наоборот.
     """
     moment = now or _now()
+    parent_deadline = container_close_at(block)
+    if parent_deadline is not None and parent_deadline <= moment:
+        return False
     if (
         block.block_type == BLOCK_PORTFOLIO
         and not block.accepts_inline_portfolio_submission
@@ -3071,22 +3149,35 @@ def feed_state(
     subject_by_block = {block.id: block.subject or task_subject for block in blocks}
     now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
     result: list[dict] = []
+    accessible_ids: set[int] = set()
+    access_context = dict(
+        states=states,
+        audiences_by_block=audiences_by_block,
+        viewer=viewer,
+        required_by_block=required_by_block,
+        subject_by_block=subject_by_block,
+        now=now,
+    )
     for index, block in enumerate(blocks):
-        accessible = is_block_accessible(
-            block_index=index,
-            blocks=blocks,
-            states=states,
-            audiences_by_block=audiences_by_block,
-            viewer=viewer,
-            required_by_block=required_by_block,
-            subject_by_block=subject_by_block,
-            now=now,
-        )
+        accessible = is_block_accessible(block_index=index, blocks=blocks, **access_context)
+        sequence_blocker = None
+        if accessible:
+            accessible_ids.add(block.id)
+        elif (
+            block.block_type == BLOCK_PORTFOLIO
+            and not block.hidden_until_done
+            # Подсказываем шаг только при блокировке очередью, когда сам блок уже открыт по дате.
+            and is_block_accessible(block_index=0, blocks=[block], **access_context)
+        ):
+            blocker = _first_sequence_blocker(block, blocks[:index], **access_context)
+            if blocker is not None and not blocker.hidden_until_done and blocker.id in accessible_ids:
+                sequence_blocker = blocker
         state = states.get(block.id)
         result.append({
             "block": block,
             "status": block_status(block, state, accessible=accessible),
             "state": state,
+            "sequence_blocker": sequence_blocker,
         })
     return result
 
@@ -3408,7 +3499,12 @@ def mark_submitted(
     """Отметить работу сданной. Пересдача до проверки сдвигает `submitted_at`
     и снимает отметку проверки — куратор должен увидеть новую версию работы,
     а не старую галочку (тот же смысл, что `needs_revision` у `Work`)."""
-    submission.submitted_at = _now()
+    submitted_at = _now()
+    if submission.control_review_mode is None:
+        submission.control_review_mode = submission_control_review_mode(
+            db, submission, first_submission_at=submission.submitted_at or submitted_at,
+        )
+    submission.submitted_at = submitted_at
     if comment is not None:
         submission.comment = comment or None
     submission.reviewed_at = None
@@ -3446,6 +3542,64 @@ def set_submission_reviewed(
         submission.review_comment = comment or None
     db.flush()
     return submission
+
+
+def is_control_submission(db: DBSession, submission: TaskBlockSubmission) -> bool:
+    block = db.get(TaskBlock, submission.block_id)
+    return block is not None and block.block_type == BLOCK_TIMED
+
+
+def control_review_mode(
+    block: TaskBlock, submitted_at: datetime | None, *,
+    first_completed_at: datetime | None = None, frozen: str | None = None,
+    user_tariff: str | None = None, block_overrides: dict[str, datetime | None] | None = None,
+) -> str | None:
+    """Classify a control by its first completed submission and Moscow deadlines."""
+    from datetime import time
+    from app.services.tz import MSK_TZ, _as_utc
+
+    if block.block_type != BLOCK_TIMED or submitted_at is None:
+        return None
+    if frozen is not None:
+        return frozen
+    # Review options are tied to an explicit control deadline. Other deadlines
+    # still apply to ordinary lateness and editing rules.
+    first_deadline = effective_submit_until(block, block_overrides, user_tariff)
+    if first_deadline is None:
+        return None
+    first_deadline = _as_utc(first_deadline).astimezone(MSK_TZ)
+    # A completion marker can be written just after submitted_at for the same upload.
+    first_submission = min(_as_utc(submitted_at), _as_utc(first_completed_at)) if first_completed_at else _as_utc(submitted_at)
+    if first_submission <= first_deadline:
+        return "full"
+    second_deadline = datetime.combine(first_deadline.date() + timedelta(days=1), time(19), tzinfo=MSK_TZ)
+    return "text" if first_submission <= second_deadline else "score"
+
+
+def submission_control_review_mode(
+    db: DBSession, submission: TaskBlockSubmission, *, first_submission_at: datetime | None = None,
+) -> str | None:
+    from app.models.user import User
+
+    block = db.get(TaskBlock, submission.block_id)
+    submitted_at = first_submission_at or submission.submitted_at
+    if block is None or block.block_type != BLOCK_TIMED or submitted_at is None:
+        return None
+    if submission.control_review_mode is not None:
+        return submission.control_review_mode
+    student = db.get(User, submission.user_id)
+    state = get_state(db, block_id=block.id, user_id=submission.user_id)
+    mode = control_review_mode(
+        block, submitted_at, user_tariff=student.tariff if student is not None else None,
+        block_overrides=get_submit_deadlines(db, [block.id]).get(block.id),
+        first_completed_at=state.completed_at if state else None,
+    )
+    # Freeze unrestricted first uploads too, in case the block gains a deadline later.
+    return "full" if mode is None and first_submission_at is not None else mode
+
+
+def requires_submission_review(block_type: str, task_kind: str) -> bool:
+    return block_type == BLOCK_TIMED or task_kind == ITEM_MOCK_EXAM
 
 
 def submission_review_queue(
@@ -3515,14 +3669,20 @@ def submission_review_queue(
     # Какие задания вошли в общую ОС — в подпись строки (владелец 21.10.2026):
     # без них школа искала работы по композиции отдельной строкой и не находила.
     linked_task_titles: dict[int, str] = {}
+    linked_review_blocks: set[int] = set()
+    linked_control_blocks: set[int] = set()
     linked_blocks = {linked.block_id for group in group_of.values() for linked in group}
     if linked_blocks:
-        linked_task_titles = dict(
-            db.query(TaskBlock.id, TrackerTask.title)
+        for block_id, block_type, title, kind in (
+            db.query(TaskBlock.id, TaskBlock.block_type, TrackerTask.title, TrackerTask.kind)
             .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
             .filter(TaskBlock.id.in_(linked_blocks))
-            .all()
-        )
+        ):
+            linked_task_titles[block_id] = title
+            if requires_submission_review(block_type, kind):
+                linked_review_blocks.add(block_id)
+            if block_type == BLOCK_TIMED:
+                linked_control_blocks.add(block_id)
     image_map: dict[int, list[TaskBlockSubmissionImage]] = {}
     if ids:
         for image in (
@@ -3558,7 +3718,22 @@ def submission_review_queue(
     items = []
     for submission, block, task, student in rows:
         state = state_map.get((block.id, student.id))
+        block_overrides = block_deadlines.get(block.id)
         linked = group_of.get(submission.id, [])
+        control_mode = control_review_mode(
+            block, submission.submitted_at, user_tariff=student.tariff, block_overrides=block_overrides,
+            first_completed_at=state.completed_at if state else None,
+            frozen=submission.control_review_mode,
+        )
+        has_linked_control = any(work.block_id in linked_control_blocks for work in linked)
+        pending_linked_controls = [
+            work
+            for work in linked
+            if work.block_id in linked_control_blocks and work.reviewed_at is None and not work.needs_revision
+        ]
+        pending_controls = pending_linked_controls.copy()
+        if block.block_type == BLOCK_TIMED and submission.reviewed_at is None and not submission.needs_revision:
+            pending_controls.append(submission)
         group_dates = [submission.submitted_at] + [w.submitted_at for w in linked]
         items.append({
             "submission_id": submission.id,
@@ -3592,12 +3767,20 @@ def submission_review_queue(
             # срока принимают первую сдачу любого блока, отметка общая.
             "late": completed_after_deadline(
                 block, task, state, user_tariff=student.tariff,
-                block_overrides=block_deadlines.get(block.id),
+                block_overrides=block_overrides,
                 task_overrides=task_deadlines.get(task.id),
                 cycle_deadline=cycle_deadline(task.topic_id, student.tariff),
             ),
-            "reviewed": submission.reviewed_at is not None,
-            "needs_revision": submission.needs_revision,
+            "control_review_mode": control_mode,
+            # Только полный разбор контрольной совместим с обычным главным блоком.
+            "control_filter_mode": control_mode or ("full" if has_linked_control else None),
+            "pending_controls": pending_controls,
+            "requires_review": (
+                requires_submission_review(block.block_type, task.kind)
+                or any(w.block_id in linked_review_blocks for w in linked)
+            ),
+            "reviewed": submission.reviewed_at is not None and not pending_linked_controls,
+            "needs_revision": submission.needs_revision and not pending_linked_controls,
             "score": int(submission.score) if submission.score is not None else None,
             "submitted_at": submission.submitted_at,
         })

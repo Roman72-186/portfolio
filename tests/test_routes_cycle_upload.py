@@ -1185,3 +1185,18 @@ def test_legacy_mock_exam_api_takes_one_final_photo(auth_client, db):
     resp = client.post("/upload/mock-exam/api", data={"subject": "Рисунок"}, files=files)
 
     assert resp.status_code == 422
+
+
+def test_legacy_mock_exam_api_rejects_a_final_when_the_attempt_is_still_open(auth_client, db):
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    _ticket_with_stages(db, user, None)
+    with patch("app.api.cycle_upload.close_or_expire_mock_exam_attempts"):
+        assert _final(client).json()["verified"] is True
+
+    files = [("photos", ("other-final.jpg", _JPG_BYTES, "image/jpeg"))]
+    response = client.post("/upload/mock-exam/api", data={"subject": "Рисунок"}, files=files)
+
+    assert response.status_code == 409
+    assert db.query(Work).filter_by(user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, is_final=True).count() == 1

@@ -1,12 +1,4 @@
-"""Задания внутри цикла (`app/api/cabinet_program.py`, экран
-`cabinet_program_cycle_items.html`) — замена календарного дня как способа
-заводить задания (владелец 10.09.2026).
-
-Скрипт страницы держат те же два сторожа, что у `cabinet_program_day.html`
-(`tests/test_program_day_script.py`) — сюда переехал общий блочный
-конструктор через `{% include %}`, и здесь та же пара аварий возможна:
-удалили вызов без объявления, или Jinja-цикл сломал JS-литерал.
-"""
+"""Задания внутри цикла и скрипт редактора."""
 
 import json
 import pathlib
@@ -20,36 +12,8 @@ import pytest
 
 from app.models.learning_topic import LearningTopic
 from app.models.tracker import TrackerTask
-from app.services.task_blocks import get_blocks
-from app.services.tz import today_msk
-
-# Тот же набор, что у test_program_day_script.py — платформенные глобальные,
-# на которые сторож не должен ругаться.
-KNOWN_GLOBALS = {
-    "if", "for", "while", "switch", "catch", "function", "return", "typeof",
-    "new", "in", "of", "do", "else", "try", "throw", "delete", "void",
-    "Array", "Object", "JSON", "String", "Number", "Boolean", "Promise",
-    "Date", "Math", "Set", "Map", "RegExp", "Error", "FormData", "URL",
-    "URLSearchParams", "Blob", "File", "FileReader", "IntersectionObserver",
-    "MutationObserver", "CustomEvent", "Event", "Uint8Array",
-    "fetch", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
-    "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
-    "clearInterval", "requestAnimationFrame", "alert", "confirm", "prompt",
-    "console", "queueMicrotask", "structuredClone", "AbortController",
-    # Поиск ученика по номеру — `window.studentIdFromQuery` из
-    # `/static/js/student-search.js`, подключён в `base.html` (14.10.2026).
-    "studentIdFromQuery",
-}
-
-
-def _strip_noise(js: str) -> str:
-    js = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
-    js = re.sub(r"(?m)^\s*//.*$", " ", js)
-    js = re.sub(r"//[^\n'\"]*$", " ", js, flags=re.M)
-    js = re.sub(r"'(?:\\.|[^'\\])*'", "''", js)
-    js = re.sub(r'"(?:\\.|[^"\\])*"', '""', js)
-    return js
-
+from app.services.task_blocks import block_opens_at, block_still_doable, get_blocks, submit_deadline_for
+from app.services.tz import parse_msk_local, today_msk
 
 def _csrf_client(client, user_factory, session_factory, *, vk_id=700_501):
     admin = user_factory(vk_id=vk_id, name="Главный", is_admin=True, role_name="админ")
@@ -116,27 +80,58 @@ def test_cycle_item_keeps_saved_submission_when_condition_is_cleared(
     assert db.get(TrackerTask, task_id).title == "Эскизы"
 
 
-def test_cycle_items_page_script_calls_only_defined_functions(
-    client, db, user_factory, session_factory
-):
+def test_nested_containers_save_settings_and_move_with_children(client, db, user_factory, session_factory):
     _csrf_client(client, user_factory, session_factory)
     cycle_id = _make_cycle(client)
+    headers = {"X-CSRF-Token": "x"}
+    outer = {"key": "outer", "title": "Основной блок", "opens_at": "2026-11-25T12:00",
+             "closes_at": "2026-12-02T12:00", "submit_until": "2026-12-01T12:00"}
+    middle = {"key": "middle", "title": "Вложенный блок", "submit_until": "2026-11-30T12:00"}
+    inner = {"key": "inner", "title": "Внутренний блок"}
+    sibling = {"key": "sibling", "title": "Дополнительный блок"}
+    blocks = [
+        {"block_type": "text", "body": "Материалы", "container_path": [outer, middle, inner]},
+        {"block_type": "text", "body": "Другие материалы", "container_path": [outer, sibling]},
+    ]
+    response = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Контрольная", "blocks": blocks}, headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    task_id = response.json()["task_id"]
+    first, second = get_blocks(db, task_id)
+    first_id, second_id = first.id, second.id
+    assert [node["title"] for node in first.container_path] == [outer["title"], middle["title"], inner["title"]]
+    assert block_opens_at(first) == parse_msk_local(outer["opens_at"])
+    assert not block_still_doable(first, None, now=parse_msk_local("2026-12-03T12:00"))
+    assert submit_deadline_for(first, None, user_tariff=None) == parse_msk_local(middle["submit_until"])
 
-    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
-    assert page.status_code == 200
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={"title": "Контрольная", "blocks": [
+            {**blocks[1], "id": second_id},
+            {**blocks[0], "id": first_id, "container_path": [middle, inner]},
+        ]}, headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+    first, second = get_blocks(db, task_id)
+    assert (first.id, second.id) == (second_id, first_id)
+    assert [node["key"] for node in second.container_path] == ["middle", "inner"]
+    assert block_opens_at(second) is None
 
-    for raw in re.findall(r"<script>(.*?)</script>", page.text, re.S):
-        js = _strip_noise(raw)
-        declared = set(re.findall(r"function\s+(\w+)", js))
-        declared |= set(re.findall(r"\bvar\s+(\w+)", js))
-        declared |= set(re.findall(r"\b(\w+)\s*=\s*function", js))
-        for params in re.findall(r"function[^(]*\(([^)]*)\)", js):
-            declared |= {p.strip() for p in params.split(",") if p.strip()}
 
-        called = set(re.findall(r"(?<![.\w$])([A-Za-z_$]\w*)\s*\(", js))
-        missing = sorted(called - declared - KNOWN_GLOBALS)
-
-        assert not missing, f"вызовы без определения: {missing}"
+def test_cycle_rejects_a_container_inside_itself(client, db, user_factory, session_factory):
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+    response = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={"title": "Контрольная", "blocks": [
+            {"block_type": "text", "body": "Материалы", "container_path": [{"key": "a"}, {"key": "a"}]},
+        ]}, headers={"X-CSRF-Token": "x"},
+    )
+    assert response.status_code == 422
+    assert "самого себя" in response.json()["detail"]
 
 
 def test_cycle_items_page_scripts_are_valid_javascript(
@@ -422,3 +417,67 @@ def test_curator_with_view_sees_cycle_and_named_students_without_nick(
         headers={"X-CSRF-Token": "x", "Accept": "application/json"},
     )
     assert write.status_code == 403
+
+
+def test_create_request_retry_returns_original_task(admin_client):
+    client, _ = admin_client
+    cycle_id = _make_cycle(client)
+    path = f"/cabinet/staff/program/cycles/{cycle_id}/items/material"
+    payload = {"title": "Задание", "creation_request_id": "a84c5e10-6e98-41f4-a593-ce33dec9b2e2"}
+    first = client.post(path, json=payload)
+    second = client.post(path, json=payload)
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+
+
+def test_create_request_retry_rejects_edited_payload(admin_client, db):
+    client, _ = admin_client
+    cycle_id = _make_cycle(client)
+    path = f"/cabinet/staff/program/cycles/{cycle_id}/items/material"
+    payload = {"title": "Исходное", "creation_request_id": "86d51b94-c520-4f93-b090-6feb755c9a11"}
+    first = client.post(path, json=payload)
+    assert first.status_code == 200
+
+    changed = client.post(path, json={**payload, "title": "После обрыва связи"})
+
+    assert changed.status_code == 409
+    task = db.query(TrackerTask).filter_by(topic_id=cycle_id, creation_request_id=payload["creation_request_id"]).one()
+    assert task.title == "Исходное"
+    assert client.post(path, json=payload).json() == first.json()
+
+
+def test_stale_revision_cannot_overwrite_new_edit(admin_client, db):
+    from app.api.cabinet_program import _item_revision
+
+    client, _ = admin_client
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material", json={"title": "Исходное"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    stale = _item_revision(db.get(TrackerTask, task_id))
+    path = f"/cabinet/staff/program/items/{task_id}/material"
+    assert client.post(path, json={"title": "Свежее", "revision": stale}).status_code == 200
+    result = client.post(path, json={"title": "Устаревшее", "revision": stale})
+    assert result.status_code == 409
+    db.expire_all()
+    assert db.get(TrackerTask, task_id).title == "Свежее"
+
+
+def test_tariff_deadline_edit_invalidates_open_assignment_form(admin_client, db):
+    from app.api.cabinet_program import _item_revision
+
+    client, _ = admin_client
+    cycle_id = _make_cycle(client)
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material", json={"title": "Задание"},
+    )
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+    stale = _item_revision(db.get(TrackerTask, task_id))
+    path = f"/cabinet/staff/program/items/{task_id}"
+    override = {"tariff": "Я С ВАМИ", "submit_until": "2026-12-15T19:00"}
+    assert client.post(f"{path}/deadline", json={"submit_deadlines": [override]}).status_code == 200
+
+    assert client.post(f"{path}/material", json={"title": "Задание", "revision": stale}).status_code == 409

@@ -1060,7 +1060,7 @@ def test_curator_cannot_open_foreign_student_feedback_detail(
 
 
 def test_curator_sees_chief_teacher_score_in_feedback_dialog(
-    client, db, user_factory, session_factory
+    client, db, user_factory, session_factory, rendered
 ):
     """Балл ГП куратор видит только для чтения, с комментарием."""
     curator = user_factory(vk_id=930_032, name="Куратор", role_name="куратор")
@@ -1077,7 +1077,9 @@ def test_curator_sees_chief_teacher_score_in_feedback_dialog(
     resp = client.get(f"/cabinet/curator/feedback/{cycle.id}")
 
     assert resp.status_code == 200
-    assert "72 / 100" in resp.text
+    dialog = rendered("cabinet_feedback_detail.html")
+    assert dialog["can_score"] is False
+    assert [entry["score"] for entry in dialog["attempts"]] == [work.score]
     assert "Композиция держится" in resp.text
 
 

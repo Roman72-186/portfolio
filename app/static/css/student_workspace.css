@@ -1,0 +1,306 @@
+/* The student pages keep their existing controls, state classes and data hooks. */
+.student-workspace {
+    --student-rule: color-mix(in srgb, var(--blue) 18%, var(--line));
+    --student-tint: color-mix(in srgb, var(--blue-soft) 46%, var(--surface));
+    --student-radius: var(--r-lg);
+    --student-ink-panel: #211633;
+    --student-panel-text: #faf5ff;
+    --student-panel-muted: #e0d2ee;
+}
+
+.student-workspace .app-sidebar {
+    background: var(--student-tint);
+    border-color: var(--student-rule);
+}
+.student-workspace .app-sidebar :is(.desk-brand, .desk-nav-footer) { border-color: var(--student-rule); }
+.student-workspace .app-sidebar .desk-nav {
+    min-height: 0;
+    overflow-y: auto;
+    gap: var(--s-1);
+}
+.student-workspace .app-sidebar .desk-nav-item {
+    min-height: 44px;
+    color: var(--text);
+}
+.student-workspace .app-sidebar .desk-nav-active {
+    color: var(--blue-on-soft);
+    background: var(--blue-soft);
+    box-shadow: inset 2px 0 var(--blue-fill);
+    font-weight: 800;
+}
+.student-workspace .app-sidebar .desk-nav-active .desk-nav-icon { color: var(--blue-text); }
+.student-workspace #studentBurger .burger-toggle {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--student-rule);
+    box-shadow: var(--sh-md);
+    min-height: 52px;
+}
+.student-workspace #studentBurger .burger-toggle-icon { color: var(--blue-text); }
+.student-workspace #studentBurger .burger-toggle:focus-visible { outline-color: var(--blue); }
+.student-workspace #studentBurger .burger-panel {
+    border-color: var(--student-rule);
+    border-radius: var(--student-radius);
+}
+.student-workspace #studentBurger .burger-item-active {
+    background: var(--blue-soft);
+    color: var(--blue-on-soft);
+}
+
+.student-workspace .main :is(
+    .lrn-hero, .trk-head, .cyc-hero, .prs-hero, .portfolio-head,
+    .page-header, .prg-head, .dlg-head, .prf-top, .student-upload-heading
+) {
+    padding: var(--s-5);
+    border: 1px solid var(--student-rule);
+    border-radius: var(--student-radius);
+    background: var(--student-tint);
+    color: var(--text);
+    box-shadow: none;
+}
+.student-workspace .main :is(
+    .lrn-hero, .trk-head, .cyc-hero, .prs-hero, .portfolio-head,
+    .page-header, .prg-head, .dlg-head, .prf-top, .student-upload-heading,
+    .notif-page
+) h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -.035em;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+}
+.student-workspace .main :is(.lrn-hero, .prs-hero, .prf-top)::before,
+.student-workspace .main :is(.lrn-hero, .prs-hero, .prf-top)::after { content: none; }
+.student-workspace .main :is(.lrn-hero, .prs-hero, .prf-top) p { color: var(--text); opacity: 1; }
+.student-workspace .cyc-hero .badge { background: var(--surface); color: var(--ink); }
+.student-workspace .profile-hero { border-radius: var(--student-radius); }
+.student-workspace .lrn-hero .lrn-hero-period { font-weight: 700; }
+.student-workspace .lrn-hero .lrn-progress { font-size: .875rem; margin-block: var(--s-2); }
+.student-workspace .main .student-learning-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: var(--s-5);
+    padding: var(--s-6);
+    color: var(--student-panel-text);
+    border-color: var(--student-ink-panel);
+    background: var(--student-ink-panel);
+    overflow: visible;
+}
+.student-workspace .student-cycle-intro:only-child { grid-column: 1 / -1; }
+.student-workspace .main .student-learning-hero h1 {
+    color: var(--student-panel-text);
+    text-wrap: pretty;
+    font-size: clamp(1.85rem, 4.3vw, 3.25rem);
+}
+.student-workspace .main .student-learning-hero .student-cycle-intro p {
+    color: var(--student-panel-muted);
+    max-inline-size: 52ch;
+}
+.student-workspace .student-learning-hero .student-learning-jump {
+    min-width: 8rem;
+    border-color: transparent;
+    background: var(--student-panel-text);
+    color: var(--student-ink-panel);
+    box-shadow: none;
+    transition: background-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.student-workspace .student-learning-hero .student-learning-jump:hover { background: var(--student-panel-muted); }
+.student-workspace .student-learning-jump:active { transform: translateY(2px); }
+.student-workspace .student-learning-jump:focus-visible { outline-color: var(--student-panel-text); }
+.student-workspace .lrn-hero .student-cycle-progress {
+    display: grid;
+    align-content: center;
+    gap: var(--s-2);
+    width: 100%;
+    margin: 0;
+    padding: var(--s-4);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+.student-workspace .student-cycle-progress .lrn-progress { margin: 0; }
+.student-workspace .student-cycle-progress .lrn-progress strong {
+    font-size: 1.55em;
+    font-family: var(--font-display);
+}
+.student-workspace .lrn-hero .lrn-progress-meter {
+    display: block;
+    width: 100%;
+    height: 8px;
+    margin-block: 0;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+    color: var(--blue-fill);
+}
+.student-workspace .lrn-progress-meter::-webkit-progress-bar { background: var(--surface-2); }
+.student-workspace .lrn-progress-meter::-webkit-progress-value { background: var(--blue-fill); }
+.student-workspace .lrn-progress-meter::-moz-progress-bar { background: var(--blue-fill); }
+.student-workspace .student-learning-jump { margin-block-start: var(--s-3); min-height: 44px; }
+.student-workspace #learningStart { scroll-margin-block-start: var(--s-6); }
+.student-workspace #learningStart:focus-visible { outline: 2px solid var(--blue); outline-offset: var(--s-1); }
+.student-workspace .lrn-cycles {
+    gap: 12px;
+    padding: 10px 8px;
+    overscroll-behavior-inline: contain;
+}
+.student-workspace .lrn-cycle-chip {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    max-width: min(24rem, 100%);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.student-workspace .lrn-cycle-chip.is-current {
+    transform: none;
+    z-index: auto;
+    box-shadow: 0 0 7px color-mix(in srgb, var(--blue-fill) 38%, transparent);
+}
+.student-workspace .lrn-cycle-chip.is-current::after { content: none; }
+.student-workspace .lrn-cycle-chip:focus-visible {
+    outline: 2px solid var(--blue-fill);
+    outline-offset: 2px;
+}
+.student-workspace .lrn-step--current {
+    background: var(--surface);
+    border-color: var(--blue-fill);
+    box-shadow: inset 0 2px var(--blue-fill);
+}
+.student-workspace .lrn-step--done.is-open .lrn-step-body { animation: student-reveal var(--duration-base) var(--ease-out); }
+.student-workspace .lrn-nested-block { border-color: var(--student-rule); }
+.student-workspace .lrn-archive { display: grid; gap: var(--s-2); }
+.student-workspace .lrn-archive-period > summary {
+    min-height: 44px;
+    border-radius: var(--r-sm);
+    padding-inline: var(--s-2);
+    transition: background-color var(--duration-fast) var(--ease-out);
+}
+.student-workspace .lrn-archive-period[open] > summary,
+.student-workspace .lrn-archive-period > summary:hover { background: var(--student-tint); }
+.student-workspace .lrn-archive-period[open] .lrn-archive-cycles {
+    animation: student-reveal var(--duration-base) var(--ease-out);
+}
+.student-workspace .lrn-archive-period .video-row { min-height: 44px; }
+.student-workspace .ios-portfolio .pf-mblock {
+    border: 1px solid var(--student-rule);
+    box-shadow: none;
+}
+.student-workspace .ios-portfolio .pf-mblock.open .pf-mhead {
+    background: var(--student-tint);
+}
+.student-workspace .ios-portfolio .pf-mtoggle { min-height: 44px; }
+.student-workspace .ios-portfolio .pf-mgrid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+    gap: var(--s-2);
+    padding: var(--s-3);
+}
+.student-workspace .main .ios-portfolio .section-title {
+    font-size: 1.125rem;
+    font-weight: 800;
+    text-transform: none;
+    color: var(--ink);
+}
+.student-workspace .ios-tracker .trk-day {
+    border-block-end: 1px solid var(--student-rule);
+    padding-block-end: var(--s-2);
+}
+.student-workspace .ios-personal .prs-expand > summary {
+    min-height: 44px;
+    padding-inline: var(--s-2);
+    border-radius: var(--r-sm);
+    transition: background-color var(--duration-fast) var(--ease-out);
+}
+.student-workspace .ios-personal .prs-expand > summary:hover,
+.student-workspace .ios-personal .prs-expand[open] > summary {
+    background: var(--student-tint);
+}
+
+.student-workspace .main :is(
+    .lrn-card, .lrn-step, .trk-row, .prs-group, .pf-month, .fb-row,
+    .prf-card, .hw-card, .notif-row, .video-row
+) {
+    border-radius: var(--r-md);
+}
+.student-workspace .main :is(.lrn-card:not(.lrn-waiting), .trk-row, .prs-group, .pf-month, .fb-row) {
+    border: 1px solid var(--student-rule);
+}
+.student-workspace .main :is(.prs-section-title, .trk-day, .section-title, .fb-group-title) {
+    font-family: var(--font-display);
+    letter-spacing: -.01em;
+}
+.student-workspace .main :is(.prs-row-link, .video-row[href], .fb-row[href]) {
+    transition: background-color var(--duration-fast) var(--ease-out);
+}
+.student-workspace .main :is(.prs-row-link, .video-row[href], .fb-row[href]):is(:hover, :focus-visible) {
+    background-color: var(--student-tint);
+}
+.student-workspace .main :is(.ios-personal, .ios-portfolio, .ios-homework, .ios-cycle) details[open] > summary {
+    color: var(--blue-text);
+}
+.student-workspace .main :is(.ios-personal, .ios-cycle) :is(.prs-row-value, .cyc-score) {
+    font-variant-numeric: tabular-nums;
+}
+.student-workspace .notif-pop { border-color: var(--student-rule); }
+.student-workspace .legal-modal-head {
+    background: var(--student-tint);
+    border-color: var(--student-rule);
+}
+.student-workspace .legal-modal-body { overflow-wrap: anywhere; }
+
+.student-secret {
+    width: min(30rem, calc(100% - 2rem));
+    margin: auto;
+    padding: var(--s-5);
+    border: 1px solid var(--student-rule);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    color: var(--ink);
+}
+.student-secret::backdrop { background: color-mix(in srgb, var(--student-ink-panel) 70%, transparent); }
+.student-secret[open] { animation: student-reveal var(--duration-base) var(--ease-out); }
+.student-secret h2 { font-family: var(--font-display); margin: 0; }
+.student-secret p { margin-block: var(--s-3) var(--s-5); }
+
+.student-lab .app-header {
+    background: #221932;
+    border-block-end: 1px solid #4b3d61;
+}
+.student-lab .app-title { letter-spacing: -.025em; }
+.student-lab .model-card { border-color: #4b3d61; }
+.student-lab .model-card:is(:hover, :focus-visible) { border-color: #c4a5ef; }
+.student-lab .viewer-toolbar { border-block-end: 1px solid #4b3d61; }
+.student-lab :is(.tab-btn.active, .viewer-bottom-nav-btn:focus-visible) {
+    outline: 2px solid #c4a5ef;
+    outline-offset: -2px;
+}
+
+@keyframes student-reveal {
+    from { opacity: .65; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 600px) {
+    .student-workspace .main :is(
+        .lrn-hero, .trk-head, .cyc-hero, .prs-hero, .portfolio-head,
+        .page-header, .prg-head, .dlg-head, .prf-top, .student-upload-heading
+    ) { padding: var(--s-4); }
+    .student-workspace .main .student-learning-hero {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--s-4);
+        padding: var(--s-4);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .student-workspace .lrn-step--done.is-open .lrn-step-body,
+    .student-workspace .lrn-archive-period[open] .lrn-archive-cycles,
+    .student-secret[open] { animation: none; }
+    .student-workspace .main :is(.prs-row-link, .video-row[href], .fb-row[href], .student-learning-jump),
+    .student-workspace .lrn-archive-period > summary,
+    .student-workspace .ios-personal .prs-expand > summary { transition: none; }
+    .student-workspace .student-learning-jump:active { transform: none; }
+}

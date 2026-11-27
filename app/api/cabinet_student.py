@@ -36,6 +36,7 @@ from app.models.push_subscription import PushSubscription
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
+from app.services.notify import PUSH_ENDPOINT_COOKIE, is_allowed_push_endpoint
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services import broadcasts as bc_service
 from app.services import feedback as fb_service
@@ -766,11 +767,15 @@ def push_subscribe(
     endpoint уникален глобально — тот же браузер повторно шлёт тот же endpoint,
     апсерт переносит его на текущего user_id и включает is_active.
     """
-    endpoint = (payload.get("endpoint") or "").strip()
-    keys = payload.get("keys") or {}
-    p256dh = (keys.get("p256dh") or "").strip()
-    auth_key = (keys.get("auth") or "").strip()
-    if not endpoint or not p256dh or not auth_key:
+    endpoint = payload.get("endpoint")
+    keys = payload.get("keys")
+    p256dh = keys.get("p256dh") if isinstance(keys, dict) else None
+    auth_key = keys.get("auth") if isinstance(keys, dict) else None
+    if not (
+        isinstance(endpoint, str) and is_allowed_push_endpoint(endpoint)
+        and isinstance(p256dh, str) and 0 < len(p256dh) <= 256
+        and isinstance(auth_key, str) and 0 < len(auth_key) <= 256
+    ):
         raise HTTPException(status_code=400, detail="Неполные данные подписки")
 
     sub = db.query(PushSubscription).filter(PushSubscription.endpoint == endpoint).first()
@@ -784,7 +789,29 @@ def push_subscribe(
             user_id=user["user_id"], endpoint=endpoint, p256dh=p256dh, auth_key=auth_key, is_active=True,
         ))
     db.commit()
-    return JSONResponse({"ok": True})
+    return _push_device_response(endpoint, active=True)
+
+
+def _push_device_response(endpoint: str, *, active: bool, include_status: bool = False) -> JSONResponse:
+    response = JSONResponse({"ok": True, **({"active": active} if include_status else {})})
+    if active:
+        response.set_cookie(PUSH_ENDPOINT_COOKIE, endpoint, max_age=60 * 60 * 24 * 30,
+                            httponly=True, secure=True, samesite="lax")
+    return response
+
+
+@router.post("/push/status")
+def push_status(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    payload: Annotated[dict, Body(...)],
+):
+    endpoint = payload.get("endpoint")
+    active = isinstance(endpoint, str) and is_allowed_push_endpoint(endpoint) and db.query(
+        PushSubscription.id
+    ).filter_by(endpoint=endpoint, user_id=user["user_id"], is_active=True).first() is not None
+    return _push_device_response(endpoint or "", active=active, include_status=True)
 
 
 @router.post("/push/unsubscribe")

@@ -1,0 +1,32 @@
+{% macro program_page_header(title, description='', actions='', parent_context='', settings='') %}
+{% set aop_blueprint = user.role_rank >= 4 and request.url.path.startswith(('/cabinet/staff/program/periods', '/cabinet/staff/program/stages', '/cabinet/staff/program/cycles')) %}
+<header class="prg-workspace-header" aria-labelledby="program-page-title">
+    {% include "partials/program_switch.html" %}
+    {% include "partials/program_path.html" %}
+    <div class="prg-workspace-row">
+        <div class="prg-workspace-heading">
+            <h1 id="program-page-title">{{ title }}</h1>
+            {% if description|trim %}
+            <div class="prg-workspace-description">{{ description }}</div>
+            {% endif %}
+        </div>
+        {% if actions|trim %}
+        <div class="prg-workspace-actions">{{ actions }}</div>
+        {% endif %}
+    </div>
+    {% if parent_context|trim %}
+    <div class="prg-workspace-context">{{ parent_context }}</div>
+    {% endif %}
+    {% if settings|trim %}
+    <div class="prg-workspace-settings">{{ settings }}</div>
+    {% endif %}
+</header>
+{% if aop_blueprint %}
+<dialog class="aop-secret" data-sa-easter aria-labelledby="aop-secret-title">
+    <h2 id="aop-secret-title">Архивный лист</h2>
+    <p>На полях чертежа сохранился первый эскиз проекта.</p>
+    <div class="aop-secret-sketch" aria-hidden="true"></div>
+    <form method="dialog"><button class="btn-blue" autofocus>Закрыть</button></form>
+</dialog>
+{% endif %}
+{% endmacro %}

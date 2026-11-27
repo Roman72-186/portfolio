@@ -12,6 +12,14 @@ WORK_TYPE_MOCK_EXAM = "mock_exam"
 WORK_TYPE_RETAKE = "retake"
 
 
+class PendingWorkFileDeletion(Base):
+    __tablename__ = "pending_work_file_deletions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
+
 class Work(Base):
     __tablename__ = "works"
 

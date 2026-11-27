@@ -99,6 +99,7 @@ class TrackerTask(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creation_request_id: Mapped[str | None] = mapped_column(String(36), index=True, unique=True, nullable=True)
     diagnostic_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Дедлайн: от него считается цвет строки у ученика. Считать только через

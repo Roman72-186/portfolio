@@ -11,7 +11,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=59">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/tracker.css?v=90">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=15">
 {% endblock %}
@@ -50,7 +50,7 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>Личный трекер {{ hint("Тут весь долг сразу, по всем неделям. Что актуально прямо сейчас – смотри в «Обучении».") }}</h1>
-            <p>Что не сдано и что горит — время московское.</p>
+            <p>Сроки указаны по Москве.</p>
         </div>
     </div>
 
@@ -68,7 +68,7 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="nav-pill trk-tabs" role="group" aria-label="Разделы трекера">
         <button type="button" class="nav-pill-item active" id="trkTabTasks"
                 aria-controls="trkPanelTasks" aria-pressed="true"
-                data-trk-tab="tasks">Задачи</button>
+                data-trk-tab="tasks">Задания</button>
         <button type="button" class="nav-pill-item" id="trkTabDigest"
                 aria-controls="trkPanelDigest" aria-pressed="false"
                 data-trk-tab="digest">Дайджест</button>
@@ -82,7 +82,7 @@ FORM: Operate, список, а не карточка-витрина.
     {% endif %}
 
     {% if not overdue and not upcoming and not done %}
-    <p class="trk-empty">Задач нет.</p>
+    <p class="trk-empty">Заданий пока нет.</p>
     {% endif %}
 
     {% if overdue %}

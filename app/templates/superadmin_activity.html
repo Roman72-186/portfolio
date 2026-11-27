@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/statistics-pagination.css?v=1">
 <script src="/static/js/statistics-pagination.js?v=1" defer></script>
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=22">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=24">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. У кураторов
@@ -369,7 +369,8 @@
                 <label for="tm-tariff">Тариф<select id="tm-tariff" data-tm-filter="tariff"><option value="">Все тарифы</option></select></label>
                 <label for="tm-subject">Предмет<select id="tm-subject" data-tm-filter="subject"><option value="">Все предметы</option></select></label>
                 <label for="tm-level">Уровень<select id="tm-level" data-tm-filter="level"><option value="">Все уровни</option><option value="1">1</option><option value="2">2</option><option value="none">Ещё не определён</option></select></label>
-                <label for="tm-status">Статус<select id="tm-status" data-tm-filter="status"><option value="">Все</option></select></label>
+                <label for="tm-timer">Таймер<select id="tm-timer" data-tm-filter="timer"><option value="">Все</option></select></label>
+                <label for="tm-deadline">Срок сдачи<select id="tm-deadline" data-tm-filter="deadline_status"><option value="">Все</option></select></label>
                 <label for="tm-grade">Балл<select id="tm-grade" data-tm-filter="grade"><option value="">Все работы</option><option value="graded">С баллом</option><option value="ungraded">Сданы без балла</option></select></label>
                 <label for="tm-search">Поиск ученика<input type="search" id="tm-search" data-tm-search placeholder="Имя, ник или номер" autocomplete="off"></label>
             </div>
@@ -390,7 +391,7 @@
                 <h3 class="ss-sub-head">Ученики <span class="ss-sub-count" data-tm-count aria-live="polite"></span></h3>
                 <div class="ss-table-wrap">
                     <table class="ss-table" data-tm-students>
-                        <thead><tr><th>Ученик</th><th>Контрольная</th><th class="ss-ta-r">Работал, мин</th><th>Статус</th><th class="ss-ta-r">Балл</th></tr></thead>
+                        <thead><tr><th>Ученик</th><th>Контрольная</th><th>Таймер (мин)</th><th>Срок сдачи</th><th class="ss-ta-r">Балл</th></tr></thead>
                     </table>
                 </div>
                 <nav class="ss-timed-pages" aria-label="Страницы учеников" data-tm-pages hidden>
@@ -404,11 +405,14 @@
                 const root = document.querySelector('[data-timed]');
                 if (!root) return;
                 const attempts = {{ timed.attempts | tojson }};
-                const LABELS = {
-                    in_time: 'Вовремя', overrun: 'Превысил', unknown_timer: 'Нет данных',
-                    late: 'Опоздал', running_over: 'Нет работы', running: 'Пишет', uploading: 'Ждём фото',
+                const TIMER_LABELS = {
+                    in_time: 'Уложился', overrun: 'Превысил', unknown_timer: 'Нет данных',
+                    running_over: 'Время вышло', running: 'Пишет', uploading: 'Ждём фото',
                 };
-                const STATUS_COLORS = { in_time: 'ab-ok', overrun: 'ss-timed-warning', late: 'ab-danger' };
+                const DEADLINE_LABELS = {
+                    in_deadline: 'В срок', late: 'После срока', no_deadline: 'Без срока', not_submitted: 'Не сдано',
+                };
+                const TIMER_COLORS = { in_time: 'ab-ok', overrun: 'ss-timed-warning' };
                 const filters = Array.from(root.querySelectorAll('[data-tm-filter]'));
                 const search = root.querySelector('[data-tm-search]');
                 const big = root.querySelector('[data-tm-big]');
@@ -436,11 +440,15 @@
                     attempts.forEach(function (a) { if (a[key] !== '' && !seen.has(String(a[key]))) seen.set(String(a[key]), a[label || key]); });
                     return Array.from(seen.entries());
                 }
-                addOptions(root.querySelector('#tm-status'), Object.entries(LABELS));
+                addOptions(root.querySelector('#tm-timer'), Object.entries(TIMER_LABELS));
+                addOptions(root.querySelector('#tm-deadline'), Object.entries(DEADLINE_LABELS));
                 addOptions(root.querySelector('#tm-month'), unique('month_id', 'month'));
                 addOptions(root.querySelector('#tm-tariff'), unique('tariff').sort());
                 addOptions(root.querySelector('#tm-subject'), unique('subject').sort());
 
+                function timerStatus(a) {
+                    return a.submitted ? (a.timer_result || 'unknown_timer') : a.status;
+                }
                 function passes(a) {
                     for (let i = 0; i < filters.length; i += 1) {
                         const value = filters[i].value;
@@ -448,6 +456,8 @@
                         if (!value) continue;
                         if (key === 'level') {
                             if (value === 'none' ? a.level : String(a.level) !== value) return false;
+                        } else if (key === 'timer') {
+                            if (timerStatus(a) !== value) return false;
                         } else if (key === 'grade') {
                             if (!a.submitted || (a.score !== null) !== (value === 'graded')) return false;
                         } else if (String(a[key]) !== value) {
@@ -559,7 +569,7 @@
                         headingCell.appendChild(toggle);
                         const labels = group.insertRow();
                         labels.className = 'ss-timed-mobile-labels';
-                        ['Контрольная', 'Мин', 'Статус', 'Балл'].forEach(function (label) {
+                        ['Контрольная', 'Таймер', 'Срок сдачи', 'Балл'].forEach(function (label) {
                             const th = document.createElement('th');
                             th.textContent = label;
                             th.scope = 'col';
@@ -582,13 +592,40 @@
                                 who.append(name, document.createElement('br'), meta);
                                 tr.appendChild(who);
                             }
-                            const status = document.createElement('td');
-                            status.dataset.label = 'Статус';
+                            const timer = cell('Таймер', a.minutes === null ? '' :
+                                a.minutes + ' из ' + (a.limit || '—'));
+                            if (a.minutes !== null) {
+                                const unit = document.createElement('span');
+                                unit.className = 'ss-timed-mobile-unit';
+                                unit.textContent = ' мин';
+                                timer.appendChild(unit);
+                            }
+                            const timerKey = timerStatus(a);
                             const badge = document.createElement('span');
-                            badge.className = 'act-badge ' + (STATUS_COLORS[a.status] || 'ss-timed-neutral');
-                            badge.textContent = LABELS[a.status];
-                            if (a.upload_overrun) badge.title = 'Загрузка дольше 5 минут';
-                            status.appendChild(badge);
+                            badge.className = 'act-badge ss-timed-timer-badge ' + (TIMER_COLORS[timerKey] || 'ss-timed-neutral');
+                            badge.textContent = TIMER_LABELS[timerKey];
+                            if (a.upload_minutes !== null) {
+                                badge.title = 'Фото и загрузка: ' + a.upload_minutes + ' мин';
+                            }
+                            timer.appendChild(badge);
+
+                            const dueLabel = DEADLINE_LABELS[a.deadline_status];
+                            const due = cell('Срок сдачи', dueLabel);
+                            if (a.deadline_status === 'late') {
+                                const details = document.createElement('details');
+                                const summary = document.createElement('summary');
+                                summary.className = 'act-badge ab-danger ss-timed-due-toggle';
+                                summary.textContent = dueLabel;
+                                const dates = document.createElement('div');
+                                dates.className = 'ss-dim-sm ss-timed-dates';
+                                const submitted = document.createElement('div');
+                                submitted.textContent = 'Сдали ' + a.submitted_msk + ' МСК';
+                                const deadline = document.createElement('div');
+                                deadline.textContent = 'Срок ' + a.deadline_msk + ' МСК';
+                                dates.append(submitted, deadline);
+                                details.append(summary, dates);
+                                due.replaceChildren(details);
+                            }
                             const title = a.title + (a.subject ? ' · ' + a.subject : '') + ' · ' + a.month;
                             const control = cell('Контрольная', title);
                             if (Number.isSafeInteger(a.submission_id) && a.submission_id > 0) {
@@ -600,8 +637,8 @@
                             }
                             tr.append(
                                 control,
-                                cell('Работал, мин', a.minutes === null ? '—' : a.minutes + ' из ' + (a.limit || '—') + (a.upload_minutes !== null ? ' · фото и загрузка: ' + a.upload_minutes + ' мин' : ''), 'ss-ta-r'),
-                                status,
+                                timer,
+                                due,
                                 cell('Балл', a.score === null ? (a.submitted ? 'Ждём баллы' : '—') :
                                     a.score.toLocaleString('ru-RU'), 'ss-ta-r')
                             );

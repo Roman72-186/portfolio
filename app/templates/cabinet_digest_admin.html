@@ -20,13 +20,13 @@ FORM: Operate, расширение существующего кабинета 
     {% include "partials/program_tabs.html" %}
     <div class="trk-head">
         <div class="trk-head-copy">
-            <h1>Дайджест-расписание</h1>
+            <h1>Дайджест</h1>
             <p>Один дайджест — один месяц для одной аудитории. Пока не опубликован, ученик его не видит. После публикации весь месяц не меняется.</p>
         </div>
         <div class="trk-actions">
             <a class="btn-outline" href="/cabinet/staff/digest/types">Типы событий</a>
             {% if prg_edit %}
-            <button type="button" class="btn-blue" data-digest-toggle>Новый дайджест</button>
+            <button type="button" class="btn-blue" data-digest-toggle>Создать дайджест</button>
             {% endif %}
         </div>
     </div>
@@ -138,7 +138,7 @@ FORM: Operate, расширение существующего кабинета 
         {% endfor %}
     </div>
     {% else %}
-    <div class="trk-empty">Дайджестов пока нет. Первый появится у учеников после публикации.</div>
+    <div class="trk-empty">Дайджестов пока нет. Ученики увидят дайджест после публикации.</div>
     {% endif %}
 </div>
 

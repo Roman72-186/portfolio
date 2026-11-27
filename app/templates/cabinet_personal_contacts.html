@@ -17,7 +17,6 @@
 
     <div class="prs-hero">
         <h1>Личные данные</h1>
-        <p>Здесь можно изменить данные профиля и контакты.</p>
     </div>
 
     {% if errors %}
@@ -95,7 +94,7 @@
                 <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" readonly
                        value="{{ ('@' ~ user.tg_username) if user.tg_username else '' }}"
                        placeholder="ника нет" aria-describedby="contacts-tg-hint">
-                <p class="prs-field-note" id="contacts-tg-hint">Берём из Telegram, здесь он не меняется. Нет ника – задай его в настройках Telegram, поле «Имя пользователя», затем выйди и войди снова.</p>
+                <p class="prs-field-note" id="contacts-tg-hint">Ник берётся из Telegram. Чтобы добавить или изменить его, открой «Имя пользователя» в настройках Telegram, затем войди на платформу заново.</p>
             </div>
             {% else %}
             <div class="prs-field">
@@ -110,7 +109,7 @@
                 <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" required
                        value="{{ form.tg_username }}" placeholder="@username"
                        maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}">
-                <p class="prs-field-note">По этому нику твои работы находятся в облаке. Меняешь ник – напиши в поддержку, иначе загруженное раньше потеряется.</p>
+                <p class="prs-field-note">Если поменяешь ник, напиши в поддержку, чтобы сохранить доступ к ранее загруженным работам.</p>
             </div>
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-email">Электронная почта <span class="prs-required">*</span></label>
@@ -172,7 +171,7 @@
         {% endif %}
 
         <div class="prs-form-actions">
-            <button type="submit" class="prs-save-btn">Сохранить</button>
+            <button type="submit" class="prs-save-btn">Сохранить изменения</button>
             <a class="prs-cancel-link" href="/cabinet/personal">Отмена</a>
         </div>
     </form>

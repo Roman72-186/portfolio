@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=13">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=14">
+<link rel="stylesheet" href="/static/css/superadmin_dashboard.css?v=3">
+<script src="/static/js/superadmin_dashboard.js?v=2" defer></script>
 {% endblock %}
 {% block content %}
 {#- Один экран у ГП (/cabinet/admin-panel) и суперадмина (/cabinet/superadmin),
@@ -9,16 +11,23 @@
     Разбор 28.09.2026 (/critique): вместо баннера с градиентом — обычный
     заголовок, пункты бокового меню здесь не повторяются. Очередь, проверка,
     билеты и статистика пробников сняты с экрана (владелец 29.09.2026). -#}
-<div class="staff-wrap ios-staff-dashboard">
+{% set is_superadmin = user.role_rank >= 5 %}
+{% set closed_sections = user.closed_sections or [] %}
+{% set show_management = is_superadmin or 'people' not in closed_sections or 'statistics' not in closed_sections %}
+<div class="staff-wrap ios-staff-dashboard sa-workspace">
 
     <header class="page-header sfd-head">
         <div>
-            <p class="sfd-role">{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %}</p>
+            <h1 class="page-title">{{ 'Кабинет суперадминистратора' if is_superadmin else 'Кабинет главного преподавателя' }}</h1>
             <div class="dashboard-name-row">
-                <h1 class="page-title">{{ user.last_name or '' }} {{ user.first_name or user.name }}</h1>
+                <p class="sa-user">{{ user.last_name or '' }} {{ user.first_name or user.name }}</p>
                 {% include "partials/mobile_dashboard_logout.html" %}
                 {% include "partials/mobile_dashboard_theme_toggle.html" %}
             </div>
+            <nav class="sa-jump" aria-label="Разделы кабинета">
+                {% if show_management %}<a href="#tools-people-title">{{ 'Управление' if is_superadmin else 'Люди и активность' }}</a>{% endif %}
+                <a href="#curators-title">{{ 'Команда' if is_superadmin else 'Кураторы' }}</a>
+            </nav>
         </div>
     </header>
 
@@ -88,38 +97,32 @@
             <div class="stat-tile-sub">Всего {{ total_works }} {{ total_works | plural('работа', 'работы', 'работ') }}</div>
         </div>
         <div class="stat-tile">
-            <div class="stat-tile-head"><span class="ico">⭐</span> Средний балл за пробники</div>
-            <div class="stat-tile-value">{% if avg_mock_score is not none %}{{ avg_mock_score }}{% else %}—{% endif %}</div>
-            <div class="stat-tile-sub">{% if avg_mock_score is none %}оценок пока нет{% endif %}</div>
-        </div>
-        <div class="stat-tile">
             <div class="stat-tile-head"><span class="ico">🆕</span> Новых учеников в {{ month_name }}</div>
             <div class="stat-tile-value">{{ new_students_month }}</div>
             <div class="stat-tile-sub"></div>
         </div>
     </div>
 
+    {% if show_management %}
+    <div class="sa-overview">
     <div class="sfd-groups">
         <section class="panel" aria-labelledby="tools-people-title">
-            <div class="panel-header"><h2 class="panel-title" id="tools-people-title">Люди и активность</h2></div>
+            <div class="panel-header"><h2 class="panel-title" id="tools-people-title" tabindex="-1">{% if user.role_rank >= 5 %}Управление{% else %}Люди и активность{% endif %}</h2></div>
             {# Плитки закрытых суперадмином разделов не показываем (services/section_access.py). #}
-            {% set _closed = user.closed_sections or [] %}
-            {% if 'people' not in _closed %}
+            {% if 'people' not in closed_sections %}
             <a href="/cabinet/superadmin/users" class="sfd-tool">
                 <span class="sfd-tool-icon" aria-hidden="true">👥</span>
                 <span class="sfd-tool-body"><span class="sfd-tool-title">Пользователи</span><span class="sfd-tool-desc">Аккаунты, роли и тарифы</span></span>
             </a>
             {% endif %}
-            {% if 'statistics' not in _closed %}
+            {% if 'statistics' not in closed_sections %}
             <a href="/cabinet/superadmin/activity" class="sfd-tool">
                 <span class="sfd-tool-icon" aria-hidden="true">📈</span>
                 <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика активности</span><span class="sfd-tool-desc">Диагностика, видео, задания, работа кураторов</span></span>
             </a>
-            {% endif %}
-            {% if user.role_rank >= 5 %}
-            <a href="/cabinet/superadmin/access" class="sfd-tool">
-                <span class="sfd-tool-icon" aria-hidden="true">🔒</span>
-                <span class="sfd-tool-body"><span class="sfd-tool-title">Доступы к разделам</span><span class="sfd-tool-desc">Что открыто кураторам, модераторам и Главным преподавателям</span></span>
+            <a href="/cabinet/superadmin/stats/telegram" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">📊</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика Telegram-бота</span></span>
             </a>
             {% endif %}
             {% if user.role_rank >= 5 %}
@@ -133,9 +136,10 @@
             {% endif %}
         </section>
     </div>
+    {% endif %}
 
-    <div class="{% if user.role_rank >= 5 %}two-col{% else %}sfd-single-col{% endif %}">
-        {% if user.role_rank >= 5 %}
+    {% if user.role_rank >= 5 %}
+    <div class="sa-analysis">
         <section class="panel" aria-labelledby="roles-title">
             <div class="panel-header"><h2 class="panel-title" id="roles-title">Пользователи по ролям</h2></div>
             {% set role_icons = {1: '🎓', 2: '👤', 3: '🛡', 4: '⚙️', 5: '👑'} %}
@@ -146,28 +150,14 @@
             </div>
             {% endfor %}
         </section>
-        {% endif %}
-        <section class="panel" aria-labelledby="works-title">
-            <div class="panel-header">
-                <h2 class="panel-title" id="works-title">Работы по типам</h2>
-                <span class="sfd-meta-text">всего {{ total_works }}</span>
-            </div>
-            {% if total_works %}
-            <div class="type-grid">
-                <div class="type-cell"><div class="type-label">До обучения</div><div class="type-val">{{ works_by_type.get('before', 0) }}</div></div>
-                <div class="type-cell"><div class="type-label">После обучения</div><div class="type-val">{{ works_by_type.get('after', 0) }}</div></div>
-                <div class="type-cell"><div class="type-label">Пробники</div><div class="type-val">{{ works_by_type.get('mock_exam', 0) }}</div></div>
-            </div>
-            {% else %}
-            <p class="sfd-empty-row">Работ пока нет. Ученики загружают их внутри заданий учебной программы.</p>
-            {% endif %}
-        </section>
     </div>
+    {% endif %}
 
+    {% if show_management %}</div>{% endif %}
     <div class="{% if user.role_rank >= 5 %}two-col{% else %}sfd-single-col{% endif %}">
         <section class="panel" aria-labelledby="curators-title">
             <div class="panel-header">
-                <h2 class="panel-title" id="curators-title">Кураторы</h2>
+                <h2 class="panel-title" id="curators-title" tabindex="-1">Кураторы</h2>
                 <div class="sfd-row-actions">
                     <span class="sfd-meta-text">{{ curators | length }} чел.</span>
                     <button type="button" id="staffToggleBtn-curators" class="issue-link-btn" aria-expanded="false" aria-controls="staffListBody-curators" onclick="toggleStaffList('curators')">Показать</button>
@@ -240,6 +230,14 @@
         </section>
         {% endif %}
     </div>
+
+    <dialog class="sa-easter" data-sa-easter aria-labelledby="sa-easter-title">
+        <h2 id="sa-easter-title">Секретный этаж</h2>
+        <p>Вы нашли место, где чертежи отдыхают от правок.</p>
+        <form method="dialog">
+            <button class="btn-blue" autofocus>Вернуться в кабинет</button>
+        </form>
+    </dialog>
 
     <script>
     (function(){

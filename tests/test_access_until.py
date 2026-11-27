@@ -77,7 +77,7 @@ def test_no_deadline_does_not_block(auth_client):
     """Пустой срок — как у всех действующих учеников, ничего не меняется."""
     client, _student = auth_client
 
-    assert client.get("/cabinet/personal").status_code == 200
+    assert client.get("/cabinet/learning", follow_redirects=False).status_code == 200
 
 
 def test_expired_deadline_ignored_for_staff(db, client, session_factory, user_factory):
@@ -92,7 +92,7 @@ def test_expired_deadline_ignored_for_staff(db, client, session_factory, user_fa
 
     resp = client.get("/cabinet/students", follow_redirects=False)
 
-    assert resp.status_code != 302 or resp.headers.get("location") != "/cabinet/personal"
+    assert resp.status_code == 200
 
 
 def test_expired_student_without_profile_does_not_loop(db, client, session_factory, user_factory):

@@ -8,11 +8,11 @@
 <div class="cyc-page ios-cycle">
     <section class="cyc-hero">
         <h1>Обратная связь</h1>
-        <p>Здесь ответы преподавателей по твоим работам и пробникам.</p>
+        <p>Ответы преподавателей по работам и пробникам.</p>
         {% set works_count = open_works|length + closed_works|length %}
         {% if works_count %}<span class="badge">Работ с ответом: {{ works_count }}</span>{% endif %}
         {% if cycles_count or not works_count %}
-            <span class="badge">Циклов всего: {{ cycles_count }}</span>
+            <span class="badge">Пробников: {{ cycles_count }}</span>
             {{ hint("Цикл – это один пробник: билет, твоя работа и результат проверки.") }}
         {% endif %}
         {% set total_unread = open_cycles|sum(attribute='unread_count') + open_works|sum(attribute='unread_count') + closed_works|sum(attribute='unread_count') %}
@@ -57,7 +57,7 @@
         {% endif %}
         {% if not open_cycles and not closed_cycles %}
             {% if not open_works and not closed_works %}
-                <div class="fb-empty">Пока пусто. Когда преподаватель ответит на твою работу, ответ появится здесь.</div>
+                <div class="fb-empty">Ответов преподавателей пока нет.</div>
             {% endif %}
         {% else %}
             {% if open_cycles %}

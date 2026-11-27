@@ -112,11 +112,11 @@ def test_bell_shows_error_then_empty_and_keeps_badge_on_failed_mark(auth_client,
         bell = page.locator("button.notif-bell")
         body = page.locator("#notifPopBody")
         bell.click()
-        body.get_by_text("Не удалось загрузить уведомления.").wait_for()
+        body.get_by_text("Не удалось обновить список.").wait_for()
         feed_status = 200
         feed_body = '{"unread_count": 1, "notifications": [{"title":"Новое"}]}'
         with page.expect_response("**/notifications/mark-read"):
-            body.get_by_role("button", name="Повторить").click()
+            body.get_by_role("button", name="Повторить загрузку", exact=True).click()
         assert body.get_by_text("Новое").is_visible()
         assert bell.locator("[data-notif-bell-badge]").is_visible()
 

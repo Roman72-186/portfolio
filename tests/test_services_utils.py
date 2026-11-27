@@ -49,26 +49,38 @@ def test_compress_image_no_exif_leaves_dimensions():
     assert res.size == (200, 100)
 
 
-def test_rotate_image_bytes_swaps_dimensions():
-    # 200x100 landscape → after a 90° rotation must become 100x200 portrait,
-    # in both directions (superadmin rotate-photo tool).
-    data = _make_jpeg(200, 100, orientation=None)
-    for clockwise in (True, False):
-        out = rotate_image_bytes(data, clockwise=clockwise)
-        res = Image.open(io.BytesIO(out))
-        assert res.size == (100, 200)
+def _marked_image():
+    image = Image.new("RGB", (120, 80), "white")
+    image.paste("black", (0, 0, 40, 40))
+    data = io.BytesIO()
+    image.save(data, format="JPEG")
+    return data.getvalue()
+
+
+@pytest.mark.parametrize("clockwise, dark, light", [
+    (True, (60, 20), (20, 100)), (False, (20, 100), (60, 20)),
+])
+def test_rotate_image_bytes_swaps_dimensions(clockwise, dark, light):
+    image = Image.open(io.BytesIO(rotate_image_bytes(_marked_image(), clockwise=clockwise)))
+    assert image.size == (80, 120)
+    assert max(image.getpixel(dark)) < 32
+    assert min(image.getpixel(light)) > 220
 
 
 def test_rotate_image_bytes_full_turn_restores_dimensions():
-    # Four quarter-turns return to the original orientation (no compounding crop).
-    data = _make_jpeg(200, 100, orientation=None)
-    cur = data
-    for _ in range(4):
-        cur = rotate_image_bytes(cur, clockwise=True)
-    assert Image.open(io.BytesIO(cur)).size == (200, 100)
+    data = _marked_image()
+    for expected_size in [(80, 120), (120, 80)] * 2:
+        data = rotate_image_bytes(data, clockwise=True)
+        assert Image.open(io.BytesIO(data)).size == expected_size
+    image = Image.open(io.BytesIO(data))
+    assert image.size == (120, 80)
+    assert max(image.getpixel((20, 20))) < 32
+    assert min(image.getpixel((100, 60))) > 220
 
 
 def test_rotate_image_bytes_rejects_non_image():
     # A non-image payload (e.g. a video) must raise so the route returns a clean error.
-    with pytest.raises(Exception):
+    from PIL import UnidentifiedImageError
+
+    with pytest.raises(UnidentifiedImageError):
         rotate_image_bytes(b"not an image at all", clockwise=True)
