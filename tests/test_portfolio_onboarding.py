@@ -11,7 +11,7 @@ from app.services import payments, portfolio_onboarding
 from app.services.portfolio_window import snapshot
 from app.services.tz import now_msk
 from app.services.user_management import tag_annual_newcomer
-from tests.test_portfolio_window import _post_before, _task, _work
+from tests.test_portfolio_window import _JPG_BYTES, _post_before, _task, _work
 
 
 @pytest.fixture
@@ -222,6 +222,34 @@ def test_upload_post_cannot_start_clock(db, newcomer, client, session_factory):
     assert db.get(PortfolioOnboarding, newcomer.id).started_at is None
 
 
+def test_student_can_close_before_once_without_losing_uploaded_work(db, newcomer, client, session_factory):
+    _pay(db, newcomer)
+    _login(client, session_factory, newcomer)
+    close_url = "/cabinet/learning/portfolio-before/close"
+    assert client.post(close_url).status_code == 409
+    client.get("/upload?section=before")
+    work = _work(db, newcomer)
+    assert 'data-close-before>' in client.get("/cabinet/learning").text
+
+    assert client.post(close_url).json() == {"ok": True}
+    saved = db.get(PortfolioOnboarding, newcomer.id)
+    db.refresh(saved)
+    closed_at = saved.closed_at
+    assert closed_at is not None
+    assert client.post(close_url).json() == {"ok": True}
+    db.refresh(saved)
+    assert saved.closed_at == closed_at
+    assert 'data-role="portfolio-onboarding"' not in client.get("/cabinet/learning").text
+    assert 'id="upload-form"' not in client.get("/upload?section=before").text
+    assert _post_before(client).status_code == 422
+    html = client.post("/upload", data={"section": "before"},
+                       files={"photos": ("p.jpg", _JPG_BYTES, "image/jpeg")})
+    assert 'id="upload-form"' not in html.text
+    assert client.delete(f"/upload/works/{work.id}").status_code == 422
+    assert db.get(type(work), work.id) is not None
+    assert _post_before(client, section="after", month="сентябрь").status_code == 200
+
+
 def test_after_get_never_starts_before_window(db, newcomer, client, session_factory):
     _pay(db, newcomer)
     _login(client, session_factory, newcomer)
@@ -232,7 +260,7 @@ def test_after_get_never_starts_before_window(db, newcomer, client, session_fact
 def test_expired_window_cannot_be_bypassed_by_weekly_window_or_block_id(db, newcomer, client, session_factory):
     _pay(db, newcomer)
     row = db.get(PortfolioOnboarding, newcomer.id)
-    row.started_at = now_msk() - timedelta(hours=73)
+    row.started_at = now_msk().astimezone(timezone.utc) - timedelta(hours=73)
     task = _task(db, newcomer)
     block = TaskBlock(task_id=task.id, block_type=BLOCK_PORTFOLIO, bypass_sequence=True)
     db.add(block)
@@ -289,7 +317,7 @@ def test_first_photo_keeps_entry_and_delete_is_limited_to_window(db, newcomer, c
     work = _work(db, newcomer)
     assert client.delete(f"/upload/works/{work.id}").status_code == 200
     row = db.get(PortfolioOnboarding, newcomer.id)
-    row.started_at = now_msk() - timedelta(hours=73)
+    row.started_at = now_msk().astimezone(timezone.utc) - timedelta(hours=73)
     db.commit()
     work = _work(db, newcomer)
     assert client.delete(f"/upload/works/{work.id}").status_code == 422
@@ -323,3 +351,6 @@ def test_another_student_cannot_start_someone_elses_window(db, newcomer, client,
     _login(client, session_factory, other)
     client.get(f"/upload?section=before&user_id={newcomer.id}")
     assert db.get(PortfolioOnboarding, newcomer.id).started_at is None
+    portfolio_onboarding.start(db, newcomer.id)
+    assert client.post(f"/cabinet/learning/portfolio-before/close?user_id={newcomer.id}").status_code == 409
+    assert db.get(PortfolioOnboarding, newcomer.id).closed_at is None

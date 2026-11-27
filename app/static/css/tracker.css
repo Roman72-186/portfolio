@@ -597,6 +597,31 @@
     color: var(--success);
 }
 
+.lrn-portfolio-onboarding {
+    margin-block: var(--s-5);
+}
+
+.lrn-portfolio-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-3);
+}
+
+.lrn-portfolio-dialog {
+    width: min(420px, calc(100% - 2 * var(--s-4)));
+    padding: var(--s-5);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--surface);
+    color: var(--ink);
+}
+
+.lrn-portfolio-dialog::backdrop {
+    background: rgb(0 0 0 / 55%);
+}
+
 .ios-learning .lrn-empty {
     background: var(--ios-card-bg); border-radius: 16px;
     font: 500 15px/1.4 var(--ios-font); color: var(--ios-label-2);

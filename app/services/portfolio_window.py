@@ -217,12 +217,13 @@ def snapshot(
     user_tariff: str | None,
     section: str | None = None,
     preferred_block_id: int | None = None,
+    for_write: bool = False,
 ) -> WindowSnapshot:
     # Paid newcomer admission is authoritative for Before: weekly blocks and
     # the legacy "no blocks" fallback must not extend these 72 hours.
     if section in (None, SECTION_BEFORE):
         from app.services.portfolio_onboarding import window
-        admission = window(db, user_id)
+        admission = window(db, user_id, for_write=for_write)
         if admission is not None:
             return WindowSnapshot(
                 open=admission if admission.is_open else None,

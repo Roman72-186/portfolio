@@ -27,17 +27,17 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
-from app.dependencies import require_student
+from app.dependencies import require_csrf_header, require_student
 from app.services.adaptation import november_cycle
 from app.services.cycle_feed import archive_cycle_ids, archive_for_student, feed_for_student
 from app.services import intake_link as intake_link_service
 from app.services.program import item_details
-from app.services.portfolio_onboarding import card as portfolio_onboarding_card
+from app.services import portfolio_onboarding
 from app.services.task_blocks import completion_blocker, completion_button_needed
 from app.services.tz import msk_text, today_msk
 from app.services.tracker import accessible_cycles
@@ -141,7 +141,7 @@ def cabinet_learning(
         "request": request,
         "user": user,
         "feed": feed,
-        "portfolio_onboarding": portfolio_onboarding_card(db, user["user_id"]),
+        "portfolio_onboarding": portfolio_onboarding.card(db, user["user_id"]),
         "focus_task_id": focus_task_id,
         "focus_subject": focus_subject,
         # Нужен partial'у `partials/task_action.html` у шагов без блоков: без
@@ -154,6 +154,18 @@ def cabinet_learning(
         "onboarding_access_until_text": msk_text(user.get("access_until")),
         "support_url": SUPPORT_URL,
     })
+
+
+@router.post("/learning/portfolio-before/close", response_class=JSONResponse)
+def close_portfolio_before(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    if not portfolio_onboarding.close(db, user["user_id"]):
+        return JSONResponse({"ok": False, "error": "Окно загрузки не было открыто."}, status_code=409)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.get("/learning/archive", response_class=HTMLResponse)

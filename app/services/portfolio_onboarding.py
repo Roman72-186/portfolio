@@ -94,19 +94,34 @@ def start(db: Session, user_id: int) -> PortfolioOnboarding | None:
     return row
 
 
-def window(db: Session, user_id: int):
+def close(db: Session, user_id: int) -> bool:
+    row = db.get(PortfolioOnboarding, user_id, with_for_update=True, populate_existing=True)
+    if row is None or row.granted_at is None or row.started_at is None:
+        return False
+    if row.closed_at is None:
+        row.closed_at = now_msk().astimezone(timezone.utc)
+    return True
+
+
+def window(db: Session, user_id: int, *, for_write: bool = False):
     """None means legacy rules; an unstarted managed window is always closed."""
-    row = db.get(PortfolioOnboarding, user_id)
+    # Serialize uploads and deletions with manual closure on the admission row.
+    row = db.get(PortfolioOnboarding, user_id, with_for_update=for_write, populate_existing=for_write)
     if row is None:
         return None
     # Local import avoids a cycle: the shared resolver owns the public type.
     from app.services.portfolio_window import PortfolioWindow
     started = _utc(row.started_at) if row.started_at else None
     deadline = started + timedelta(hours=WINDOW_HOURS) if started else None
+    if row.closed_at is not None:
+        deadline = min(deadline, _utc(row.closed_at)) if deadline else _utc(row.closed_at)
     return PortfolioWindow(
         block_id=None, task_id=None, section=WORK_TYPE_BEFORE,
         opens_at=started, closes_at=deadline,
-        is_open=bool(row.granted_at and started and deadline > now_msk() and payment_active(db, user_id)),
+        is_open=bool(
+            row.closed_at is None and row.granted_at and started
+            and deadline > now_msk() and payment_active(db, user_id)
+        ),
     )
 
 
@@ -130,7 +145,7 @@ def uploaded(db: Session, user_id: int) -> bool | None:
 def card(db: Session, user_id: int) -> dict | None:
     """Display-only state. Rendering a card must never start a timer."""
     row = db.get(PortfolioOnboarding, user_id)
-    if row is None or row.granted_at is None or not payment_active(db, user_id):
+    if row is None or row.closed_at is not None or row.granted_at is None or not payment_active(db, user_id):
         return None
     from app.services.portfolio_window import format_deadline_msk
     state = window(db, user_id)

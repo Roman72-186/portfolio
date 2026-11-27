@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, Backgro
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
+from starlette.concurrency import run_in_threadpool
 
 from app.cache import invalidate_session
 from app.config import settings
@@ -49,7 +50,6 @@ from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_M
 from app.services.n8n import send_photo_to_n8n
 from app.services.portfolio_window import (
     PortfolioWindow,
-    find_open_portfolio_window,
     format_deadline_msk,
     snapshot,
 )
@@ -134,7 +134,9 @@ def _window_closed_message(closed: PortfolioWindow | None) -> str:
     )
 
 
-def _resolve_window(db: DBSession, user: dict, mode: str, block_id: int | None = None):
+def _resolve_window(
+    db: DBSession, user: dict, mode: str, block_id: int | None = None, *, for_write: bool = False,
+):
     """Можно ли ученику сейчас грузить и удалять работы раздела `mode`.
 
     Возвращает `(window, allowed, context)`. `allowed=False` — ни загрузить,
@@ -154,6 +156,7 @@ def _resolve_window(db: DBSession, user: dict, mode: str, block_id: int | None =
         user_tariff=user.get("tariff"),
         section=mode,
         preferred_block_id=block_id,
+        for_write=for_write,
     )
     if state.open is not None:
         return state.open, True, {
@@ -781,7 +784,7 @@ async def upload_photos(
     # иначе форма открывалась бы, а отправка возвращала «Загрузка закрыта».
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
-    window, allowed, window_ctx = _resolve_window(db, user, mode, block)
+    window, allowed, window_ctx = await run_in_threadpool(_resolve_window, db, user, mode, block, for_write=True)
 
     def _err(msg):
         return _render_upload(
@@ -880,7 +883,7 @@ async def upload_photos_api(
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
 
-    window, allowed, window_ctx = _resolve_window(db, user, mode, block)
+    window, allowed, window_ctx = await run_in_threadpool(_resolve_window, db, user, mode, block, for_write=True)
     if not allowed:
         return JSONResponse(
             {"success": False, "error": window_ctx["window_closed_message"]},
@@ -1100,12 +1103,7 @@ def delete_own_work(
     # Послабление «нет блока — грузи как раньше» на удаление НЕ распространяется:
     # отсутствие окна не выдаёт новых прав, иначе ученик сносил бы работы «После»
     # круглый год, а вместе с ними и файлы из хранилища.
-    window = find_open_portfolio_window(
-        db,
-        user_id=user["user_id"],
-        user_tariff=user.get("tariff"),
-        section=work.work_type,
-    )
+    window, _, _ = _resolve_window(db, user, work.work_type, for_write=True)
     if window is None:
         return JSONResponse(
             {"ok": False, "error": WINDOW_DELETE_CLOSED}, status_code=422

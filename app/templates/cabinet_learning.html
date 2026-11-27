@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=97">
+<link rel="stylesheet" href="/static/css/tracker.css?v=98">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% if student_workspace and not archive_view %}
 <script src="/static/js/student_learning.js?v=1" defer></script>
@@ -88,13 +88,25 @@
     {% endif %}
 
     {% if portfolio_onboarding and not archive_view %}
-    <div class="lrn-card" data-role="portfolio-onboarding">
+    <div class="lrn-card lrn-portfolio-onboarding" data-role="portfolio-onboarding">
         <div class="lrn-card-title">Портфолио до обучения</div>
         {% if portfolio_onboarding.expired %}
         <p class="lrn-card-note">Окно загрузки закрылось {{ portfolio_onboarding.deadline }} МСК. Если нужно добавить работы, напиши в поддержку.</p>
         {% elif portfolio_onboarding.started %}
         <p class="lrn-card-note">Добавлять и удалять непроверенные фото можно до {{ portfolio_onboarding.deadline }} МСК.</p>
-        <a class="btn-blue" href="/upload?section=before">Продолжить загрузку</a>
+        <div class="lrn-portfolio-actions">
+            <a class="btn-blue" href="/upload?section=before">Продолжить загрузку</a>
+            <button class="btn-outline" type="button" data-close-before>Закрыть загрузку</button>
+        </div>
+        <dialog class="lrn-portfolio-dialog" aria-labelledby="close-before-title">
+            <h2 id="close-before-title">Закрыть загрузку «До»?</h2>
+            <p>Загруженные фото сохранятся. Добавлять и удалять фото «До» больше не получится.</p>
+            <p class="lrn-card-note" data-close-before-status role="status"></p>
+            <form method="dialog" class="lrn-portfolio-actions">
+                <button class="btn-outline" type="submit" autofocus>Отмена</button>
+                <button class="btn-danger" type="button" data-confirm-close-before>Закрыть загрузку</button>
+            </form>
+        </dialog>
         {% else %}
         <p class="lrn-card-note">Загрузи работы, которые ты сделал до обучения. После открытия формы у тебя будет 72 часа, чтобы добавить фото и исправить загрузку.</p>
         <a class="btn-blue" href="/upload?section=before">Открыть портфолио</a>
@@ -423,6 +435,31 @@ function lrnFocusStep(target) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    var closeBefore = document.querySelector('[data-close-before]');
+    if (closeBefore) {
+        var portfolioCard = closeBefore.closest('.lrn-portfolio-onboarding');
+        var dialog = portfolioCard.querySelector('dialog');
+        var confirmClose = dialog.querySelector('[data-confirm-close-before]');
+        var closeStatus = dialog.querySelector('[data-close-before-status]');
+        closeBefore.addEventListener('click', function () { dialog.showModal(); });
+        confirmClose.addEventListener('click', function () {
+            confirmClose.disabled = true;
+            closeStatus.textContent = 'Закрываем загрузку…';
+            window.csrfFetch('/cabinet/learning/portfolio-before/close', {method: 'POST'})
+                .then(function (response) {
+                    return response.json().then(function (data) {
+                        if (!response.ok || !data.ok) throw new Error(data.error);
+                    });
+                }).then(function () {
+                    dialog.close();
+                    portfolioCard.remove();
+                }).catch(function () {
+                    confirmClose.disabled = false;
+                    closeStatus.textContent = 'Не удалось закрыть загрузку. Попробуй ещё раз.';
+                });
+        });
+    }
+
     var cta = document.querySelector('[data-learning-cta]');
     if (cta) cta.addEventListener('click', function (event) {
         if (!event.target.closest('.student-learning-jump')) return;
