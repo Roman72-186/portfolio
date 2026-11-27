@@ -60,6 +60,18 @@ scope)` и свойством `answered` (одна попытка: после о
     }
 
     function sectionHost(list, block) {
+        if (block.container_path && block.container_path.length) {
+            return block.container_path.reduce(function (host, node) {
+                var group = host.lastElementChild;
+                if (!group || group.dataset.universalKey !== node.key) {
+                    group = el('section', 'lrn-universal-block lrn-nested-block');
+                    group.dataset.universalKey = node.key;
+                    if (node.title) group.appendChild(el('p', 'lrn-nested-title', node.title));
+                    host.appendChild(group);
+                }
+                return group;
+            }, list);
+        }
         if (!block.universal_key) return list;
         var group = list.lastElementChild;
         if (!group || group.dataset.universalKey !== block.universal_key) {
@@ -1280,6 +1292,14 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));
                 }
                 wrap.appendChild(el('p', 'video-help', 'После завершения выполнения будет ещё 5 минут на фото и загрузку.'));
+                if (block.started_at) {
+                    var started = new Date(block.started_at);
+                    wrap.appendChild(el(
+                        'p', 'video-help',
+                        'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
+                            + ' · ' + started.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'})
+                    ));
+                }
                 if (block.done || block.needs_revision) {
                     wrap.appendChild(el(
                         'p',
@@ -1324,11 +1344,6 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(note);
                     return wrap;
                 }
-                var started = new Date(block.started_at);
-                wrap.appendChild(el(
-                    'p', 'video-help',
-                    'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
-                ));
                 if (block.work_finished_at) {
                     wrap.appendChild(el('p', 'video-help', block.overrun
                         ? 'Выполнение завершено с превышением времени. Теперь загрузи фото.'

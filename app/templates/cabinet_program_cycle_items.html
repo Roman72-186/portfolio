@@ -15,24 +15,25 @@
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=68">
+<link rel="stylesheet" href="/static/css/program.css?v=76">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=27">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=92">
+<link rel="stylesheet" href="/static/css/tracker.css?v=96">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=3">
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=5">
 {% endblock %}
 {% block content %}
 {% from "partials/program_settings_panel.html" import settings_panel %}
+{% from "components/hint.html" import hint %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 {# Плеер в «Глазами ученика» (владелец 13.10.2026: «когда я захожу смотреть
    глазами ученика, у меня нету плеера») — то же ядро, что в ленте ученика. #}
 {% include "partials/inline/_video_player.html" %}
 <script src="/static/js/photo-prep.js?v=1"></script>
-<script src="/static/js/task-blocks-render.js?v=56"></script>
+<script src="/static/js/task-blocks-render.js?v=58"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# Подсказки «?» у пунктов «Доступности блока» (06.10.2026). #}
@@ -47,78 +48,60 @@
 {% set prg_edit = can(user, "program") %}
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
-    {% include "partials/program_path.html" %}
-    {% if prg_edit and payments_staff(user) and flow_offer and flow_offer.deleted_at %}
-        <p>Ссылка на оплату удалена.</p>
-    {% elif prg_edit and payments_staff(user) and flow_offer %}
-        <a class="btn-outline" href="/cabinet/flows#flow-{{ flow_offer.id }}">Ссылка на оплату и настройки потока</a>
-    {% elif prg_edit and payments_staff(user) and can_create_flow_offer %}
-        <details class="card">
-            <summary>Создать ссылку на оплату</summary>
-            <form method="post" action="/cabinet/flows/weeks/{{ topic.id }}/offer">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <p>Доступ к заданиям с {{ topic.opens_at | msk_text }} до {{ topic.ends_at | msk_text }} МСК. Продажи закончатся вместе с доступом.</p>
-                <label class="form-label" for="week-offer-price">Цена, ₽</label>
-                <input class="form-input" id="week-offer-price" name="price" inputmode="decimal" required>
-                <label class="form-label" for="week-offer-start">Начало продаж (МСК)</label>
-                <input class="form-input" id="week-offer-start" name="sales_from" type="datetime-local" required>
-                <div class="form-actions">
-                    <button class="btn-blue" type="submit">Создать ссылку</button>
-                </div>
-            </form>
-        </details>
-    {% endif %}
-
-    <div class="prg-head">
-        <div class="prg-head-copy">
-            <h1>{{ cycle_label }}</h1>
-            {% if topic.description %}<p>{{ topic.description | rich_text | safe }}</p>{% endif %}
-            <p class="prg-hint" data-role-note>
-                {# TODO(владелец): пояснение о смысле цикла — формулировка ещё
-                   не дана, не придумывать самостоятельно (10.09.2026). #}
-            </p>
-        </div>
-        {# На уровень выше в том же периоде и этапе, а не в общий список
-           (владелец 06.10.2026). #}
+    {% from "components/program_page_header.html" import program_page_header with context %}
+    {% set header_actions %}
+        {% if prg_edit %}
+        <button type="button" class="btn-blue" data-open-form>Создать задание</button>
+        {% endif %}
         {% if is_stage %}
         <a class="btn-outline" href="/cabinet/staff/program/stages{{ '?period=%s' % prg_path.period_id if prg_path.period_id }}">К этапам</a>
         {% else %}
         <a class="btn-outline" href="/cabinet/staff/program/cycles{{ '?stage=%s' % stage_id if stage_id }}">К циклам</a>
         {% endif %}
-    </div>
-
-    {# Переключатель соседних циклов того же этапа — плашками, по аналогии с
-       тем, как раньше переключались типы заданий (владелец 24.09.2026).
-       Ссылка, не JS-переключение форм: соседний цикл — другой topic_id со
-       своими заданиями на сервере, не альтернативная форма этой страницы.
-       Компактные стеклянные «пилюли», не карточки `.prg-tile` — названия
-       короткие («Цикл 1», «Цикл 2»), крупная карточка под них не нужна
-       (владелец 24.09.2026, второй заход после первой версии). #}
-    {# С 29.09.2026 тот же экран показывает задания самого этапа («Портфолио»):
-       с цикла туда ведёт название этапа, с этапа плашки ведут в его циклы. #}
-    {% if cycle_tiles|length > 1 or (is_stage and cycle_tiles) %}
-    {# Ссылка «Этап «…» – задания этапа» снята 06.10.2026: из цикла — только в
-       соседние циклы того же этапа, сам этап — звено пути сверху. #}
-    <p class="prg-hint">Циклы этапа</p>
-    <div class="prg-cycle-switch">
-        {% for tile in cycle_tiles %}
-        <a class="prg-cycle-pill{{ ' is-active' if tile.is_current }}"
-           href="/cabinet/staff/program/cycles/{{ tile.id }}">{{ tile.label }}</a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if prg_edit %}
-    <div class="prg-tiles">
-        <button type="button" class="prg-tile" data-open-form>
-            <span class="prg-tile-icon" aria-hidden="true">📄</span>
-            <span>
-                <strong>Задание</strong>
-                <small>Любое содержимое: текст, фото, видео, ссылка, вопросы</small>
-            </span>
-        </button>
-    </div>
-    {% endif %}
+    {% endset %}
+    {% set header_context %}
+        {% if cycle_tiles|length > 1 or (is_stage and cycle_tiles) %}
+        <p class="prg-hint">Циклы этапа</p>
+        <div class="prg-cycle-switch">
+            {% for tile in cycle_tiles %}
+            <a class="prg-cycle-pill{{ ' is-active' if tile.is_current }}"
+               {% if tile.is_current %}aria-current="page"{% endif %}
+               href="/cabinet/staff/program/cycles/{{ tile.id }}">{{ tile.label }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endset %}
+    {% set header_settings %}
+        {% if prg_edit and payments_staff(user) and flow_offer and flow_offer.price_kop and not flow_offer.deleted_at %}
+            <a class="btn-outline" href="/cabinet/flows#flow-{{ flow_offer.id }}">Ссылка на оплату и настройки потока</a>
+        {% endif %}
+        {% if prg_edit and payments_staff(user) and can_create_flow_offer %}
+            <details class="card">
+                <summary>Создать ссылку на оплату</summary>
+                <form method="post" action="/cabinet/flows/weeks/{{ topic.id }}/offer">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    {% from "partials/holiday_intake_select.html" import holiday_intake_select %}
+                    {{ holiday_intake_select("week-offer-intake", holiday_intakes) }}
+                    {% if not holiday_intakes %}<a href="/cabinet/flows#intake-flows">Создать набор в «Потоках»</a>{% endif %}
+                    <p>Доступ к заданиям с {{ topic.opens_at | msk_text }} до {{ topic.ends_at | msk_text }} МСК. Продажи закончатся вместе с доступом.</p>
+                    <label class="form-label" for="week-offer-price">Цена, ₽</label>
+                    <input class="form-input" id="week-offer-price" name="price" inputmode="decimal" required>
+                    <label class="form-label" for="week-offer-start">Начало продаж (МСК)</label>
+                    <input class="form-input" id="week-offer-start" name="sales_from" type="datetime-local" required>
+                    <div class="form-actions">
+                        <button class="btn-blue" type="submit">Создать ссылку</button>
+                    </div>
+                </form>
+            </details>
+        {% endif %}
+    {% endset %}
+    {% set header_description %}
+        {% if topic.description %}{{ topic.description | rich_text | safe }}{% else %}
+        {{ "Управляйте заданиями этапа." if is_stage else "Управляйте заданиями цикла." }}
+        {% endif %}
+    {% endset %}
+    {{ program_page_header(cycle_label, header_description, actions=header_actions,
+                           parent_context=header_context, settings=header_settings) }}
 
     <form class="prg-form" data-item-form hidden>
         <h2 data-item-form-title>Новое задание</h2>
@@ -137,26 +120,28 @@
                 </select>
             </label>
         </div>
-        <label class="prg-field">Условие задания
+        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока' ~ (', всем тарифам' if tariffs else '')) %}
+        <div class="prg-editor-heading">
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" data-item-required data-sum-off="не обязательно" checked>
+                <span>Обязательное задание</span>
+            </label>
+            {{ hint('Пока задание не выполнено, следующие шаги ленты закрыты.', 'Подсказка об обязательном задании') }}
+        </div>
+        <div class="prg-editor-heading">
+            <label for="cycle-item-starts">Откроется не раньше</label>
+            {{ hint('Если оставить поле пустым, задание доступно с момента публикации цикла.', 'Подсказка о дате открытия') }}
+        </div>
+        <input id="cycle-item-starts" type="datetime-local" data-item-starts data-sum="откроется">
+        {% with cycle_deadline_hints = true %}
+        {% include "partials/program_item_deadline_fields.html" %}
+        {% endwith %}
+        {% endcall %}
+        <label class="prg-field prg-cycle-editor-section">Условие задания
             <textarea data-rich-text data-item-description maxlength="5000"
                       aria-label="Условие задания"
                       placeholder="Что предстоит сделать ученику"></textarea>
         </label>
-        {# Обязательность, открытие и срок свёрнуты в одну панель (владелец
-           28.09.2026) — та же, что в форме задания на экране дня. #}
-        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока' ~ (', всем тарифам' if tariffs else '')) %}
-        <label class="prg-field prg-field--row">
-            <input type="checkbox" data-item-required data-sum-off="не обязательно" checked>
-            <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
-        </label>
-        <label class="prg-field">Откроется не раньше
-            <input type="datetime-local" data-item-starts data-sum="откроется" aria-label="Дата и время открытия задания">
-            <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
-        </label>
-        {# Срок сдачи на всё задание (владелец 27.09.2026) — общий партиал с
-           экраном дня. #}
-        {% include "partials/program_item_deadline_fields.html" %}
-        {% endcall %}
 
         <div data-diagnostic-note hidden>
             <div data-diagnostic-editor></div>
@@ -174,18 +159,22 @@
         <div class="prg-blocks" data-blocks-wrap>
             {% set material_types = ('photo', 'video', 'link', 'media') %}
             {% set submission_types = ('photo_upload', 'timed', 'portfolio') %}
-            <section class="prg-block-tools">
-                <h3>Материалы для ученика</h3>
-                <p class="prg-hint">Добавьте примеры, пояснения или видео к условию.</p>
+            <section class="prg-block-tools prg-cycle-editor-section">
+                <div class="prg-editor-heading">
+                    <h3>Материалы для ученика</h3>
+                    {{ hint('Добавьте примеры, пояснения или видео к условию.', 'Подсказка о материалах') }}
+                </div>
                 <div class="prg-actions prg-blocks-add">
                     {% for kind, label in block_add_types if kind in material_types %}
                     <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
                     {% endfor %}
                 </div>
             </section>
-            <section class="prg-block-tools">
-                <h3>Что сдаёт ученик</h3>
-                <p class="prg-hint">Для каждого этапа укажите, что отправить и сколько фото приложить.</p>
+            <section class="prg-block-tools prg-cycle-editor-section">
+                <div class="prg-editor-heading">
+                    <h3>Что сдаёт ученик</h3>
+                    {{ hint('Для каждого этапа укажите, что отправить и сколько фото приложить.', 'Подсказка об этапах сдачи') }}
+                </div>
                 <div class="prg-actions prg-blocks-add">
                     {% for kind, label in block_add_types if kind in submission_types %}
                     <button type="button" class="btn-outline" data-add-block="{{ kind }}">{{ 'Добавить этап сдачи' if kind == 'photo_upload' else '+ ' ~ label }}</button>
@@ -194,20 +183,24 @@
             </section>
             <details class="prg-block-tools prg-settings">
                 <summary>Опросы и другие блоки</summary>
+                <div class="prg-settings-body">
                 <div class="prg-actions prg-blocks-add">
                     {% for kind, label in block_add_types if kind not in material_types and kind not in submission_types %}
                     <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
                     {% endfor %}
                     <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
                     <button type="button" class="btn-outline" data-add-universal>+ Универсальный блок</button>
+                    {{ hint('Универсальный блок объединяет несколько секций в один шаг ленты.', 'Подсказка об универсальном блоке') }}
                 </div>
-                <p class="prg-hint">Универсальный блок объединяет несколько секций в один шаг ленты.</p>
+                </div>
             </details>
-            <div class="prg-block-tools" data-block-order hidden>
-                <h3>Порядок в ленте ученика</h3>
-                <p class="prg-hint">Стрелками ↑ ↓ можно переставить шаги.</p>
-            </div>
-            <div data-blocks></div>
+            <section class="prg-cycle-editor-section prg-cycle-editor-order">
+                <div class="prg-editor-heading" data-block-order hidden>
+                    <h3>Порядок в ленте ученика</h3>
+                    {{ hint('Стрелками ↑ ↓ можно переставить шаги.', 'Подсказка о порядке шагов') }}
+                </div>
+                <div data-blocks></div>
+            </section>
         </div>
 
         {# Предпросмотр (владелец 31.08.2026, возвращён на этот экран
@@ -220,7 +213,7 @@
         <div class="prg-actions prg-blocks-take" data-preview-wrap>
             <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
             <button type="button" class="btn-outline" data-take-blocks>Взять содержимое из другого задания</button>
-            <p class="prg-hint" data-copy-deadline-hint hidden>Сроки сдачи задайте заново после копирования.</p>
+            <span data-copy-deadline-hint hidden>{{ hint('Сроки сдачи задайте заново после копирования.', 'Подсказка о сроках при копировании') }}</span>
             {% include "partials/program_take_blocks_picker.html" %}
             <p class="prg-hint" data-take-status></p>
         </div>
@@ -243,6 +236,9 @@
         {% if items %}
         <div class="prg-actions prg-cycle-preview-bar">
             <button type="button" class="btn-outline" data-cycle-preview-open aria-expanded="false" aria-controls="cyclePreview">Весь цикл глазами ученика</button>
+        </div>
+        <div class="prg-preview prg-cycle-preview" id="cyclePreview" hidden>
+        <div class="prg-actions prg-cycle-preview-bar">
             {# Каникулярному циклу тарифов не отдают — фильтр скрыт, но остаётся
                в разметке: скрипт просмотра читает его значение. #}
             <label class="prg-field"{% if not tariffs %} hidden{% endif %}>Тариф
@@ -283,7 +279,8 @@
                 </select>
             </label>
         </div>
-        <div class="prg-preview prg-cycle-preview" id="cyclePreview" data-cycle-preview hidden></div>
+        <div data-cycle-preview></div>
+        </div>
         {% endif %}
         {% if items %}
         {% for item in items %}
@@ -310,7 +307,7 @@
         </article>
         {% endfor %}
         {% else %}
-        <p class="prg-hint">Пока ни одного задания.{% if prg_edit %} Нажмите «Задание» выше, чтобы добавить первое.{% endif %}</p>
+        <p class="prg-hint">Пока ни одного задания.{% if prg_edit %} Нажмите «Создать задание» выше, чтобы добавить первое.{% endif %}</p>
         {% endif %}
     </section>
 </div>
@@ -578,6 +575,7 @@ function uploadImage(file, url) {
     // (запертые шаги) не показываем: у ученика она зависит от его ответов.
     var cyclePreviewBox = document.querySelector('[data-cycle-preview]');
     var cyclePreviewOpen = document.querySelector('[data-cycle-preview-open]');
+    var cyclePreviewPanel = document.getElementById('cyclePreview');
 
     // Виден ли блок тому, на кого смотрим, — перенос серверного
     // `task_blocks.is_block_open_to` (владелец 08.10.2026: просмотр
@@ -685,15 +683,15 @@ function uploadImage(file, url) {
             cyclePreviewBox.appendChild(el('p', 'prg-hint', 'При таком выборе на этой вкладке заданий нет.'));
         }
         freezePreview(cyclePreviewBox);
-        cyclePreviewBox.hidden = false;
+        cyclePreviewPanel.hidden = false;
         cyclePreviewOpen.setAttribute('aria-expanded', 'true');
         cyclePreviewOpen.textContent = 'Скрыть просмотр цикла';
     }
 
     if (cyclePreviewOpen) {
         cyclePreviewOpen.addEventListener('click', function () {
-            if (!cyclePreviewBox.hidden) {
-                cyclePreviewBox.hidden = true;
+            if (!cyclePreviewPanel.hidden) {
+                cyclePreviewPanel.hidden = true;
                 cyclePreviewOpen.setAttribute('aria-expanded', 'false');
                 cyclePreviewOpen.textContent = 'Весь цикл глазами ученика';
                 return;
@@ -714,7 +712,7 @@ function uploadImage(file, url) {
         });
         document.querySelectorAll('[data-cycle-preview-tariff], [data-cycle-preview-track], [data-cycle-preview-level], [data-cycle-preview-student], [data-cycle-preview-subject]').forEach(function (select) {
             select.addEventListener('change', function () {
-                if (!cyclePreviewBox.hidden) previewCycle();
+                if (!cyclePreviewPanel.hidden) previewCycle();
             });
         });
     }
@@ -736,6 +734,8 @@ function uploadImage(file, url) {
         resetTrainerBox.hidden = true;
         resetTrainerBox.innerHTML = '';
         fields.id.value = '';
+        form.dataset.itemRevision = '';
+        form.dataset.creationRequestId = '';
         fields.title.value = '';
         fields.subject.value = '';
         fields.description.value = '';
@@ -809,6 +809,8 @@ function uploadImage(file, url) {
             form.querySelector('[data-diagnostic-trainer]').hidden = false;
         }
         fields.id.value = itemId;
+        form.dataset.itemRevision = data.revision || '';
+        form.dataset.creationRequestId = data.creation_request_id || '';
         fields.title.value = data.title || '';
         fields.subject.value = data.subject || '';
         fields.description.value = data.description || '';
@@ -848,7 +850,9 @@ function uploadImage(file, url) {
     // перезагрузки (владелец 08.10.2026).
     {% include "partials/program_task_draft_js.html" %}
 
-    form.querySelector('[data-item-save]').addEventListener('click', function () {
+    var saveButton = form.querySelector('[data-item-save]');
+    saveButton.addEventListener('click', function () {
+        if (saveButton.disabled) return;
         var previousError = form.querySelector('[data-block-error]');
         if (previousError) previousError.remove();
         var previousField = form.querySelector('[aria-describedby="cycle-block-error"]');
@@ -957,10 +961,18 @@ function uploadImage(file, url) {
             }
         }
         var id = fields.id.value;
+        if (id && form.dataset.itemRevision) {
+            payload.revision = form.dataset.itemRevision;
+        } else if (!id && typeof crypto.randomUUID === 'function') {
+            form.dataset.creationRequestId = form.dataset.creationRequestId || crypto.randomUUID();
+            payload.creation_request_id = form.dataset.creationRequestId;
+            taskDraft.save();
+        }
         var itemKind = form.dataset.itemKind || 'material';
         var url = id
             ? '/cabinet/staff/program/items/' + id + '/' + itemKind
             : '/cabinet/staff/program/cycles/' + topicId + '/items/' + itemKind;
+        saveButton.disabled = true;
         api(url, payload).then(function () {
             // Явное подтверждение (владелец 22.09.2026): страница до этого
             // молча перезагружалась, и не было понятно, прошло сохранение.
@@ -968,7 +980,8 @@ function uploadImage(file, url) {
             window.alert('Сохранено.');
             window.location.reload();
         }).catch(function (err) {
-            message.textContent = (err.status === 422 && err.message !== 'request_failed')
+            saveButton.disabled = false;
+            message.textContent = ([409, 422].includes(err.status) && err.message !== 'request_failed')
                 ? err.message : 'Не удалось сохранить задание.';
             message.classList.add('is-error');
             message.focus();
@@ -1128,6 +1141,7 @@ function uploadImage(file, url) {
             syncBlockOptions(holder.lastElementChild);
             renumberBlocks(holder);
             var newBlock = holder.lastElementChild;
+            refreshSettingsPanels(newBlock);
             var blockHeader = newBlock.querySelector('.prg-ticket-head');
             blockHeader.tabIndex = -1;
             blockHeader.focus({preventScroll: true});
