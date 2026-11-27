@@ -484,6 +484,29 @@ def test_closed_task_counts_its_text_and_link_as_done(auth_client, db, rendered)
     assert [step["status"] for step in feed["steps"]] == [STATUS_DONE, STATUS_DONE]
 
 
+def test_learning_shows_completion_and_next_published_cycle(auth_client, db):
+    client, user = auth_client
+    _topic(db, user, opens_in_days=-1, ends_in_days=1)
+    task = _task(db, user, title="Последнее задание", kind="material", day=today_msk())
+    _block(db, task, title="Последний шаг", is_required=False)
+
+    before = client.get("/cabinet/learning")
+    assert "К заданиям</a>" in before.text
+    assert "Все задания выполнены</strong>" not in before.text
+
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
+    done = client.get("/cabinet/learning")
+    assert "К заданиям</a>" not in done.text
+    assert "Все задания выполнены</strong>" in done.text
+    assert "Следующий цикл откроется" not in done.text
+
+    _topic(db, user, title="Черновик", opens_in_days=2, is_published=False)
+    _topic(db, user, title="Следующий", opens_in_days=3)
+    _topic(db, user, title="Более поздний", opens_in_days=6)
+    next_date = (today_msk() + timedelta(days=3)).strftime("%d.%m.%Y")
+    assert f"Следующий цикл откроется {next_date}" in client.get("/cabinet/learning").text
+
+
 def test_learning_cycle_period_widens_the_window(auth_client, db):
     """Трёхнедельный цикл показывает задание, которое в календарную неделю не
     попадает, — ради этого период и заводился."""

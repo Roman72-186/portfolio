@@ -47,7 +47,16 @@
         <p>Следующее задание откроется после выполнения предыдущего.</p>
         {% endif %}
         {% if feed.steps and not archive_view %}
-        <a class="btn-blue student-learning-jump" href="#learningStart">К заданиям</a>
+        <div data-learning-cta aria-live="polite">
+            {% if feed.total_count and feed.done_count == feed.total_count %}
+            <p><strong>Все задания выполнены</strong></p>
+            {% if feed.next_cycle_opens_on %}
+            <p>Следующий цикл откроется {{ feed.next_cycle_opens_on.strftime('%d.%m.%Y') }}</p>
+            {% endif %}
+            {% else %}
+            <a class="btn-blue student-learning-jump" href="#learningStart">К заданиям</a>
+            {% endif %}
+        </div>
         {% endif %}
         </div>
         {% if feed.total_count or (feed.deadline and not archive_view) %}
@@ -414,8 +423,9 @@ function lrnFocusStep(target) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    var jump = document.querySelector('.student-learning-jump');
-    if (jump) jump.addEventListener('click', function (event) {
+    var cta = document.querySelector('[data-learning-cta]');
+    if (cta) cta.addEventListener('click', function (event) {
+        if (!event.target.closest('.student-learning-jump')) return;
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
         // После сохранения шага лента обновляет эти статусы без перезагрузки.
         var next = document.querySelector('.lrn-feed .lrn-step--current:not([hidden])');

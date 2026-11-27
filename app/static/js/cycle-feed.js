@@ -59,8 +59,17 @@
             if (!resp.ok) throw new Error();
             return resp.text();
         }).then(function (html) {
-            var updated = new DOMParser().parseFromString(html, 'text/html').querySelector('.lrn-feed');
+            var page = new DOMParser().parseFromString(html, 'text/html');
+            var updated = page.querySelector('.lrn-feed');
             if (!updated) throw new Error();
+
+            ['[data-learning-cta]', '[data-student-progress]'].forEach(function (selector) {
+                var current = document.querySelector(selector);
+                var fresh = page.querySelector(selector);
+                if (current && fresh && current.innerHTML !== fresh.innerHTML) {
+                    current.replaceChildren(...fresh.childNodes);
+                }
+            });
 
             var changed = new Map();
             updated.querySelectorAll('.lrn-step').forEach(function (fresh) {

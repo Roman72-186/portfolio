@@ -31,6 +31,7 @@ from app.models.learning_topic import (
     TOPIC_KIND_STAGE,
     TOPIC_KIND_WEEK,
     LearningTopic,
+    LearningTopicTariff,
 )
 from app.models.task_block import BLOCK_PORTFOLIO, COMPLETABLE_BLOCK_TYPES
 from app.models.tracker import ITEM_HOMEWORK, ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
@@ -42,6 +43,7 @@ from app.services.task_blocks import (
     BlockViewer,
     autoclose_steps,
     block_still_doable,
+    block_opens_at,
     attended_links_for,
     close_block_for_user,
     get_audiences,
@@ -70,6 +72,7 @@ from app.services.tracker import (
     upcoming_cycles,
 )
 from app.services.tz import MSK_TZ
+from app.services.video_topics import upcoming_topic_ids
 
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
@@ -455,7 +458,8 @@ def build_cycle_feed(
             done = (state is not None and state.status == STATUS_DONE) or (
                 block.block_type not in COMPLETABLE_BLOCK_TYPES and _task_done(entry)
             )
-            block_waits_date = _not_open_yet(block.opens_at, now)
+            block_opening = block_opens_at(block)
+            block_waits_date = _not_open_yet(block_opening, now)
             block_closed = not block_still_doable(block, state, now=now)
             block_subject = subject_by_block[block.id]
             accessible = (
@@ -507,7 +511,7 @@ def build_cycle_feed(
                 # Дата блока важнее даты задания: она ближе к тому, что ученик
                 # видит перед собой.
                 "opens_on": (
-                    block.opens_at if block_waits_date else opens_on
+                    block_opening if block_waits_date else opens_on
                 ),
                 # Предмет блока важнее предмета задания: часть цикла идёт без
                 # деления на Рисунок и Композицию, часть — с делением
@@ -1129,6 +1133,32 @@ def deadline_view(moment: datetime | None) -> dict | None:
     return {"text": local.strftime("%d.%m в %H:%M"), "short": local.strftime("%d.%m")}
 
 
+def _next_cycle_opening(db: Session, user_id: int, tariff: str | None, cycle: LearningTopic) -> date | None:
+    upcoming = upcoming_topic_ids(db, user_id)
+    if not upcoming:
+        return None
+    rows = (
+        db.query(LearningTopic.opens_at, LearningTopicTariff.opens_at)
+        .outerjoin(LearningTopicTariff, (
+            (LearningTopicTariff.topic_id == LearningTopic.id)
+            & (LearningTopicTariff.tariff == (tariff or "").strip().upper())
+            & LearningTopic.tariff_restricted.is_(True)
+        ))
+        .filter(
+            LearningTopic.id.in_(upcoming),
+            LearningTopic.kind == TOPIC_KIND_WEEK,
+            LearningTopic.id != cycle.id,
+            LearningTopic.opens_at >= cycle.opens_at,
+        )
+        .all()
+    )
+    first_opening = min(
+        (max(opens_at, tariff_opens_at or opens_at) for opens_at, tariff_opens_at in rows),
+        default=None,
+    )
+    return msk_date(first_opening) if first_opening is not None else None
+
+
 def feed_for_student(
     db: Session, *, user_id: int, user_tariff: str | None, today: date,
     cycle_id: int | None = None,
@@ -1258,6 +1288,12 @@ def feed_for_student(
         step for step in steps
         if step["block"] is None or step["block"].id not in poll_inner
     ]
+    done_count = sum(1 for step in counted_steps if step["status"] == STATUS_DONE)
+    next_cycle_opens_on = (
+        _next_cycle_opening(db, user_id, user_tariff, viewed_cycle)
+        if viewed_cycle is not None and counted_steps and done_count == len(counted_steps)
+        else None
+    )
     return {
         "topic": topic,
         "start": start,
@@ -1319,8 +1355,9 @@ def feed_for_student(
         # Опрос ученик видит одной карточкой (владелец 30.09.2026) — и
         # считается он одним шагом, по последнему вопросу: иначе опрос из
         # трёх вопросов давал бы «Сделано 3 из 4» при двух карточках.
-        "done_count": sum(1 for step in counted_steps if step["status"] == STATUS_DONE),
+        "done_count": done_count,
         "total_count": len(counted_steps),
+        "next_cycle_opens_on": next_cycle_opens_on,
         # Вкладки «Общее / Композиция / Рисунок» (созвон 30.09.2026, владелец
         # 01.10.2026): если хоть у одного шага есть предмет — все три, иначе
         # переключателя нет (владелец 03.09.2026: «мы просто не будем ставить
