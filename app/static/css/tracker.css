@@ -579,7 +579,8 @@
 .lrn-cycle-description {
     position: relative;
     z-index: 1;
-    margin: 0 0 var(--s-3);
+    margin-block: var(--s-3);
+    margin-inline: 0;
     padding: var(--s-2) var(--s-3);
     border-inline-start: 3px solid color-mix(in srgb, var(--on-color) 68%, transparent);
     border-radius: var(--r-md);
@@ -595,6 +596,10 @@
     border-radius: var(--r-md);
     background: var(--surface);
     color: var(--success);
+}
+
+.lrn-hero [data-learning-cta] > p + p {
+    margin-block-start: var(--s-2);
 }
 
 .lrn-portfolio-onboarding {
