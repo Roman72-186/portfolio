@@ -1024,6 +1024,9 @@ scope)` и свойством `answered` (одна попытка: после о
                     if (replaceMode) return required;
                     return required ? left : 0;
                 }
+                function selectionCapacity() {
+                    return needCount() || (replaceMode ? block.max_files || 10 : left);
+                }
 
                 var fileId = 'lrn-upl-' + api.uid + '-' + block.id;
                 var label = el('label', 'field-label', required
@@ -1039,22 +1042,27 @@ scope)` и свойством `answered` (одна попытка: после о
                 input.type = 'file';
                 input.id = fileId;
                 input.accept = 'image/*';
-                input.multiple = needCount() !== 1;
+                input.multiple = selectionCapacity() !== 1;
                 var pickButton = el('label', 'btn-outline file-pick-btn', 'Выбрать фото');
                 pickButton.setAttribute('for', fileId);
                 var pickNames = el('p', 'file-pick-names', 'Фото не выбраны');
+                var clearSelection = el('button', 'btn-outline', 'Сбросить выбор');
+                clearSelection.type = 'button';
+                clearSelection.disabled = true;
                 pickNames.id = fileId + '-names';
                 input.setAttribute('aria-describedby', pickNames.id);
                 // Превью выбранного с кнопкой ⟳ (04.10.2026): ученик крутит
                 // фото до отправки, пиксели поворачивает `photo-prep.js`.
-                // Выбор как был: повторный заменяет набор целиком.
+                // Галерея заменяет FileList при каждом открытии. Набор для
+                // превью и отправки храним отдельно.
+                var selectedPhotos = [];
                 var previews = el('div', 'photo-grid');
                 var previewUrls = [];
                 function renderPreviews() {
                     previewUrls.forEach(function (u) { URL.revokeObjectURL(u); });
                     previewUrls = [];
                     previews.innerHTML = '';
-                    Array.prototype.forEach.call(input.files || [], function (file, index) {
+                    selectedPhotos.forEach(function (file, index) {
                         var cell = el('div', 'preview-cell');
                         var img = el('img');
                         img.alt = 'Фото ' + (index + 1);
@@ -1068,17 +1076,41 @@ scope)` и свойством `answered` (одна попытка: после о
                     previews.hidden = !previews.children.length;
                 }
                 previews.hidden = true;
-                input.addEventListener('change', function () {
-                    var names = Array.prototype.map.call(input.files || [], function (file) {
+                function updateSelection() {
+                    uploadKey = null;
+                    var names = selectedPhotos.map(function (file) {
                         return file.name;
                     });
                     pickNames.textContent = names.length ? 'Выбрано: ' + names.join(', ') : 'Фото не выбраны';
-                    pickButton.textContent = names.length ? 'Выбрать другие' : 'Выбрать фото';
+                    var capacity = selectionCapacity();
+                    pickButton.textContent = names.length
+                        ? (capacity === 1 ? 'Выбрать другое фото' : 'Добавить фото')
+                        : 'Выбрать фото';
+                    clearSelection.disabled = !names.length;
                     renderPreviews();
                     syncSend();
+                }
+                input.addEventListener('change', function () {
+                    var picked = Array.from(input.files || []);
+                    if (!picked.length) return;
+                    var capacity = selectionCapacity();
+                    if (capacity === 1) selectedPhotos = [];
+                    var remaining = Math.max(0, capacity - selectedPhotos.length);
+                    selectedPhotos = selectedPhotos.concat(picked.slice(0, remaining));
+                    updateSelection();
+                    if (picked.length > remaining) {
+                        note.textContent = 'Можно выбрать не больше ' + capacity + ' фото. Лишние фото не добавлены.';
+                        note.classList.add('is-error');
+                    }
+                });
+                clearSelection.addEventListener('click', function () {
+                    selectedPhotos = [];
+                    input.value = '';
+                    updateSelection();
                 });
                 pick.appendChild(input);
                 pick.appendChild(pickButton);
+                pick.appendChild(clearSelection);
                 pick.appendChild(pickNames);
 
                 var commentId = fileId + '-note';
@@ -1132,7 +1164,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 // проверяет то же самое и сам (старая вкладка правило не обойдёт).
                 function syncSend() {
                     var need = needCount();
-                    var chosen = input.files ? input.files.length : 0;
+                    var chosen = selectedPhotos.length;
                     send.disabled = !!need && chosen !== need;
                     if (need && chosen && chosen !== need) {
                         note.textContent = 'Выбрано ' + chosen + ' фото, а нужно ровно ' + need + '.';
@@ -1145,25 +1177,26 @@ scope)` и свойством `answered` (одна попытка: после о
                 syncSend();
 
                 var uploadKey = null;
-                input.addEventListener('change', function () { uploadKey = null; });
                 comment.addEventListener('input', function () { uploadKey = null; });
                 send.addEventListener('click', function () {
-                    if (!input.files || !input.files.length) {
+                    if (!selectedPhotos.length) {
                         note.textContent = 'Выбери хотя бы один файл.';
                         note.classList.add('is-error');
                         return;
                     }
                     var need = needCount();
-                    if (need && input.files.length !== need) {
+                    if (need && selectedPhotos.length !== need) {
                         syncSend();
                         return;
                     }
                     send.disabled = true;
+                    input.disabled = true;
+                    clearSelection.disabled = true;
                     note.classList.remove('is-error');
                     note.textContent = 'Загружаем…';
                     // Повёрнутые в превью фото крутим по-настоящему; не вышло —
                     // уходит оригинал (`prepareAll` не падает).
-                    var chosen = Array.prototype.slice.call(input.files);
+                    var chosen = selectedPhotos.slice();
                     var requestKey = uploadKey || Array.from(
                         window.crypto.getRandomValues(new Uint8Array(16)),
                         function (byte) { return byte.toString(16).padStart(2, '0'); }
@@ -1212,6 +1245,8 @@ scope)` и свойством `answered` (одна попытка: после о
                         refreshAfterChange(block, note, true);
                     }).catch(function (err) {
                         send.disabled = false;
+                        input.disabled = false;
+                        clearSelection.disabled = !selectedPhotos.length;
                         note.textContent = (err && err.message)
                             ? err.message
                             : 'Не удалось загрузить. Проверь связь и попробуй ещё раз.';
@@ -1235,6 +1270,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     var replaceBtn = el('button', 'btn-outline', 'Заменить фото');
                     replaceBtn.type = 'button';
                     replaceBtn.addEventListener('click', function () {
+                        if (input.disabled) return;
                         replaceMode = true;
                         uploadKey = null;
                         replaceBtn.remove();
@@ -1242,13 +1278,11 @@ scope)` и свойством `answered` (одна попытка: после о
                             ? 'Новые фото вместо загруженных (ровно ' + required + ')'
                             : 'Новые фото вместо загруженных';
                         send.textContent = 'Заменить работу';
-                        input.multiple = required !== 1;
+                        input.multiple = selectionCapacity() !== 1;
                         input.value = '';
-                        renderPreviews();
-                        pickNames.textContent = 'Фото не выбраны';
-                        pickButton.textContent = 'Выбрать фото';
+                        selectedPhotos = [];
                         if (!label.parentNode) appendForm();
-                        syncSend();
+                        updateSelection();
                         input.click();
                     });
                     wrap.appendChild(replaceBtn);
