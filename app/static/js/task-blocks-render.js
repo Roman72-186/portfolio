@@ -1339,18 +1339,20 @@ scope)` и свойством `answered` (одна попытка: после о
                     }
                     var startBtn = el('button', 'btn-blue', 'Начать работу');
                     startBtn.type = 'button';
-                    var startAction = el('div');
-                    startAction.appendChild(startBtn);
-                    var confirmPanel = el('div');
-                    confirmPanel.hidden = true;
-                    confirmPanel.appendChild(el('p', 'video-help', 'После подтверждения откроется условие и сразу запустится таймер.'));
-                    var confirmActions = el('div', 'trk-row-actions');
+                    var confirmation = 'Ты уверен, что готов начать работу?';
+                    var confirmDialog = el('dialog', 'lrn-portfolio-dialog');
+                    confirmDialog.setAttribute('aria-label', confirmation);
+                    confirmDialog.appendChild(el('h2', null, confirmation));
+                    var confirmActions = el('form', 'lrn-portfolio-actions');
+                    confirmActions.method = 'dialog';
                     var cancelStart = el('button', 'btn-outline', 'Отмена');
-                    var confirmStart = el('button', 'btn-blue', 'Начать и запустить таймер');
-                    cancelStart.type = confirmStart.type = 'button';
+                    var confirmStart = el('button', 'btn-blue', 'Готов');
+                    cancelStart.type = 'submit';
+                    cancelStart.autofocus = true;
+                    confirmStart.type = 'button';
                     confirmActions.appendChild(cancelStart);
                     confirmActions.appendChild(confirmStart);
-                    confirmPanel.appendChild(confirmActions);
+                    confirmDialog.appendChild(confirmActions);
                     var note = el('p', 'video-progress-status');
                     note.setAttribute('aria-live', 'polite');
                     var startConfirmed = false;
@@ -1398,22 +1400,14 @@ scope)` и свойством `answered` (одна попытка: после о
                             startWork();
                             return;
                         }
-                        startAction.hidden = true;
-                        confirmPanel.hidden = false;
-                        cancelStart.focus({preventScroll: true});
-                    });
-                    cancelStart.addEventListener('click', function () {
-                        confirmPanel.hidden = true;
-                        startAction.hidden = false;
-                        startBtn.focus({preventScroll: true});
+                        confirmDialog.showModal();
                     });
                     confirmStart.addEventListener('click', function () {
-                        confirmPanel.hidden = true;
-                        startAction.hidden = false;
+                        confirmDialog.close();
                         startWork();
                     });
-                    wrap.appendChild(startAction);
-                    wrap.appendChild(confirmPanel);
+                    wrap.appendChild(startBtn);
+                    wrap.appendChild(confirmDialog);
                     wrap.appendChild(note);
                     return wrap;
                 }
