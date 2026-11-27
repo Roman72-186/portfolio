@@ -170,6 +170,7 @@ def test_feedback_cycle_shows_submitted_ticket_image(auth_client, db):
 
     assert resp.status_code == 200
     assert ticket.image_s3_url in resp.text
+    assert "куратор" not in resp.text.casefold()
 
 
 # ── Dialog message POST ──────────────────────────────────────────────────────

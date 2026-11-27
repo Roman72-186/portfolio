@@ -666,6 +666,7 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
     });
 });
 
+{% if can_manage_dialogs and viewer_role != 'student' %}
 async function returnToCurator(btn) {
     if (!confirm('Вернуть цикл куратору на изменение обратной связи? Цикл останется закрытым; куратор сможет поправить свои сообщения.')) {
         return;
@@ -693,6 +694,8 @@ async function returnToCurator(btn) {
         btn.disabled = false; btn.textContent = orig;
     }
 }
+
+{% endif %}
 
 async function returnToStudentForStages(btn) {
     if (!confirm('Вернуть пробник ученику? Он сможет догрузить этапные фото по этому билету и при необходимости обновить финальное фото.')) {
