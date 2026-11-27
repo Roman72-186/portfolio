@@ -15,6 +15,7 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
 быть не одна на странице (несколько видео за неделю), синглтон-id столкнулись
 бы друг с другом.
 #}
+{% if not panels_assets_only %}
 <div class="lrn-inline-video" data-role="root">
     <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем видео…</p>
     <div class="video-shell" data-role="shell" hidden aria-label="Видеоурок">
@@ -45,7 +46,9 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
     {# Мини-опрос отсюда убран 31.08.2026: вопросы к ролику стали блоками
        задания и показываются общей панелью содержимого на той же карточке. #}
 </div>
+{% endif %}
 
+{% if not panels_assets_separate or panels_assets_only %}
 {% include "partials/inline/_video_player.html" %}
 <script>
 (function () {
@@ -60,7 +63,14 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
         var wrapper = root.closest('.trk-expand-body');
         var endpoint = wrapper ? wrapper.getAttribute('data-video-embed-endpoint') : null;
         if (!endpoint) return;
-        window.lrnVideoPlayer.mount(root, { endpoint: endpoint, csrfToken: csrfToken });
+        window.lrnVideoPlayer.mount(root, {
+            endpoint: endpoint,
+            csrfToken: csrfToken,
+            onCompleted: function () {
+                root.dispatchEvent(new CustomEvent('lrn-task-saved', {bubbles: true}));
+            }
+        });
     };
 })();
 </script>
+{% endif %}

@@ -17,16 +17,16 @@
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
-    document.querySelectorAll('.trk-row-expand[data-task-kind]').forEach(function (details) {
-        details.addEventListener('toggle', function () {
-            if (!details.open || details.dataset.inited) return;
-            var kind = details.getAttribute('data-task-kind');
-            var initFn = window.lrnPanelInit && window.lrnPanelInit[kind];
-            var body = details.querySelector('.trk-expand-body');
-            if (!initFn || !body) return;
-            details.dataset.inited = '1';
-            initFn(body, csrfToken);
-        });
-    });
+    document.addEventListener('toggle', function (event) {
+        var details = event.target;
+        if (!details.matches('.trk-row-expand[data-task-kind]')) return;
+        if (!details.open || details.dataset.inited) return;
+        var kind = details.getAttribute('data-task-kind');
+        var initFn = window.lrnPanelInit && window.lrnPanelInit[kind];
+        var body = details.querySelector('.trk-expand-body');
+        if (!initFn || !body) return;
+        details.dataset.inited = '1';
+        initFn(body, csrfToken);
+    }, true);
 })();
 </script>

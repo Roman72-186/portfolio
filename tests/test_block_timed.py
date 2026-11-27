@@ -242,3 +242,36 @@ def test_start_endpoint_404_for_other_block_types(auth_client, db):
     db.commit()
 
     assert client.post(f"/cabinet/tracker/blocks/{block.id}/start").status_code == 404
+
+
+def test_condition_and_photos_are_returned_only_after_start(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    description = "Нарисуйте композицию по фотографии"
+    photo_url = "https://example.com/condition.jpg"
+    block, = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_TIMED,
+        "title": "Контрольная работа",
+        "body": description,
+        "time_limit_minutes": 130,
+        "images": [{"url": photo_url, "path": "blocks/condition.jpg"}],
+    }])
+    db.commit()
+    blocks_url = f"/cabinet/tracker/tasks/{task.id}/blocks"
+
+    before = client.get(blocks_url).json()["blocks"][0]
+    assert before["body_hidden"] is True
+    assert before["body"] is None
+    assert before["body_html"] is None
+    assert not before.get("images")
+    assert before["started_at"] is None
+    assert before["refresh_endpoint"] == blocks_url
+
+    start = client.post(before["start_endpoint"])
+    assert start.status_code == 200
+    after = client.get(before["refresh_endpoint"]).json()["blocks"][0]
+    assert start.json()["started_at"]
+    assert after["started_at"]
+    assert after["time_left_seconds"] > 0
+    assert description in after["body_html"]
+    assert after["images"] == [{"url": photo_url}]

@@ -398,10 +398,12 @@ async function check({question, scale, mounted, expected, submit = true}) {
     const bodies = {1: node()};
     if (mounted) bodies[2] = node();
     const cards = [1, 2].map(id => ({
+        dataset: {blockId: String(id)},
         getAttribute() { return '159'; },
         querySelector(selector) { return selector === '[data-role="block-body"]' ? bodies[id] : null; }
     }));
     const feed = {
+        addEventListener() {},
         querySelectorAll(selector) { return selector === '[data-block-id]' ? cards : []; },
         querySelector(selector) {
             if (selector === '[data-answer-text="1"]') return {value: 'Новый ответ'};
@@ -420,6 +422,7 @@ async function check({question, scale, mounted, expected, submit = true}) {
             })});
         }
     });
+    context.window.fetchWithTimeout = context.fetch;
     vm.runInContext(fs.readFileSync('app/static/js/task-blocks-render.js', 'utf8'), context);
     const api = context.window.lrnBlockRender;
     // Реальные formOpen и collectAnswers; вместо разметки полей - DOM-заглушка.

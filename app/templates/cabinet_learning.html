@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Архив' if archive_view else 'Актуальное образовательное пространство' }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=93">
+<link rel="stylesheet" href="/static/css/tracker.css?v=96">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
+{% if student_workspace and not archive_view %}
+<script src="/static/js/student_learning.js?v=1" defer></script>
+{% endif %}
 {% endblock %}
 {% block content %}
 {#
@@ -25,24 +28,34 @@
 `/static/js/task-blocks-render.js`, второй копии рендереров в проекте нет.
 #}
 {% from "components/hint.html" import hint %}
+{% set panels_assets_separate = true %}
 <div class="lrn-page ios-learning">
 
-    <div class="lrn-hero">
+    <div class="lrn-hero student-learning-hero">
+        <div class="student-cycle-intro">
         {# Период над циклом (владелец 08.10.2026: «показывать период») — в
            шапке, а не на плитках карусели: на плитке только цикл (06.10.2026). #}
         {% if feed.period %}
         <p class="lrn-hero-period" data-role="cycle-period">{{ feed.period.title }}</p>
         {% endif %}
-        <h1>{{ feed.topic.title if feed.topic else 'Актуальное образовательное пространство' }}
+        <h1>{{ feed.topic.title if feed.topic else 'Обучение' }}
             {% if not archive_view %}{{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}{% endif %}
         </h1>
         {% if feed.topic and feed.topic.description %}
         <p>{{ feed.topic.description | rich_text | safe }}</p>
         {% else %}
-        <p>Задания идут по порядку: следующее открывается, когда сделано предыдущее.</p>
+        <p>Следующее задание откроется после выполнения предыдущего.</p>
         {% endif %}
+        {% if feed.steps and not archive_view %}
+        <a class="btn-blue student-learning-jump" href="#learningStart">К заданиям</a>
+        {% endif %}
+        </div>
+        {% if feed.total_count or (feed.deadline and not archive_view) %}
+        <div class="student-cycle-progress"{% if not archive_view %} data-student-progress{% endif %}>
         {% if feed.total_count %}
-        <p class="lrn-progress" id="cycle-progress-label">Сделано {{ feed.done_count }} из {{ feed.total_count }}</p>
+        <p class="lrn-progress" id="cycle-progress-label">Сделано
+            <strong>{{ feed.done_count }}</strong> из {{ feed.total_count }}
+        </p>
         <progress class="lrn-progress-meter" value="{{ feed.done_count }}" max="{{ feed.total_count }}"
                   aria-labelledby="cycle-progress-label"></progress>
         {% endif %}
@@ -54,7 +67,16 @@
         {% if feed.deadline and not archive_view %}
         <p class="lrn-progress" data-role="cycle-deadline">Срок цикла – до {{ feed.deadline.text }}</p>
         {% endif %}
+        </div>
+        {% endif %}
     </div>
+    {% if student_workspace and not archive_view %}
+    <dialog class="student-secret" data-student-secret aria-labelledby="student-secret-title">
+        <h2 id="student-secret-title">Заметка на полях</h2>
+        <p>Если эскиз застопорился, переверни лист и попробуй построить ту же форму с другой точки.</p>
+        <form method="dialog"><button class="btn-blue" type="submit" autofocus>К обучению</button></form>
+    </dialog>
+    {% endif %}
 
     {% if portfolio_onboarding and not archive_view %}
     <div class="lrn-card" data-role="portfolio-onboarding">
@@ -81,12 +103,13 @@
        лента без карусели и плашки долга: ученик пришёл из списка архива и
        туда же возвращается, а не прыгает по текущим циклам. #}
     {% if not archive_view and (feed.pinned_tasks or feed.cycles|length > 1) %}
-    <div class="lrn-cycles" aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
+    <div class="lrn-cycles"{% if student_workspace %} data-loop-weeks{% endif %} aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
         {# «Портфолио» — задание прямо на этапе, ведёт на сам этап (владелец
            24.09.2026: «просто открываем все задания, которые есть», не
            прыжок к одному блоку внутри текущего цикла). #}
         {% for pinned in feed.pinned_tasks %}
         <a class="lrn-cycle-chip{{ ' is-current' if pinned.is_current }}"
+           {% if pinned.is_current %}aria-current="page"{% endif %}
            href="/cabinet/learning{{ '' if pinned.is_current else '?cycle=' ~ feed.stage.id }}"
            data-pinned-task-id="{{ pinned.id }}">{{ pinned.title }}</a>
         {% endfor %}
@@ -99,6 +122,7 @@
               title="{% if cycle.opens_on %}Откроется {{ cycle.opens_on.strftime('%d.%m') }}{% else %}Откроется, когда закроешь «{{ feed.debt.label }}»{% endif %}">{{ cycle.title }}{% if cycle.deadline %} · до {{ cycle.deadline.short }}{% endif %}</span>
         {% else %}
         <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
+           {% if cycle.is_current %}aria-current="page"{% endif %}
            href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
            data-cycle-id="{{ cycle.id }}">{{ cycle.title }}{% if cycle.deadline %} · до {{ cycle.deadline.short }}{% endif %}</a>
         {% endif %}
@@ -161,13 +185,29 @@
     {% endif %}
 
     {% if feed.steps %}
-    <div class="lrn-feed" id="learningStart">
+    <div class="lrn-feed" id="learningStart" tabindex="-1">
+        {% set groups = namespace(path=[], task_id=none) %}
         {% for step in feed.steps %}
-        {% set group = step.block.universal_key if step.block else none %}
-        {% if group and (loop.first or not loop.previtem.block or
-                         loop.previtem.task.id != step.task.id or loop.previtem.block.universal_key != group) %}
-        <div class="lrn-universal-block">
+        {% set path = step.block.container_path or [] if step.block else [] %}
+        {% if not path and step.block and step.block.universal_key %}
+            {% set path = [{'key': step.block.universal_key}] %}
         {% endif %}
+        {% set common = namespace(length=0) %}
+        {% if groups.task_id == step.task.id %}
+            {% for node in path %}
+                {% if loop.index0 == common.length and loop.index0 < groups.path|length and
+                       node.key == groups.path[loop.index0].key %}
+                    {% set common.length = loop.index %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+        {% for node in groups.path[common.length:] %}</div>{% endfor %}
+        {% for node in path[common.length:] %}
+        <div class="lrn-universal-block{% if step.block.container_path %} lrn-nested-block{% endif %}">
+            {% if node.title %}<p class="lrn-nested-title">{{ node.title }}</p>{% endif %}
+        {% endfor %}
+        {% set groups.path = path %}
+        {% set groups.task_id = step.task.id %}
         {# data-subject пустой у задач без предмета — это вкладка «Общее». #}
         <article
             class="lrn-step lrn-step--{{ step.status }}"
@@ -267,14 +307,11 @@
             </div>
             {% endif %}
         </article>
-        {% if group and (loop.last or not loop.nextitem.block or
-                         loop.nextitem.task.id != step.task.id or loop.nextitem.block.universal_key != group) %}
-        </div>
-        {% endif %}
+        {% if loop.last %}{% for node in groups.path %}</div>{% endfor %}{% endif %}
         {% endfor %}
     </div>
     {% else %}
-    <p class="lrn-empty">Здесь пока ничего нет — задания появятся, когда преподаватель соберёт цикл.</p>
+    <p class="lrn-empty">Заданий пока нет.</p>
     {% endif %}
 
     <p class="lrn-empty lrn-subject-empty" hidden>По этому направлению заданий нет.</p>
@@ -283,6 +320,10 @@
 </div>
 
 {% include "partials/inline/cycle_feed.html" %}
+{% with panels_assets_only = true %}
+{% include "partials/inline/video.html" %}
+{% include "partials/inline/mock_exam.html" %}
+{% endwith %}
 {% include "partials/inline/panels_init.html" %}
 <script>
 // Вкладка помнится до конца сеанса браузера: после ответа страница
@@ -313,6 +354,9 @@ function lrnApplySubjectFilter() {
         var visible = subject === null || node.getAttribute('data-subject') === subject;
         node.toggleAttribute('data-subject-off', !visible);
         if (visible) shown += 1;
+    });
+    document.querySelectorAll('.lrn-feed .lrn-nested-block').forEach(function (group) {
+        group.hidden = !group.querySelector('[data-subject]:not([data-subject-off])');
     });
     var empty = document.querySelector('.lrn-subject-empty');
     if (empty) empty.hidden = subject === null || shown > 0 || !document.querySelector('.lrn-feed');
@@ -394,7 +438,7 @@ document.addEventListener('DOMContentLoaded', function () {
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
 {% include "partials/student_onboarding_guide.html" %}
-<script src="/static/js/task-completion.js?v=2" data-csrf-token="{{ csrf_token(request) }}"></script>
+<script src="/static/js/task-completion.js?v=3" data-csrf-token="{{ csrf_token(request) }}"></script>
 <script src="/static/js/hint.js?v=1"></script>
-<script src="/static/js/cycle-carousel.js?v=3"></script>
+<script src="/static/js/cycle-carousel.js?v=5"></script>
 {% endblock %}

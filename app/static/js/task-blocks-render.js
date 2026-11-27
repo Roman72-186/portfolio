@@ -289,16 +289,16 @@ scope)` и свойством `answered` (одна попытка: после о
             // Локальной переменной, не полем `api`: снаружи флаг никто не
             // читает, в отличие от `answered`.
             var titlesOutside = !!(options || {}).titlesOutside;
-            // Что делать, когда галочки правил сохранились сами
-            // (`wireRulesAutosave`). Лента подставляет переход к открывшемуся
-            // шагу, остальным экранам хватает перезагрузки.
-            var onRulesSaved = (options || {}).onRulesSaved || function () {
-                window.location.reload();
-            };
+            var onBlockSaved = (options || {}).onBlockSaved;
             var api = {
                 answered: !!(options || {}).answered,
                 uid: Math.random().toString(36).slice(2)
             };
+
+            function refreshAfterChange(block, note, reloadBlock) {
+                if (onBlockSaved) onBlockSaved(block, note, reloadBlock);
+                else window.location.reload();
+            }
 
             // Любая мутация блока идёт отсюда, и ключ берётся свежим у сервера
             // (`static/js/csrf.js`), а не тот, что попал в разметку при
@@ -523,6 +523,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         check.setAttribute('aria-label', 'Выполнено');
                         check.title = 'Выполнено';
                         hint.hidden = true;
+                        if (onBlockSaved) onBlockSaved(block, hint, false);
                     }).catch(function (err) {
                         check.disabled = false;
                         hint.hidden = false;
@@ -893,7 +894,7 @@ scope)` и свойством `answered` (одна попытка: после о
                                 block.answered = true;
                                 inputs.forEach(function (input) { input.disabled = true; });
                                 saveBtn.remove();
-                                note.remove();
+                                note.textContent = '';
                                 // Шкала опроса в историю навыков не идёт
                                 // (`skills_history`, владелец 30.09.2026).
                                 wrap.appendChild(el(
@@ -902,6 +903,7 @@ scope)` и свойством `answered` (одна попытка: после о
                                         ? 'Сохранено.'
                                         : 'Сохранено — результат в «Личной информации».'
                                 ));
+                                if (onBlockSaved) onBlockSaved(block, note, false);
                             }).catch(function () {
                                 saveBtn.disabled = false;
                                 note.textContent = 'Не удалось сохранить. Попробуй ещё раз.';
@@ -935,9 +937,9 @@ scope)` и свойством `answered` (одна попытка: после о
                 }
                 var gallery = submittedGallery(block);
                 if (gallery) wrap.appendChild(gallery);
-                if (block.submitted_comment) {
-                    wrap.appendChild(el('p', 'lrn-blk-body', block.submitted_comment));
-                }
+                var savedComment = el('p', 'lrn-blk-body', block.submitted_comment || '');
+                savedComment.hidden = !block.submitted_comment;
+                wrap.appendChild(savedComment);
                 if (block.reviewed) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работу проверил преподаватель'));
                 }
@@ -994,6 +996,8 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (!required) (block.submitted_files || []).forEach(function (file, index) {
                     var remove = el('button', 'btn-outline', 'Удалить фото ' + (index + 1));
                     remove.type = 'button';
+                    var removeNote = el('p', 'video-progress-status');
+                    removeNote.setAttribute('aria-live', 'polite');
                     remove.addEventListener('click', function () {
                         remove.disabled = true;
                         post(block.delete_endpoint + '/' + file.id + '/delete', {
@@ -1001,7 +1005,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         }).then(function (resp) {
                             return resp.json().then(function (body) {
                                 if (!resp.ok) throw new Error(failure(body, 'Не удалось удалить фото.'));
-                                window.location.reload();
+                                refreshAfterChange(block, removeNote, true);
                             });
                         }).catch(function (error) {
                             remove.disabled = false;
@@ -1009,6 +1013,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         });
                     });
                     wrap.appendChild(remove);
+                    wrap.appendChild(removeNote);
                 });
 
                 var left = (required || block.max_files || 10) - uploaded;
@@ -1086,16 +1091,26 @@ scope)` и свойством `answered` (одна попытка: после о
                 if (block.submitted_files && block.submitted_files.length) {
                     var saveComment = el('button', 'btn-outline', 'Сохранить описание');
                     saveComment.type = 'button';
+                    var commentNote = el('p', 'video-progress-status');
+                    commentNote.setAttribute('aria-live', 'polite');
                     saveComment.addEventListener('click', function () {
+                        var submittedComment = comment.value;
                         saveComment.disabled = true;
                         post(block.comment_endpoint, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({comment: comment.value})
+                            body: JSON.stringify({comment: submittedComment})
                         }).then(function (resp) {
                             return resp.json().then(function (body) {
                                 if (!resp.ok) throw new Error(failure(body, 'Не удалось сохранить описание.'));
-                                window.location.reload();
+                                if (!onBlockSaved) {
+                                    window.location.reload();
+                                    return;
+                                }
+                                savedComment.textContent = submittedComment.trim();
+                                savedComment.hidden = !savedComment.textContent;
+                                commentNote.textContent = 'Описание сохранено.';
+                                saveComment.disabled = false;
                             });
                         }).catch(function (error) {
                             saveComment.disabled = false;
@@ -1105,6 +1120,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(commentLabel);
                     wrap.appendChild(comment);
                     wrap.appendChild(saveComment);
+                    wrap.appendChild(commentNote);
                 }
 
                 var send = el('button', 'btn-blue', block.upload_button_label || 'Отправить работу');
@@ -1193,9 +1209,7 @@ scope)` и свойством `answered` (одна попытка: после о
                                 'Не удалось загрузить (ошибка ' + result.status + '). Попробуй ещё раз.'
                             ));
                         }
-                        // Состояние блока и хвост ленты пересчитывает сервер —
-                        // перезагружаем, чтобы не расходиться с ним.
-                        window.location.reload();
+                        refreshAfterChange(block, note, true);
                     }).catch(function (err) {
                         send.disabled = false;
                         note.textContent = (err && err.message)
@@ -1327,16 +1341,38 @@ scope)` и свойством `answered` (одна попытка: после о
                     startBtn.type = 'button';
                     var note = el('p', 'video-progress-status');
                     note.setAttribute('aria-live', 'polite');
+                    var startConfirmed = false;
                     startBtn.addEventListener('click', function () {
                         startBtn.disabled = true;
-                        post(block.start_endpoint, { method: 'POST' }).then(function (resp) {
+                        note.classList.remove('is-error');
+                        note.textContent = 'Открываем задание…';
+                        var start = startConfirmed ? Promise.resolve() : post(block.start_endpoint, { method: 'POST' })
+                            .then(function (resp) {
+                                if (!resp.ok) throw new Error();
+                                startConfirmed = true;
+                            });
+                        start.then(function () {
+                            // После подтверждения сервер откроет текст, фото и актуальный остаток времени.
+                            return window.fetchWithTimeout(block.refresh_endpoint, {
+                                credentials: 'same-origin',
+                                cache: 'no-store',
+                                headers: { 'Accept': 'application/json' }
+                            });
+                        }).then(function (resp) {
                             if (!resp.ok) throw new Error();
-                            // Отсчёт ведёт сервер — перезагружаем, чтобы время
-                            // старта пришло из одного источника.
-                            window.location.reload();
+                            return resp.json();
+                        }).then(function (data) {
+                            var current = (data.blocks || []).find(function (item) { return item.id === block.id; });
+                            if (!current || !current.started_at) throw new Error();
+                            wrap.replaceWith(renderTimed(current));
                         }).catch(function () {
                             startBtn.disabled = false;
-                            note.textContent = 'Не удалось начать. Попробуй ещё раз.';
+                            if (startConfirmed) {
+                                startBtn.textContent = 'Открыть задание';
+                                note.textContent = 'Таймер уже запущен. Не удалось загрузить условие. Попробуй открыть его ещё раз.';
+                            } else {
+                                note.textContent = 'Не удалось подтвердить старт. Попробуй ещё раз.';
+                            }
                             note.classList.add('is-error');
                         });
                     });
@@ -1364,7 +1400,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     post(block.finish_endpoint, { method: 'POST' }).then(function (resp) {
                         return resp.json().then(function (body) {
                             if (!resp.ok) throw new Error(failure(body, 'Не удалось завершить выполнение'));
-                            window.location.reload();
+                            refreshAfterChange(block, finishNote, true);
                         });
                     }).catch(function (error) {
                         finishBtn.disabled = false;
@@ -1389,6 +1425,10 @@ scope)` и свойством `answered` (одна попытка: после о
                 var handle = null;
                 function pad(n) { return n < 10 ? '0' + n : String(n); }
                 function tick() {
+                    if (handle && !box.isConnected) {
+                        window.clearInterval(handle);
+                        return;
+                    }
                     var left = Math.round((endsAt - Date.now()) / 1000);
                     if (left <= 0) {
                         box.textContent = uploading
@@ -1549,7 +1589,7 @@ scope)` и свойством `answered` (одна попытка: после о
             // (`task_blocks._save_rules`, иначе обязательный блок запер бы
             // ленту). Закрытие задания и открытие следующего решает сервер —
             // `close_block_for_user` → `maybe_close_task_by_blocks`; здесь только
-            // доставка галочек и то, что экран делает после (`onRulesSaved`).
+            // доставка галочек и обновление статусов после сохранения.
             // Отказ показывается словами сервера (срок вышел, уже сохранено),
             // как у кружков, а «Сохранить ещё раз» нужна, потому что повторно
             // отметить уже отмеченное нечем.
@@ -1592,7 +1632,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         }
                         block.answered = true;
                         status.textContent = 'Сохранено.';
-                        onRulesSaved(block);
+                        refreshAfterChange(block, status, false);
                     }).catch(function (err) {
                         inputs.forEach(function (input) { input.disabled = false; });
                         status.classList.add('is-error');
@@ -1719,8 +1759,14 @@ scope)` и свойством `answered` (одна попытка: после о
                         // раньше, чем его успели прочитать.
                         var next = el('button', 'btn-blue', 'Продолжить');
                         next.type = 'button';
-                        next.addEventListener('click', function () { window.location.reload(); });
+                        var nextStatus = el('p', 'video-progress-status');
+                        nextStatus.setAttribute('aria-live', 'polite');
+                        next.addEventListener('click', function () {
+                            next.disabled = true;
+                            refreshAfterChange(block, nextStatus, false);
+                        });
                         stage.appendChild(next);
+                        stage.appendChild(nextStatus);
                     }
                 }
 

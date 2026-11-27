@@ -21,6 +21,7 @@ in-place UI вместо навигации.
 карточка может быть не одна на странице (Рисунок и Композиция — два разных
 mock_exam-задания одной недели), синглтон-id столкнулись бы друг с другом.
 #}
+{% if not panels_assets_only %}
 <div class="lrn-inline-mock" data-role="root">
     <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем пробник…</p>
 
@@ -109,6 +110,8 @@ mock_exam-задания одной недели), синглтон-id стол�
     </div>
 </div>
 
+{% endif %}
+{% if not panels_assets_separate or panels_assets_only %}
 {# Поворот фото перед отправкой (04.10.2026). Повторное подключение на втором
    пробнике недели безвредно: браузер берёт файл из кэша. #}
 <script src="/static/js/photo-prep.js?v=1"></script>
@@ -679,7 +682,9 @@ mock_exam-задания одной недели), синглтон-id стол�
             if (stageState.existing > 0) msg += ' и ' + stageState.existing + ' ' + stageWord(stageState.existing);
             msg += '. Жди результат проверки.';
             showUploadMsg(msg, false);
+            root.dispatchEvent(new CustomEvent('lrn-task-saved', {bubbles: true}));
         }
     };
 })();
 </script>
+{% endif %}

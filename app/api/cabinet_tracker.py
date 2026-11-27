@@ -97,6 +97,7 @@ from app.services import s3 as s3_service
 from app.services.notify import notify
 from app.services.task_block_feedback import resubmission_notification, submission_notification
 from app.services.task_blocks import (
+    block_opens_at,
     add_submission_image as add_task_block_submission_image,
     answered_block_ids as task_block_answered_ids,
     close_block_for_user as close_task_block_for_user,
@@ -603,7 +604,7 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
     since = (
         state.started_at
         if block.portfolio_window_hours and state is not None and state.started_at
-        else block.opens_at or (task.starts_at if task else None)
+        else block_opens_at(block) or (task.starts_at if task else None)
     )
     if since is None and task is not None and task.due_at is not None:
         since = day_bounds(msk_date(task.due_at))[0]
@@ -1011,6 +1012,10 @@ def cabinet_tracker_task_blocks(
             # ученик должен иметь возможность вернуться.
             "answered": block.id in answered_ids,
             "universal_key": block.universal_key,
+            "container_path": [
+                {"key": node["key"], "title": node.get("title", "")}
+                for node in (block.container_path or [])
+            ],
             # Срок сдачи — у блока любого типа (владелец 27.09.2026). Ученик
             # видит его и там, где срок ничего не запрещает: у видео и фото он
             # предупреждает, что отметка позже зачтётся опозданием.
@@ -1178,6 +1183,7 @@ def cabinet_tracker_task_blocks(
                 task_overrides=task_submit_deadlines,
             )
             item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
+            item["refresh_endpoint"] = f"/cabinet/tracker/tasks/{task.id}/blocks"
             item.update(_submission_payload(
                 db, task, block, user["user_id"],
                 user_tariff=user.get("tariff"),

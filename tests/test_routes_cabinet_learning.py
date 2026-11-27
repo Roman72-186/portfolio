@@ -91,6 +91,18 @@ def test_learning_without_auth_redirects(client):
     assert "session_expired" in resp.headers["location"]
 
 
+def test_learning_has_panel_initializers_before_cards_unlock(auth_client, db):
+    client, user = auth_client
+    _topic(db, user)
+
+    response = client.get("/cabinet/learning")
+
+    assert response.status_code == 200
+    assert response.text.count("window.lrnPanelInit.video = function") == 1
+    assert response.text.count("window.lrnPanelInit.mock_exam = function") == 1
+    assert "document.addEventListener('toggle'" in response.text
+
+
 def test_learning_redirects_to_profile_when_incomplete(client, user_factory, session_factory):
     user = user_factory(profile_completed=False)
     sess = session_factory(user)

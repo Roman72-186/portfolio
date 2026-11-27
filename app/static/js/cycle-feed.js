@@ -10,7 +10,6 @@
     var steps = Array.prototype.filter.call(feed.querySelectorAll('[data-block-id]'), function (step) {
         return step.querySelector('[data-role="block-body"]');
     });
-    if (!steps.length) return;
 
     // Один запрос на задание, а не на блок: у задания из пяти блоков это
     // пять одинаковых ответов сервера вместо одного.
@@ -48,21 +47,91 @@
         });
     }
 
-    // Галочки правил сохранились сами (владелец 04.10.2026). Статусы шагов
-    // считает сервер, поэтому лента перезагружается, а метка `after` просит
-    // показать шаг, открывшийся ниже сохранённого (`lrnFocusAfterStep` в
-    // `cabinet_learning.html`). `task` снимаем: фокус ссылки из трекера
-    // раскрыл бы уже сделанный шаг. `replace` — новая загрузка без
-    // восстановления прокрутки, которое вернуло бы ученика к правилам.
-    function showStepAfter(block) {
-        var url = new URL(window.location.href);
-        url.searchParams.delete('task');
-        url.searchParams.set('after', block.id);
-        url.hash = '';
-        window.location.replace(url.toString());
+    function refreshSteps(hint, refreshIds) {
+        var refresh = new Set((refreshIds || []).map(String));
+        hint.hidden = false;
+        hint.classList.remove('is-error');
+        hint.textContent = 'Обновляем…';
+        window.fetchWithTimeout(window.location.href, {
+            credentials: 'same-origin',
+            cache: 'no-store'
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            return resp.text();
+        }).then(function (html) {
+            var updated = new DOMParser().parseFromString(html, 'text/html').querySelector('.lrn-feed');
+            if (!updated) throw new Error();
+
+            var changed = new Map();
+            updated.querySelectorAll('.lrn-step').forEach(function (fresh) {
+                var taskId = fresh.dataset.taskId;
+                var blockId = fresh.dataset.blockId;
+                var current = blockId
+                    ? stepFor(taskId, blockId)
+                    : feed.querySelector('.lrn-step[data-task-id="' + taskId + '"]:not([data-block-id])');
+                if (!current) return;
+                var unlocked = current.classList.contains('lrn-step--locked')
+                    && !fresh.classList.contains('lrn-step--locked');
+                if (unlocked) {
+                    fresh.toggleAttribute('data-subject-off', current.hasAttribute('data-subject-off'));
+                    current.replaceWith(fresh);
+                    current = fresh;
+                } else if (fresh.classList.contains('lrn-step--done')
+                    && current.classList.contains('lrn-step--current')) {
+                    // Тело карточки остаётся на месте: плеер и формы сохраняют состояние.
+                    current.classList.remove('lrn-step--current');
+                    current.classList.add('lrn-step--done', 'is-open');
+                    current.querySelector('.lrn-step-head').replaceWith(fresh.querySelector('.lrn-step-head'));
+                    var toggle = current.querySelector('.lrn-step-toggle');
+                    if (toggle) window.lrnToggleStep(toggle, true);
+                }
+
+                if (!unlocked) {
+                    var oldLock = current.querySelector('.lrn-step-locked');
+                    var newLock = fresh.querySelector('.lrn-step-locked');
+                    if (oldLock && newLock) oldLock.textContent = newLock.textContent;
+                    var oldButton = current.querySelector('[data-toggle-task]');
+                    var newButton = fresh.querySelector('[data-toggle-task]');
+                    if (oldButton && newButton && (oldButton.disabled !== newButton.disabled
+                        || oldButton.getAttribute('aria-describedby') !== newButton.getAttribute('aria-describedby')
+                        || oldButton.getAttribute('aria-pressed') !== newButton.getAttribute('aria-pressed'))) {
+                        oldButton.parentNode.replaceChildren(...newButton.parentNode.childNodes);
+                    }
+                }
+                if ((unlocked || refresh.has(blockId)) && current.querySelector('[data-role="block-body"]')) {
+                    if (!changed.has(taskId)) changed.set(taskId, []);
+                    changed.get(taskId).push(current);
+                }
+            });
+            changed.forEach(function (cards, taskId) { loadTask(taskId, cards, true); });
+            hint.hidden = true;
+            hint.textContent = '';
+        }).catch(function () {
+            hint.hidden = false;
+            hint.classList.add('is-error');
+            hint.textContent = 'Изменение сохранено, но ленту не удалось обновить. ';
+            var retry = el('button', 'btn-outline', 'Повторить');
+            retry.type = 'button';
+            retry.addEventListener('click', function () {
+                retry.disabled = true;
+                refreshSteps(hint, refreshIds);
+            });
+            hint.appendChild(retry);
+        });
     }
 
-    function renderTask(taskId, data) {
+    feed.addEventListener('lrn-task-saved', function (event) {
+        var hint = event.detail && event.detail.hint;
+        if (!hint) hint = event.target.appendChild(el('p', 'video-progress-status'));
+        refreshSteps(hint);
+    });
+
+    function renderTask(taskId, data, onlyCards) {
+        if (onlyCards) onlyCards.forEach(function (card) { card.hidden = false; });
+        function renderableStep(blockId) {
+            var step = stepFor(taskId, blockId);
+            return !onlyCards || onlyCards.indexOf(step) !== -1 ? step : null;
+        }
         // `titlesOutside` — подпись шага печатает сервер
         // (`cabinet_learning.html`, `<h2 class="lrn-step-title">`), поэтому
         // внутри блока она не нужна: до 16.09.2026 ученик читал её дважды
@@ -73,7 +142,9 @@
             csrfToken: csrfToken,
             answered: !!data.answered,
             titlesOutside: true,
-            onRulesSaved: showStepAfter
+            onBlockSaved: function (block, hint, reloadBlock) {
+                refreshSteps(hint, reloadBlock ? [block.id] : []);
+            }
         });
         var blocks = data.blocks || [];
 
@@ -94,7 +165,7 @@
             var diagnosticBlocks = blocks.filter(function (block) { return block.is_archi_profile; });
             var wizardSteps = [];
             var complete = diagnosticBlocks.length > 0 && diagnosticBlocks.every(function (block) {
-                var step = stepFor(taskId, block.id);
+                var step = renderableStep(block.id);
                 var body = step && step.querySelector('[data-role="block-body"]');
                 if (!step || !body) return false;
                 wizardSteps.push({ block: block, container: step, body: body });
@@ -104,7 +175,8 @@
                 window.lrnBlockRender.runWizard(renderer, wizardSteps, {
                     onFinish: function (answers, handlers) {
                         postAnswers(data.submit_endpoint, answers).then(function () {
-                            window.location.reload();
+                            refreshSteps(wizardSteps[0].body.appendChild(el('p', 'video-progress-status')),
+                                diagnosticBlocks.map(function (block) { return block.id; }));
                         }).catch(function () { handlers.onError(); });
                     }
                 });
@@ -124,7 +196,7 @@
         // мастером в общую форму ответов не идут: они уходят своим запросом.
         var wizardIds = {};
         window.lrnBlockRender.pollGroups(blocks).forEach(function (poll) {
-            var cards = poll.blocks.map(function (block) { return stepFor(taskId, block.id); });
+            var cards = poll.blocks.map(function (block) { return renderableStep(block.id); });
             var ready = cards.every(function (card) {
                 return card && card.querySelector('[data-role="block-body"]');
             });
@@ -143,7 +215,8 @@
                 showTitle: false,
                 onSubmit: function (answers, handlers) {
                     postAnswers(data.submit_endpoint, answers).then(function () {
-                        window.location.reload();
+                        refreshSteps(host.appendChild(el('p', 'video-progress-status')),
+                            poll.blocks.map(function (block) { return block.id; }));
                     }).catch(function () { handlers.onError(); });
                 }
             });
@@ -155,7 +228,7 @@
         });
 
         blocks.forEach(function (block, index) {
-            var step = stepFor(taskId, block.id);
+            var step = renderableStep(block.id);
             // Блока может не быть на экране: запертый шаг содержимого не
             // получает вовсе — иначе «закрыто» обходилось бы чтением ответа
             // сервера в консоли браузера.
@@ -224,10 +297,11 @@
             // Ответы собираются со всей ленты: вопросы одного задания
             // разъехались по разным карточкам шагов.
             postAnswers(data.submit_endpoint, answers).then(function () {
-                // Попытка одна, и статусы шагов считает сервер: после ответа
-                // перезагружаем экран, чтобы вердикт, счёт и открывшиеся
-                // ниже шаги пришли из одного источника.
-                window.location.reload();
+                var edited = formBlocks.filter(function (block) {
+                    return answers.some(function (answer) { return String(answer.block_id) === String(block.id); });
+                }).map(function (block) { return block.id; });
+                edited.push(host.closest('[data-block-id]').dataset.blockId);
+                refreshSteps(note, edited);
             }).catch(function () {
                 button.disabled = false;
                 note.textContent = 'Не удалось отправить ответ. Попробуй ещё раз.';
@@ -237,7 +311,7 @@
         host.appendChild(form);
     }
 
-    function loadTask(taskId, cards) {
+    function loadTask(taskId, cards, onlyNewCards) {
         cards.forEach(function (card) {
             var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
             if (!status) return;
@@ -256,27 +330,35 @@
             if (!data || !Array.isArray(data.blocks)) throw new Error();
             return data;
         }).then(function (data) {
-            renderTask(taskId, data);
+            renderTask(taskId, data, onlyNewCards ? cards : null);
             var ids = new Set(data.blocks.map(function (block) { return String(block.id); }));
             cards.forEach(function (card) {
                 if (ids.has(card.dataset.blockId)) return;
                 var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
                 if (status) fail(status, 'Этот блок недоступен. Обнови страницу, чтобы увидеть актуальное задание.');
             });
-        }, function () {
-            showLoadError(taskId, cards);
+        }).catch(function () {
+            showLoadError(taskId, cards, onlyNewCards);
         });
     }
 
-    function showLoadError(taskId, cards) {
+    function showLoadError(taskId, cards, onlyNewCards) {
         cards.forEach(function (card) {
-            var status = card.querySelector('[data-role="block-body"] > [data-role="status"]');
+            var body = card.querySelector('[data-role="block-body"]');
+            var status = body && body.querySelector(':scope > [data-role="status"]');
+            if (!status && body && onlyNewCards) {
+                status = body.appendChild(el('p', 'video-progress-status'));
+                status.setAttribute('data-role', 'status');
+                status.setAttribute('aria-live', 'polite');
+            }
             if (!status) return;
+            var previousRetry = status.parentNode.querySelector('[data-block-retry]');
+            if (previousRetry) previousRetry.remove();
             fail(status, 'Не удалось загрузить содержимое.');
             var retry = el('button', 'btn-outline', 'Повторить');
             retry.type = 'button';
             retry.setAttribute('data-block-retry', '');
-            retry.addEventListener('click', function () { loadTask(taskId, cards); });
+            retry.addEventListener('click', function () { loadTask(taskId, cards, onlyNewCards); });
             status.after(retry);
         });
     }

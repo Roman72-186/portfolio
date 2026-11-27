@@ -18,11 +18,14 @@
             button.setAttribute('aria-describedby', id);
         }
         note.textContent = text;
+        return note;
     }
 
-    document.querySelectorAll('[data-toggle-task]').forEach(function (button) {
-        if (button.disabled) return;
-        button.addEventListener('click', function () {
+    var feed = document.querySelector('.lrn-feed');
+    if (!feed) return;
+    feed.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-toggle-task]');
+            if (!button || button.disabled) return;
             if (!window.confirm('Завершить задание? Отменить это действие не получится.')) return;
 
             var taskId = button.getAttribute('data-toggle-task');
@@ -46,12 +49,13 @@
                     throw error;
                 });
             }).then(function () {
-                window.location.reload();
+                var note = showNote(button, 'Задание сохранено.');
+                button.textContent = 'Задание выполнено';
+                feed.dispatchEvent(new CustomEvent('lrn-task-saved', {detail: {hint: note}}));
             }).catch(function (error) {
                 button.disabled = false;
                 button.textContent = originalText;
                 showNote(button, (error && error.detail) || 'Не получилось. Попробуй ещё раз');
             });
-        });
     });
 })();
