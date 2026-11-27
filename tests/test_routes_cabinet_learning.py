@@ -489,7 +489,7 @@ def test_learning_shows_completion_and_next_published_cycle(auth_client, db):
     cycle = _topic(db, user, opens_in_days=-1, ends_in_days=1)
     cycle.description = "Описание **цикла**"
     task = _task(db, user, title="Последнее задание", kind="material", day=today_msk())
-    _block(db, task, title="Последний шаг", is_required=False)
+    block = _block(db, task, title="Последний шаг", is_required=False)
 
     before = client.get("/cabinet/learning")
     assert "К заданиям</a>" in before.text
@@ -503,6 +503,18 @@ def test_learning_shows_completion_and_next_published_cycle(auth_client, db):
     assert "Все задания выполнены</strong>" in done.text
     assert 'class="lrn-cycle-complete"' in done.text
     assert "Следующий цикл откроется" not in done.text
+    assert "Дата открытия следующего цикла пока не назначена." in done.text
+
+    from app.models.task_block import TaskBlockSubmission
+    work = TaskBlockSubmission(block_id=block.id, user_id=user.id, submitted_at=now_msk())
+    db.add(work)
+    db.commit()
+    assert "Дождись обратной связи" in client.get("/cabinet/learning").text
+    work.needs_revision = True
+    db.commit()
+    revision = client.get("/cabinet/learning")
+    assert "Есть работа на доработку" in revision.text
+    assert "Дождись обратной связи" not in revision.text
 
     _topic(db, user, title="Черновик", opens_in_days=2, is_published=False)
     _topic(db, user, title="Следующий", opens_in_days=3)

@@ -51,6 +51,7 @@ from app.services.task_blocks import (
     get_blocks_for_tasks,
     get_required_tariffs,
     get_states,
+    get_submissions,
     is_block_accessible,
     is_block_open_to,
     not_open_yet,
@@ -1289,9 +1290,23 @@ def feed_for_student(
         if step["block"] is None or step["block"].id not in poll_inner
     ]
     done_count = sum(1 for step in counted_steps if step["status"] == STATUS_DONE)
+    cycle_complete = bool(counted_steps and done_count == len(counted_steps))
+    has_current_step = not cycle_complete and any(step["status"] == STATUS_CURRENT for step in steps)
+    submissions = get_submissions(
+        db, user_id=user_id, block_ids=[step["block"].id for step in steps if step["block"] is not None],
+    ) if not has_current_step else {}
+    revision_block_id = next((
+        step["block"].id for step in steps if step["block"] is not None
+        and (submission := submissions.get(step["block"].id)) is not None
+        and submission.submitted_at is not None and submission.needs_revision
+    ), None)
+    waiting_for_review = any(
+        row.submitted_at is not None and row.reviewed_at is None and not row.needs_revision
+        for row in submissions.values()
+    )
     next_cycle_opens_on = (
         _next_cycle_opening(db, user_id, user_tariff, viewed_cycle)
-        if viewed_cycle is not None and counted_steps and done_count == len(counted_steps)
+        if viewed_cycle is not None and cycle_complete
         else None
     )
     return {
@@ -1358,6 +1373,9 @@ def feed_for_student(
         "done_count": done_count,
         "total_count": len(counted_steps),
         "next_cycle_opens_on": next_cycle_opens_on,
+        "has_current_step": has_current_step,
+        "revision_block_id": revision_block_id,
+        "waiting_for_review": waiting_for_review,
         # Вкладки «Общее / Композиция / Рисунок» (созвон 30.09.2026, владелец
         # 01.10.2026): если хоть у одного шага есть предмет — все три, иначе
         # переключателя нет (владелец 03.09.2026: «мы просто не будем ставить

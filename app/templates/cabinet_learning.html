@@ -50,11 +50,26 @@
         <div data-learning-cta aria-live="polite">
             {% if feed.total_count and feed.done_count == feed.total_count %}
             <p><strong class="lrn-cycle-complete">Все задания выполнены</strong></p>
-            {% if feed.next_cycle_opens_on %}
-            <p>Следующий цикл откроется {{ feed.next_cycle_opens_on.strftime('%d.%m.%Y') }}</p>
             {% endif %}
-            {% else %}
+            {% if feed.has_current_step %}
             <a class="btn-blue student-learning-jump" href="#learningStart">К заданиям</a>
+            {% else %}
+            {% if feed.revision_block_id %}
+            <p><a href="#lrn-body-{{ feed.revision_block_id }}" data-focus-learning-block="{{ feed.revision_block_id }}">Есть работа на доработку</a></p>
+            {% endif %}
+            {% if feed.waiting_for_review %}
+            <p>Работа на проверке. Дождись обратной связи от преподавателя.</p>
+            {% endif %}
+            {% if feed.waiting_for %}
+            <p>Следующее задание откроется {{ feed.waiting_for | msk_text }} МСК.</p>
+            {% endif %}
+            {% if feed.next_cycle_opens_on %}
+            <p>Следующий цикл откроется {{ feed.next_cycle_opens_on.strftime('%d.%m.%Y') }}.</p>
+            {% elif feed.total_count and feed.done_count == feed.total_count %}
+            <p>Дата открытия следующего цикла пока не назначена.</p>
+            {% elif not feed.waiting_for and not feed.waiting_for_review and not feed.revision_block_id %}
+            <p>Следующее задание пока закрыто. Дата открытия не указана.</p>
+            {% endif %}
             {% endif %}
         </div>
         {% endif %}
@@ -192,10 +207,7 @@
     </div>
     {% endif %}
 
-    {# Всё доступное сделано, дальше ждём календарь (владелец 03.09.2026:
-       «ему выпадает уведомление, что следующее задание откроется 23 сентября,
-       и мы отсылаем его в чат комьюнити»). #}
-    {% if feed.waiting_for %}
+    {% if feed.waiting_for and archive_view %}
     <div class="lrn-card lrn-waiting">
         <div class="lrn-card-title">На сегодня всё</div>
         <p class="lrn-card-note">
@@ -462,8 +474,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var cta = document.querySelector('[data-learning-cta]');
     if (cta) cta.addEventListener('click', function (event) {
-        if (!event.target.closest('.student-learning-jump')) return;
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        var revision = event.target.closest('[data-focus-learning-block]');
+        if (revision) {
+            var step = document.querySelector('.lrn-step[data-block-id="' + revision.dataset.focusLearningBlock + '"]');
+            if (!step) return;
+            event.preventDefault();
+            var toggle = step.querySelector('.lrn-step-toggle');
+            if (toggle) lrnToggleStep(toggle, true);
+            lrnFocusStep(step);
+            return;
+        }
+        if (!event.target.closest('.student-learning-jump')) return;
         // После сохранения шага лента обновляет эти статусы без перезагрузки.
         var next = document.querySelector('.lrn-feed .lrn-step--current:not([hidden])');
         if (!next) return;
